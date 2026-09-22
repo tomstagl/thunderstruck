@@ -349,6 +349,54 @@ def build_bundle(repo: Path, hs: dict, data: dict, catalog: dict, profile: dict,
     return "\n".join(p for p in parts if p).rstrip() + "\n"
 
 
+def write_catalog_brief(dest: Path, catalog: dict, profile: dict) -> Path:
+    """The Tier A/B slice of the catalog, for the investigator to read.
+
+    This is §8's <stability_catalog> block. It lives on disk rather than in the
+    agent's prompt so the agent spends its context on the code.
+    """
+    patterns = c.effective_patterns(catalog, profile)
+    out = ["# Stability pattern catalog — tiers A and B", "",
+           "Every finding must map to at least one of these IDs, or to `OTHER` "
+           "with a justification. A pattern is 'missing' when the code that "
+           "needs it does not have it — not merely when a detector said so.", ""]
+    for tier, heading in (("A", "Tier A — highest weight"), ("B", "Tier B — lower weight")):
+        rows = [p for p in patterns.values() if str(p.get("tier", "")).upper() == tier]
+        if not rows:
+            continue
+        out += [f"## {heading}", ""]
+        for p in sorted(rows, key=lambda r: r["id"]):
+            out.append(f"### {p['id']} — {p['name']}")
+            out.append("")
+            out.append(f"Failure if absent: {str(p.get('failure_if_absent','')).strip()}")
+            role = p.get("metastable_role")
+            if role:
+                out.append(f"Typical role in a metastable failure: **{role}**.")
+            refs = p.get("references") or []
+            if refs:
+                out.append("References: " + "; ".join(str(r) for r in refs))
+            out.append("")
+    tier_c = catalog.get("tier_c") or []
+    if tier_c:
+        out += ["## Tier C — named but not scanned", "",
+                "Use these IDs if the evidence supports them; nothing detects them.", ""]
+        for p in tier_c:
+            out.append(f"- **{p['id']}** {p['name']} — {p.get('failure_if_absent','')}")
+        out.append("")
+    out += ["## The metastability question", "",
+            "A metastable failure needs a vulnerable state, a trigger, and a "
+            "**sustaining effect** that keeps the system failing after the trigger "
+            "is gone. For every hypothesis, ask: once this is triggered, what keeps "
+            "it failing? Common answers: retries consuming the budget recovery "
+            "needs; failed jobs re-queuing at full cost; errors invalidating caches "
+            "into a miss flood; expensive work regenerated on every failed request. "
+            "If nothing sustains it, say so — `sustaining_effect` may be null, but "
+            "it may never be omitted.", ""]
+    path = dest / "catalog-brief.md"
+    path.write_text("\n".join(out), encoding="utf-8")
+    return path
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="bundle.py",
                                  description="build per-hotspot context bundles")
@@ -374,24 +422,41 @@ def main(argv: list[str] | None = None) -> int:
     dest_dir.mkdir(parents=True, exist_ok=True)
     hotspots = data["hotspots"]
 
+    findings_dir = c.out_dir(repo) / "findings"
     index = []
     for hs in hotspots:
         body = build_bundle(repo, hs, data, catalog, profile,
                             args.budget, args.commits, hotspots)
         path = dest_dir / f"{hs['id']}.md"
         path.write_text(body, encoding="utf-8")
+        bundle_hash = c.sha256_text(body)
+
+        # Checkpoint: a finding produced from an identical bundle is still
+        # valid, so a rerun does not spend a subagent re-deriving it. This is
+        # also what makes an interrupted scan resumable.
+        cached_doc = c.load_json(findings_dir / f"{hs['id']}.json", {}) or {}
+        cached = cached_doc.get("bundle_hash") == bundle_hash
+
         index.append({"id": hs["id"], "file": hs["file"], "bundle": str(path),
-                      "bundle_hash": c.sha256_text(body),
+                      "bundle_hash": bundle_hash,
                       "content_hash": hs["content_hash"],
                       "tokens_estimated": c.estimate_tokens(body),
-                      "score": hs["scores"]["score"]})
-        print(f"{hs['id']}  ~{c.estimate_tokens(body):>5} tokens  {hs['file']}")
+                      "score": hs["scores"]["score"],
+                      "cached": cached,
+                      "findings_path": str(findings_dir / f"{hs['id']}.json")})
+        flag = "cached" if cached else "     "
+        print(f"{hs['id']}  ~{c.estimate_tokens(body):>5} tokens  {flag}  {hs['file']}")
+
+    brief = write_catalog_brief(c.out_dir(repo), catalog, profile)
+    print(f"catalog brief -> {brief}")
 
     c.write_json(c.out_dir(repo) / "bundles" / "index.json",
                  {"schema": "thunderstruck.bundles/v1", "budget": args.budget,
                   "bundles": index})
     total = sum(b["tokens_estimated"] for b in index)
+    todo = [b for b in index if not b["cached"]]
     print(f"\n{len(index)} bundles, ~{total} tokens total -> {dest_dir}")
+    print(f"{len(todo)} need investigating, {len(index) - len(todo)} reused from cache")
     return 0
 
 
