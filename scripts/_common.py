@@ -32,6 +32,17 @@ DEFAULT_EXCLUDE_GLOBS = [
     "*.svg", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.ico", "*.pdf",
     "*.woff", "*.woff2", "*.ttf", "*.eot",
 ]
+# Test code churns and branches as much as production code, but its failure
+# modes are CI failures, not outages. Ranking it spends investigators on the
+# wrong files. Opt back in with --include-tests or filters.include_tests.
+DEFAULT_EXCLUDE_TEST_GLOBS = [
+    "*.test.*", "*.spec.*", "test_*.py", "*_test.py", "*_test.go",
+    "conftest.py", "*.fixture.*", "*.stories.*",
+]
+DEFAULT_EXCLUDE_TEST_DIRS = [
+    "tests", "test", "__tests__", "spec", "specs", "e2e", "fixtures",
+    "testdata", "__mocks__",
+]
 DEFAULT_EXCLUDE_DIRS = [
     "node_modules", "vendor", "third_party", "dist", "build", "out",
     ".next", ".nuxt", "target", "__pycache__", ".venv", "venv",
@@ -228,11 +239,15 @@ class Filters:
     exclude_dirs: list[str] = field(default_factory=lambda: list(DEFAULT_EXCLUDE_DIRS))
     exclude_authors: list[str] = field(default_factory=lambda: list(DEFAULT_EXCLUDE_AUTHORS))
     path_prefix: str | None = None
+    include_tests: bool = False
 
     @classmethod
-    def from_profile(cls, profile: dict[str, Any], path_prefix: str | None = None) -> "Filters":
+    def from_profile(cls, profile: dict[str, Any], path_prefix: str | None = None,
+                     include_tests: bool | None = None) -> "Filters":
         section = (profile.get("filters") or {}) if isinstance(profile, dict) else {}
-        f = cls(path_prefix=path_prefix)
+        if include_tests is None:
+            include_tests = bool(section.get("include_tests", False))
+        f = cls(path_prefix=path_prefix, include_tests=include_tests)
         for key, attr in (
             ("exclude_globs", "exclude_globs"),
             ("exclude_dirs", "exclude_dirs"),
@@ -247,8 +262,13 @@ class Filters:
         return f
 
     def __post_init__(self) -> None:
-        self._glob_res = [_glob_to_re(g) for g in self.exclude_globs]
-        self._dirs = set(self.exclude_dirs)
+        globs = list(self.exclude_globs)
+        dirs = list(self.exclude_dirs)
+        if not self.include_tests:
+            globs += DEFAULT_EXCLUDE_TEST_GLOBS
+            dirs += DEFAULT_EXCLUDE_TEST_DIRS
+        self._glob_res = [_glob_to_re(g) for g in globs]
+        self._dirs = set(dirs)
         self._authors = [a.lower() for a in self.exclude_authors]
 
     def excludes_path(self, rel_path: str) -> bool:

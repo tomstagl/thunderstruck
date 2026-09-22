@@ -137,6 +137,12 @@ PERSIST = re.compile(
     r"(?i)(save|persist|upsert|checkpoint|commit|store|flush|record_progress"
     r"|last_?sync|last_?seen|progress|set_?state|resume_?from)"
     r"|\.update\s*\(|UPDATE\s+\w+\s+SET")
+# Mentioning a page is not walking pages. `for (const item of pageItems)` is an
+# item loop that happens to contain the substring; a real paging loop advances
+# the position or tests a more-pages flag.
+PAGE_ADVANCE = re.compile(
+    r"(?i)((page|cursor|offset|skip|start_?at)\s*(\+\+|\+=|=\s*[^=])"
+    r"|has_?more|has_?next|next_?(page|cursor|token|url)|is_?last_?page)")
 LOOP_TS = re.compile(r"^\s*(?:\}\s*)?(?:do\b|while\s*\(|for\s*(?:await\s*)?\()")
 LOOP_PY = re.compile(r"^\s*(?:while|for)\b.*:")
 
@@ -195,7 +201,8 @@ def s07_checkpoint(ctx) -> Result:
         end = end_of(lines, i)
         body_lines = lines[i:end + 1]
         body = "\n".join(body_lines)
-        if PAGING.search(body) and not _persists_cursor(body_lines):
+        if (PAGING.search(body) and PAGE_ADVANCE.search(body)
+                and not _persists_cursor(body_lines)):
             out.append((i + 1, (
                 "paged loop with no persisted cursor — an interrupted run "
                 "restarts from the first page and re-pays the whole cost")))
