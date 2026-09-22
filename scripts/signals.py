@@ -280,8 +280,9 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
             f"with --since, e.g. --since 24m.")
     if history["total_commits"] < 20:
         warnings.append(
-            f"only {history['total_commits']} commits in the window — churn "
-            f"ranking is weak on this little history. Consider --since 24m.")
+            f"only {history['total_commits']} commits since {since_date} — churn "
+            f"ranking is weak on this little history. Widen the window with a "
+            f"longer --since than {args.since!r}, if the repository has one.")
 
     tracked = {p for p in c.git(repo, "ls-files").split("\n") if p}
     candidates = [

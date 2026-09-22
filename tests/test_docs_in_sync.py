@@ -106,3 +106,25 @@ def test_every_script_has_a_docstring():
         text = script.read_text()
         body = text.split('"""')
         assert len(body) >= 3, f"{script.name} has no module docstring"
+
+
+def test_manifest_does_not_redeclare_autodiscovered_hooks():
+    """`hooks/hooks.json` is auto-discovered, and the manifest's `hooks` field
+    MERGES with it rather than replacing it. Naming it there loads the same
+    file twice and the plugin fails to load at runtime — which
+    `claude plugin validate` does not catch, only `claude plugin list` does.
+    """
+    manifest = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())
+    assert (ROOT / "hooks" / "hooks.json").is_file()
+    assert "hooks" not in manifest, (
+        "plugin.json declares `hooks` while hooks/hooks.json also exists; the "
+        "runtime rejects this as a duplicate hooks file")
+
+
+def test_manifest_does_not_redeclare_other_autodiscovered_dirs():
+    manifest = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())
+    for field, default_dir in (("skills", "skills"), ("agents", "agents")):
+        if (ROOT / default_dir).is_dir():
+            assert field not in manifest, (
+                f"plugin.json declares `{field}` while {default_dir}/ exists; "
+                f"rely on auto-discovery instead")

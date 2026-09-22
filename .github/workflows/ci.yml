@@ -88,6 +88,29 @@ jobs:
       - name: Validate the plugin and marketplace manifests
         run: claude plugin validate . --strict
 
+      # validate checks the manifests; it does not load the plugin. A
+      # duplicate hooks declaration passes validation and then fails at
+      # runtime, so assert the plugin actually loads.
+      - name: Plugin loads without errors
+        run: |
+          claude plugin marketplace add "$GITHUB_WORKSPACE"
+          claude plugin install thunderstruck@thunderstruck
+          claude plugin list | tee /tmp/plugins.txt
+          if grep -qi "failed to load\|error" /tmp/plugins.txt; then
+            echo "::error::plugin failed to load"
+            exit 1
+          fi
+          grep -q "enabled" /tmp/plugins.txt
+
+      - name: Expected components are present
+        run: |
+          claude plugin details thunderstruck@thunderstruck | tee /tmp/details.txt
+          grep -q "thunderstruck-scan" /tmp/details.txt
+          grep -q "thunderstruck-verify" /tmp/details.txt
+          grep -q "stability-catalog" /tmp/details.txt
+          grep -q "thunderstruck-investigator" /tmp/details.txt
+          grep -q "PreToolUse" /tmp/details.txt
+
   guardrail:
     name: guardrail contract
     runs-on: ubuntu-latest
