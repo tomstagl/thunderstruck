@@ -41,7 +41,21 @@ CAP = re.compile(
     r"|max_?(delay|backoff|wait|interval)|ceiling)", re.I)
 JITTER = re.compile(r"(?i)(jitter|random|rand\s*\(|uniform\s*\(|splay|stagger)")
 
-_LITERAL_MS = re.compile(r"^\s*\d+(\.\d+)?(\s*[*]\s*\d+(\.\d+)?)*\s*$")
+_LITERAL_MS = re.compile(r"^\s*[\d_]+(\.\d+)?(\s*[*]\s*[\d_]+(\.\d+)?)*\s*$")
+# `const SLEEP_MS = 2000;` then `setTimeout(resolve, SLEEP_MS)` is how a fixed
+# retry wait is usually written. Reading only the call site would miss it.
+_CONST_ASSIGN = re.compile(
+    r"^\s*(?:const|let|var|final)?\s*([A-Za-z_]\w*)\s*(?::\s*\w+\s*)?="
+    r"\s*([\d_]+(?:\.\d+)?(?:\s*\*\s*[\d_]+(?:\.\d+)?)*)\s*;?\s*$")
+
+
+def _numeric_constants(code_lines: list[str]) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for line in code_lines:
+        m = _CONST_ASSIGN.match(line)
+        if m:
+            out[m.group(1)] = m.group(2).strip()
+    return out
 
 SLEEP_RES: dict[str, list[re.Pattern]] = {
     "typescript": [
@@ -80,6 +94,7 @@ def s02_backoff(ctx) -> Result:
     file_growth = bool(GROWTH.search(ctx.code_text))
     file_cap = bool(CAP.search(ctx.code_text))
     file_jitter = bool(JITTER.search(ctx.code_text))
+    constants = _numeric_constants(ctx.code_lines)
 
     out: Result = []
     reported: set[str] = set()
@@ -97,12 +112,14 @@ def s02_backoff(ctx) -> Result:
             if not arg:
                 continue
 
-            if _LITERAL_MS.match(arg):
+            literal = arg if _LITERAL_MS.match(arg) else constants.get(arg)
+            if literal is not None:
                 if not file_growth and "constant" not in reported:
                     reported.add("constant")
+                    shown = arg if literal == arg else f"{arg} ({literal})"
                     out.append((i + 1, (
-                        f"retry waits a constant {arg} — no exponential growth, so "
-                        f"every client retries on the same schedule")))
+                        f"retry waits a constant {shown} — no exponential growth, "
+                        f"so every client retries on the same schedule")))
                 break
 
             inline_growth = bool(GROWTH.search(arg))

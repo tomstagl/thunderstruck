@@ -1,0 +1,85 @@
+# .thunderstruck.toml — per-repository profile
+#
+# Copy to the root of the repository you want to scan. Everything here is
+# optional; thunderstruck runs with no profile at all.
+#
+# What a profile does: re-prioritise catalog patterns for this codebase, and
+# state facts about the systems it talks to. Those facts reach the
+# investigator as *your statements about the system*. They are context, not
+# detector evidence — a finding can never cite them as proof.
+
+[profile]
+# Boundaries this service crosses. Named here, they appear in every bundle,
+# so the investigator reasons about them even in files where the call is
+# indirect.
+boundaries = ["discogs", "llm", "db", "queue"]
+
+notes = """
+Runs as an AWS Lambda behind a FIFO SQS queue, one message group per user.
+Long syncs continue by re-enqueuing rather than looping inside one invocation.
+"""
+
+# --------------------------------------------------------------------------
+# Pattern overrides
+# --------------------------------------------------------------------------
+# tier:   "A" (full weight), "B" (lower weight), "C" (catalogued, not scanned)
+# weight: multiplies this pattern's contribution to the hotspot score
+#
+# Raise what bites this codebase; lower what does not apply. Both change the
+# ranking, not what the detectors look for.
+
+[patterns]
+# Scheduled syncs: everything firing at :00 is a self-inflicted burst.
+S16 = { tier = "A", weight = 2.0 }
+
+# Batch work and interactive lookups share a limiter here, so starvation is a
+# live risk rather than a theoretical one.
+S06 = { tier = "A", weight = 2.0 }
+
+# Deadline propagation matters less inside a single Lambda invocation.
+S11 = { tier = "B", weight = 0.3 }
+
+# Bulkheads are the platform's job in this architecture, not the code's.
+S13 = { tier = "C" }
+
+# --------------------------------------------------------------------------
+# Boundary facts
+# --------------------------------------------------------------------------
+# What you know about each dependency that is not visible in the source.
+
+[boundary.discogs]
+# Discogs rate-limits authenticated requests per OAuth token, not per IP.
+# This distinction decides the blast radius of a rate-limit finding: with a
+# per-token budget, one user's runaway sync throttles that user only. If the
+# service ever falls back to unauthenticated requests, those are limited per
+# IP and the blast radius becomes every user behind that address.
+rate_limit = "60/min per authenticated OAuth token (unauthenticated: 25/min per IP)"
+headers = ["X-Discogs-Ratelimit", "X-Discogs-Ratelimit-Used", "X-Discogs-Ratelimit-Remaining"]
+pushback = "429 with Retry-After"
+notes = "Every call in this service uses the requesting user's own token."
+
+[boundary.llm]
+provider = "Gemini via @google/generative-ai"
+rate_limit = "per-project quota, shared across all users"
+notes = "A shared quota, unlike Discogs — one heavy caller can starve everyone."
+
+[boundary.db]
+engine = "PostgreSQL via Prisma"
+pool = "shared between request handling and background sync"
+
+[boundary.queue]
+engine = "SQS FIFO"
+notes = "MessageGroupId = userId, so at most one in-flight message per user."
+
+# --------------------------------------------------------------------------
+# Filters
+# --------------------------------------------------------------------------
+# These ADD to the built-in defaults (lockfiles, generated code, vendored
+# directories, bot authors, test files) rather than replacing them.
+
+[filters]
+exclude_dirs = ["infrastructure", "o11y"]
+exclude_globs = ["*.dql"]
+# Test files are excluded by default: they churn like production code but
+# their failure mode is a red CI run, not an outage.
+include_tests = false

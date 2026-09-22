@@ -443,13 +443,25 @@ def die(message: str, code: int = 2) -> None:
     raise SystemExit(code)
 
 
-def normalize(values: list[float]) -> list[float]:
-    """Min-max normalise to [0, 1]. All-equal input maps to 1.0 across the
-    board, so a repo where every file has identical churn still ranks on its
-    other axis rather than collapsing to zero."""
+NORMALIZE_FLOOR = 0.05
+
+
+def normalize(values: list[float], floor: float = NORMALIZE_FLOOR) -> list[float]:
+    """Min-max normalise into [floor, 1].
+
+    The floor matters because the score is a product. Plain min-max puts the
+    least-churned file at exactly 0, which annihilates its complexity and its
+    missing patterns too — so a complex file with three Tier A gaps would tie
+    with an empty one at 0.0 purely for being the least-changed thing in the
+    window. The floor keeps ordering intact while letting the other axis and
+    the stability weight still separate the tail.
+
+    All-equal input maps to 1.0 across the board, so a repo where every file
+    has identical churn ranks on its other axis rather than collapsing.
+    """
     if not values:
         return []
     lo, hi = min(values), max(values)
     if hi - lo < 1e-12:
         return [1.0] * len(values)
-    return [(v - lo) / (hi - lo) for v in values]
+    return [floor + (1.0 - floor) * ((v - lo) / (hi - lo)) for v in values]

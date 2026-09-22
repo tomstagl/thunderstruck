@@ -311,8 +311,9 @@ patterns:
         - id: S08-ts-unbounded-promise-all
           kind: regex
           pattern: '\bPromise\s*\.\s*(all|allSettled)\s*\('
-          absent_within: '(?i)\b(slice|chunk|batch|limit|pLimit|p-limit|concurrency|take)\b'
+          absent_within: '(?i)\b(slice|chunk|batch|limit|pLimit|p-limit|concurrency|take|semaphore)\b'
           window: 5
+          window_before: 10
           confidence: medium
           note: "Promise.all over an unbounded collection — concurrency equals input size"
         - id: S08-ts-findmany-without-take
@@ -335,6 +336,7 @@ patterns:
           pattern: '\basyncio\s*\.\s*gather\s*\('
           absent_within: '(?i)\b(semaphore|slice|chunk|batch|limit|islice)\b'
           window: 5
+          window_before: 10
           confidence: medium
           note: "asyncio.gather over an unbounded collection — concurrency equals input size"
         - id: S08-py-query-all-without-limit

@@ -103,6 +103,7 @@ def _run_regex(ctx: DetectorContext, pattern: dict, det: dict) -> list[Hit]:
     present = _rx(det["present_within"], True) if det.get("present_within") else None
     window = int(det.get("window", 1))
     offset = int(det.get("window_offset", 0))
+    before = int(det.get("window_before", 0))
 
     hits: list[Hit] = []
     for i, line in enumerate(lines):
@@ -110,7 +111,8 @@ def _run_regex(ctx: DetectorContext, pattern: dict, det: dict) -> list[Hit]:
             continue
         if absent is not None or present is not None:
             start = i + offset
-            chunk = "\n".join(lines[start:start + max(window, 1)])
+            lo = max(0, start - before)
+            chunk = "\n".join(lines[lo:start + max(window, 1)])
             if absent is not None and absent.search(chunk):
                 continue
             if present is not None and not present.search(chunk):
