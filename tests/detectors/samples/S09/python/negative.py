@@ -1,0 +1,10 @@
+from functools import lru_cache
+
+@lru_cache(maxsize=1024)
+def get_release(release_id):
+    hit = cache.get(release_id)
+    if hit:
+        return hit
+    value = fetch_release(release_id)
+    cache[release_id] = value
+    return value

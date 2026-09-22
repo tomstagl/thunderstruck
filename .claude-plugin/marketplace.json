@@ -1,0 +1,19 @@
+{
+  "name": "thunderstruck",
+  "owner": {
+    "name": "Tom Stagl",
+    "url": "https://github.com/tomstagl"
+  },
+  "description": "Forensic failure-mode analysis for git repositories.",
+  "plugins": [
+    {
+      "name": "thunderstruck",
+      "source": "./",
+      "description": "Resilience forensics for your codebase. Find the thundering herd before it finds you.",
+      "version": "0.1.0",
+      "category": "code-analysis",
+      "keywords": ["resilience", "hotspots", "failure-analysis", "reliability"],
+      "license": "MIT"
+    }
+  ]
+}

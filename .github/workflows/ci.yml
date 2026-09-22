@@ -1,0 +1,149 @@
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: tests (python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The fixture builds its own repository, but signals.py reads real
+          # history when dogfooding, so keep more than a shallow clone.
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python ${{ matrix.python }}
+        run: uv python install ${{ matrix.python }}
+
+      - name: Configure git for the fixture repository
+        run: |
+          git config --global user.email "ci@example.com"
+          git config --global user.name "CI"
+          git config --global init.defaultBranch main
+
+      - name: Run the test suite
+        run: uv run --python ${{ matrix.python }} --with pytest --with pyyaml --with lizard pytest tests/ -v
+
+      - name: Generated docs are in sync
+        run: uv run --python ${{ matrix.python }} scripts/gen_catalog_docs.py --check
+
+  dogfood:
+    name: scan this repo with itself
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Deterministic layers run clean on a real repository
+        run: |
+          uv run scripts/signals.py --top 5 --since 24m
+          uv run scripts/bundle.py
+          test -s .thunderstruck/hotspots.json
+          test -s .thunderstruck/catalog-brief.md
+
+      - name: Upload the scan output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: thunderstruck-self-scan
+          path: .thunderstruck/
+          retention-days: 7
+
+  plugin:
+    name: plugin manifest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Validate the plugin and marketplace manifests
+        run: claude plugin validate . --strict
+
+      # validate checks the manifests; it does not load the plugin. A
+      # duplicate hooks declaration passes validation and then fails at
+      # runtime, so assert the plugin actually loads.
+      - name: Plugin loads without errors
+        run: |
+          claude plugin marketplace add "$GITHUB_WORKSPACE"
+          claude plugin install thunderstruck@thunderstruck
+          claude plugin list | tee /tmp/plugins.txt
+          if grep -qi "failed to load\|error" /tmp/plugins.txt; then
+            echo "::error::plugin failed to load"
+            exit 1
+          fi
+          grep -q "enabled" /tmp/plugins.txt
+
+      - name: Expected components are present
+        run: |
+          claude plugin details thunderstruck@thunderstruck | tee /tmp/details.txt
+          grep -q "thunderstruck-scan" /tmp/details.txt
+          grep -q "thunderstruck-verify" /tmp/details.txt
+          grep -q "stability-catalog" /tmp/details.txt
+          grep -q "thunderstruck-investigator" /tmp/details.txt
+          grep -q "PreToolUse" /tmp/details.txt
+
+  guardrail:
+    name: guardrail contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The hook must never fail an edit
+        run: |
+          set -u
+          for payload in '' 'not json' '{}' '{"tool_input":{}}'; do
+            printf '%s' "$payload" | python3 scripts/guardrail.py
+            code=$?
+            if [ "$code" -ne 0 ]; then
+              echo "guardrail exited $code on payload: $payload"
+              exit 1
+            fi
+          done
+          echo "guardrail failed open on every malformed input"
+
+      - name: The hook must not need third-party packages
+        run: |
+          python3 -c "
+          import ast, sys
+          tree = ast.parse(open('scripts/guardrail.py').read())
+          stdlib = {'hashlib','json','os','sys','tempfile','pathlib','traceback','__future__'}
+          bad = []
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Import):
+                  bad += [a.name for a in node.names if a.name.split('.')[0] not in stdlib]
+              elif isinstance(node, ast.ImportFrom) and node.module:
+                  if node.module.split('.')[0] not in stdlib:
+                      bad.append(node.module)
+          if bad:
+              sys.exit(f'guardrail imports non-stdlib modules: {bad}')
+          print('guardrail is stdlib-only')
+          "

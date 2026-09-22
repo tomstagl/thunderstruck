@@ -1,0 +1,92 @@
+# .thunderstruck.toml — per-repository profile
+#
+# Copy to the root of the repository you want to scan and replace the
+# placeholders with your own systems. Everything here is optional;
+# thunderstruck runs with no profile at all.
+#
+# What a profile does: re-prioritise catalog patterns for this codebase, and
+# state facts about the systems it talks to. Those facts reach the
+# investigator as *your statements about the system*. They are context, not
+# detector evidence — a finding can never cite them as proof.
+#
+# The example below describes an imaginary service that syncs data from a
+# partner API into its own database, with a worker queue and an LLM
+# enrichment step. Swap in whatever yours actually does.
+
+[profile]
+# Boundaries this service crosses. Named here, they appear in every bundle,
+# so the investigator reasons about them even in files where the call is
+# indirect. The names are yours to choose; they key the [boundary.*] sections.
+boundaries = ["partner_api", "llm", "db", "queue"]
+
+notes = """
+Background syncs run as short-lived workers rather than one long process:
+a worker handles a slice of the work and hands the rest to the next one.
+"""
+
+# --------------------------------------------------------------------------
+# Pattern overrides
+# --------------------------------------------------------------------------
+# tier:   "A" (full weight), "B" (lower weight), "C" (catalogued, not scanned)
+# weight: multiplies this pattern's contribution to the hotspot score
+#
+# Raise what bites this codebase; lower what does not apply. Both change the
+# ranking, not what the detectors look for.
+
+[patterns]
+# Scheduled syncs: everything firing at :00 is a self-inflicted burst.
+S16 = { tier = "A", weight = 2.0 }
+
+# Batch work and interactive lookups share a limiter here, so starvation is a
+# live risk rather than a theoretical one.
+S06 = { tier = "A", weight = 2.0 }
+
+# Deadline propagation matters less when each worker is already short-lived.
+S11 = { tier = "B", weight = 0.3 }
+
+# Bulkheads are the platform's job in this architecture, not the code's.
+S13 = { tier = "C" }
+
+# --------------------------------------------------------------------------
+# Boundary facts
+# --------------------------------------------------------------------------
+# What you know about each dependency that is not visible in the source.
+# Rate limits, quotas and pushback behaviour are the highest-value entries:
+# they decide the blast radius of a finding, and no detector can infer them.
+
+[boundary.partner_api]
+# Whether a quota is per-credential or per-IP decides who a runaway caller
+# takes down with them. Per-credential, one tenant's runaway sync throttles
+# that tenant only. Per-IP, it throttles everyone behind that address — the
+# same code, a completely different blast radius. Write down which one you
+# have, including any fallback path that changes the answer.
+rate_limit = "60/min per API key; unauthenticated requests are limited per IP"
+headers = ["X-RateLimit-Limit", "X-RateLimit-Used", "X-RateLimit-Remaining"]
+pushback = "429 with Retry-After"
+notes = "Every call uses the requesting tenant's own credential."
+
+[boundary.llm]
+provider = "<your LLM provider>"
+rate_limit = "per-project quota, shared across all tenants"
+notes = "Shared, unlike the partner API — one heavy caller can starve everyone."
+
+[boundary.db]
+engine = "<your database>"
+pool = "shared between request handling and background work"
+
+[boundary.queue]
+engine = "<your queue>"
+notes = "Ordered per tenant, so at most one message per tenant is in flight."
+
+# --------------------------------------------------------------------------
+# Filters
+# --------------------------------------------------------------------------
+# These ADD to the built-in defaults (lockfiles, generated code, vendored
+# directories, bot authors, test files) rather than replacing them.
+
+[filters]
+exclude_dirs = ["deploy", "monitoring"]
+exclude_globs = ["*.tfvars"]
+# Test files are excluded by default: they churn like production code but
+# their failure mode is a red CI run, not an outage.
+include_tests = false

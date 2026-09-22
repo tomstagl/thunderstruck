@@ -1,0 +1,30 @@
+[project]
+name = "thunderstruck"
+version = "0.1.0"
+description = "Resilience forensics for your codebase — forensic failure-mode analysis for git repositories."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Tom Stagl" }]
+keywords = ["resilience", "hotspots", "failure-analysis", "reliability"]
+dependencies = [
+    "pyyaml>=6.0",
+    "lizard>=1.17",
+]
+
+[project.urls]
+Homepage = "https://github.com/tomstagl/thunderstruck"
+Repository = "https://github.com/tomstagl/thunderstruck"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+filterwarnings = ["error::DeprecationWarning:thunderstruck.*"]
+
+[tool.uv]
+package = false

@@ -1,0 +1,706 @@
+# thunderstruck stability pattern catalog
+#
+# Each entry describes a stability pattern, what fails when it is absent, and
+# heuristics for spotting its absence in source. Detector hits are LEADS, not
+# findings: the investigator subagent confirms or rejects each one against the
+# actual code, and a finding never rests on a detector hit alone.
+#
+# Tiers here are generic defaults. A repo re-prioritises them in
+# .thunderstruck.toml (see examples/thunderstruck.toml.example).
+#
+# Detector kinds
+#   regex        `pattern` matches a line. Optional `absent_within` (regex that
+#                must NOT appear in the `window` lines from the match) and
+#                `present_within` (regex that MUST appear there).
+#   file_absent  `anchor` matches somewhere in the file AND `absent` matches
+#                nowhere in it. Hit is reported at the first anchor line.
+#   module       dispatches to a handler in scripts/detectors/. For patterns
+#                where a regex cannot see the structure that matters.
+#
+# `confidence` is the detector's own self-assessment and feeds hit weighting.
+# It is NOT the finding's confidence — only the investigator sets that.
+
+version: 1
+schema: thunderstruck.catalog/v1
+
+languages:
+  typescript:
+    extensions: [".ts", ".tsx", ".mts", ".cts"]
+  javascript:
+    extensions: [".js", ".jsx", ".mjs", ".cjs"]
+  python:
+    extensions: [".py", ".pyi"]
+
+# Language aliases: a detector written for `typescript` also runs on javascript.
+aliases:
+  javascript: typescript
+
+patterns:
+  # ---------------------------------------------------------------- Tier A --
+  - id: S01
+    name: Timeouts on every external call
+    tier: A
+    weight: 1.0
+    metastable_role: amplifier
+    failure_if_absent: >-
+      Blocked threads or a stalled event loop. One hung dependency holds
+      connections open until the whole app stops serving.
+    references:
+      - "Nygard, Release It! (2nd ed.), ch. 5 — Timeouts"
+      - "Amazon Builders' Library — Timeouts, retries and backoff with jitter"
+    detectors:
+      typescript:
+        - id: S01-ts-fetch-no-signal
+          kind: regex
+          pattern: '\bfetch\s*\('
+          absent_within: '\b(signal|AbortSignal|timeout|AbortController)\b'
+          window: 8
+          confidence: medium
+          note: "fetch() with no AbortSignal or timeout in the request options"
+        - id: S01-ts-axios-no-timeout
+          kind: regex
+          pattern: '\baxios\s*(\.\s*(get|post|put|patch|delete|request)\s*)?\('
+          absent_within: '\btimeout\b'
+          window: 8
+          confidence: medium
+          note: "axios call with no timeout option"
+        - id: S01-ts-node-http-no-timeout
+          kind: regex
+          pattern: '\b(https?|http2)\s*\.\s*(request|get)\s*\('
+          absent_within: '\btimeout\b'
+          window: 8
+          confidence: medium
+          note: "node http(s) request with no timeout option"
+      python:
+        - id: S01-py-requests-no-timeout
+          kind: regex
+          pattern: '\brequests\s*\.\s*(get|post|put|patch|delete|head|request)\s*\('
+          absent_within: '\btimeout\s*='
+          window: 6
+          confidence: high
+          note: "requests call with no timeout= (requests blocks forever by default)"
+        - id: S01-py-httpx-no-timeout
+          kind: regex
+          pattern: '\bhttpx\s*\.\s*(AsyncClient|Client|get|post|put|patch|delete|request)\s*\('
+          absent_within: '\btimeout\s*='
+          window: 6
+          confidence: low
+          note: "httpx call with no explicit timeout= (httpx does default to 5s)"
+        - id: S01-py-urlopen-no-timeout
+          kind: regex
+          pattern: '\burlopen\s*\('
+          absent_within: '\btimeout\s*='
+          window: 4
+          confidence: high
+          note: "urlopen() with no timeout="
+        - id: S01-py-socket-no-timeout
+          kind: regex
+          pattern: '\bsocket\s*\.\s*socket\s*\('
+          absent_within: '\b(settimeout|setdefaulttimeout)\b'
+          window: 10
+          confidence: medium
+          note: "raw socket with no settimeout()"
+
+  - id: S02
+    name: Capped exponential backoff with full jitter
+    tier: A
+    weight: 1.0
+    metastable_role: sustaining
+    failure_if_absent: >-
+      Synchronised retries hammer a recovering dependency and hold it down —
+      the classic thundering herd. Uncapped growth parks work for minutes.
+    references:
+      - "Brooker, Exponential Backoff And Jitter (AWS Architecture Blog)"
+      - "Nygard, Release It! (2nd ed.), ch. 5 — Retries"
+    detectors:
+      typescript:
+        - id: S02-ts-backoff
+          kind: module
+          handler: s02_backoff
+          confidence: medium
+          note: "retry backoff missing a cap, jitter, or growth"
+      python:
+        - id: S02-py-backoff
+          kind: module
+          handler: s02_backoff
+          confidence: medium
+          note: "retry backoff missing a cap, jitter, or growth"
+
+  - id: S03
+    name: Honor server pushback (Retry-After, 429/503)
+    tier: A
+    weight: 1.0
+    metastable_role: sustaining
+    failure_if_absent: >-
+      Retries land inside a window the server has already told you is closed,
+      so the limiter never gets a chance to reopen.
+    references:
+      - "RFC 9110 §10.2.3 — Retry-After"
+      - "Google SRE Book, ch. 21 — Handling Overload"
+    detectors:
+      typescript:
+        - id: S03-ts-429-ignores-retry-after
+          kind: file_absent
+          anchor: '\b429\b|TOO_MANY_REQUESTS|tooManyRequests'
+          absent: '[Rr]etry-?[Aa]fter|retry_after|RETRY_AFTER'
+          confidence: high
+          note: "file handles 429 but never reads Retry-After"
+        - id: S03-ts-503-ignores-retry-after
+          kind: file_absent
+          anchor: '\b503\b|SERVICE_UNAVAILABLE'
+          absent: '[Rr]etry-?[Aa]fter|retry_after|RETRY_AFTER'
+          confidence: low
+          note: "file handles 503 but never reads Retry-After"
+      python:
+        - id: S03-py-429-ignores-retry-after
+          kind: file_absent
+          anchor: '\b429\b|TOO_MANY_REQUESTS|too_many_requests'
+          absent: '[Rr]etry-?[Aa]fter|retry_after|RETRY_AFTER'
+          confidence: high
+          note: "file handles 429 but never reads Retry-After"
+        - id: S03-py-503-ignores-retry-after
+          kind: file_absent
+          anchor: '\b503\b|SERVICE_UNAVAILABLE'
+          absent: '[Rr]etry-?[Aa]fter|retry_after|RETRY_AFTER'
+          confidence: low
+          note: "file handles 503 but never reads Retry-After"
+
+  - id: S04
+    name: Retry only transient errors
+    tier: A
+    weight: 1.0
+    metastable_role: amplifier
+    failure_if_absent: >-
+      Retrying a 4xx burns the retry budget on requests that can never
+      succeed, and hides the bug that caused them.
+    references:
+      - "Amazon Builders' Library — Timeouts, retries and backoff with jitter"
+    detectors:
+      typescript:
+        - id: S04-ts-retry-without-discrimination
+          kind: file_absent
+          anchor: '\b(maxRetries|MAX_RETRIES|retryCount|retries|retryAttempt)\b'
+          absent: '\b(5\d\d|status\s*>=\s*500|isTransient|isRetryable|ECONNRESET|ETIMEDOUT|429|statusCode\s*>=)\b'
+          confidence: medium
+          note: "retry construct with no visible transient/permanent discrimination"
+      python:
+        - id: S04-py-bare-except-retry
+          kind: regex
+          pattern: 'except\s*(Exception\s*)?(as\s+\w+\s*)?:'
+          present_within: '\b(continue|retry|attempt)\b'
+          window: 6
+          confidence: medium
+          note: "catch-all except followed by a retry — retries permanent errors too"
+        - id: S04-py-retry-without-discrimination
+          kind: file_absent
+          anchor: '\b(max_retries|MAX_RETRIES|retry_count|retries|num_retries)\b'
+          absent: '\b(5\d\d|status_code\s*>=\s*500|is_transient|is_retryable|ConnectionError|Timeout|429)\b'
+          confidence: medium
+          note: "retry construct with no visible transient/permanent discrimination"
+
+  - id: S05
+    name: Client-side rate limiting / budget gating
+    tier: A
+    weight: 1.0
+    metastable_role: trigger
+    failure_if_absent: >-
+      A shared quota is exhausted by one caller, and every other caller on
+      that quota starts failing.
+    references:
+      - "Google SRE Book, ch. 21 — Handling Overload"
+      - "Nygard, Release It! (2nd ed.), ch. 5 — Governor"
+    detectors:
+      typescript:
+        - id: S05-ts-http-without-limiter
+          kind: file_absent
+          anchor: '\b(fetch|axios|got|superagent|undici)\s*[.(]'
+          absent: '(?i)\b(ratelimit|rate_limit|rate-limit|limiter|throttle|bottleneck|semaphore|token.?bucket|p-?limit|pLimit)\b'
+          confidence: medium
+          note: "external HTTP calls with no local rate limiter or concurrency gate in this file"
+        - id: S05-ts-ratelimit-headers-unread
+          kind: file_absent
+          anchor: '(?i)\bratelimit\b|\brate.?limit\b'
+          absent: '(?i)headers\s*\.\s*get\s*\(\s*[''"`][^''"`]*ratelimit|x-.*-ratelimit'
+          confidence: low
+          note: "rate limiting mentioned but server rate-limit headers are never read"
+      python:
+        - id: S05-py-http-without-limiter
+          kind: file_absent
+          anchor: '\b(requests|httpx|aiohttp|urllib3)\s*[.(]'
+          absent: '(?i)\b(ratelimit|rate_limit|limiter|throttle|semaphore|token.?bucket|aiolimiter)\b'
+          confidence: medium
+          note: "external HTTP calls with no local rate limiter or concurrency gate in this file"
+
+  - id: S06
+    name: Request prioritization (interactive over background)
+    tier: A
+    weight: 1.0
+    metastable_role: amplifier
+    failure_if_absent: >-
+      Batch work starves user-facing requests: both queue behind the same
+      limiter, and the batch always wins on volume.
+    references:
+      - "Google SRE Book, ch. 21 — Criticality"
+      - "Nygard, Release It! (2nd ed.), ch. 5 — Shed Load"
+    detectors:
+      typescript:
+        - id: S06-ts-single-queue-no-priority
+          kind: file_absent
+          anchor: '(?i)\b(queue|limiter|throttle|worker|pool)\b'
+          absent: '(?i)\b(priority|interactive|criticality|tier|urgent|foreground)\b'
+          confidence: low
+          note: "one queue/limiter serves all callers; no priority or criticality field"
+      python:
+        - id: S06-py-single-queue-no-priority
+          kind: file_absent
+          anchor: '(?i)\b(queue|limiter|throttle|worker|pool)\b'
+          absent: '(?i)\b(priority|interactive|criticality|tier|urgent|foreground)\b'
+          confidence: low
+          note: "one queue/limiter serves all callers; no priority or criticality field"
+
+  - id: S07
+    name: Idempotent, resumable jobs
+    tier: A
+    weight: 1.0
+    metastable_role: sustaining
+    failure_if_absent: >-
+      A crash mid-job restarts from zero or writes duplicates. Every retry
+      pays the full cost again, so the job never gets further than the
+      failure point.
+    references:
+      - "Nygard, Release It! (2nd ed.), ch. 5 — Handshaking / Steady State"
+      - "Google SRE Book, ch. 22 — Addressing Cascading Failures"
+    detectors:
+      typescript:
+        - id: S07-ts-uncheckpointed-loop
+          kind: module
+          handler: s07_checkpoint
+          confidence: medium
+          note: "paged/batched loop with no persisted cursor — a crash restarts from the beginning"
+        - id: S07-ts-create-without-upsert
+          kind: file_absent
+          anchor: '\.\s*create(Many)?\s*\(|INSERT\s+INTO'
+          absent: '(?i)\b(upsert|ON\s+CONFLICT|ON\s+DUPLICATE\s+KEY|MERGE\s+INTO|idempotenc)'
+          confidence: medium
+          note: "inserts with no upsert / ON CONFLICT — a replayed job duplicates rows"
+      python:
+        - id: S07-py-uncheckpointed-loop
+          kind: module
+          handler: s07_checkpoint
+          confidence: medium
+          note: "paged/batched loop with no persisted cursor — a crash restarts from the beginning"
+        - id: S07-py-insert-without-upsert
+          kind: file_absent
+          anchor: '\.\s*(add|bulk_save_objects|insert)\s*\(|INSERT\s+INTO'
+          absent: '(?i)\b(upsert|ON\s+CONFLICT|ON\s+DUPLICATE\s+KEY|MERGE\s+INTO|idempotenc)'
+          confidence: medium
+          note: "inserts with no upsert / ON CONFLICT — a replayed job duplicates rows"
+
+  - id: S08
+    name: Bounded result sets and pagination
+    tier: A
+    weight: 1.0
+    metastable_role: amplifier
+    failure_if_absent: >-
+      Memory exhaustion, timeouts, and oversized LLM prompts as the data
+      grows. Works fine until one row count crosses a threshold.
+    references:
+      - "Nygard, Release It! (2nd ed.), ch. 4 — Unbounded Result Sets"
+    detectors:
+      typescript:
+        - id: S08-ts-unbounded-promise-all
+          kind: regex
+          pattern: '\bPromise\s*\.\s*(all|allSettled)\s*\('
+          absent_within: '(?i)\b(slice|chunk|batch|limit|pLimit|p-limit|concurrency|take|semaphore)\b'
+          window: 5
+          window_before: 10
+          confidence: medium
+          note: "Promise.all over an unbounded collection — concurrency equals input size"
+        - id: S08-ts-findmany-without-take
+          kind: regex
+          pattern: '\.\s*findMany\s*\('
+          absent_within: '\btake\s*:'
+          window: 10
+          confidence: medium
+          note: "Prisma findMany with no take: — result set grows with the table"
+        - id: S08-ts-select-without-limit
+          kind: regex
+          pattern: '(?i)SELECT\s+.*\s+FROM\s+'
+          absent_within: '(?i)\bLIMIT\b'
+          window: 6
+          confidence: low
+          note: "SELECT with no LIMIT"
+      python:
+        - id: S08-py-unbounded-gather
+          kind: regex
+          pattern: '\basyncio\s*\.\s*gather\s*\('
+          absent_within: '(?i)\b(semaphore|slice|chunk|batch|limit|islice)\b'
+          window: 5
+          window_before: 10
+          confidence: medium
+          note: "asyncio.gather over an unbounded collection — concurrency equals input size"
+        - id: S08-py-query-all-without-limit
+          kind: regex
+          pattern: '\.\s*(all|fetchall)\s*\(\s*\)'
+          absent_within: '(?i)\b(limit|slice|first|paginate|yield_per|stream)\b'
+          window: 4
+          confidence: low
+          note: "full result-set fetch with no limit"
+        - id: S08-py-select-without-limit
+          kind: regex
+          pattern: '(?i)SELECT\s+.*\s+FROM\s+'
+          absent_within: '(?i)\bLIMIT\b'
+          window: 6
+          confidence: low
+          note: "SELECT with no LIMIT"
+
+  - id: S09
+    name: Single-flight / request coalescing plus caching
+    tier: A
+    weight: 1.0
+    metastable_role: sustaining
+    failure_if_absent: >-
+      N concurrent cache misses become N identical upstream calls. After an
+      eviction or an error-driven invalidation, the miss flood keeps the
+      dependency down even once the original trigger is gone.
+    references:
+      - "Bronson et al., Metastable Failures in Distributed Systems (HotOS '21)"
+      - "Nygard, Release It! (2nd ed.), ch. 5 — Caching"
+    detectors:
+      typescript:
+        - id: S09-ts-cache-aside-no-singleflight
+          kind: file_absent
+          anchor: '(?i)cache\s*\.\s*(get|has|read)\s*\(|getCached|fromCache'
+          absent: '(?i)\b(in.?flight|single.?flight|coalesc|dedupe|dedup|pending(Requests|Promises|Map)|memoize)\b'
+          confidence: medium
+          note: "cache-aside read with no in-flight deduplication"
+      python:
+        - id: S09-py-cache-aside-no-singleflight
+          kind: file_absent
+          anchor: '(?i)cache\s*\.\s*(get|has|read)\s*\(|get_cached|from_cache'
+          absent: '(?i)\b(in.?flight|single.?flight|coalesc|dedupe|dedup|pending|lru_cache|memoiz)\b'
+          confidence: medium
+          note: "cache-aside read with no in-flight deduplication"
+
+  - id: S10
+    name: Retry at one layer plus a retry budget
+    tier: A
+    weight: 1.0
+    metastable_role: amplifier
+    failure_if_absent: >-
+      Retry amplification. R retries at each of N nested layers is R^N
+      requests to the dependency that is already struggling.
+    references:
+      - "Google SRE Book, ch. 22 — Addressing Cascading Failures"
+      - "Amazon Builders' Library — Timeouts, retries and backoff with jitter"
+    detectors:
+      typescript:
+        - id: S10-ts-nested-retry
+          kind: module
+          handler: s10_retry_layers
+          confidence: medium
+          note: "more than one retry layer in the same call path, with no shared budget"
+      python:
+        - id: S10-py-nested-retry
+          kind: module
+          handler: s10_retry_layers
+          confidence: medium
+          note: "more than one retry layer in the same call path, with no shared budget"
+
+  # ---------------------------------------------------------------- Tier B --
+  - id: S11
+    name: Deadline propagation across hops
+    tier: B
+    weight: 0.6
+    metastable_role: amplifier
+    failure_if_absent: >-
+      Downstream work keeps running after the caller has already given up,
+      spending capacity on results nobody will read.
+    references:
+      - "Google SRE Book, ch. 22 — Deadlines"
+    detectors:
+      typescript:
+        - id: S11-ts-no-deadline-propagation
+          kind: file_absent
+          anchor: '\b(fetch|axios|got|request)\s*[.(]'
+          absent: '(?i)\b(deadline|abortSignal|signal\s*[:,)]|cancellationToken|remainingMs|timeBudget)\b'
+          confidence: low
+          note: "outbound calls with no deadline or cancellation passed through"
+      python:
+        - id: S11-py-no-deadline-propagation
+          kind: file_absent
+          anchor: '\b(requests|httpx|aiohttp)\s*[.(]'
+          absent: '(?i)\b(deadline|cancel|remaining|time_budget|CancelledError)\b'
+          confidence: low
+          note: "outbound calls with no deadline or cancellation passed through"
+
+  - id: S12
+    name: Circuit breaker or retry token bucket
+    tier: B
+    weight: 0.6
+    metastable_role: sustaining
+    failure_if_absent: >-
+      The client keeps calling a dependency that is already dead, so the
+      dependency never gets the quiet it needs to come back.
+    references:
+      - "Nygard, Release It! (2nd ed.), ch. 5 — Circuit Breaker"
+    detectors:
+      typescript:
+        - id: S12-ts-no-breaker
+          kind: file_absent
+          anchor: '\b(maxRetries|MAX_RETRIES|retries|retryCount)\b'
+          absent: '(?i)\b(circuit|breaker|opossum|cockatiel|half.?open|token.?bucket)\b'
+          confidence: low
+          note: "retries with no circuit breaker or retry token bucket"
+      python:
+        - id: S12-py-no-breaker
+          kind: file_absent
+          anchor: '\b(max_retries|MAX_RETRIES|retries|retry_count)\b'
+          absent: '(?i)\b(circuit|breaker|pybreaker|half.?open|token.?bucket)\b'
+          confidence: low
+          note: "retries with no circuit breaker or retry token bucket"
+
+  - id: S13
+    name: Bulkheads (separate pools, queues, workers)
+    tier: B
+    weight: 0.6
+    metastable_role: amplifier
+    failure_if_absent: >-
+      Background work exhausts the resources request handling needs, so a
+      batch job takes the web tier down with it.
+    references:
+      - "Nygard, Release It! (2nd ed.), ch. 5 — Bulkheads"
+    detectors:
+      typescript:
+        - id: S13-ts-shared-pool
+          kind: file_absent
+          anchor: '(?i)\b(pool|connectionLimit|maxConnections|poolSize)\b'
+          absent: '(?i)\b(bulkhead|separate|dedicated|isolat|partition)\w*\b'
+          confidence: low
+          note: "one shared pool with no isolation between workloads"
+      python:
+        - id: S13-py-shared-pool
+          kind: file_absent
+          anchor: '(?i)\b(pool|pool_size|max_connections|ThreadPoolExecutor)\b'
+          absent: '(?i)\b(bulkhead|separate|dedicated|isolat|partition)\w*\b'
+          confidence: low
+          note: "one shared pool with no isolation between workloads"
+
+  - id: S14
+    name: Bounded queues with backpressure or load shedding
+    tier: B
+    weight: 0.6
+    metastable_role: sustaining
+    failure_if_absent: >-
+      Unbounded latency and memory growth under load. The queue absorbs the
+      overload instead of rejecting it, and never drains.
+    references:
+      - "Nygard, Release It! (2nd ed.), ch. 4 — Blocked Threads"
+      - "Google SRE Book, ch. 21 — Load Shedding"
+    detectors:
+      typescript:
+        - id: S14-ts-unbounded-queue
+          kind: regex
+          pattern: '(?i)\b(queue|buffer|backlog)\s*(:|=)\s*(\[\]|new\s+Array)'
+          absent_within: '(?i)\b(maxSize|max_size|capacity|limit|bounded|shed)\b'
+          window: 6
+          confidence: medium
+          note: "in-memory queue with no capacity bound or rejection path"
+      python:
+        - id: S14-py-unbounded-queue
+          kind: regex
+          pattern: '\b(asyncio\s*\.\s*Queue|queue\s*\.\s*Queue|Queue)\s*\(\s*\)'
+          confidence: medium
+          note: "Queue() with no maxsize — unbounded by default"
+
+  - id: S15
+    name: Graceful degradation and fallbacks
+    tier: B
+    weight: 0.6
+    metastable_role: amplifier
+    failure_if_absent: >-
+      One dependency being down turns the whole feature into an error,
+      instead of a reduced but working response.
+    references:
+      - "Nygard, Release It! (2nd ed.), ch. 5 — Fail Fast / Decoupling Middleware"
+    detectors:
+      typescript:
+        - id: S15-ts-no-fallback
+          kind: file_absent
+          anchor: '\b(fetch|axios|got)\s*[.(]'
+          absent: '(?i)\b(fallback|degrade|stale|default(Value|Response)|cached(Value|Response))\b'
+          confidence: low
+          note: "external call with no fallback branch"
+      python:
+        - id: S15-py-no-fallback
+          kind: file_absent
+          anchor: '\b(requests|httpx|aiohttp)\s*[.(]'
+          absent: '(?i)\b(fallback|degrade|stale|default_value|cached_value)\b'
+          confidence: low
+          note: "external call with no fallback branch"
+
+  - id: S16
+    name: Jitter on periodic work
+    tier: B
+    weight: 0.6
+    metastable_role: trigger
+    failure_if_absent: >-
+      Self-inflicted bursts. Every instance fires at :00 together and the
+      dependency sees its whole day's peak in one second.
+    references:
+      - "Google SRE Book, ch. 24 — Distributed Periodic Scheduling"
+      - "Brooker, Exponential Backoff And Jitter"
+    detectors:
+      typescript:
+        - id: S16-ts-setinterval-no-jitter
+          kind: regex
+          pattern: '\bsetInterval\s*\('
+          absent_within: '(?i)\b(jitter|random|offset|stagger|splay)\b'
+          window: 5
+          confidence: medium
+          note: "setInterval with no jitter or offset — every instance fires in lockstep"
+        - id: S16-ts-fixed-cron
+          kind: regex
+          pattern: '(?i)(cron\s*[:(]\s*[''"`]|schedule\s*\(\s*[''"`])\s*(0|\*/?\d*)\s+'
+          absent_within: '(?i)\b(jitter|random|offset|stagger|splay)\b'
+          window: 5
+          confidence: low
+          note: "cron schedule pinned to a fixed minute with no splay"
+      python:
+        - id: S16-py-fixed-sleep-loop
+          kind: regex
+          pattern: '\b(time\s*\.\s*sleep|asyncio\s*\.\s*sleep)\s*\(\s*\d+(\.\d+)?\s*\)'
+          present_within: '(?i)\b(while\s+True|schedule|periodic|poll)\b'
+          window: 8
+          confidence: low
+          note: "periodic loop with a fixed sleep and no jitter"
+        - id: S16-py-fixed-cron
+          kind: regex
+          pattern: '(?i)(crontab|CronTrigger|cron_schedule)\s*\('
+          absent_within: '(?i)\b(jitter|random|offset|stagger|splay)\b'
+          window: 5
+          confidence: low
+          note: "cron schedule pinned to a fixed minute with no splay"
+
+  - id: S17
+    name: Steady state (TTLs, cleanup, growth bounds)
+    tier: B
+    weight: 0.6
+    metastable_role: trigger
+    failure_if_absent: >-
+      Slow resource exhaustion. Fine for weeks, then the cache or the table
+      crosses a limit and the process dies at 3am.
+    references:
+      - "Nygard, Release It! (2nd ed.), ch. 5 — Steady State"
+    detectors:
+      typescript:
+        - id: S17-ts-cache-without-ttl
+          kind: file_absent
+          anchor: '(?i)new\s+Map\s*\(|cache\s*\.\s*set\s*\('
+          absent: '(?i)\b(ttl|expire|expiry|evict|maxSize|max_size|maxAge|lru|clear\s*\()\b'
+          confidence: medium
+          note: "in-memory cache with no TTL, eviction, or size bound"
+      python:
+        - id: S17-py-cache-without-ttl
+          kind: file_absent
+          anchor: '(?i)cache\s*\[|cache\s*\.\s*(set|update)\s*\(|_cache\s*='
+          absent: '(?i)\b(ttl|expire|expiry|evict|maxsize|max_size|max_age|lru|clear\s*\()\b'
+          confidence: medium
+          note: "in-memory cache with no TTL, eviction, or size bound"
+
+  - id: S18
+    name: Fail fast (validate before expensive work)
+    tier: B
+    weight: 0.6
+    metastable_role: amplifier
+    failure_if_absent: >-
+      Expensive calls are made for requests that were always going to fail
+      validation, wasting exactly the capacity that is scarce under load.
+    references:
+      - "Nygard, Release It! (2nd ed.), ch. 5 — Fail Fast"
+    detectors:
+      typescript:
+        - id: S18-ts-validate-after-call
+          kind: module
+          handler: s18_fail_fast
+          confidence: low
+          note: "validation appears after an expensive external call"
+      python:
+        - id: S18-py-validate-after-call
+          kind: module
+          handler: s18_fail_fast
+          confidence: low
+          note: "validation appears after an expensive external call"
+
+  - id: S19
+    name: No error swallowing; failures stay observable
+    tier: B
+    weight: 0.6
+    metastable_role: sustaining
+    failure_if_absent: >-
+      Silent data drift. The write path fails, nothing is logged, and the
+      divergence is only discovered months later by a user.
+    references:
+      - "Nygard, Release It! (2nd ed.), ch. 17 — Transparency"
+      - "Google SRE Book, ch. 6 — Monitoring Distributed Systems"
+    detectors:
+      typescript:
+        - id: S19-ts-empty-catch
+          kind: regex
+          pattern: 'catch\s*(\([^)]*\))?\s*\{\s*\}'
+          confidence: high
+          note: "empty catch block — the failure leaves no trace"
+        - id: S19-ts-catch-only-comment
+          kind: regex
+          pattern: 'catch\s*(\([^)]*\))?\s*\{\s*(//.*)?$'
+          present_within: '^\s*\}'
+          window: 2
+          window_offset: 1
+          confidence: medium
+          note: "catch block with no handling beyond a comment"
+      python:
+        - id: S19-py-except-pass
+          kind: regex
+          pattern: 'except[^:]*:\s*$'
+          present_within: '^\s*pass\s*$'
+          window: 2
+          window_offset: 1
+          confidence: high
+          note: "except: pass — the failure leaves no trace"
+        - id: S19-py-bare-except
+          kind: regex
+          pattern: 'except\s*:\s*$'
+          confidence: medium
+          note: "bare except catches SystemExit and KeyboardInterrupt too"
+
+# ---------------------------------------------------------------- Tier C ----
+# Catalogued for the investigator's vocabulary; not scanned in v1.
+tier_c:
+  - id: S20
+    name: Shuffle sharding
+    failure_if_absent: "One bad tenant degrades every tenant sharing its shard."
+    references: ["Amazon Builders' Library — Workload isolation using shuffle-sharding"]
+  - id: S21
+    name: Cell-based architecture
+    failure_if_absent: "Blast radius of any failure is the whole fleet."
+    references: ["Amazon Builders' Library — Reducing blast radius with cell-based architecture"]
+  - id: S22
+    name: Static stability across AZs and regions
+    failure_if_absent: "Recovery depends on the control plane that is itself impaired."
+    references: ["Amazon Builders' Library — Static stability using Availability Zones"]
+  - id: S23
+    name: Adaptive concurrency limits
+    failure_if_absent: "A fixed limit is wrong at both ends: throttling when healthy, overloading when degraded."
+    references: ["Netflix — Performance Under Load (adaptive concurrency limits)"]
+  - id: S24
+    name: Multi-level criticality shedding
+    failure_if_absent: "Overload sheds load indiscriminately, dropping critical work with the rest."
+    references: ["Google SRE Book, ch. 21 — Criticality"]
+  - id: S25
+    name: Hedged requests
+    failure_if_absent: "Tail latency is set by the slowest replica on every request."
+    references: ["Dean & Barroso, The Tail at Scale (CACM 2013)"]
+  - id: S26
+    name: Leader-election hardening
+    failure_if_absent: "Split brain or a stuck leader stalls all coordinated work."
+    references: ["Google SRE Book, ch. 23 — Managing Critical State"]
