@@ -208,7 +208,7 @@ export const limiter = {
 
 QUEUE = '''\
 export async function enqueue(message: unknown): Promise<void> {
-  await sqs.send({ MessageBody: JSON.stringify(message) });
+  await broker.publish({ body: JSON.stringify(message) });
 }
 '''
 

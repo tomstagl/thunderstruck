@@ -178,8 +178,8 @@ know about your dependencies. See
 S16 = { tier = "A", weight = 2.0 }   # everything fires at :00 here
 S13 = { tier = "C" }                 # bulkheads are the platform's job
 
-[boundary.discogs]
-rate_limit = "60/min per authenticated OAuth token"
+[boundary.partner_api]
+rate_limit = "60/min per API key; unauthenticated requests are per IP"
 ```
 
 Profile facts are *your statements about the system*. They reach the

@@ -85,25 +85,25 @@ Return **only** a JSON object, no prose before or after, no markdown fence:
 ```
 {
   "hotspot_id": "H01",
-  "file": "src/sync/discogs.ts",
+  "file": "src/sync/catalog.ts",
   "findings": [
     {
-      "location": { "file": "src/sync/discogs.ts", "symbol": "syncCollection", "lines": "42-118" },
+      "location": { "file": "src/sync/catalog.ts", "symbol": "syncCatalog", "lines": "42-118" },
       "missing_patterns": ["S03", "S05", "S07"],
-      "failure_mode": "Full-collection resync dies on 429 and restarts from page 1",
-      "trigger_condition": "Collection >1k items synced while another sync runs",
+      "failure_mode": "Full resync dies on 429 and restarts from page 1",
+      "trigger_condition": "Catalog >1k items synced while another sync runs",
       "amplifier": "Retry sleeps 2^n s, shorter than the 60s rate-limit window",
       "sustaining_effect": "Failed job re-queues itself, re-consuming the shared quota",
-      "blast_radius": "All syncs for this account are rate-limited while the loop runs",
+      "blast_radius": "All syncs for this tenant are rate-limited while the loop runs",
       "evidence": [
-        { "type": "code", "ref": "src/sync/discogs.ts:77", "note": "backoff ignores Retry-After" },
+        { "type": "code", "ref": "src/sync/catalog.ts:77", "note": "backoff ignores Retry-After" },
         { "type": "commit", "ref": "a1b2c3d", "note": "3rd 'fix timeout' commit in 6 weeks" },
         { "type": "detector", "ref": "S05@src/lib/http.ts:12", "note": "rate-limit headers never read" }
       ],
       "confidence": "medium",
       "confidence_rationale": "Pattern visible in code and fix history; trigger not observed",
-      "how_to_verify": "Mock 429 + Retry-After: 60; resync a 1.5k-item collection",
-      "prediction": "Next sync incident involves rate limiting on large collections"
+      "how_to_verify": "Mock 429 + Retry-After: 60; resync a 1.5k-item catalog",
+      "prediction": "Next sync incident involves rate limiting on large catalogs"
     }
   ],
   "notes": "optional: leads you rejected and why, in one or two sentences"
