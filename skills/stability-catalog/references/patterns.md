@@ -72,7 +72,7 @@ Scanned and reasoned about by default, at full weight.
 
 **What the detectors look for.**
 
-- external HTTP calls with no local rate limiter or concurrency gate in this file
+- HTTP calls made in a loop or fan-out with no local rate limiter or concurrency gate in this file
 - rate limiting mentioned but server rate-limit headers are never read
 
 **References.** Google SRE Book, ch. 21 — Handling Overload; Nygard, Release It! (2nd ed.), ch. 5 — Governor

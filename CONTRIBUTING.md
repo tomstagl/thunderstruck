@@ -58,7 +58,7 @@ generated — never edit it by hand.
 | Kind | Use it when | Fields |
 |---|---|---|
 | `regex` | A single line shows the problem | `pattern`, `absent_within`, `present_within`, `window`, `window_before`, `window_offset` |
-| `file_absent` | The problem is that something is *missing* from the whole file | `anchor`, `absent` |
+| `file_absent` | The problem is that something is *missing* from the whole file | `anchor`, `absent`, optional `require` (the file must also show the construct the pattern guards, e.g. a fan-out or a retry) |
 | `module` | Structure matters and a regex cannot see it | `handler` → a function in `scripts/detectors/modules.py` |
 
 Notes that save time:

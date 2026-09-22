@@ -64,8 +64,10 @@ if any of these fail, and you get exactly one chance to repair it.
 
 - **At least one `code` evidence item per finding**, and every `ref` must
   resolve: a `code` ref is `path:line` where the file exists and the line is
-  within it; a `commit` ref is a SHA that exists in this repository (use the
-  SHAs from the bundle); a `detector` ref is `S0x@path:line` copied exactly
+  within it; a `commit` ref is a SHA that exists in this repository *and*
+  changed the file the finding is about (use the SHAs from the bundle's change
+  history — a commit to some other file is rejected); a `detector` ref is
+  `S0x@path:line` copied exactly
   from a detector lead in the bundle.
 - **Never invent evidence.** A ref you cannot see in the bundle or in a file
   you actually read does not go in. A fabricated SHA fails the run.

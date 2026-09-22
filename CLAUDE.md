@@ -82,7 +82,8 @@ investigator's job. `validate.py` enforces this by requiring at least one
 rejected.
 
 **Every evidence ref is resolved mechanically, never trusted.** A `code` ref's
-file and line must exist, a `commit` ref must resolve in that repo, a
+file and line must exist, a `commit` ref must resolve in that repo *and* have
+changed the finding's file (or a file cited as code evidence), a
 `detector` ref must match a hit in `hotspots.json` exactly. This is the reason
 the tool is worth anything; do not add a path that bypasses it.
 
@@ -102,7 +103,9 @@ should be a catalog entry plus sample files — if you are editing `signals.py`
 to add one, something is wrong.
 
 Three detector kinds: `regex` (line match with a look-ahead/behind window),
-`file_absent` (anchor present *and* absent-regex matching nowhere), `module`
+`file_absent` (anchor present *and* absent-regex matching nowhere, optionally
+gated by a `require` regex so it only fires on files that do the thing the
+pattern guards), `module`
 (dispatches to a handler in `scripts/detectors/modules.py`).
 
 Gotchas that cost real debugging time here:

@@ -11,7 +11,9 @@ producing a confident sentence attached to a line number that does not exist.
 So every ref is resolved mechanically:
 
   code      path:line — the file exists and the line is inside it
-  commit    a SHA that git can actually resolve in this repository
+  commit    a SHA that git can actually resolve in this repository, and that
+            touched the finding's file or a file cited as code evidence — a
+            SHA that merely exists is not history
   detector  S0x@path:line — copied exactly from a hit in hotspots.json
 
 Anything that fails gets one repair round with the error text, then it is
@@ -172,6 +174,7 @@ class Validator:
             return
         types = [self.check_evidence(ev, f"{where}.evidence[{i}]", errors)
                  for i, ev in enumerate(evidence)]
+        self.check_commits_touch(f, evidence, types, where, errors)
         if "code" not in types:
             errors.append(
                 f"{where}.evidence has no item of type 'code'. A detector hit on "
@@ -180,6 +183,32 @@ class Validator:
             errors.append(
                 f"{where}.confidence is 'high' but there is no 'commit' evidence. "
                 f"High confidence needs both code and history; otherwise use 'medium'.")
+
+    def check_commits_touch(self, f: dict, evidence: list, types: list,
+                            where: str, errors: list[str]) -> None:
+        """A commit is evidence only if it changed the code the finding is
+        about. Without this, any SHA from the bundle buys 'high' confidence."""
+        files: list[str] = []
+        loc = f.get("location")
+        if isinstance(loc, dict) and loc.get("file"):
+            files.append(str(loc["file"]).lstrip("./"))
+        for ev in evidence:
+            if isinstance(ev, dict) and ev.get("type") == "code":
+                m = CODE_REF.match(str(ev.get("ref") or "").strip())
+                if m:
+                    files.append(m.group("path").lstrip("./"))
+        files = list(dict.fromkeys(files))
+        for i, (ev, etype) in enumerate(zip(evidence, types)):
+            if etype != "commit":
+                continue
+            short = str(ev["ref"]).strip().split()[0]
+            if not self._sha_ok(short):
+                continue  # already reported as unresolvable
+            if not c.commit_touches(self.repo, short, files):
+                errors.append(
+                    f"{where}.evidence[{i}].ref {short!r} does not touch "
+                    f"{files[0] if files else 'the finding'} or any file cited as "
+                    f"code evidence. Cite a commit from this file's change history.")
 
     def check_document(self, doc: Any) -> list[str]:
         errors: list[str] = []

@@ -106,7 +106,7 @@ its errors to the task:
 > <the errors verbatim>
 > Fix only these problems and return the corrected JSON. Every `ref` must
 > resolve: a code ref's file and line must exist, a commit SHA must be one
-> from the bundle's change history, and a detector ref must be copied verbatim
+> from the bundle's change history for this file, and a detector ref must be copied verbatim
 > from the bundle's Detector leads section. If you cannot support a claim with
 > evidence that resolves, drop that finding.
 

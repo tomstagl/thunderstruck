@@ -10,7 +10,10 @@ Three kinds, declared in catalog/stability.yaml:
                (`absent_within`) or present (`present_within`) in the next
                `window` lines.
   file_absent  `anchor` matches somewhere in the file and `absent` matches
-               nowhere. The hit lands on the first anchor line.
+               nowhere. An optional `require` must also match somewhere in
+               the file, so a whole-file absence can be scoped to files that
+               show the construct the pattern is about (a fan-out, a retry).
+               The hit lands on the first anchor line.
   module       dispatches to a handler in detectors/modules.py, for structure
                a regex cannot see.
 
@@ -131,6 +134,9 @@ def _run_file_absent(ctx: DetectorContext, pattern: dict, det: dict) -> list[Hit
     text = ctx.raw_text if det.get("include_comments") else ctx.code_text
     anchor = _rx(det["anchor"], True)
     absent = _rx(det["absent"], True)
+    require = _rx(det["require"], True) if det.get("require") else None
+    if require is not None and not require.search(text):
+        return []  # the file never does the thing the pattern guards
     if absent.search(text):
         return []
     m = anchor.search(text)

@@ -13,7 +13,11 @@
 #                must NOT appear in the `window` lines from the match) and
 #                `present_within` (regex that MUST appear there).
 #   file_absent  `anchor` matches somewhere in the file AND `absent` matches
-#                nowhere in it. Hit is reported at the first anchor line.
+#                nowhere in it. Optional `require` must ALSO match somewhere
+#                in the file — use it to scope a whole-file absence to files
+#                that actually do the thing the pattern guards (a fan-out, a
+#                retry), instead of every file that mentions the anchor.
+#                Hit is reported at the first anchor line.
 #   module       dispatches to a handler in scripts/detectors/. For patterns
 #                where a regex cannot see the structure that matters.
 #
@@ -53,8 +57,9 @@ patterns:
         - id: S01-ts-fetch-no-signal
           kind: regex
           pattern: '\bfetch\s*\('
-          absent_within: '\b(signal|AbortSignal|timeout|AbortController)\b'
+          absent_within: '\b(signal|AbortSignal|timeout|AbortController)\b|\bfetch\s*\([^,()]*(?:\([^()]*\))?[^,()]*,\s*[A-Za-z_$][\w$.]*\s*\)'
           window: 8
+          window_before: 6
           confidence: medium
           note: "fetch() with no AbortSignal or timeout in the request options"
         - id: S01-ts-axios-no-timeout
@@ -62,6 +67,7 @@ patterns:
           pattern: '\baxios\s*(\.\s*(get|post|put|patch|delete|request)\s*)?\('
           absent_within: '\btimeout\b'
           window: 8
+          window_before: 6
           confidence: medium
           note: "axios call with no timeout option"
         - id: S01-ts-node-http-no-timeout
@@ -69,28 +75,32 @@ patterns:
           pattern: '\b(https?|http2)\s*\.\s*(request|get)\s*\('
           absent_within: '\btimeout\b'
           window: 8
+          window_before: 6
           confidence: medium
           note: "node http(s) request with no timeout option"
       python:
         - id: S01-py-requests-no-timeout
           kind: regex
           pattern: '\brequests\s*\.\s*(get|post|put|patch|delete|head|request)\s*\('
-          absent_within: '\btimeout\s*='
+          absent_within: '\btimeout\s*=|\*\*\w+\s*\)'
           window: 6
+          window_before: 4
           confidence: high
           note: "requests call with no timeout= (requests blocks forever by default)"
         - id: S01-py-httpx-no-timeout
           kind: regex
           pattern: '\bhttpx\s*\.\s*(AsyncClient|Client|get|post|put|patch|delete|request)\s*\('
-          absent_within: '\btimeout\s*='
+          absent_within: '\btimeout\s*=|\*\*\w+\s*\)'
           window: 6
+          window_before: 4
           confidence: low
           note: "httpx call with no explicit timeout= (httpx does default to 5s)"
         - id: S01-py-urlopen-no-timeout
           kind: regex
           pattern: '\burlopen\s*\('
-          absent_within: '\btimeout\s*='
+          absent_within: '\btimeout\s*=|\*\*\w+\s*\)'
           window: 4
+          window_before: 4
           confidence: high
           note: "urlopen() with no timeout="
         - id: S01-py-socket-no-timeout
@@ -143,12 +153,14 @@ patterns:
           kind: file_absent
           anchor: '\b429\b|TOO_MANY_REQUESTS|tooManyRequests'
           absent: '[Rr]etry-?[Aa]fter|retry_after|RETRY_AFTER'
+          require: '(?i)\b(retry|retries|retrying|attempt|attempts|backoff|sleep|setTimeout|delay|wait)\b'
           confidence: high
           note: "file handles 429 but never reads Retry-After"
         - id: S03-ts-503-ignores-retry-after
           kind: file_absent
           anchor: '\b503\b|SERVICE_UNAVAILABLE'
           absent: '[Rr]etry-?[Aa]fter|retry_after|RETRY_AFTER'
+          require: '(?i)\b(retry|retries|retrying|attempt|attempts|backoff|sleep|setTimeout|delay|wait)\b'
           confidence: low
           note: "file handles 503 but never reads Retry-After"
       python:
@@ -156,12 +168,14 @@ patterns:
           kind: file_absent
           anchor: '\b429\b|TOO_MANY_REQUESTS|too_many_requests'
           absent: '[Rr]etry-?[Aa]fter|retry_after|RETRY_AFTER'
+          require: '(?i)\b(retry|retries|retrying|attempt|attempts|backoff|sleep|setTimeout|delay|wait)\b'
           confidence: high
           note: "file handles 429 but never reads Retry-After"
         - id: S03-py-503-ignores-retry-after
           kind: file_absent
           anchor: '\b503\b|SERVICE_UNAVAILABLE'
           absent: '[Rr]etry-?[Aa]fter|retry_after|RETRY_AFTER'
+          require: '(?i)\b(retry|retries|retrying|attempt|attempts|backoff|sleep|setTimeout|delay|wait)\b'
           confidence: low
           note: "file handles 503 but never reads Retry-After"
 
@@ -180,7 +194,7 @@ patterns:
         - id: S04-ts-retry-without-discrimination
           kind: file_absent
           anchor: '\b(maxRetries|MAX_RETRIES|retryCount|retries|retryAttempt)\b'
-          absent: '\b(5\d\d|status\s*>=\s*500|isTransient|isRetryable|ECONNRESET|ETIMEDOUT|429|statusCode\s*>=)\b'
+          absent: '\b(5\d\d|status\s*>=\s*500|isTransient|isRetryable|ECONNRESET|ETIMEDOUT|429|statusCode\s*>=|axiosRetry|axios-retry|retryCondition|shouldRetry|retryIf|retryOn|isNetworkError|isRetryableError|isNetworkOrIdempotentRequestError)\b'
           confidence: medium
           note: "retry construct with no visible transient/permanent discrimination"
       python:
@@ -194,7 +208,7 @@ patterns:
         - id: S04-py-retry-without-discrimination
           kind: file_absent
           anchor: '\b(max_retries|MAX_RETRIES|retry_count|retries|num_retries)\b'
-          absent: '\b(5\d\d|status_code\s*>=\s*500|is_transient|is_retryable|ConnectionError|Timeout|429)\b'
+          absent: '\b(5\d\d|status_code\s*>=\s*500|is_transient|is_retryable|ConnectionError|Timeout|429|retry_if\w*|status_forcelist|allowed_methods|giveup|retry_on_exception|retry_on_result|retryable_exceptions)\b'
           confidence: medium
           note: "retry construct with no visible transient/permanent discrimination"
 
@@ -213,10 +227,11 @@ patterns:
       typescript:
         - id: S05-ts-http-without-limiter
           kind: file_absent
-          anchor: '\b(fetch|axios|got|superagent|undici)\s*[.(]'
+          anchor: '\bfetch\s*\(|\b(axios|got)\s*(\.\s*(get|post|put|patch|delete|head|request))?\s*\(|\bsuperagent\s*\.|\bundici\s*\.\s*(request|fetch)\s*\('
           absent: '(?i)\b(ratelimit|rate_limit|rate-limit|limiter|throttle|bottleneck|semaphore|token.?bucket|p-?limit|pLimit)\b'
+          require: '(?i)(Promise\s*\.\s*(all|allSettled)|\bfor\s*(await\s*)?\(|\bfor\s+await\b|\bwhile\s*\(|\.(map|forEach)\s*\(|setInterval)'
           confidence: medium
-          note: "external HTTP calls with no local rate limiter or concurrency gate in this file"
+          note: "HTTP calls made in a loop or fan-out with no local rate limiter or concurrency gate in this file"
         - id: S05-ts-ratelimit-headers-unread
           kind: file_absent
           anchor: '(?i)\bratelimit\b|\brate.?limit\b'
@@ -228,8 +243,9 @@ patterns:
           kind: file_absent
           anchor: '\b(requests|httpx|aiohttp|urllib3)\s*[.(]'
           absent: '(?i)\b(ratelimit|rate_limit|limiter|throttle|semaphore|token.?bucket|aiolimiter)\b'
+          require: '(?i)(asyncio\s*\.\s*gather|^\s*(async\s+)?for\b|^\s*while\b|ThreadPoolExecutor|create_task|\.map\s*\()'
           confidence: medium
-          note: "external HTTP calls with no local rate limiter or concurrency gate in this file"
+          note: "HTTP calls made in a loop or fan-out with no local rate limiter or concurrency gate in this file"
 
   - id: S06
     name: Request prioritization (interactive over background)
@@ -279,7 +295,7 @@ patterns:
           note: "paged/batched loop with no persisted cursor — a crash restarts from the beginning"
         - id: S07-ts-create-without-upsert
           kind: file_absent
-          anchor: '\.\s*create(Many)?\s*\(|INSERT\s+INTO'
+          anchor: '(?<!Object)(?<!axios)(?<!Reflect)(?<!document)(?<!Buffer)(?<!Error)(?<!React)\.\s*create(Many)?\s*\(|INSERT\s+INTO'
           absent: '(?i)\b(upsert|ON\s+CONFLICT|ON\s+DUPLICATE\s+KEY|MERGE\s+INTO|idempotenc)'
           confidence: medium
           note: "inserts with no upsert / ON CONFLICT — a replayed job duplicates rows"
@@ -291,7 +307,7 @@ patterns:
           note: "paged/batched loop with no persisted cursor — a crash restarts from the beginning"
         - id: S07-py-insert-without-upsert
           kind: file_absent
-          anchor: '\.\s*(add|bulk_save_objects|insert)\s*\(|INSERT\s+INTO'
+          anchor: '\bsession\w*\s*\.\s*(add|add_all|bulk_save_objects)\s*\(|\b(db|conn|cursor|collection|table|model|engine)\w*\s*\.\s*(insert|insert_one|insert_many)\s*\(|INSERT\s+INTO'
           absent: '(?i)\b(upsert|ON\s+CONFLICT|ON\s+DUPLICATE\s+KEY|MERGE\s+INTO|idempotenc)'
           confidence: medium
           note: "inserts with no upsert / ON CONFLICT — a replayed job duplicates rows"
@@ -311,7 +327,7 @@ patterns:
         - id: S08-ts-unbounded-promise-all
           kind: regex
           pattern: '\bPromise\s*\.\s*(all|allSettled)\s*\('
-          absent_within: '(?i)\b(slice|chunk|batch|limit|pLimit|p-limit|concurrency|take|semaphore)\b'
+          absent_within: '(?i)\b(slice|chunk|batch|limit|pLimit|p-limit|concurrency|take|semaphore)\b|Promise\s*\.\s*(all|allSettled)\s*\(\s*\[(?![^\]]*(?:\.\.\.|\.map\s*\())'
           window: 5
           window_before: 10
           confidence: medium
@@ -334,7 +350,7 @@ patterns:
         - id: S08-py-unbounded-gather
           kind: regex
           pattern: '\basyncio\s*\.\s*gather\s*\('
-          absent_within: '(?i)\b(semaphore|slice|chunk|batch|limit|islice)\b'
+          absent_within: '(?i)\b(semaphore|slice|chunk|batch|limit|islice)\b|gather\s*\((?:[^*()]|\([^()]*\))*\)'
           window: 5
           window_before: 10
           confidence: medium
@@ -422,7 +438,7 @@ patterns:
       typescript:
         - id: S11-ts-no-deadline-propagation
           kind: file_absent
-          anchor: '\b(fetch|axios|got|request)\s*[.(]'
+          anchor: '\bfetch\s*\(|\b(axios|got)\s*(\.\s*(get|post|put|patch|delete|head|request))?\s*\(|\brequest\s*\('
           absent: '(?i)\b(deadline|abortSignal|signal\s*[:,)]|cancellationToken|remainingMs|timeBudget)\b'
           confidence: low
           note: "outbound calls with no deadline or cancellation passed through"
@@ -527,7 +543,7 @@ patterns:
       typescript:
         - id: S15-ts-no-fallback
           kind: file_absent
-          anchor: '\b(fetch|axios|got)\s*[.(]'
+          anchor: '\bfetch\s*\(|\b(axios|got)\s*(\.\s*(get|post|put|patch|delete|head|request))?\s*\('
           absent: '(?i)\b(fallback|degrade|stale|default(Value|Response)|cached(Value|Response))\b'
           confidence: low
           note: "external call with no fallback branch"
@@ -556,6 +572,7 @@ patterns:
           kind: regex
           pattern: '\bsetInterval\s*\('
           absent_within: '(?i)\b(jitter|random|offset|stagger|splay)\b'
+          present_within: '(?i)(fetch|axios|\bgot\b|http|sync|poll|refresh|heartbeat|query|publish|flush|client|\bapi\b|request|send|emit|ping)'
           window: 5
           confidence: medium
           note: "setInterval with no jitter or offset — every instance fires in lockstep"

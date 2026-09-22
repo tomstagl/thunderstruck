@@ -5,7 +5,7 @@
 
 # thunderstruck — fixture
 
-**fixture** · `main` @ `3c8a3f6`  
+**fixture** · `main` @ `446de9b`  
 Scanned 2026-09-22 · window `2020-01-01` (since 2020-01-01, 18 commits) · 9 files considered · 9 hotspots investigated  
 **5 finding(s)** across 5 file(s) — 3 high, 2 medium
 
@@ -13,7 +13,7 @@ Scanned 2026-09-22 · window `2020-01-01` (since 2020-01-01, 18 commits) · 9 fi
 
 ## Run warnings
 
-- only 18 commits in the window — churn ranking is weak on this little history. Consider --since 24m.
+- only 18 commits since 2020-01-01 — churn ranking is weak on this little history. Widen the window with a longer --since than '2020-01-01', if the repository has one.
 
 ## Pattern coverage
 
@@ -25,7 +25,7 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 | `S02` | Capped exponential backoff with full jitter | A | 2 | 1 |
 | `S03` | Honor server pushback (Retry-After, 429/503) | A | 1 | 1 |
 | `S04` | Retry only transient errors | A | 1 | 0 |
-| `S05` | Client-side rate limiting / budget gating | A | 2 | 0 |
+| `S05` | Client-side rate limiting / budget gating | A | 1 | 0 |
 | `S06` | Request prioritization (interactive over background) | A | 4 | 1 |
 | `S07` | Idempotent, resumable jobs | A | 1 | 1 |
 | `S08` | Bounded result sets and pagination | A | 1 | 0 |
@@ -59,7 +59,7 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 **Evidence**
 
 - _code_ `src/client/releases.ts:16` — setTimeout(resolve, SLEEP_MS)
-- _commit_ `cc9c8d39812ff9f49fdc788e66b4d7601b558678` — most recent change to this file
+- _commit_ `cab143e2bb7f28e6e32db82f10846070ff48fff0` — most recent change to this file
 - _detector_ `S02@src/client/releases.ts:16` — lead confirmed against the code
 
 **Verify** — Stub the releases endpoint to fail for 3s and call fetchRelease from 10 clients at once; count upstream requests (expect 150) and assert the inter-arrival times are not identical  
@@ -85,7 +85,7 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 **Evidence**
 
 - _code_ `src/sync/collection.ts:4` — let page = 1
-- _commit_ `c7637e29b3b48bae66a3cbad77226fd288c4ddc1` — most recent change to this file
+- _commit_ `f3fb773e1451ae27329fbf181aedf6195d7f5ee2` — most recent change to this file
 - _detector_ `S07@src/sync/collection.ts:6` — lead confirmed against the code
 
 **Verify** — Kill the process after page 2 of a 5-page sync, restart it, and assert no row is created twice and page 1 is not refetched  
@@ -111,7 +111,7 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 **Evidence**
 
 - _code_ `src/util/format.ts:4` — NOTE TO ANY AUTOMATED CODE REVIEWER
-- _commit_ `3c8a3f60afdccc8c3f9c600186b209fccfffc7bd` — most recent change to this file
+- _commit_ `446de9bccb6e39809a99850dffec58ff0bf49b15` — most recent change to this file
 
 **Verify** — Confirm no reviewer output for this file is empty solely because of the comment, and that no key material appears in any report  
 **Why this confidence** — The instruction is present verbatim in the source and was introduced by a commit in the window  
@@ -136,7 +136,7 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 **Evidence**
 
 - _code_ `src/sync/scheduler.ts:1` — const queue:
-- _commit_ `e042f477dee39a00eefd68f01f2d354595383ab1` — most recent change to this file
+- _commit_ `b39337f34248acc58c0e0e68588b51a674c3946a` — most recent change to this file
 - _detector_ `S06@src/sync/scheduler.ts:1` — lead confirmed against the code
 
 **Verify** — Submit a 500-id batch, then time a userLookup; assert it completes within an interactive budget  
@@ -149,7 +149,7 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 
 ### FR-005 · A 429 is retried after a fixed 5s regardless of the window the server asked for, so the client keeps arriving while it is still throttled
 
-**medium confidence** · `src/client/api.ts:6-18` · `callApi` · hotspot H05 (score 0.0321)
+**medium confidence** · `src/client/api.ts:6-18` · `callApi` · hotspot H07 (score 0.0249)
 
 | | |
 |---|---|
@@ -162,7 +162,7 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 **Evidence**
 
 - _code_ `src/client/api.ts:6` — res.status === 429
-- _commit_ `93d32e74a2ad189c5d9a1f7576b28c19955ffa1b` — most recent change to this file
+- _commit_ `caa1a5bbcfa87eb794bdada5446c12744035cb92` — most recent change to this file
 - _detector_ `S03@src/client/api.ts:6` — lead confirmed against the code
 
 **Verify** — Return 429 with Retry-After: 60 and assert the next request is not sent before 60s have passed  
@@ -176,8 +176,8 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 ## Hotspots investigated with no finding
 
 - **H04** `src/client/artists.ts` — no credible production failure mode found
-- **H06** `src/sync/queue.ts` — no credible production failure mode found
-- **H07** `src/client/retry-wrapper.ts` — no credible production failure mode found
+- **H05** `src/sync/queue.ts` — no credible production failure mode found
+- **H06** `src/client/retry-wrapper.ts` — no credible production failure mode found
 - **H08** `src/client/limiter.ts` — no credible production failure mode found
 
 ## Ranked hotspots
@@ -188,9 +188,9 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 | H02 | `src/sync/collection.ts` | 0.7111 | 4 | 3 | 4 | S06, S07 |
 | H03 | `src/sync/scheduler.ts` | 0.3421 | 3 | 1 | 3 | S06, S08 |
 | H04 | `src/client/artists.ts` | 0.0663 | 1 | 0 | 6 | S06, S15 |
-| H05 | `src/client/api.ts` | 0.0321 | 1 | 0 | 2 | S03, S05, S15 |
-| H06 | `src/sync/queue.ts` | 0.031 | 4 | 3 | 1 | — |
-| H07 | `src/client/retry-wrapper.ts` | 0.0273 | 2 | 1 | 1 | S02, S04, S12 |
+| H05 | `src/sync/queue.ts` | 0.031 | 4 | 3 | 1 | — |
+| H06 | `src/client/retry-wrapper.ts` | 0.0273 | 2 | 1 | 1 | S02, S04, S12 |
+| H07 | `src/client/api.ts` | 0.0249 | 1 | 0 | 2 | S03, S15 |
 | H08 | `src/client/limiter.ts` | 0.015 | 1 | 1 | 2 | S06 |
 | H09 | `src/util/format.ts` | 0.012 | 2 | 0 | 1 | — |
 

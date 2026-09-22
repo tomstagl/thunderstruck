@@ -131,6 +131,18 @@ def git(repo_root: Path, *args: str, check: bool = True, timeout: int = 180) -> 
     return proc.stdout
 
 
+def commit_touches(repo_root: Path, sha: str, paths: list[str]) -> bool:
+    """True when `sha` changed at least one of `paths` (as named today)."""
+    if not paths:
+        return False
+    proc = subprocess.run(
+        ["git", "-C", str(repo_root), "diff-tree", "--no-commit-id", "--name-only",
+         "-r", "--root", sha, "--", *paths],
+        capture_output=True, text=True, timeout=30,
+    )
+    return proc.returncode == 0 and bool(proc.stdout.strip())
+
+
 def commit_exists(repo_root: Path, sha: str) -> bool:
     if not re.fullmatch(r"[0-9a-fA-F]{4,40}", sha or ""):
         return False

@@ -24,7 +24,8 @@ does not reach the report.
   decide whether the pattern means anything here.
 - **Every ref resolves.** A `code` ref is `path:line` or `path:start-end` in a
   file that exists, with the line inside it. A `commit` ref is a SHA git can
-  resolve. A `detector` ref is `S0x@path:line` matching a hit in
+  resolve that changed the finding's file (or a file cited as `code`
+  evidence). A `detector` ref is `S0x@path:line` matching a hit in
   `hotspots.json` exactly.
 - **`missing_patterns` ⊆ catalog IDs ∪ {`OTHER`}.**
 - **`confidence: "high"` requires both `code` and `commit` evidence.** A

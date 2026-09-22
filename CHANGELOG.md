@@ -4,6 +4,41 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+
+- False positives on correct code, each now pinned by a negative sample:
+  - `S01` looked only *after* the call, so a timeout or `AbortSignal` set on
+    the line before, or passed through `**kwargs`, still fired at high
+    confidence. Detectors now look back a few lines and treat an opaque
+    options variable or a kwargs splat as unknowable rather than missing.
+  - `S03` fired at high confidence on any file that mentioned 429, including
+    one that only maps the status to an error and never retries. It now
+    requires retry/wait vocabulary in the file.
+  - `S05` fired on every file with a single HTTP call and, being Tier A,
+    boosted the ranking of every client file. It now requires a loop or
+    fan-out in the file and no longer anchors on client construction such
+    as `axios.create(`. `S11` and `S15` share the call-site anchor.
+  - `S04` counted `axios-retry`, tenacity and urllib3 `Retry` configuration
+    as undiscriminating retries.
+  - `S07` treated `Object.create(`, `axios.create(`, `set.add(` and
+    `list.insert(` as database inserts.
+  - `S08` flagged `Promise.all([a(), b()])` and `asyncio.gather(a(), b())`,
+    whose concurrency is fixed by construction.
+  - `S16` flagged every `setInterval`, including UI clocks that touch no
+    shared dependency; it now needs an I/O-shaped call in the callback.
+- `validate.py` accepted any commit SHA that exists as `commit` evidence, so
+  a finding could buy `high` confidence with a commit to an unrelated file.
+  A commit ref must now have changed the finding's file or a file cited as
+  `code` evidence.
+
+### Added
+
+- `file_absent` detectors accept an optional `require` regex that must also
+  match somewhere in the file, so a whole-file absence can be scoped to files
+  that actually do the thing the pattern guards.
+
 ## 0.1.0
 
 First release.

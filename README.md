@@ -129,7 +129,8 @@ A finding is a hypothesis, and it has to earn its place:
   justifies a finding — detectors are pattern matchers; deciding whether the
   pattern *means* something is the investigator's job.
 - **Every ref resolves.** A `code` ref's file and line must exist. A `commit`
-  ref must be a SHA git can resolve. A `detector` ref must match a real hit.
+  ref must be a SHA git can resolve that changed the file in question. A
+  `detector` ref must match a real hit.
   This is checked mechanically, not trusted.
 - **`high` confidence requires corroborating history.** A hypothesis the
   change history does not support tops out at `medium`.

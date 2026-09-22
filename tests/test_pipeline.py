@@ -215,6 +215,23 @@ def test_high_confidence_requires_commit_evidence(scanned_repo, plugin_root):
     assert "no 'commit' evidence" in proc.stdout, proc.stdout
 
 
+def test_commit_evidence_must_touch_the_finding_file(scanned_repo, plugin_root):
+    """A SHA that merely exists is not history. Citing a commit to another file
+    would let any finding buy 'high' confidence with an unrelated SHA."""
+    data = _hotspots(scanned_repo)
+    hid, doc = _valid_finding(scanned_repo, data)
+    own = set(data["hotspots"][0]["churn"]["recent_shas"])
+    foreign = next(sha for hs in data["hotspots"][1:]
+                   for sha in hs["churn"]["recent_shas"] if sha not in own)
+    f = doc["findings"][0]
+    f["evidence"] = [e for e in f["evidence"] if e["type"] != "commit"]
+    f["evidence"].append({"type": "commit", "ref": foreign, "note": "unrelated"})
+    _write_finding(scanned_repo, hid, doc)
+    proc = _validate(scanned_repo, plugin_root)
+    assert proc.returncode == 1, "a commit that never touched the file was accepted"
+    assert "does not touch" in proc.stdout, proc.stdout
+
+
 def test_more_than_three_findings_is_rejected(scanned_repo, plugin_root):
     data = _hotspots(scanned_repo)
     hid, doc = _valid_finding(scanned_repo, data)
