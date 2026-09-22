@@ -1,0 +1,15 @@
+# thunderstruck's own scan output, when dogfooding on this repo
+.thunderstruck/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+uv.lock
+
+# Editors / OS
+.DS_Store
+*.swp
