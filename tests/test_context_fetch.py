@@ -3,6 +3,7 @@ budget and a failing neighbour degrade the result without failing it."""
 
 from __future__ import annotations
 
+import hashlib
 import os
 import sys
 import time
@@ -143,7 +144,14 @@ def test_fresh_fetch_writes_context_json(context_repo, trusted):
     on_disk = json.loads((context_repo / ".thunderstruck" / "context.json").read_text())
     assert on_disk == doc
     raw = context_repo / ".thunderstruck" / "context" / "raw"
-    assert (raw / "component_default_fixture-app.json").is_file()
+    suffix = hashlib.sha256(MAIN.encode()).hexdigest()[:8]
+    assert (raw / f"component_default_fixture-app-{suffix}.json").is_file()
+
+
+def test_raw_files_never_collide(tmp_path):
+    context._write_raw(tmp_path, {"a_b:c/d": "one", "a:b_c/d": "two"})
+    raw = tmp_path / ".thunderstruck" / "context" / "raw"
+    assert sorted(p.read_text() for p in raw.glob("*.json")) == ["one", "two"]
 
 
 def test_not_configured_and_disabled_are_silent(tmp_path, trusted):

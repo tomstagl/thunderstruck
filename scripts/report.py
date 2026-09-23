@@ -156,8 +156,8 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
         + (f" — {breakdown}" if breakdown else ""),
         "",
         "> Findings are **falsifiable hypotheses**, not verified defects. Every "
-        "claim cites evidence that resolved to a real file:line, commit or "
-        "detector hit, and every finding names one concrete way to prove it "
+        "claim cites evidence that resolved to a real file:line, commit, "
+        "detector hit or catalog edge, and every finding names one concrete way to prove it "
         "wrong. Check the `Verify` line before you act on one.",
         "",
     ]

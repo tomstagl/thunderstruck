@@ -68,4 +68,6 @@ as it would if you had asked Claude to read those files directly. The scripts
 make no network calls, send no telemetry and talk to no external
 service. The one opt-in exception: when you configure and approve a service
 context command, `context.py` runs it, and that command may call your service
-catalog. thunderstruck passes it nothing but the entity ref.
+catalog. thunderstruck passes it the entity ref (and, when neighbour
+attributes are configured, each neighbour's ref), and it runs with the user's
+environment.

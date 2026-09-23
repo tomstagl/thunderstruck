@@ -394,7 +394,9 @@ def _write_raw(repo: Path, raws: dict[str, str]) -> None:
     for old in raw_dir.glob("*.json"):
         old.unlink()
     for ref, text in sorted(raws.items()):
-        name = re.sub(r"[^A-Za-z0-9_.-]", "_", ref) + ".json"
+        # Flattening is lossy (a_b:c/d and a:b_c/d both become a_b_c_d), so
+        # a short hash of the original ref keeps every response on disk.
+        name = f"{re.sub(r'[^A-Za-z0-9_.-]', '_', ref)}-{c.short_hash(ref, 8)}.json"
         (raw_dir / name).write_text(text, encoding="utf-8")
 
 

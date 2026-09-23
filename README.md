@@ -209,6 +209,11 @@ one as `catalog` evidence, which is checked against what the command
 returned. `/thunderstruck-context-config` sets it up, and nothing runs until
 you approve the command on your machine.
 
+Setting `THUNDERSTRUCK_TRUST_CONTEXT=1` skips that approval and trusts every
+context definition on that machine. It is meant for CI, where the
+`.thunderstruck.toml` that defines the command is reviewed in the repository
+like any other code; do not set it on a workstation.
+
 ## Privacy
 
 **Nothing leaves your machine that Claude Code was not already going to see.**
@@ -217,8 +222,9 @@ The scripts run locally and write only into `.thunderstruck/`. They make no
 network calls, send no telemetry, and talk to no external
 service. There is no API key because there is no API. The one opt-in
 exception is a service context command you configure and approve yourself:
-it may call your service catalog, and thunderstruck passes it only the entity
-ref.
+it may call your service catalog. thunderstruck passes it the entity ref (and,
+when neighbour attributes are configured, each neighbour's ref), and it runs
+with your environment, so it can use whatever credentials your shell has.
 
 The one thing that reaches a model is the bundles — source and commit history
 from your repository — read by the investigator subagents inside your existing

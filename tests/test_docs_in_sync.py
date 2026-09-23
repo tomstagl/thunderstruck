@@ -135,6 +135,8 @@ def test_sample_report_shows_service_context():
     assert "## Service context" in sample
     assert "_catalog_ `dependencyOf component:default/web-frontend`" in sample
     assert "| Dependents / dependencies |" in sample
+    assert "real file:line, commit, detector hit or catalog edge" in sample
+    assert "a detector hit or a catalog edge" in sample.split("-->")[0]
     assert "ignore previous instructions" not in sample
 
 
@@ -149,3 +151,21 @@ def test_service_context_is_wired_into_the_prompts():
     assert "Service context" in agent and "`catalog`" in agent
     plugin = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())
     assert "skills" not in plugin
+
+
+def test_docs_state_what_the_context_command_receives():
+    readme = (ROOT / "README.md").read_text()
+    orch = (ROOT / "skills" / "thunderstruck-scan" / "references"
+            / "orchestration.md").read_text()
+    for doc in (readme, orch):
+        flat = " ".join(doc.split())
+        assert "only the entity ref" not in flat and "nothing but the entity ref" not in flat
+        assert "each neighbour's ref" in flat and "environment" in flat
+
+
+def test_ci_trust_override_is_documented():
+    readme = (ROOT / "README.md").read_text()
+    config = (ROOT / "skills" / "thunderstruck-context-config" / "SKILL.md").read_text()
+    service = readme.split("### Service context")[1].split("\n## ")[0]
+    for doc in (service, config):
+        assert "THUNDERSTRUCK_TRUST_CONTEXT=1" in doc and "CI" in doc

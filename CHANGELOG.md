@@ -11,7 +11,9 @@ All notable changes to thunderstruck are recorded here. The format follows
 - Service context (#1): a scan can know which services depend on this one,
   and which it depends on, from your service catalog. `context.py` runs a
   command you configure under `[context]` in `.thunderstruck.toml` and
-  approve per machine, reads Backstage `relations[]`, and every bundle lists
+  approve per machine (`--show` prints the definition hash, which covers
+  any repo-local script it runs; `--approve --expect <hash>` trusts exactly
+  that), reads Backstage `relations[]`, and every bundle lists
   the 1-hop neighbours. Findings may cite an edge as `catalog` evidence,
   which `validate.py` resolves against the snapshot the bundle was built
   from. The report and the edit guardrail name cited neighbours. The new

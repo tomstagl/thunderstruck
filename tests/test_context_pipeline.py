@@ -56,6 +56,19 @@ def test_context_bundles_stay_within_budget(context_scanned_repo):
         assert entry["tokens_estimated"] <= index["budget"] * 1.1, entry
 
 
+def test_bundles_stay_within_budget_at_the_neighbour_cap(context_scanned_copy, context_env,
+                                                         run_steps):
+    env = {**context_env, "FAKE_CATALOG_EXTRA_DEPENDENTS": "30"}
+    run_steps(context_scanned_copy, env, ["context.py", "--refresh"], ["bundle.py"])
+    ctx = _context(context_scanned_copy)
+    assert sum(e["direction"] == "inbound" for e in ctx["edges"]) == 25
+    assert ctx["truncated"] == {"inbound": 7, "outbound": 0}
+    index = _index(context_scanned_copy)
+    assert index["bundles"]
+    for entry in index["bundles"]:
+        assert entry["tokens_estimated"] <= index["budget"] * 1.1, entry
+
+
 def test_volatile_catalog_fields_do_not_change_bundles(context_scanned_copy, context_env,
                                                        run_steps):
     env = {**context_env, "FAKE_CATALOG_VOLATILE": "1"}

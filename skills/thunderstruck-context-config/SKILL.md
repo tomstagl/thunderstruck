@@ -73,6 +73,11 @@ looked is never trusted. Approval is per machine and per definition: any
 later change to the command, or to a repo-local script it runs, needs
 approval again. Never approve on the user's behalf.
 
+`THUNDERSTRUCK_TRUST_CONTEXT=1` in the environment trusts every context
+definition on that machine without approval. It exists for CI, where the
+config is reviewed in the repository. Mention it only if the user asks about
+CI; never set it yourself.
+
 ## 5. Check
 
 ```bash
