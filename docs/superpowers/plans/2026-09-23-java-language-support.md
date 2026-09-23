@@ -23,6 +23,14 @@ A first draft of this plan was reviewed against the spec, the ticket and the rea
 - **In-scope items the draft had dropped.** Spring `@Retryable` misuse (S02 no jitter, S04 retries every exception), `@Cacheable` without `sync` (S09), `java.net.http.HttpRequest` without `.timeout()` (S01), `Executors.newFixedThreadPool` as an unbounded queue (S14), Kafka `max.poll.records` (S08), and the Akka/JMS/RabbitMQ batch. That batch had no Akka/JMS/RabbitMQ detectors at all and now has four (S01 JMS `receive()`, S07 RabbitMQ auto-ack, S13 Akka blocking on the default dispatcher, S14 RabbitMQ prefetch). The spec-table entries still deferred are listed at the end, with reasons.
 - **Correctness.** S27–S29 go after S19 in `patterns:`. S20–S26 live under `tier_c:`, so "after S26" was never a valid place. S18 gains Java validation and external-call vocabularies (`throw new IllegalArgumentException` matched nothing before). The S19 comment-only-catch detector uses window 1: the TS equivalent's window 2 reaches the `}` after a one-statement body and fires on a logged catch. The S29 and S18 regexes were rewritten to avoid nested overlapping quantifiers.
 
+**Execution amendment (Tasks 2–4 review).** The task review found four detectors, as the plan specifies them, that fire on common correct Java. Commit `18e8978` supersedes the YAML in Tasks 2–4 for those detectors (catalog is authoritative):
+- The S28 lock/monitor search stops at the section end: the first `}` or `unlock()`.
+- The S01 future detector requires a future-named receiver and honours `orTimeout`.
+- S27 no longer matches `.block()`.
+- S01 OkHttp suppresses only on `callTimeout`.
+
+It adds five required-silent samples.
+
 ## Global Constraints
 
 - No new third-party dependencies. Detection is regex/heuristic only, with no Java parser and no AST library (CLAUDE.md: "scripts for anything that must be reproducible", not a compiler).
