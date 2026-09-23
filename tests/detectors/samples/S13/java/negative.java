@@ -15,3 +15,19 @@ public class WorkerRegistry {
         BATCH_POOL.submit(r);
     }
 }
+
+class InventoryActor extends akka.actor.AbstractActor {
+    static akka.actor.Props props() {
+        return akka.actor.Props.create(InventoryActor.class).withDispatcher("blocking-io-dispatcher");
+    }
+
+    @Override
+    public Receive createReceive() {
+        return receiveBuilder()
+                .match(String.class, sku -> {
+                    Thread.sleep(100);
+                    getSender().tell(sku, getSelf());
+                })
+                .build();
+    }
+}

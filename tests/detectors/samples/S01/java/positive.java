@@ -37,3 +37,10 @@ class SpringClients {
     private final org.springframework.web.reactive.function.client.WebClient web =
             org.springframework.web.reactive.function.client.WebClient.create("https://api.example.com");
 }
+
+class JmsReader {
+    String next(javax.jms.Session session, javax.jms.Queue queue) throws Exception {
+        javax.jms.MessageConsumer consumer = session.createConsumer(queue);
+        return ((javax.jms.TextMessage) consumer.receive()).getText();
+    }
+}

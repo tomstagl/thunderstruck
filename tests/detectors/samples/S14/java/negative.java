@@ -12,3 +12,10 @@ public class BoundedPool {
             new ThreadPoolExecutor.CallerRunsPolicy());
     private final LinkedBlockingQueue<Runnable> inbox = new LinkedBlockingQueue<>(1000);
 }
+
+class RabbitIntake {
+    void start(com.rabbitmq.client.Channel channel, com.rabbitmq.client.Consumer consumer) throws Exception {
+        channel.basicQos(50);
+        channel.basicConsume("intake", false, consumer);
+    }
+}

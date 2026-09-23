@@ -163,6 +163,16 @@ patterns:
           absent: '\.\s*timeout\s*\(\s*[^\s)]|\bresponseTimeout\s*\(\s*[^\s)]|ReadTimeoutHandler|CONNECT_TIMEOUT_MILLIS|\bclientConnector\s*\(\s*(?!new\s+[\w.]+\s*\(\s*(\)|HttpClient\s*\.\s*create\s*\(\s*\)\s*\)))[^\s)]'
           confidence: low
           note: "WebClient built with no responseTimeout(), configured connector or per-call timeout() anywhere in the file"
+        - id: S01-java-jms-receive-no-timeout
+          kind: regex
+          pattern: '\.\s*receive\s*\(\s*\)'
+          # Evidence of a JMS consumer on a line that is not an import, so a
+          # JMS import does not make an application type's receive() a JMS one.
+          present_within: '^(?!\s*import\s)[^\n]*?(?:\b(?:MessageConsumer|JMSConsumer|QueueReceiver|TopicSubscriber)\b|\bcreate(?:Consumer|Receiver|Subscriber|DurableSubscriber|DurableConsumer|SharedConsumer|SharedDurableConsumer)\s*\(|\b(?:javax|jakarta)\s*\.\s*jms\b)'
+          window: 1
+          window_before: 10
+          confidence: low
+          note: "JMS receive() with no timeout — blocks the thread until a message arrives, forever if none does"
 
   - id: S02
     name: Capped exponential backoff with full jitter
@@ -379,6 +389,23 @@ patterns:
           absent: '(?i)\b(priority|interactive|criticality|tier|urgent|foreground)\b'
           confidence: low
           note: "one queue/limiter serves all callers; no priority or criticality field"
+      java:
+        - id: S06-java-single-pool-no-priority
+          kind: file_absent
+          # A pool this file creates. An injected executor is sized and shared
+          # elsewhere; a virtual-thread executor queues nothing behind a fixed
+          # number of workers.
+          anchor: '\bExecutors\s*\.\s*new(?!VirtualThreadPerTaskExecutor|ThreadPerTaskExecutor)\w*\s*\(|new\s+ThreadPoolExecutor\s*\('
+          # More than one kind of work reaches it: two submission sites, or a
+          # pass-through of a caller's task (`pool.submit(task)`). A pool that
+          # runs one job of its own (`submit(this)`, a scheduled flush), or is
+          # only built and handed on (a bean, a gRPC server's executor), has no
+          # callers to prioritise. `execute(` counts only on an executor- or
+          # pool-named receiver: `statement.execute(sql)` is JDBC.
+          require: '(?s)(?:\.\s*(?:submit|invokeAll|invokeAny)|\b(?:supplyAsync|runAsync)|(?i:exec|pool|workers?|scheduler)\w*\s*\.\s*execute)\s*\(.*(?:\.\s*(?:submit|invokeAll|invokeAny)|\b(?:supplyAsync|runAsync)|(?i:exec|pool|workers?|scheduler)\w*\s*\.\s*execute)\s*\(|(?:\.\s*submit|(?i:exec|pool|workers?|scheduler)\w*\s*\.\s*execute)\s*\(\s*(?!this\b)[a-z]\w*\s*\)'
+          absent: '(?i)(priority|interactive|criticality|urgent|foreground|background|batch)|(?s:(Executors\s*\.\s*new\w*|new\s+ThreadPoolExecutor)\s*\(.*(Executors\s*\.\s*new\w*|new\s+ThreadPoolExecutor)\s*\()'
+          confidence: low
+          note: "one executor serves every caller; no priority or criticality separation"
 
   - id: S07
     name: Idempotent, resumable jobs
@@ -445,6 +472,17 @@ patterns:
           absent: '\b(commitSync|commitAsync|acknowledge|sendOffsetsToTransaction)\s*\(|\.\s*seek\s*\('
           confidence: low
           note: "KafkaConsumer.poll() loop with no manual offset commit — auto-commit can ack a record before it is processed"
+        - id: S07-java-rabbitmq-auto-ack
+          kind: regex
+          pattern: '\.\s*basicConsume\s*\(\s*[^,()]+,\s*true\s*,'
+          # A server-named queue (`queueDeclare()`) or one declared exclusive
+          # is deleted with the consumer's connection, so acking saves nothing
+          # after a crash; direct reply-to requires autoAck=true.
+          absent_within: 'queueDeclare\s*\(\s*\)|queueDeclare\s*\([^,()]*,\s*\w+\s*,\s*true\s*,|amq\.rabbitmq\.reply-to'
+          window: 1
+          window_before: 25
+          confidence: low
+          note: "RabbitMQ basicConsume with autoAck=true — a crash mid-message loses it"
 
   - id: S08
     name: Bounded result sets and pagination
@@ -704,6 +742,15 @@ patterns:
           absent: '(?i)(bulkhead|dedicated|isolat|partition)|(?s:(Executors\s*\.\s*new\w*|new\s+ThreadPoolExecutor)\s*\(.*(Executors\s*\.\s*new\w*|new\s+ThreadPoolExecutor)\s*\()'
           confidence: low
           note: "one executor serves several submission sites with no second pool — every workload competes for the same threads"
+        - id: S13-java-akka-blocking-default-dispatcher
+          kind: file_absent
+          anchor: '\bAbstractActor\w*\b|\bAbstractBehavior\b|\bBehaviors\s*\.\s*(receive|setup)\b'
+          require: '\bThread\s*\.\s*sleep\s*\(|\.\s*execute(Query|Update)\s*\(|\bDriverManager\s*\.\s*getConnection\s*\(|\w*[Rr]estTemplate\s*\.\s*\w+\s*\(|\w*[Hh]ttp[Cc]lient\s*\.\s*send\s*\(|\.\s*toCompletableFuture\s*\(\s*\)\s*\.\s*(?:get|join)\s*\('
+          # A launcher's `main` that sleeps after starting the ActorSystem
+          # blocks the main thread, not an actor.
+          absent: 'withDispatcher|DispatcherSelector|blocking\S*dispatcher|\bstatic\s+void\s+main\s*\('
+          confidence: low
+          note: "actor makes blocking calls on the default dispatcher — it starves every other actor sharing it"
 
   - id: S14
     name: Bounded queues with backpressure or load shedding
@@ -743,6 +790,14 @@ patterns:
           pattern: '\bExecutors\s*\.\s*(newFixedThreadPool|newSingleThreadExecutor)\s*\('
           confidence: medium
           note: "Executors.newFixedThreadPool/newSingleThreadExecutor queue on an unbounded LinkedBlockingQueue"
+        - id: S14-java-rabbitmq-no-prefetch
+          kind: file_absent
+          # Not an autoAck consumer (second argument `true`): the broker
+          # ignores prefetch for those, and S07 reports the autoAck itself.
+          anchor: '\.\s*basicConsume\s*\((?!\s*[^,()]+,\s*true\s*,)'
+          absent: '(?i)basicQos\s*\(|prefetch'
+          confidence: low
+          note: "RabbitMQ consumer with no basicQos prefetch — the broker pushes the whole queue into this process"
 
   - id: S15
     name: Graceful degradation and fallbacks
@@ -883,6 +938,12 @@ patterns:
           note: "validation appears after an expensive external call"
       python:
         - id: S18-py-validate-after-call
+          kind: module
+          handler: s18_fail_fast
+          confidence: low
+          note: "validation appears after an expensive external call"
+      java:
+        - id: S18-java-validate-after-call
           kind: module
           handler: s18_fail_fast
           confidence: low

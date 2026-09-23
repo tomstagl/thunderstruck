@@ -12,3 +12,9 @@ public class UnboundedPool {
     private final ExecutorService fixed = Executors.newFixedThreadPool(4);
     private final java.util.Deque<String> pending = new java.util.concurrent.LinkedBlockingDeque<String>();
 }
+
+class RabbitIntake {
+    void start(com.rabbitmq.client.Channel channel, com.rabbitmq.client.Consumer consumer) throws Exception {
+        channel.basicConsume("intake", false, consumer);
+    }
+}

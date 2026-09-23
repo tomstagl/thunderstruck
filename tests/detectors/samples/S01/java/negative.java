@@ -61,3 +61,10 @@ class SpringClients {
         return new org.springframework.web.client.RestTemplate(factory);
     }
 }
+
+class JmsReader {
+    String next(javax.jms.Session session, javax.jms.Queue queue) throws Exception {
+        javax.jms.MessageConsumer consumer = session.createConsumer(queue);
+        return ((javax.jms.TextMessage) consumer.receive(5000)).getText();
+    }
+}

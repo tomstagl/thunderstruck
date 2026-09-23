@@ -411,11 +411,65 @@ FUNC_TS = re.compile(
     r"^\s*(export\s+)?(default\s+)?(async\s+)?(function\s+\w+|const\s+\w+\s*=|"
     r"(public|private|protected)?\s*\w+\s*\([^)]*\)\s*[:{])")
 FUNC_PY = re.compile(r"^\s*(async\s+)?def\s+\w+")
+# A Java member boundary: a method or constructor declaration (METHOD_JAVA,
+# which also takes package-private methods, parameter annotations with their
+# own parentheses and a parameter list continued onto the next line), or any
+# line that opens a field, nested type or member with an access or `static`
+# modifier. A lambda assigned to a field is its own member, not part of the
+# method above it. An extra boundary can only split a method (a miss); a
+# missing one merges two methods into one (a false "call, then validate").
+FUNC_JAVA = re.compile(
+    r"(?:" + METHOD_JAVA.pattern + r")"
+    r"|^\s*(?:(?:public|protected|private|static)\s"
+    r"|(?:(?:abstract|final|sealed|non-sealed)\s+)*(?:class|interface|enum|record)\s)")
+# `throw new ResponseStatusException(…)` counts only for BAD_REQUEST: after a
+# call it usually reports what the dependency returned (404, 502).
+VALIDATION_JAVA = re.compile(
+    r"\bvalidate\w*\s*\(|\bisValid\w*\s*\(|\bObjects\s*\.\s*requireNonNull\s*\("
+    r"|\bPreconditions\s*\.\s*check\w+\s*\(|\bAssert\s*\.\s*\w+\s*\("
+    r"|throw\s+new\s+(IllegalArgumentException|\w*Validation\w*Exception"
+    r"|ConstraintViolationException|BadRequest\w*"
+    r"|ResponseStatusException\s*\(\s*(?:HttpStatus\s*\.\s*)?BAD_REQUEST)\b")
+# Not validation, though they throw a validation-shaped exception: a switch
+# label that throws (an exhaustiveness check on a value the method already
+# has, often the response), and a throw inside a catch (translating an
+# exception whose check ran wherever it was thrown, usually before the call).
+SWITCH_LABEL_JAVA = re.compile(r"^\s*(?:case\b|default\b)")
+CATCH_JAVA = re.compile(r"\bcatch\s*\(")
+
+
+def _java_not_validation(lines: list[str], i: int) -> bool:
+    if SWITCH_LABEL_JAVA.match(lines[i]) or CATCH_JAVA.search(lines[i]):
+        return True
+    seen = 0
+    for k in range(i - 1, -1, -1):  # the catch header, one or two lines up
+        if not lines[k].strip():
+            continue
+        if CATCH_JAVA.search(lines[k]):
+            return True
+        seen += 1
+        if seen == 2:
+            break
+    return False
+
+
+# Java's own list rather than EXTERNAL_CALL plus extras: the shared list's
+# `fetch` prefix matches `fetchSize`/`FetchType`, `.invoke(` is reflection,
+# and `.execute(` on an executor or pool hands over a task, not a request.
+EXTERNAL_CALL_JAVA = re.compile(
+    r"\.\s*(?:send|sendAsync|exchange|retrieve|getForObject|getForEntity|postForObject"
+    r"|postForEntity|executeQuery|executeUpdate|queryFor\w+)\s*\("
+    r"|(?<!Query)\.\s*query\s*\("
+    r"|(?<![Ee]xecutor)(?<![Pp]ool)(?<![Ss]ervice)\.\s*execute\s*\("
+    r"|\bgenerateContent\b")
 
 
 def s18_fail_fast(ctx) -> Result:
-    is_py = _lang_key(ctx) == "python"
-    func_re = FUNC_PY if is_py else FUNC_TS
+    key = _lang_key(ctx)
+    func_re = {"python": FUNC_PY, "java": FUNC_JAVA}.get(key, FUNC_TS)
+    call_re = EXTERNAL_CALL_JAVA if key == "java" else EXTERNAL_CALL
+    valid_re = VALIDATION_JAVA if key == "java" else VALIDATION
+    is_java = key == "java"
     lines = ctx.code_lines
 
     starts = [i for i, ln in enumerate(lines) if func_re.match(ln)]
@@ -427,9 +481,10 @@ def s18_fail_fast(ctx) -> Result:
     for a, b in zip(starts, starts[1:]):
         first_call = first_valid = None
         for i in range(a, b):
-            if first_call is None and EXTERNAL_CALL.search(lines[i]):
+            if first_call is None and call_re.search(lines[i]):
                 first_call = i
-            if first_valid is None and VALIDATION.search(lines[i]):
+            if (first_valid is None and valid_re.search(lines[i])
+                    and not (is_java and _java_not_validation(lines, i))):
                 first_valid = i
         if first_call is not None and first_valid is not None and first_call < first_valid:
             out.append((first_valid + 1, (

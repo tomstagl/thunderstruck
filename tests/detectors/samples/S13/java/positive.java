@@ -14,3 +14,15 @@ public class WorkerRegistry {
         POOL.submit(r);
     }
 }
+
+class InventoryActor extends akka.actor.AbstractActor {
+    @Override
+    public Receive createReceive() {
+        return receiveBuilder()
+                .match(String.class, sku -> {
+                    Thread.sleep(100);
+                    getSender().tell(sku, getSelf());
+                })
+                .build();
+    }
+}

@@ -833,3 +833,237 @@ required-silent sample.
     (`WebClient.create(url).get()…`) is missed. So is a chain that starts
     from a builder (`webClientBuilder.build().get()…`), because the receiver
     before the call is `build()`, not a client name.
+
+## Batch 5 — Akka/JMS/RabbitMQ (Task 11): S06, S18, and the S01/S07/S13/S14 messaging idioms
+
+The sweep ran `--patterns S06,S18,S01,S07,S13,S14`. S06 and S18 gain their
+first Java detectors: `S06-java-single-pool-no-priority` and
+`S18-java-validate-after-call` (the shared `s18_fail_fast` module, with
+Java-only `FUNC_JAVA`, `VALIDATION_JAVA` and `EXTERNAL_CALL_JAVA`). Four
+detectors are appended to patterns calibrated earlier:
+`S01-java-jms-receive-no-timeout`, `S07-java-rabbitmq-auto-ack`,
+`S13-java-akka-blocking-default-dispatcher` and `S14-java-rabbitmq-no-prefetch`.
+Only those four are judged here. The sweep's other S01/S07/S13/S14 lines come
+from detectors calibrated in Batches 1–3, so the TSVs were filtered to this
+batch's six detector ids before counting.
+
+The brief's four repositories come first. akka/akka-samples is archived and
+mostly Scala; only its 39 Java files are swept (`--lang java`). The fourteen
+clones from Batches 1–4 were swept as well, because the brief's four gave S06
+and S18 almost nothing to work on (S06: 0 hits, S18: 1). The Batch 4 scope
+rules apply: grpc-java is judged on `examples/` only, and spring-data-examples
+excludes `jpa/deferred`. For the record, grpc-java outside `examples/` has 23
+first-sweep lines (20 S06, 3 S18) and 4 final ones, all
+`S06-java-single-pool-no-priority` in benchmarks, interop-test harnesses and a
+JMH benchmark; they are not judged.
+
+| Repo | Commit | Java files swept |
+|---|---|---|
+| spring-projects/spring-amqp-samples | `eee2e80577d2e22415ace5ad6a69dfd0ec2e6789` | 38 |
+| rabbitmq/rabbitmq-tutorials | `586f18f75693d7fffe16ff3d29775f4176ba4ecc` | 90 |
+| apache/activemq-artemis-examples | `37a1052bad9928f04f983fb6619088d43855f4a2` | 194 |
+| akka/akka-samples | `eab644e38375553bafe1742baaa5a5aaff270621` | 39 (Java only) |
+| resilience4j/resilience4j-spring-boot3-demo | `6c3e644d53174182fb79c0e49770b191a1d7287c` | 10 |
+| resilience4j/resilience4j-spring-boot2-demo | `85590a025d1ff6ecf97f26502a14ab595a664305` | 10 |
+| grpc/grpc-java | `9e0ff283e9a727546c46d889e02a9376c36ab411` | 98 in `examples/` (1132 in the repository) |
+| spring-petclinic/spring-petclinic-microservices | `295fa8d5ee10f7b6daddf83a2c65f9051a87564b` | 53 |
+| spring-projects/spring-kafka | `fff33914d4e450a33e17195e11a79937c3505605` | 387 |
+| confluentinc/kafka-streams-examples | `3c40c0e27dd988d8b2d72951802d8fd9c9940a64` | 58 |
+| jhy/jsoup | `49a15317317970a7ea3f0a5ded303ef319860f4a` | 98 |
+| brettwooldridge/HikariCP | `a4d93f4f85517f90e632b795486d7102e933d7ff` | 49 |
+| apache/commons-pool | `c4aba65cd8445685f89422b18219ea9853e4306d` | 57 |
+| iExecBlockchainComputing/iexec-core | `a09dbba123f09ae352410c87bcb3788610536809` | 129 |
+| spring-projects/spring-petclinic | `818c4136ea971c21674525f9053de0d9c7ad8cfe` | 30 |
+| spring-projects/spring-data-examples | `7747029e6157cb780862826b6ae87c88d7a4df3c` | 6504 (6001 in `jpa/deferred`; no hits there) |
+| jhipster/jhipster-sample-app | `6b000b5d23a36c45e01472471b84a44fa2464044` | 81 |
+| spring-petclinic/spring-petclinic-reactive | `68534cf88a9d022467b9590b953ea4fc7f78bd6b` | 39 |
+
+| Detector | Hits | TP | FP-fixed | FP-accepted | Deferred | Final |
+|---|---|---|---|---|---|---|
+| S06-java-single-pool-no-priority | 13 | 0 | 13 | 0 | | 0 |
+| S18-java-validate-after-call | 8 | 0 | 8 | 0 | | 0 |
+| S01-java-jms-receive-no-timeout | 3 | 3 (+1) | 0 | 0 | | 4 |
+| S07-java-rabbitmq-auto-ack | 18 | 6 | 12 | 0 | | 6 |
+| S13-java-akka-blocking-default-dispatcher | 0 | 0 | 0 | 0 | | 0 |
+| S14-java-rabbitmq-no-prefetch | 18 | 0 | 18 | 0 | | 0 |
+
+**Hits** is the first sweep, made with the brief's detectors unchanged.
+
+- **No tripwire.** No detector had more than 25 hits in one repository. The
+  most was 18 each for the two RabbitMQ detectors in rabbitmq-tutorials, which
+  holds the same six consumers three times (`java/`, `java-mvn/`,
+  `java-gradle/`).
+- **S01's extra hit.** The final `present_within` also recognises
+  `TopicSubscriber`/`createDurableSubscriber`, which the brief's did not, so
+  artemis `DurableSubscriptionExample.java:95` appears only in the final sweep.
+  It is a TP. That is the "(+1)".
+- **No S06, S13 or S14 true positive, and no S18 one.** None of the 18
+  repositories mixes interactive and background work on one pool, blocks
+  inside an actor, or runs a manual-ack RabbitMQ consumer without `basicQos`,
+  and every S18 hit was a cross-method or non-call pairing. These four
+  detectors are proven by their samples and the recall probes under
+  **Silences checked**.
+
+### Tightened before calibration
+
+Common shapes of correct Java were run against the brief's detectors at the
+same time as the first sweep (`$SCRATCH/t11/probes/`). The shapes below fired
+and had no instance in the corpus. Each became a required-silent sample.
+
+- `S06-java-single-pool-no-priority`:
+  - **Virtual threads.** `Executors.newVirtualThreadPerTaskExecutor()` (and
+    `newThreadPerTaskExecutor`) no longer anchors: a thread per task queues
+    nothing behind a fixed set of workers. → `S06/java/negative_virtual_threads.java`
+  - **Injected executors.** The brief's anchor included the bare type name
+    `ExecutorService`, so a class handed its executor through the constructor,
+    or a `shutdownQuietly(ExecutorService)` helper, fired. The anchor is now a
+    pool the file creates. → `S06/java/negative_injected_executor.java`
+- `S18-java-validate-after-call`:
+  - **`ResponseStatusException` counts only with `BAD_REQUEST`.** After a
+    call, `throw new ResponseStatusException(HttpStatus.BAD_GATEWAY)` or
+    `.orElseThrow(() -> new ResponseStatusException(NOT_FOUND))` reports what
+    the dependency returned, not a request that was never valid.
+    → `S18/java/negative_response_status.java`
+- `S01-java-jms-receive-no-timeout`: a JMS `import` no longer counts as
+  evidence. `inbox.receive()` on the application's own `Inbox` type fired
+  because `import javax.jms.Session;` was within 10 lines. `present_within`
+  now needs a non-import line naming `MessageConsumer`, `JMSConsumer`,
+  `QueueReceiver`, `TopicSubscriber`, a `create…Consumer/Receiver/Subscriber(`
+  call or a qualified `javax.jms`/`jakarta.jms` name.
+  `socket.receive(packet)` and `receiveNoWait()` were already silent.
+  → `S01/java/negative_jms_custom_receive.java`
+- `S07-java-rabbitmq-auto-ack`: direct reply-to
+  (`basicConsume("amq.rabbitmq.reply-to", true, …)`) *requires* autoAck and is
+  exempt. → `S07/java/negative_rabbitmq_exclusive_queue.java` (`replies`)
+- `S13-java-akka-blocking-default-dispatcher`: a launcher whose `main` sleeps
+  after `ActorSystem.create(Behaviors.setup(…))` blocks the main thread, not an
+  actor. `static void main(` in the file now suppresses the detector.
+  → `S13/java/negative_akka_main_sleep.java`. The other direction, a recall
+  fix: `Patterns.ask(…).toCompletableFuture().get()` (or `.join()`) inside an
+  actor blocks its dispatcher thread, and the brief's `require` did not see
+  it. It is now one of the blocking calls.
+
+### Hits
+
+- `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/broker-connection/ha-with-dual-mirror/src/main/java/org/apache/artemis/jms/example/Consumer.java:49` — TP: the consumer thread loops on `consumer.receive()` over a `failover:` URL with `maxReconnectAttempts=-1`. While the failover transport reconnects forever, `receive()` neither returns nor throws, so the loop never reaches its error handling and the thread cannot report that it has stopped consuming. A timed `receive(ms)` would let it notice.
+- `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/broker-connection/ha-with-mesh-mirror/src/main/java/org/apache/artemis/jms/example/Consumer.java:49` — TP: the same consumer.
+- `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/standard/durable-subscription/src/main/java/org/apache/activemq/artemis/jms/example/DurableSubscriptionExample.java:95` — TP: a single `subscriber.receive()` for one expected message. If the message is lost or the subscription was not durable after all, the program hangs forever instead of failing.
+- `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/standard/scheduled-message/src/main/java/org/apache/activemq/artemis/jms/example/ScheduledMessageExample.java:78` — TP: `receive()` waits for a message scheduled 5 s ahead. If the broker drops or never delivers the scheduled message, the program blocks forever; a timeout of the schedule plus a margin would bound it.
+- `S07-java-rabbitmq-auto-ack` rabbitmq-tutorials `java/Recv.java:25` — TP: autoAck on a durable quorum queue (`queueDeclare(QUEUE_NAME, true, …)`). A message is acked on delivery, so a crash while it is printed loses it although the queue was made durable to keep it.
+- `S07-java-rabbitmq-auto-ack` rabbitmq-tutorials `java-mvn/src/main/java/Recv.java:25` — TP: the same file.
+- `S07-java-rabbitmq-auto-ack` rabbitmq-tutorials `java-gradle/src/main/java/Recv.java:25` — TP: the same file.
+- `S07-java-rabbitmq-auto-ack` rabbitmq-tutorials `java/ReceiveLogHeader.java:54` — TP: autoAck on a named durable queue (`queueDeclare(queueInputName, true, …)`), which outlives the consumer. Messages acked on delivery are lost on a crash.
+- `S07-java-rabbitmq-auto-ack` rabbitmq-tutorials `java-mvn/src/main/java/ReceiveLogHeader.java:54` — TP: the same file.
+- `S07-java-rabbitmq-auto-ack` rabbitmq-tutorials `java-gradle/src/main/java/ReceiveLogHeader.java:54` — TP: the same file.
+
+### Fixed during calibration
+
+- `S06-java-single-pool-no-priority`, 7 hits on a pool that is built and handed on, with no submission in the file: HikariCP `src/main/java/com/zaxxer/hikari/util/UtilityElf.java:188` (a `createThreadPoolExecutor` factory); resilience4j-spring-boot2-demo and resilience4j-spring-boot3-demo `src/main/java/io/github/robwin/controller/BackendBController.java:64` (a scheduled pool passed to resilience4j's `TimeLimiter`/`Retry` decorators); grpc-java `examples/example-alts/src/main/java/io/grpc/examples/alts/HelloWorldAltsClient.java:25`, `examples/example-alts/src/main/java/io/grpc/examples/alts/HelloWorldAltsServer.java:88`, `examples/src/main/java/io/grpc/examples/helloworld/HelloWorldServer.java:26` (`.executor(pool)` on a channel or server builder), `examples/example-orca/src/main/java/io/grpc/examples/orca/CustomBackendMetricsServer.java:55` (a scheduler passed to `OrcaServiceImpl.createService`) — FP-fixed. A pool with no submission site in the file has no callers here to prioritise; a gRPC server's executor runs only its RPCs. `require` now asks for more than one kind of work reaching a pool: two submission sites (`submit`/`invokeAll`/`invokeAny`/`supplyAsync`/`runAsync`, or `execute` on an executor-, pool-, worker- or scheduler-named receiver), or a pass-through of a caller's task (`pool.submit(task)`). → `S06/java/negative_executor_bean.java` (`ExecutorConfig`, `GreeterServer`). Two of these anchored on the `import` line, which the creation-only anchor also fixes.
+- `S06-java-single-pool-no-priority`, 4 hits on a pool that runs one job of its own: iexec-core `src/main/java/com/iexec/core/chain/BlockchainConnectionHealthIndicator.java:77` (a scheduled connection check) and `src/main/java/com/iexec/core/task/TaskService.java:42` (one `submit(this::initializeCurrentTaskStatusesCount)`); kafka-streams-examples `src/main/java/io/confluent/examples/streams/microservices/OrderDetailsService.java:22` (one `execute(() -> startService(…))`); grpc-java `examples/src/main/java/io/grpc/examples/cancellation/CancellationServer.java:55` (one service's echo timers and a single `execute`) — FP-fixed by the same `require`. `schedule*` calls are periodic background work by nature and do not count as a submission site. → `S06/java/negative_single_purpose.java`
+- `S06-java-single-pool-no-priority` HikariCP `src/main/java/com/zaxxer/hikari/pool/HikariPool.java:545` — FP-fixed. The brief's anchor matched the `ExecutorService` parameter type of `abortActiveConnections`. HikariPool creates its pools through a helper and already keeps them apart (connection adder, connection closer, housekeeping). → `S06/java/negative_injected_executor.java`
+- `S06-java-single-pool-no-priority` HikariCP `src/main/java/com/zaxxer/hikari/pool/PoolBase.java:627` — FP-fixed. The network-timeout pool is handed to `Connection.setNetworkTimeout`. It survived the first `require` because the file's two JDBC `statement.execute(sql)` calls counted as submission sites; `execute(` now counts only on an executor-, pool-, worker- or scheduler-named receiver. → `S06/java/negative_statement_execute.java`
+- `S18-java-validate-after-call` akka-samples `akka-sample-sharding-java/killrweather/src/main/java/sample/killrweather/WeatherRoutes.java:59` — FP-fixed. The "validation" is `default: throw new IllegalArgumentException(…)` in an unmarshaller lambda assigned to a field, and the "call" was `ref.ask(… new WeatherStation.Query(…))` in the method above: `EXTERNAL_CALL`'s case-insensitive `\.query\s*\(` matched `.Query(`. Three changes: a field line is a member boundary; a switch label that throws is an exhaustiveness check, not validation; and `EXTERNAL_CALL_JAVA` is now Java's own case-sensitive list. → `S18/java/negative_switch_default.java`, `negative_method_boundaries.java`
+- `S18-java-validate-after-call` HikariCP `src/main/java/com/zaxxer/hikari/util/PropertyElf.java:239` — FP-fixed. The "call" was the reflective `method.invoke(target)` 147 lines up. HikariCP puts method braces on their own line, which the brief's `FUNC_JAVA` (brace on the header line, modifier required) never saw, so the whole class was one "method". Boundaries now use `METHOD_JAVA` (the S10 declaration regex, which takes Allman braces, package-private methods, multi-line parameter lists and annotated parameters) plus any line opening with `public`/`protected`/`private`/`static` or a type keyword. `.invoke(` is reflection and no longer a call. → `S18/java/negative_method_boundaries.java`, `negative_not_external.java`
+- `S18-java-validate-after-call` spring-kafka `spring-kafka/src/main/java/org/springframework/kafka/config/MethodKafkaListenerEndpoint.java:177` — FP-fixed. The "call" was the word `got` inside an exception message (`"… (got " + …`), which the shared list matches case-insensitively; the "validation" was `Assert.state` in the next method, whose header spans four lines (two annotations and a two-line parameter list). → `S18/java/negative_not_external.java` (`check`), `negative_method_boundaries.java`
+- `S18-java-validate-after-call` spring-kafka `spring-kafka/src/main/java/org/springframework/kafka/listener/adapter/HandlerAdapter.java:82` — FP-fixed. `invokerHandlerMethod.invoke(…)` dispatches to a local handler method, and `Objects.requireNonNull(this.delegatingHandler)` in the `else` branch checks internal state. → `S18/java/negative_not_external.java` (`dispatch`)
+- `S18-java-validate-after-call` spring-data-examples `mongodb/transactions/src/main/java/example/springdata/mongodb/imperative/TransitionService.java:80`, `mongodb/transactions/src/main/java/example/springdata/mongodb/reactive/ReactiveManagedTransitionService.java:80`, `mongodb/transactions/src/main/java/example/springdata/mongodb/reactive/ReactiveTransitionService.java:78` — FP-fixed. `Assert.state` in the package-private `verify(…)` merged into `start(…)` above it, because the brief's `FUNC_JAVA` required a modifier; the "call" was `Query.query(Criteria…)`, which builds a query object. `Query.query(` no longer counts as a call. → `S18/java/negative_method_boundaries.java` (`reload`/`rename`), `negative_not_external.java`
+- `S18-java-validate-after-call` jsoup `src/main/java11/org/jsoup/helper/HttpClientExecutor.java:144` — FP-fixed. `catch (URISyntaxException e) { throw new IllegalArgumentException("Malformed URL: " …) }` translates a failure of `req.url.toURI()`, which runs before `client.send(…)`. A validation-shaped throw on a `catch` line, or within two code lines below one, no longer counts. → `S18/java/negative_catch_translation.java`
+- `S07-java-rabbitmq-auto-ack`, 12 hits on a server-named queue: rabbitmq-tutorials `ReceiveLogs.java:22`, `ReceiveLogsDirect.java:30`, `ReceiveLogsTopic.java:31` and `RPCClient.java:51`, each in `java/`, `java-mvn/src/main/java/` and `java-gradle/src/main/java/` — FP-fixed. `channel.queueDeclare().getQueue()` declares an exclusive, auto-delete queue that is deleted with the consumer's connection, so after a crash there is nothing left to redeliver whether the consumer acked or not. `absent_within` (25 lines back) now takes `queueDeclare()`, a `queueDeclare(name, durable, true, …)` with `exclusive=true`, and direct reply-to. → `S07/java/negative_rabbitmq_exclusive_queue.java`
+- `S14-java-rabbitmq-no-prefetch`, 18 hits on autoAck consumers: rabbitmq-tutorials `Recv.java:25`, `ReceiveLogHeader.java:54`, `ReceiveLogs.java:22`, `ReceiveLogsDirect.java:30`, `ReceiveLogsTopic.java:31` and `RPCClient.java:51`, each in the three directories — FP-fixed. RabbitMQ ignores `basicQos` prefetch for a consumer in automatic-acknowledgement mode, so the control this detector says is missing would change nothing; the autoAck itself is `S07-java-rabbitmq-auto-ack`'s finding. The anchor now skips a `basicConsume` whose second argument is `true`. The two manual-ack consumers in the corpus (`Worker.java`, `RPCServer.java`) set `basicQos(1)` and were silent before and after. → `S14/java/negative_rabbitmq_auto_ack.java`
+
+### Silences checked
+
+- **spring-amqp-samples** produced no hit from any detector of this batch. Its
+  consumers are Spring listener containers (`@RabbitListener`,
+  `SimpleMessageListenerContainer` with `AcknowledgeMode.AUTO`, which acks
+  after the listener returns), with the container's default prefetch; no raw
+  `basicConsume`, no JMS.
+- **akka-samples** (39 Java files) produced no S13 hit. No Java sample blocks
+  inside an actor: they use `ask` with `pipeToSelf`/`CompletionStage`, and no
+  `Thread.sleep`, JDBC, `RestTemplate`, `HttpClient.send` or `ask(…).get()`
+  appears in the Java sources.
+- **artemis's other JMS consumers** mostly call `receive(timeout)` and are
+  silent. Eight untimed `receive()` calls are missed; see Known limitations.
+- **TypeScript/Python S18 is unchanged (AC-16).** `s18_fail_fast` at HEAD and
+  after this task were run on every TypeScript, JavaScript and Python file under
+  `tests/`, `scripts/` and the built fixture repository (101 files, 10 S18
+  hits): the output is identical for every file. The Java regexes are reached
+  only when `_lang_key` is `java`.
+- **Probes of correct code** are silent under the final detectors
+  (`$SCRATCH/t11/probes/`):
+  - S06: `ForkJoinPool.commonPool()`; `CompletableFuture.runAsync` with the
+    default pool; a pool that only runs `submit(this)`.
+  - S18: `Objects.requireNonNull` first, then the call; `@Valid` on a
+    parameter; a builder chain before an `IllegalArgumentException`.
+  - S13: an actor that offloads `Thread.sleep` to a `DispatcherSelector`
+    executor.
+  - S14: `basicQos` in a separate channel-setup method of the same file;
+    Spring AMQP `setPrefetchCount(50)`.
+- **Recall probes** fire under the final detectors (`$SCRATCH/t11/probes/r*.java`):
+  - S06: one fixed pool fed by `userRequest(…)` and `nightlyExport()`.
+  - S18: a package-private method, and a method with a multi-line parameter
+    list, each validating after `client.send`/`postForObject`; JDBC
+    `executeUpdate` then `Assert.hasText`.
+  - S01: `JMSConsumer.receive()`.
+  - S13: `Patterns.ask(…).toCompletableFuture().get()` in `AbstractActor`.
+  - S14: the two-argument `basicConsume(queue, consumer)` (manual ack by
+    default) with no `basicQos`.
+
+### Known limitations (noted, not fixed)
+
+- **S06 is file-scoped and keyword-suppressed.**
+  - It anchors only `Executors.new…(` and `new ThreadPoolExecutor(`. Spring's
+    `ThreadPoolTaskExecutor`, `new ForkJoinPool(…)`, `new
+    ScheduledThreadPoolExecutor(…)` and a pool built by a helper method are
+    invisible.
+  - Any `priority`/`interactive`/`criticality`/`urgent`/`foreground`/
+    `background`/`batch` substring suppresses it, including `executeBatch`.
+    So does a second pool creation anywhere in the file.
+  - A pool fed only through `schedule…` calls never fires, and `execute(` on a
+    receiver not named like an executor, pool, worker or scheduler is not a
+    submission.
+  - Two submission sites of the *same* kind of work (two interactive
+    endpoints) still fire. Deciding which work is interactive needs the
+    investigator.
+- **S18 recognises a fixed vocabulary.**
+  - A call counts only as `send`, `sendAsync`, `exchange`, `retrieve`,
+    `get/postForObject/Entity`, `executeQuery`, `executeUpdate`, `query`,
+    `queryFor…`, `execute` on a non-executor receiver, or `generateContent`. A
+    call through a domain client (`pricingClient.quote(…)`), a Feign interface
+    or a repository is missed. `.send(` counts on any receiver, including an
+    `SseEmitter`.
+  - A check on the *response* written as `throw new
+    IllegalArgumentException(…)` after the call (for example on a bad status
+    code) still fires. It is indistinguishable from late input validation
+    without knowing what the condition reads. No instance in this corpus.
+  - A validation-shaped throw within two code lines below any `catch (` is
+    ignored, even when the catch block has already closed.
+  - The member boundary inherits `METHOD_JAVA`'s limitations (Batch 4): a call
+    statement whose arguments continue onto the next line starts a spurious
+    member, which can only split a method (a miss).
+- **S01's JMS detector looks 10 lines back for the consumer.** A consumer
+  created further up, or held in a field, is missed. artemis has eight such
+  misses, all genuine untimed receives in one-shot demos:
+  `DurableSubscriptionExample.java:74`, `RequestReplyExample.java:100`,
+  `TopicExample.java:73`, `:78` and `XAReceiveExample.java:91`, `:93`, `:112`,
+  `:114`. Widening the window would catch them; it was left at the brief's 10
+  lines because calibration does not loosen a detector to create hits. JMS 2.0 `receiveBody(Class)`, which also blocks
+  forever, is not matched. A dedicated consumer thread that relies on
+  `connection.close()` at shutdown to unblock `receive()` will fire.
+- **S07's autoAck detector reads only a literal `true`.** `boolean autoAck =
+  true; channel.basicConsume(q, autoAck, cb)` (the RabbitMQ client javadoc's
+  style) and an `AUTO_ACK` constant are missed, and so is Spring AMQP's
+  `AcknowledgeMode.NONE`. The exclusive-queue exemption looks 25 lines back,
+  not at the queue actually consumed, so a durable queue consumed within 25
+  lines of a `queueDeclare()` is silenced.
+- **S13's Akka detector is file-scoped.** A dispatcher assigned in
+  `application.conf` (`akka.actor.deployment`) is invisible, so such an actor
+  still fires. `static void main(` anywhere in the file suppresses it, so a
+  single-file demo with a blocking actor and its launcher is missed. The
+  blocking vocabulary is fixed (sleep, JDBC, `DriverManager`, `RestTemplate`,
+  `HttpClient.send`, `toCompletableFuture().get()/join()`).
+- **S14's RabbitMQ detector** fires on a consumer whose autoAck argument is a
+  variable, even when it is `true`. `basicQos` set in another class (a channel
+  factory) is invisible, and any `prefetch` substring suppresses it. An autoAck
+  consumer on a server-named queue still receives an unbounded push, and
+  neither S14 nor S07 reports it.

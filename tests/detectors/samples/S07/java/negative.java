@@ -41,3 +41,9 @@ public class OrderConsumer {
 interface OrderApi {
     List<String> list(int page);
 }
+
+class RabbitOrders {
+    void start(com.rabbitmq.client.Channel channel, com.rabbitmq.client.Consumer consumer) throws Exception {
+        channel.basicConsume("orders", false, consumer);
+    }
+}
