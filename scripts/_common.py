@@ -458,7 +458,8 @@ def write_json(path: Path, payload: Any) -> None:
 def load_json(path: Path, default: Any = None) -> Any:
     try:
         return json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, ValueError):
+        # ValueError covers json.JSONDecodeError and UnicodeDecodeError alike.
         return default
 
 

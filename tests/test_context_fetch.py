@@ -223,6 +223,38 @@ def test_stale_fallback_never_crosses_a_definition_change(context_repo, trusted,
     assert context.run(context_repo, now=NOW + timedelta(days=1))["status"] == "failed"
 
 
+def test_invalid_toml_is_not_fatal_and_overwrites_the_cache(context_repo, trusted):
+    first = context.run(context_repo, now=NOW)
+    assert first["status"] == "fresh"
+    profile = context_repo / ".thunderstruck.toml"
+    profile.write_text(profile.read_text() + "[context\n")
+    doc = context.run(context_repo, now=NOW)
+    assert doc["status"] == "invalid_config"
+    assert any("service context config:" in w for w in doc["warnings"])
+    on_disk = json.loads((context_repo / ".thunderstruck" / "context.json").read_text())
+    assert on_disk["status"] == "invalid_config" and on_disk["edges"] == []
+
+
+@pytest.mark.parametrize("mutation", [
+    lambda doc: doc.__setitem__("warnings", 5),
+    lambda doc: doc.__setitem__("edges", ["junk"]),
+])
+def test_junk_cache_is_not_reused(context_repo, trusted, mutation):
+    context.run(context_repo, now=NOW)
+    path = context_repo / ".thunderstruck" / "context.json"
+    doc = json.loads(path.read_text())
+    mutation(doc)
+    path.write_text(json.dumps(doc))
+    assert context.run(context_repo, now=NOW)["status"] == "fresh"
+
+
+def test_corrupt_context_json_is_not_fatal(context_repo, trusted):
+    context.run(context_repo, now=NOW)
+    path = context_repo / ".thunderstruck" / "context.json"
+    path.write_bytes(b"\xff\xfe")
+    assert context.run(context_repo, now=NOW)["status"] == "fresh"
+
+
 @pytest.mark.parametrize("fetched_at,expected", [
     ("2026-10-30T00:00:00+00:00", "cached"),   # in the future: clock skew
     ("not a date", "fresh"),

@@ -339,11 +339,19 @@ def _doc(status: str, cfg: dict | None = None, chash: str | None = None,
 
 
 def _reusable(previous: Any, chash: str) -> bool:
-    return (isinstance(previous, dict)
+    if not (isinstance(previous, dict)
             and previous.get("schema") == c.CONTEXT_SCHEMA
             and previous.get("status") in c.CONTEXT_USABLE
             and previous.get("config_hash") == chash
-            and isinstance(previous.get("edges"), list))
+            and isinstance(previous.get("edges"), list)
+            and isinstance(previous.get("warnings", []), list)):
+        return False
+    try:
+        recomputed = context_hash(previous.get("entity_ref"), previous["edges"],
+                                  previous.get("truncated"))
+    except (TypeError, ValueError):
+        return False
+    return recomputed == previous.get("context_hash")
 
 
 def _age_days(doc: dict, now: datetime) -> int | None:
@@ -403,8 +411,13 @@ def resolve(repo: Path, profile: dict, previous: Any, *, now: datetime,
 def run(repo: Path, *, refresh: bool = False, now: datetime | None = None,
         budget_s: float = TOTAL_BUDGET_S) -> dict:
     path = c.out_dir(repo) / c.CONTEXT_FILENAME
-    doc = resolve(repo, c.load_profile(repo), c.load_json(path),
-                  now=now or datetime.now(timezone.utc), refresh=refresh, budget_s=budget_s)
+    try:
+        profile = c.load_profile(repo)
+    except c.ThunderstruckError as exc:
+        doc = _doc("invalid_config", warnings=[f"service context config: {exc}"])
+    else:
+        doc = resolve(repo, profile, c.load_json(path),
+                      now=now or datetime.now(timezone.utc), refresh=refresh, budget_s=budget_s)
     c.write_json(path, doc)
     return doc
 
