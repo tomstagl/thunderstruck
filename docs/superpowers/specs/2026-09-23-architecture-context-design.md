@@ -32,7 +32,7 @@ The mechanism must be **company-agnostic**. Thunderstruck ships a generic source
 ### Out (v1)
 - **File-level linking of outbound edges.** Tracked in #6.
 - **MCP-only sources.** A deterministic script cannot call MCP; only an agent can. An agent-based fetch would put model output underneath mechanically validated evidence. A catalog reachable only through MCP is unsupported in v1. Any CLI, including `curl` against a REST API, qualifies as a command source.
-- **Observed topology from APM tools** (e.g. Dynatrace via `dtctl`). It is the natural second source and is expected to reuse the `command` kind. It is deferred until a spike confirms a working query and measures how much the edge set changes with the query window. Comparing declared and observed edges is the most valuable open question.
+- **Observed topology from an observability platform** (e.g. Dynatrace). This is the natural second source, and it must stay vendor-agnostic the same way the catalog source is. It reuses the `command` kind: the vendor's CLI or API call goes in `argv`, and a vendor-specific extractor maps the output onto the same edge record. The only difference is `source: observed` instead of `source: catalog`. Thunderstruck ships the generic mechanism, and each vendor gets its own extractor. It is deferred until a spike against a real platform confirms a working query and measures how much the edge set changes with the query window. Comparing declared and observed edges is the most valuable open question.
 - **ADR registries, agentic docs, architecture diagrams.** These are future context categories.
 - **Graph walks beyond 1 hop.**
 
@@ -255,5 +255,11 @@ These are the outcome targets, measured by hand while dogfooding. They're separa
 
 ## 15. Open questions
 
-- **Dynatrace as a second source:** the working `dtctl` query, stable entity-id mapping between catalog and APM, and sensitivity to the query window. Declared vs observed edges is the key question.
+- **Observability platform as a second source** (e.g. Dynatrace):
+  - a working query for a service's callers and callees;
+  - a stable mapping between catalog entities and the platform's service identities;
+  - how sensitive the result is to the query window, which needs a fixed window for determinism;
+  - whether the extractor interface fits a second vendor without changes.
+
+  Comparing declared and observed edges is the key question.
 - **A second extractor**, for non-Backstage catalogs. Deferred until a real non-Backstage user appears.
