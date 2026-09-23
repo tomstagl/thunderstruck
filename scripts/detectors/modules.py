@@ -70,7 +70,9 @@ SLEEP_RES: dict[str, list[re.Pattern]] = {
         # Any sleep-named call: Thread.sleep(ms), TimeUnit.SECONDS.sleep(n), a
         # bare inherited sleep(ms), helpers like quietlySleep(ms) and
         # sleepUninterruptibly(d, unit). The first argument is the wait.
-        re.compile(r"\b\w*[Ss]leep\w*\s*\(\s*(?P<arg>[^),]*)"),
+        # Accessors (setMaxSleepMs, getSleepTime, isSleeping, hasSleep…)
+        # configure or read a wait; they do not perform one.
+        re.compile(r"\b(?!(?:set|get|is|has)[A-Z])\w*[Ss]leep\w*\s*\(\s*(?P<arg>[^),]*)"),
     ],
 }
 

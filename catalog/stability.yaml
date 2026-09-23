@@ -184,8 +184,8 @@ patterns:
         - id: S02-java-retryable-no-jitter
           kind: regex
           pattern: '@\s*Retryable\b'
-          absent_within: 'random\s*=\s*true|RandomBackOffPolicy|ExponentialRandomBackOffPolicy'
-          window: 6
+          absent_within: 'random\s*=\s*true|RandomBackOffPolicy|ExponentialRandomBackOffPolicy|jitter\s*='
+          window: 12
           confidence: low
           note: "@Retryable with no randomised backoff — Spring Retry defaults to a fixed 1s wait, so every client retries in lockstep"
 
@@ -236,14 +236,14 @@ patterns:
           kind: file_absent
           anchor: '\b429\b|TOO_MANY_REQUESTS'
           absent: '[Rr]etry-?[Aa]fter|RETRY_AFTER'
-          require: '(?i)\b(retry|retries|retrying|attempt|attempts|backoff|sleep|delay)\b|\w+[Rr]etry\w*\s*\('
+          require: '(?s)\A(?=.*?(?i:\b(retry|retries|retrying|attempt|attempts|backoff|sleep|delay)\b)|.*?\w+[Rr]etry\w*\s*\()(?=.*?(\.\s*(send|sendAsync|exchange|execute|retrieve|getForObject|getForEntity|postForObject|postForEntity|newCall)\s*\(|\bstatusCode\s*\(\s*\)|getStatusCode\s*\(\s*\)|\.\s*code\s*\(\s*\)))'
           confidence: medium
           note: "file handles 429 but never reads Retry-After"
         - id: S03-java-503-ignores-retry-after
           kind: file_absent
           anchor: '\b503\b|SERVICE_UNAVAILABLE|HTTP_UNAVAILABLE'
           absent: '[Rr]etry-?[Aa]fter|RETRY_AFTER'
-          require: '(?i)\b(retry|retries|retrying|attempt|attempts|backoff|sleep|delay)\b|\w+[Rr]etry\w*\s*\('
+          require: '(?s)\A(?=.*?(?i:\b(retry|retries|retrying|attempt|attempts|backoff|sleep|delay)\b)|.*?\w+[Rr]etry\w*\s*\()(?=.*?(\.\s*(send|sendAsync|exchange|execute|retrieve|getForObject|getForEntity|postForObject|postForEntity|newCall)\s*\(|\bstatusCode\s*\(\s*\)|getStatusCode\s*\(\s*\)|\.\s*code\s*\(\s*\)))'
           confidence: low
           note: "file handles 503 but never reads Retry-After"
 
@@ -283,15 +283,17 @@ patterns:
         - id: S04-java-catch-all-retry
           kind: regex
           pattern: 'catch\s*\(\s*(final\s+)?(Exception|Throwable|RuntimeException)\s+\w+\s*\)'
-          present_within: '\b(continue|retry|retries|attempt)\b|\w*[Rr]etry\w*\s*\('
-          window: 6
-          confidence: medium
+          present_within: '\b(attempt|attempts|retry|retries|retrying)\b'
+          absent_within: '\bthrow\b|isRetryable|isTransient|shouldRetry|instanceof'
+          window: 4
+          window_before: 6
+          confidence: low
           note: "catch (Exception e) followed by a retry — retries permanent errors too"
         - id: S04-java-retryable-all-exceptions
           kind: regex
           pattern: '@\s*Retryable\b'
-          absent_within: '\b(retryFor|include|value|noRetryFor|exclude|exceptionExpression)\s*=|@\s*Retryable\s*\(\s*\{?\s*[\w.]+\.class'
-          window: 6
+          absent_within: '\b(retryFor|include|value|noRetryFor|exclude|exceptionExpression|includes|excludes|predicate)\s*=|@\s*Retryable\s*\(\s*\{?\s*[\w.]+\.class'
+          window: 12
           confidence: low
           note: "@Retryable with no exception filter — retries every exception, permanent ones included"
 
