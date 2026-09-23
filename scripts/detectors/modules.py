@@ -172,6 +172,30 @@ PERSIST = re.compile(
 PAGE_ADVANCE = re.compile(
     r"(?i)((page|cursor|offset|skip|start_?at)\s*(\+\+|\+=|=\s*[^=])"
     r"|has_?more|has_?next|next_?(page|cursor|token|url)|is_?last_?page)")
+# Java variants. `Iterator.hasNext()` and `Enumeration.hasMoreElements()` walk
+# an in-memory collection, and `offset` is as often a byte position in a
+# parser (`offset += n`) or a Kafka record offset as a page position. So a
+# more-pages test counts only as a flag (`while (hasMore)`) or on a page,
+# response or slice receiver (not `buffer.hasMore()`), and an offset advance
+# only when it steps by a page or batch size. An assignment counts only at the
+# start of a statement: `String page = it.next()` declares an element, while
+# `page = repo.findAll(next)` and `nextCursor = resp.cursor()` move on.
+PAGING_JAVA = re.compile(
+    r"(?i)(page|cursor|offset|next_?token|has_?more(?!elements|tokens)"
+    r"|per_?page|page_?size|paginat|\bskip)")
+PAGE_ADVANCE_JAVA = re.compile(
+    r"(?im)((?:^|[;{(,]|\bthis\s*\.)\s*\w*(page|cursor|start_?at)\s*(\+\+|\+=|=\s*[^=])"
+    r"|page\w*\s*(\+\+|\+=)"
+    r"|\+\+\s*\w*page|has_?more(?!elements|tokens)(?!\s*\()"
+    r"|(page|resp|response|result|batch|chunk|slice|list)\w*\s*\.\s*(get|is)?has_?more\s*\("
+    r"|(page|slice)\w*\s*\.\s*(hasNext|isLast|nextPageable)\s*\("
+    r"|next_?(page|cursor|token|url)|is_?last_?page"
+    r"|offset\s*\+=\s*[\w.]*(limit|page_?size|batch_?size|fetch_?size))")
+# A setter that records the position on a progress object
+# (`state.setLastOffset(offset)`, `job.setResumeToken(t)`) persists it; a
+# setter that builds the next request (`request.setPageToken(t)`) does not.
+PERSIST_JAVA = re.compile(
+    PERSIST.pattern + r"|(?i:\bset_?(last|resume|checkpoint|committed|saved)\w*\s*\()")
 LOOP_TS = re.compile(r"^\s*(?:\}\s*)?(?:do\b|while\s*\(|for\s*(?:await\s*)?\()")
 LOOP_PY = re.compile(r"^\s*(?:while|for)\b.*:")
 
@@ -198,7 +222,8 @@ def _py_block_end(lines: list[str], start: int, limit: int = 200) -> int:
     return min(len(lines) - 1, start + limit)
 
 
-def _persists_cursor(body_lines: list[str]) -> bool:
+def _persists_cursor(body_lines: list[str], persist: re.Pattern = PERSIST,
+                     paging: re.Pattern = PAGING) -> bool:
     """True only when a persistence call is about the *position*.
 
     Saving the rows a page returned is not a checkpoint: after a crash the job
@@ -207,10 +232,10 @@ def _persists_cursor(body_lines: list[str]) -> bool:
     side of it.
     """
     for i, line in enumerate(body_lines):
-        if not PERSIST.search(line):
+        if not persist.search(line):
             continue
         near = "\n".join(body_lines[max(0, i - 1):i + 2])
-        if PAGING.search(near):
+        if paging.search(near):
             return True
     return False
 
@@ -220,6 +245,10 @@ def s07_checkpoint(ctx) -> Result:
     is_py = _lang_key(ctx) == "python"
     loop_re = LOOP_PY if is_py else LOOP_TS
     end_of = _py_block_end if is_py else _ts_block_end
+    if _lang_key(ctx) == "java":
+        paging, advance, persist = PAGING_JAVA, PAGE_ADVANCE_JAVA, PERSIST_JAVA
+    else:
+        paging, advance, persist = PAGING, PAGE_ADVANCE, PERSIST
 
     out: Result = []
     i = 0
@@ -230,8 +259,8 @@ def s07_checkpoint(ctx) -> Result:
         end = end_of(lines, i)
         body_lines = lines[i:end + 1]
         body = "\n".join(body_lines)
-        if (PAGING.search(body) and PAGE_ADVANCE.search(body)
-                and not _persists_cursor(body_lines)):
+        if (paging.search(body) and advance.search(body)
+                and not _persists_cursor(body_lines, persist, paging)):
             out.append((i + 1, (
                 "paged loop with no persisted cursor — an interrupted run "
                 "restarts from the first page and re-pays the whole cost")))
@@ -399,23 +428,31 @@ S29_VALUE_GETTERS = re.compile(
     r"|Epoch\w*|Bytes|SimpleName)$")
 
 
+# Compiled once and variable-agnostic: they capture the receiver, which is
+# then compared with the loop variable. Compiling a pattern per loop thrashed
+# the `re` cache on loop-dense files.
+# The canonical N+1: an inner for-each over an association of the outer
+# element, `for (Book book : author.getBooks())`.
+S29_NESTED = re.compile(
+    r"\bfor\s*\([^:;\n]*:\s*(\w+)\s*\.\s*(get[A-Z]\w*)\s*\(\s*\)\s*\)")
+S29_CHAIN = re.compile(
+    r"\b(\w+)\s*\.\s*get[A-Z]\w*\s*\(\s*\)\s*\.\s*(\w+)\s*\((?=\s*(\S?))")
+S29_GETTER = re.compile(r"get[A-Z]\w*")
+
+
 def _s29_navigates(body: str, var: str) -> bool:
-    # The canonical N+1: an inner for-each over an association of the outer
-    # element, `for (Book book : author.getBooks())`.
-    nested = re.compile(
-        rf"\bfor\s*\([^:;\n]*:\s*{re.escape(var)}\s*\.\s*(get[A-Z]\w*)\s*\(\s*\)\s*\)")
-    for m in nested.finditer(body):
-        if not S29_VALUE_GETTERS.fullmatch(m.group(1)):
+    for m in S29_NESTED.finditer(body):
+        if m.group(1) == var and not S29_VALUE_GETTERS.fullmatch(m.group(2)):
             return True
-    chain = re.compile(
-        rf"\b{re.escape(var)}\s*\.\s*get[A-Z]\w*\s*\(\s*\)\s*\.\s*(\w+)\s*\(\s*(\S?)")
-    for m in chain.finditer(body):
-        op, first_arg = m.group(1), m.group(2)
+    for m in S29_CHAIN.finditer(body):
+        if m.group(1) != var:
+            continue
+        op, first_arg = m.group(2), m.group(3)
         if op in S29_COLLECTION_OPS:
             return True
         if op == "get" and first_arg and first_arg != ")":
             return True  # `getLineItems().get(0)`, not `Optional.get()`
-        if re.fullmatch(r"get[A-Z]\w*", op) and not S29_VALUE_GETTERS.fullmatch(op):
+        if S29_GETTER.fullmatch(op) and not S29_VALUE_GETTERS.fullmatch(op):
             return True
     return False
 

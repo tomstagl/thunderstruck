@@ -341,7 +341,7 @@ came from a calibration hit, so none is counted in the table above.
 - `S08-java-repository-no-pageable` iexec-core `src/main/java/com/iexec/core/task/TaskRepository.java:27` — TP: `findByCurrentStatus(TaskStatus)` and `findChainTaskIdsByFinalDeadlineBefore(Date)` return every task in a status, or every task past a deadline. Terminal statuses accumulate for the life of the deployment.
 - `S08-java-repository-no-pageable` iexec-core `src/main/java/com/iexec/core/worker/WorkerRepository.java:25` — FP-accepted: the only collection finder is `findByWalletAddressIn(Collection<String>)`, which looks up a unique key, so the caller's list bounds the result. Regex cannot tell a unique column from a non-unique one, and `…In(Collection)` on a status column really is unbounded.
 
-- `S29-java-n-plus-one` spring-data-examples `jpa/graalvm-native/src/main/java/com/example/data/jpa/CLR.java:81` — TP: `listAllAuthors()` loads `authorRepository.findAll()` and then iterates `author.getBooks()` for each author. `Author.books` is a `@OneToMany` with the default LAZY fetch, and neither `AuthorRepository` nor `CLR` has an entity graph or fetch join, so inside the `@Transactional` `run()` it issues one select for the authors and one more for each author's books.
+- `S29-java-n-plus-one` spring-data-examples `jpa/graalvm-native/src/main/java/com/example/data/jpa/CLR.java:81` — TP: `listAllAuthors()` loads `authorRepository.findAll()` and then iterates `author.getBooks()` for each author. `Author.books` is a `@OneToMany` with the default LAZY fetch, and neither `AuthorRepository` nor `CLR` has an entity graph or fetch join. That is the N+1 shape: whenever this loop runs in a fresh persistence context, it costs one select for the authors and one more for each author's books. (Whether the demo's own run issues those selects depends on what its earlier steps left in the persistence context. The verdict is about the code shape, not about a measured run.)
 - `S29-java-n-plus-one` spring-data-examples `jdbc/graalvm-native/src/main/java/example/springdata/jdbc/graalvmnative/CLR.java:81` — FP-accepted: the same code on Spring Data JDBC. A JDBC aggregate loads its `books` with the author inside `findAll()`, so the loop issues no query. The file imports no store package (the dependency is only in the module's `pom.xml`), so file-local regex cannot tell it from the JPA twin above.
 
 ### Fixed during calibration
@@ -360,7 +360,108 @@ came from a calibration hit, so none is counted in the table above.
 ### Known limitations (noted, not fixed)
 
 - `S29-java-n-plus-one` misses stream and lambda forms (`orders.forEach(o -> o.getItems().size())`, `.map(o -> o.getCustomer().getName())`) and indexed loops.
-- `S29-java-n-plus-one` is file-scoped. An `@EntityGraph` or `JOIN FETCH` on a repository interface in another file does not suppress it, and that is the usual layout. Conversely, one hint anywhere in the file silences every loop in it.
+- `S29-java-n-plus-one` is file-scoped. An `@EntityGraph` or `JOIN FETCH` on a repository interface in another file does not suppress it, and that is the usual layout. Nor does `FetchType.EAGER` declared on the association in the entity's own file: a loop in a service over an eagerly fetched association still fires. Conversely, one hint anywhere in the file silences every loop in it.
+- `S29-java-n-plus-one` misses Allman-style loops, where the `{` sits on the line after `for (…)`. The body is then read as the header line and the brace line alone.
+- `S29-java-n-plus-one` trades recall for precision in its value filters, and each of them can suppress a real association: the element-type prefixes `Local\w*`, `Zoned\w*` and `Offset\w*` (meant for `java.time`, but they also match entities named `LocalBranch` or `OffsetAgreement`), the value getters `getDay\w*`, `getMonth\w*` and `getTime` (the prefixes also match association getters such as `getDaySchedules()` or `getMonthlyInvoices()`), and any `Dto` substring anywhere in the loop's source expression.
 - `S29-java-n-plus-one` cannot tell an `@Embedded` value, an enum (`getStatus().getLabel()`) or a DTO without a conventional suffix from a lazy association. It also skips a real entity that happens to be named `…Event` or `…Request`. A Spring Data JDBC or MongoDB file that also imports JPA is treated as JPA. A JDBC or Mongo file that imports no store package at all is also treated as JPA (1 FP-accepted, `jdbc/graalvm-native/…/CLR.java:81`).
+- `S08-java-repository-no-pageable`'s `require` matches a collection return type only at the start of a line. It misses finders declared with a modifier (`public List<…>`, `default List<…>`) and a one-line `@Query("…") List<…> find…(…)`.
 - `S08-java-repository-no-pageable` is file-scoped. One `Pageable`, `Limit`, `Top`/`First`-N or `LIMIT` anywhere in the repository silences its other, unbounded finders. It only sees finders declared in the interface, so an inherited `findAll()` is not reported. It misses return types written fully qualified (`java.util.List<…>`) or with nested generics (`List<Map<String, Object>>`).
 - `S08-java-repository-no-pageable` cannot see selectivity. Lookup tables (`PetType`), cast lists and `…In(Collection)` on a unique key fire (4 of this batch's 5 FP-accepted). It cannot see store paging either: a `Stream<>` finder fires unless the file sets a fetch size, even on stores whose driver pages streams (Cassandra: 1 FP-accepted).
+
+## Batch 3 — Messaging (Task 9): S07, S08 (Kafka), S19
+
+The sweep ran `--patterns S07,S08,S19`. S07 gains two Java detectors,
+`S07-java-uncheckpointed-loop` (the shared `s07_checkpoint` module) and
+`S07-java-kafka-no-manual-commit`. S08 gains `S08-java-kafka-no-max-poll-records`;
+only that S08 detector is recorded here, because `S08-java-repository-no-pageable`
+was calibrated in Batch 2. S19 gains `S19-java-empty-catch` and
+`S19-java-catch-only-comment`. The four repositories listed in the brief come
+first. The nine clones from Batches 1 and 2 were swept as well, because the
+brief's four gave S19 and the S07 loop detector little code to work on. The
+`jpa/deferred` exclusion from Batch 2 applies to spring-data-examples, but none
+of this batch's detectors hit there.
+
+| Repo | Commit | Java files swept |
+|---|---|---|
+| spring-projects/spring-kafka | `fff33914d4e450a33e17195e11a79937c3505605` | 387 |
+| confluentinc/kafka-streams-examples | `3c40c0e27dd988d8b2d72951802d8fd9c9940a64` | 58 |
+| apache/activemq-artemis-examples | `37a1052bad9928f04f983fb6619088d43855f4a2` | 194 |
+| rabbitmq/rabbitmq-tutorials | `586f18f75693d7fffe16ff3d29775f4176ba4ecc` | 90 |
+| jhy/jsoup | `49a15317317970a7ea3f0a5ded303ef319860f4a` | 98 |
+| brettwooldridge/HikariCP | `a4d93f4f85517f90e632b795486d7102e933d7ff` | 49 |
+| apache/commons-pool | `c4aba65cd8445685f89422b18219ea9853e4306d` | 57 |
+| iExecBlockchainComputing/iexec-core | `a09dbba123f09ae352410c87bcb3788610536809` | 129 |
+| spring-projects/spring-petclinic | `818c4136ea971c21674525f9053de0d9c7ad8cfe` | 30 |
+| spring-petclinic/spring-petclinic-microservices | `295fa8d5ee10f7b6daddf83a2c65f9051a87564b` | 53 |
+| spring-projects/spring-data-examples | `7747029e6157cb780862826b6ae87c88d7a4df3c` | 6504 (6001 in `jpa/deferred`; no hits there) |
+| jhipster/jhipster-sample-app | `6b000b5d23a36c45e01472471b84a44fa2464044` | 81 |
+| spring-petclinic/spring-petclinic-reactive | `68534cf88a9d022467b9590b953ea4fc7f78bd6b` | 39 |
+
+| Detector | Hits | TP | FP-fixed | FP-accepted | Deferred | Final |
+|---|---|---|---|---|---|---|
+| S07-java-uncheckpointed-loop | 38 | 0 | 38 | 0 | | 0 |
+| S07-java-kafka-no-manual-commit | 11 | 0 | 11 | 0 | | 0 |
+| S08-java-kafka-no-max-poll-records | 11 | 0 | 11 | 0 | | 0 |
+| S19-java-empty-catch | 4 | 2 | 2 | 0 | | 2 |
+| S19-java-catch-only-comment | 10 | 2 | 8 | 0 | | 2 |
+
+**Hits** here is the first sweep, made with the brief's detectors unchanged.
+No detector had more than 25 hits in one repository; the most was
+`S07-java-uncheckpointed-loop` with 18 in jsoup. The brief's four repositories
+account for 15 of the loop detector's hits, all 11 of each Kafka detector's,
+and 9 of S19's. No true positive for S07 or for the S08 Kafka detector exists
+in any of the 13 repositories. Every Kafka consumer in them is either a
+synchronous print loop in a demo driver or a framework container that commits
+through its own acknowledgment machinery. Those two detectors are proven only
+by their samples and the recall probes listed under **Silences checked**.
+
+### Tightened before calibration
+
+The detectors were run against common shapes of correct Java at the same time
+as the first sweep. The shapes below fired under the brief's detectors and
+had no instance in the corpus. Each became a required-silent sample.
+
+- `S07-java-kafka-no-manual-commit` and `S08-java-kafka-no-max-poll-records`:
+  - `require` accepts only a one-argument `poll(…)`: Kafka's `poll(Duration)` or `poll(long)`. A `BlockingQueue`'s `poll()` or `poll(timeout, unit)` in a `@Configuration` class that only builds a `KafkaConsumer` bean no longer satisfies it → `S07/java/negative_factory_only.java`.
+  - The anchor skips the `import` line, so a hit lands on the field, the parameter or the `new KafkaConsumer<>(…)`, which is where the consumer is used.
+- `S07-java-kafka-no-manual-commit`: offsets kept in the application's own store (`consumer.seek(partition, stored)`) count as a commit → `S07/java/negative_external_offsets.java`. A commit made in a helper method in the same file was already silent, and so was a Spring `@KafkaListener` that calls `Acknowledgment.acknowledge()` (no `KafkaConsumer` anchor) → `negative_commit_helper.java`, `negative_spring_listener.java`.
+- `S07-java-uncheckpointed-loop`: `s07_checkpoint` now takes Java variants of its three regexes (`PAGING_JAVA`, `PAGE_ADVANCE_JAVA`, `PERSIST_JAVA`, chosen by `_lang_key`). The shared TS/Python regexes are unchanged (AC-16). A setter that records the position on a progress object (`state.setLastOffset(offset)`, and likewise `setResume…`, `setCheckpoint…`, `setCommitted…` and `setSaved…`) counts as persisting it. A setter that builds the next request (`request.setPageToken(t)`) does not → `S07/java/negative_setter_checkpoint.java`.
+- `S19-java-empty-catch` and `S19-java-catch-only-comment`: a catch whose body is one statement on the next line and then `}` was already silent, because `window: 1` is kept from the brief. So were a one-line rethrow inside a lambda and a try-with-resources with a handled catch → `S19/java/negative_one_statement_body.java`. The parameter list is bounded to 200 characters. A pathological line of 20 000 unclosed `catch (` took 76 s with an unbounded `[^)]*` and now takes 0.3 s.
+
+### Hits
+
+- `S19-java-catch-only-comment` activemq-artemis-examples `examples/features/standard/management-notifications/src/main/java/org/apache/activemq/artemis/jms/example/ManagementNotificationExample.java:72` — TP: a `JMSException` thrown while the notification listener reads the message properties is swallowed. The listener prints half a notification and nothing says why.
+- `S19-java-catch-only-comment` activemq-artemis-examples `examples/features/standard/management-notifications/src/main/java/org/apache/activemq/artemis/jms/example/ManagementNotificationExample.java:90` — TP: the example provokes a security failure with bad credentials and swallows every `JMSException`. A broker that is down or refusing connections is swallowed exactly the same way, so the run cannot tell the failure it wanted from one it did not.
+- `S19-java-empty-catch` spring-data-examples `couchbase/transactions/src/main/java/com/example/demo/CmdRunner.java:42` — TP: `catch (Exception e) {}` around `template.removeById(…).one("1")`. The expected failure is document-not-found, but a timeout or a lost connection on this delete is swallowed too, and the leftover document then collides with the `save` that follows.
+- `S19-java-empty-catch` spring-data-examples `couchbase/transactions/src/main/java/com/example/demo/CmdRunner.java:45` — TP: the same catch-all around the second delete.
+
+### Fixed during calibration
+
+- `S07-java-uncheckpointed-loop`, 18 hits on an `Iterator.hasNext()` walk: spring-kafka `KafkaMessageListenerContainer.java:2898`, `:2953`, `:2981`; kafka-streams-examples `WordCountInteractiveQueriesRestService.java:175`, `:241`, `PriorityQueueSerializer.java:50`; jsoup `StringUtil.java:51`, `Attributes.java:728`, `:738`, `Node.java:205`, `Safelist.java:355`, `HasEvaluator.java:152`, `Nodes.java:305`, `:324`, `StreamParser.java:359`; commons-pool `EvictionTimer.java:82`, `GenericKeyedObjectPool.java:988`, `GenericObjectPool.java:696` — FP-fixed. The shared `PAGING`/`PAGE_ADVANCE` treat any `hasNext` as a more-pages test. In Java it is the in-memory iterator protocol. A more-pages test now counts only on a page or slice receiver (`page.hasNext()`, `slice.hasNext()`, `page.nextPageable()`) → `S07/java/negative_iterator_loops.java`
+- `S07-java-uncheckpointed-loop`, 6 hits on `Enumeration.hasMoreElements()`: spring-kafka `DefaultKafkaConsumerFactory.java:419`; activemq-artemis-examples `QueueBrowserExample.java:73`, `LastValueQueueExample.java:72`, `ManagementNotificationExample.java:68`; HikariCP `HikariJNDIFactory.java:44`, `DriverDataSource.java:66` — FP-fixed. `has_?more` matched `hasMoreElements`/`hasMoreTokens`, and it no longer does → `S07/java/negative_iterator_loops.java`
+- `S07-java-uncheckpointed-loop` jsoup `src/main/java/org/jsoup/internal/ControllableInputStream.java:245` — FP-fixed: `truncated = buff.hasMore()` asks a read buffer whether bytes remain. `hasMore` now counts as a flag (`while (hasMore)`) or as a call on a page, response, result, batch, chunk, slice or list receiver, and not on a buffer → `S07/java/negative_buffer_has_more.java` (this hit survived the first round of Java variants and was fixed in a second)
+- `S07-java-uncheckpointed-loop`, 11 hits on an `offset` that is not a page position: spring-kafka `ShareKafkaMessageListenerContainer.java:509` (`long offset = e.offset()`), `:732` (`offset=%d` in a log format); kafka-streams-examples `ConsumeCustomers.java:66`, `ConsumeOrders.java:66`, `ConsumePayments.java:65` (`"offset = %d"` in a `printf`); jsoup `Element.java:1849`, `:1857`, `Entities.java:204`, `CharacterReader.java:323`, `:581`, `:600` (character offsets in a parser) — FP-fixed. The shared `PAGE_ADVANCE` counts any `offset =`/`offset++`. An offset now advances a page only as `offset += <limit|pageSize|batchSize|fetchSize>`, and an assignment counts only at the start of a statement, so `String page = it.next()` and `long offset = …` are declarations, not steps → `S07/java/negative_record_offset.java`, `negative_iterator_loops.java` (byte-offset parser)
+- `S07-java-uncheckpointed-loop` jsoup `src/main/java/org/jsoup/parser/HtmlTreeBuilder.java:1183`, `:1192` — FP-fixed: a `boolean skip` flag in the adoption-agency algorithm. `skip =` no longer counts as an advance in Java → `S07/java/negative_record_offset.java` (`reconstruct`)
+- `S07-java-kafka-no-manual-commit` and `S08-java-kafka-no-max-poll-records`, 10 hits each in kafka-streams-examples: `GlobalKTablesAndStoresExampleDriver.java:29`, `JsonToAvroExampleDriver.java:32`, `PageViewRegionExampleDriver.java:26`, `SessionWindowsExampleDriver.java:23`, `SumLambdaExampleDriver.java:21`, `TopArticlesExampleDriver.java:25`, `WikipediaFeedAvroExampleDriver.java:23`, `microservices/util/ConsumeCustomers.java:12`, `ConsumeOrders.java:12`, `ConsumePayments.java:12`. All 20 landed on the `import` line. FP-fixed. Each is a synchronous loop that polls and prints every record, which is the KafkaConsumer javadoc's own auto-commit example:
+  - S07: `poll()` auto-commits only the offsets the *previous* poll returned, and a synchronous loop has already processed those. That is at-least-once delivery, the same guarantee a manual `commitSync()` after processing gives. Auto-commit acks an unprocessed record only when records are handed to another thread. When auto-commit is off and nothing commits, every restart re-reads from the reset point. `require` now asks for one of those two shapes in the file: an executor or `submit`/`runAsync`/`supplyAsync`/`new Thread`/`parallelStream`, or `enable.auto.commit` set to `false`. `positive.java`'s `run()` now hands the batch to an executor, which is a deviation from the brief's sample (see the Task 9 report) → `S07/java/negative_sync_auto_commit.java`
+  - S08: the default `max.poll.records` (500) is already a bound. A batch overruns `max.poll.interval.ms` only when each record's work is slow, and printing is not. `require` now asks for blocking per-record work in the file: an HTTP client (`RestTemplate`, `RestClient`, `WebClient`, `HttpClient`, `OkHttpClient`, `postForObject`/`postForEntity`/`exchange`), a JDBC or repository write (`JdbcTemplate`, `executeUpdate`, `executeBatch`, `batchUpdate`, `save`, `saveAll`), `Thread.sleep`, a blocking `send(…).get()` or `.block()`. A raised `max.poll.interval.ms` or a `…MaxPollRecords(n)` setter also suppresses it. The brief's appended `OrderEvents` in `S08/java/positive.java` and `negative.java` now posts each record over HTTP → `S08/java/negative_kafka_print_loop.java`, `negative_max_poll_interval.java`, `negative_max_poll_records_string.java`
+- `S07-java-kafka-no-manual-commit` and `S08-java-kafka-no-max-poll-records` kafka-streams-examples `src/main/java/io/confluent/examples/streams/microservices/OrderDetailsService.java:53` — FP-fixed:
+  - S07: with exactly-once enabled, the offsets are committed inside the producer transaction (`producer.sendOffsetsToTransaction(…)`), so there is no `commitSync()`. `sendOffsetsToTransaction(` now counts as a commit → `S07/java/negative_transactional_offsets.java`
+  - S08: the per-record work is an asynchronous `producer.send(…)`, which is not blocking, so the new `require` excludes it → `S08/java/negative_kafka_print_loop.java`
+- `S19-java-empty-catch` and `S19-java-catch-only-comment`, 10 hits on a parameter named `ignored`/`ignored0`: activemq-artemis-examples `ha-with-dual-mirror/…/Consumer.java:57`, `Producer.java:64`, `ha-with-mesh-mirror/…/Consumer.java:57`, `Producer.java:64` (a `Throwable` around the `Thread.sleep` of a reconnect loop); kafka-streams-examples `KafkaMusicExample.java:275` (an optional numeric system property), `MicroserviceUtils.java:210` (`service.stop()` in a shutdown hook); spring-kafka `EndpointHandlerMethod.java:92` (falls through to a default); jsoup `CharacterReader.java:68` (`reader.close()`), `Cleaner.java:224` (a malformed link URL that only decides `rel=nofollow`), `HttpClientExecutor.java:173` (closing a response body). 2 of these are `S19-java-empty-catch` hits and 8 are `S19-java-catch-only-comment` hits. FP-fixed. A catch parameter named `ignored`, `ignore`, `expected` or `unused` (optionally followed by digits), or the unnamed `_`, is the Java convention for a deliberate swallow. IntelliJ's empty-catch inspection honours it, and so does Error Prone's. Every one of these is a close, a best-effort parse, a shutdown or a fall-back where nothing is lost → `S19/java/negative_ignored_param.java`
+
+### Silences checked
+
+- rabbitmq-tutorials produced no hit from any detector of this batch, before or after the fixes. It has no Kafka consumer, and its RabbitMQ consumers (`basicConsume` with `autoAck` or an explicit `basicAck`) use an API none of these detectors reads.
+- spring-kafka's own consumer loop (`KafkaMessageListenerContainer`) uses the `Consumer` interface and commits with `commitSync`/`commitAsync`. Its `ShareKafkaMessageListenerContainer` acknowledges each record. Neither produces a hit.
+- No Spring Boot consumer configured in `application.yml`/`.properties` appears as a Kafka hit. The expected `FP-accepted: config outside the file` class therefore has **0** instances in this batch. The corpus's Spring consumers are `@KafkaListener` methods, which have no `KafkaConsumer` anchor.
+- Recall probes, all firing under the final detectors: a Spring Data `do { page = repo.findAll(pageable); … pageable = page.nextPageable(); } while (page.hasNext());` reindex with no saved position (`S07-java-uncheckpointed-loop`); a poll loop with `ENABLE_AUTO_COMMIT_CONFIG, false` and no commit (`S07-java-kafka-no-manual-commit`); a poll loop that `Thread.sleep`s per record (`S08-java-kafka-no-max-poll-records`); `catch (InterruptedException e) {}` and a two-line empty multi-catch (`S19`).
+
+### Known limitations (noted, not fixed)
+
+- `S19-java-catch-only-comment` keeps the brief's `window: 1`, so it sees only the line after `catch (…) {`. A catch whose body is a comment on its own line, followed by `}` on the next line, is **missed**: the blanked comment line is not `}`. A one-line `catch (E e) { /* reason */ }` still fires, because blanking the comment leaves `{ }`, and `S19/java/positive.java` pins that case. This is deliberate. A justification written as a comment is not something the detector can read, and a parameter named `ignored` is the documented way to mark a swallow as intended.
+- An `ignored`-named parameter silences S19 even where the swallow is itself a defect. The artemis reconnect loops catch `Throwable ignored0` around `Thread.sleep`, which also discards an `InterruptedException` and the thread's interrupt status.
+- `S07-java-kafka-no-manual-commit` does not see the two other ways auto-commit loses a synchronous loop's records. The first is a processing exception caught inside the loop, after which the next `poll()` commits past the failed record. The second is an exception that escapes to `close()` (for example in try-with-resources), which commits the position of the whole unfinished batch. Both need control-flow reasoning.
+- Both Kafka detectors are file-scoped. Consumer properties built in another class (or in `application.yml`) are invisible. So is a commit made by a collaborator, or per-record work done in a handler class. `S08-java-kafka-no-max-poll-records` knows only the blocking-work vocabulary listed above, so a slow call through any other client is missed.
+- Neither Kafka detector reads the Spring Kafka listener container, Reactor Kafka or Kafka Streams APIs. Their commit and batching settings live in container properties.
+- `S07-java-uncheckpointed-loop` has no real-world true positive in this batch. It recognises a Java paging loop only through a `page`/`cursor`-named step, a `hasMore` flag, a page or slice receiver's `hasNext()`/`nextPageable()`, a `next…Page/Cursor/Token` name, or an offset stepped by a limit or page size. A paging loop written with other names (`from += 100`, `while (resp.getNextLink() != null)`) is missed.

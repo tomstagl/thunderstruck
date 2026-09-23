@@ -409,6 +409,30 @@ patterns:
           absent: '(?i)\b(upsert|ON\s+CONFLICT|ON\s+DUPLICATE\s+KEY|MERGE\s+INTO|idempotenc)'
           confidence: medium
           note: "inserts with no upsert / ON CONFLICT — a replayed job duplicates rows"
+      java:
+        - id: S07-java-uncheckpointed-loop
+          kind: module
+          handler: s07_checkpoint
+          confidence: low
+          note: "paged/batched loop with no persisted cursor — a crash restarts from the beginning"
+        - id: S07-java-kafka-no-manual-commit
+          kind: file_absent
+          # Not the import line: the hit lands where the consumer is used.
+          anchor: '^(?!\s*import\s).*\bKafkaConsumer\b'
+          # A one-argument poll (Kafka's poll(Duration)/poll(long), not a
+          # BlockingQueue's poll() or poll(timeout, unit)), in a file where
+          # auto-commit can ack a record whose processing has not finished:
+          # the records are handed to another thread, or auto-commit is off
+          # and nothing commits, so every restart re-reads from the reset
+          # point. A synchronous loop under auto-commit is at-least-once —
+          # poll() commits only what the previous poll returned — and is the
+          # KafkaConsumer javadoc's own example, so it is left alone.
+          require: '\A(?=[\s\S]*?\.\s*poll\s*\(\s*[^\s,)][^,)]*\))[\s\S]*?(?:(?i:executor)\w*\s*\.\s*(?:submit|execute)\s*\(|\.\s*submit\s*\(|\b(?:runAsync|supplyAsync)\s*\(|\bnew\s+Thread\s*\(|\.\s*parallelStream\s*\(|(?i:enable[._]?auto[._]?commit)\w*"?\s*[,(=:]\s*(?:"?false"?|Boolean\s*\.\s*FALSE))'
+          # Manual commits, a listener acknowledgment, offsets committed in a
+          # producer transaction, or offsets kept in an external store (seek).
+          absent: '\b(commitSync|commitAsync|acknowledge|sendOffsetsToTransaction)\s*\(|\.\s*seek\s*\('
+          confidence: low
+          note: "KafkaConsumer.poll() loop with no manual offset commit — auto-commit can ack a record before it is processed"
 
   - id: S08
     name: Bounded result sets and pagination
@@ -479,6 +503,20 @@ patterns:
           absent: '\bPageable\b|\b(Page|Slice|Window)\s*<|\b(find|read|get|query|stream)\w*?(Top|First)\d+|\bLimit\s+\w+\s*[,)]|(?i:\bLIMIT\s+(\d|:|\?)|\bFETCH\s+FIRST\b)|FETCH_SIZE|[Ff]etchSize'
           confidence: low
           note: "Spring Data repository with collection finders and no Pageable/Slice/Top-N form — every call returns the whole match set"
+        - id: S08-java-kafka-no-max-poll-records
+          kind: file_absent
+          anchor: '^(?!\s*import\s).*\bKafkaConsumer\b'
+          # A one-argument (Kafka) poll in a file whose loop does blocking
+          # per-record work: an HTTP call, a JDBC/repository write, a sleep,
+          # or a blocking wait on a producer send. The default 500 records is
+          # already a bound; it overruns max.poll.interval.ms only when each
+          # record is slow, which a print or an in-memory update never is.
+          require: '\A(?=[\s\S]*?\.\s*poll\s*\(\s*[^\s,)][^,)]*\))[\s\S]*?(?:\b(?:RestTemplate|RestClient|WebClient|HttpClient|OkHttpClient|JdbcTemplate)\b|\.\s*(?:executeUpdate|executeBatch|batchUpdate|saveAll|save|postForObject|postForEntity|exchange)\s*\(|\bThread\s*\.\s*sleep\s*\(|\.\s*send\s*\([^;]*\)\s*\.\s*get\s*\(|\.\s*block\s*\(\s*\))'
+          # max.poll.records set in the file (constant, property string or
+          # setter), or max.poll.interval.ms raised to fit the work.
+          absent: 'max\.poll\.(records|interval)|MAX_POLL_(RECORDS|INTERVAL)|[Mm]axPoll(Records|Interval)\w*\s*\(\s*[^\s)]'
+          confidence: low
+          note: "Kafka poll loop with no max.poll.records — a slow batch overruns max.poll.interval.ms and triggers a rebalance storm"
 
   - id: S09
     name: Single-flight / request coalescing plus caching
@@ -851,6 +889,25 @@ patterns:
           pattern: 'except\s*:\s*$'
           confidence: medium
           note: "bare except catches SystemExit and KeyboardInterrupt too"
+      java:
+        - id: S19-java-empty-catch
+          kind: regex
+          # A parameter named `ignored`/`ignore`/`expected`/`unused` (or the
+          # unnamed `_`) is the Java convention for a deliberate swallow, the
+          # one IntelliJ's and Error Prone's empty-catch checks honour. The
+          # parameter list is bounded ({0,200}) so a pathological line of
+          # unclosed `catch (` stays linear.
+          pattern: 'catch\s*\((?![^)]{0,200}[\s|](?i:ignored?|expected|unused)\d*\s*\)|[^)]{0,200}\s_\s*\))[^)]{0,200}\)\s*\{\s*\}'
+          confidence: medium
+          note: "empty catch block — the failure leaves no trace"
+        - id: S19-java-catch-only-comment
+          kind: regex
+          pattern: 'catch\s*\((?![^)]{0,200}[\s|](?i:ignored?|expected|unused)\d*\s*\)|[^)]{0,200}\s_\s*\))[^)]{0,200}\)\s*\{\s*$'
+          present_within: '^\s*\}'
+          window: 1
+          window_offset: 1
+          confidence: medium
+          note: "catch block with no handling beyond a comment"
 
   # ------------------------------------------- Tier A (JVM-specific) --
   - id: S27
