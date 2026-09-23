@@ -142,6 +142,7 @@ def test_service_context_is_wired_into_the_prompts():
     config = (ROOT / "skills" / "thunderstruck-context-config" / "SKILL.md").read_text()
     assert config.startswith("---\nname: thunderstruck-context-config\n")
     assert "--approve" in config and "enabled = false" in config
+    assert "context.py\" --show" in config and "--expect" in config
     scan = (ROOT / "skills" / "thunderstruck-scan" / "SKILL.md").read_text()
     assert "context.py" in scan and "thunderstruck-context-config" in scan
     agent = (ROOT / "agents" / "thunderstruck-investigator.md").read_text()

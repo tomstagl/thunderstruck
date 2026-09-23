@@ -15,7 +15,8 @@ and a warning in context.json.
 
     uv run scripts/context.py                  # fetch, or reuse the cache
     uv run scripts/context.py --refresh        # fetch even if the cache is fresh
-    uv run scripts/context.py --approve        # trust the configured command here
+    uv run scripts/context.py --show           # print the command and its hash
+    uv run scripts/context.py --approve --expect <hash>  # trust what --show printed
     uv run scripts/context.py --detect-entity  # print the ref from catalog-info.yaml
 """
 
@@ -134,10 +135,34 @@ def load_config(profile: dict) -> tuple[dict | None, list[str]]:
     return cfg, errors
 
 
-def config_hash(cfg: dict) -> str:
-    """Identity of what will run. The cache lifetime is not part of it."""
-    return c.sha256_text(json.dumps(
-        {"entity_ref": cfg["entity_ref"], "sources": cfg["sources"]}, sort_keys=True))
+def _local_files(cfg: dict, repo: Path) -> dict[str, str]:
+    """Content hashes of repo-local files the command lists, keyed as written.
+
+    A committed wrapper script is part of what will run, so editing it must
+    need approval again just as editing argv does."""
+    root = Path(repo).resolve()
+    files: dict[str, str] = {}
+    for src in cfg["sources"]:
+        for part in [*src["argv"], *src["preflight"]]:
+            try:
+                path = (root / part).resolve()
+            except (OSError, ValueError):
+                continue
+            if path.is_relative_to(root) and path.is_file():
+                digest = c.sha256_file(path)
+                if digest:
+                    files[part] = digest
+    return files
+
+
+def config_hash(cfg: dict, repo: Path) -> str:
+    """Identity of what will run, including any repo-local scripts it names.
+    The cache lifetime is not part of it."""
+    identity: dict[str, Any] = {"entity_ref": cfg["entity_ref"], "sources": cfg["sources"]}
+    files = _local_files(cfg, repo)
+    if files:
+        identity["files"] = files
+    return c.sha256_text(json.dumps(identity, sort_keys=True))
 
 
 # --------------------------------------------------------------------------
@@ -383,7 +408,7 @@ def resolve(repo: Path, profile: dict, previous: Any, *, now: datetime,
                     warnings=[f"service context config: {e}" for e in errors])
     if not cfg["enabled"]:
         return _doc("disabled", cfg)
-    chash = config_hash(cfg)
+    chash = config_hash(cfg, repo)
     if not is_trusted(repo, chash):
         return _doc("untrusted", cfg, chash, [UNTRUSTED_WARNING])
 
@@ -429,7 +454,8 @@ def detect(repo: Path) -> str | None:
     return None
 
 
-def approve_config(repo: Path) -> tuple[dict, str]:
+def current_definition(repo: Path) -> tuple[dict, str]:
+    """The configured source and its definition hash, with no side effects."""
     cfg, errors = load_config(c.load_profile(repo))
     if cfg is None or errors:
         raise c.ThunderstruckError(
@@ -437,9 +463,30 @@ def approve_config(repo: Path) -> tuple[dict, str]:
             + "; ".join(errors or ["it is missing"]))
     if not cfg["enabled"]:
         raise c.ThunderstruckError("[context] has enabled = false; there is nothing to approve")
-    chash = config_hash(cfg)
+    return cfg, config_hash(cfg, repo)
+
+
+def approve_config(repo: Path, expected: str | None) -> tuple[dict, str]:
+    """Trust the definition only if it is the one the user was shown."""
+    cfg, chash = current_definition(repo)
+    if expected != chash:
+        raise c.ThunderstruckError(
+            "the definition to approve does not match the one shown; run "
+            "context.py --show, review it, then --approve --expect <definition hash>"
+            if expected else
+            "--approve needs --expect <definition hash> from context.py --show")
     approve(repo, chash)
     return cfg, chash
+
+
+def _print_definition(cfg: dict, repo: Path, chash: str) -> None:
+    src = cfg["sources"][0]
+    print(f"  entity: {cfg['entity_ref']}")
+    print(f"  argv: {src['argv']}")
+    print(f"  preflight: {src['preflight'] or 'none'}")
+    for part, digest in sorted(_local_files(cfg, repo).items()):
+        print(f"  repo-local file {part}: {digest}")
+    print(f"  definition {chash}")
 
 
 # --------------------------------------------------------------------------
@@ -453,8 +500,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--repo", default=None)
     ap.add_argument("--refresh", action="store_true",
                     help="fetch even when the cached context is fresh")
+    ap.add_argument("--show", action="store_true",
+                    help="print the configured command and its definition hash; runs nothing")
     ap.add_argument("--approve", action="store_true",
-                    help="trust the configured command on this machine")
+                    help="trust the configured command on this machine (needs --expect)")
+    ap.add_argument("--expect", default=None, metavar="HASH",
+                    help="the definition hash printed by --show")
     ap.add_argument("--detect-entity", action="store_true",
                     help="print the entity ref declared in catalog-info.yaml")
     args = ap.parse_args(argv)
@@ -466,14 +517,16 @@ def main(argv: list[str] | None = None) -> int:
             if ref:
                 print(ref)
             return 0 if ref else 1
+        if args.show:
+            cfg, chash = current_definition(repo)
+            print(f"service context definition for {repo}:")
+            _print_definition(cfg, repo, chash)
+            print(f"  trusted on this machine: {'yes' if is_trusted(repo, chash) else 'no'}")
+            return 0
         if args.approve:
-            cfg, chash = approve_config(repo)
-            src = cfg["sources"][0]
+            cfg, chash = approve_config(repo, args.expect)
             print(f"approved on this machine for {repo}:")
-            print(f"  argv: {src['argv']}")
-            if src["preflight"]:
-                print(f"  preflight: {src['preflight']}")
-            print(f"  definition {chash}")
+            _print_definition(cfg, repo, chash)
             return 0
         doc = run(repo, refresh=args.refresh)
     except c.ThunderstruckError as exc:

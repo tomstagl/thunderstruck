@@ -170,8 +170,12 @@ def test_untrusted_source_never_runs(context_repo, untrusted, monkeypatch, tmp_p
     assert not marker.exists()
 
 
+def _definition_hash(repo):
+    return context.current_definition(repo)[1]
+
+
 def test_approval_unlocks_and_a_changed_command_relocks(context_repo, untrusted):
-    context.approve_config(context_repo)
+    context.approve_config(context_repo, _definition_hash(context_repo))
     assert context.run(context_repo, now=NOW)["status"] == "fresh"
     profile = context_repo / ".thunderstruck.toml"
     profile.write_text(profile.read_text().replace("timeout_s = 10", "timeout_s = 11"))
@@ -298,10 +302,55 @@ def test_cli_detects_the_entity(context_repo):
     assert proc.returncode == 0 and proc.stdout.strip() == "component:default/fixture-app"
 
 
-def test_cli_approve_prints_the_command_and_records_trust(context_repo, tmp_path):
+def _untrusted_env(tmp_path):
     env = {k: v for k, v in os.environ.items() if k != "THUNDERSTRUCK_TRUST_CONTEXT"}
     env["XDG_CONFIG_HOME"] = str(tmp_path / "xdg")
-    proc = _cli(context_repo, "--approve", env=env)
+    return env
+
+
+def _shown_hash(stdout):
+    return next(line.split()[-1] for line in stdout.splitlines()
+                if line.strip().startswith("definition "))
+
+
+def test_cli_show_prints_the_definition_without_side_effects(context_repo, tmp_path):
+    proc = _cli(context_repo, "--show", env=_untrusted_env(tmp_path))
+    assert proc.returncode == 0, proc.stderr
+    assert "argv:" in proc.stdout and "preflight:" in proc.stdout
+    assert _shown_hash(proc.stdout) == _definition_hash(context_repo)
+    assert not (tmp_path / "xdg").exists()
+    assert not (context_repo / ".thunderstruck" / "context.json").exists()
+
+
+def test_cli_approve_records_trust_for_the_shown_hash(context_repo, tmp_path):
+    env = _untrusted_env(tmp_path)
+    shown = _shown_hash(_cli(context_repo, "--show", env=env).stdout)
+    proc = _cli(context_repo, "--approve", "--expect", shown, env=env)
     assert proc.returncode == 0, proc.stderr
     assert "argv:" in proc.stdout
     assert (tmp_path / "xdg" / "thunderstruck" / "trusted-sources.json").is_file()
+    assert "fresh" in _cli(context_repo, env=env).stdout
+
+
+@pytest.mark.parametrize("expect", [[], ["--expect", "sha256:" + "0" * 64]])
+def test_cli_approve_refuses_without_the_shown_hash(context_repo, tmp_path, expect):
+    env = _untrusted_env(tmp_path)
+    proc = _cli(context_repo, "--approve", *expect, env=env)
+    assert proc.returncode == 2
+    assert "--show" in proc.stderr
+    assert not (tmp_path / "xdg" / "thunderstruck" / "trusted-sources.json").exists()
+    assert "untrusted" in _cli(context_repo, env=env).stdout
+
+
+def test_editing_a_repo_local_script_relocks(context_repo, untrusted):
+    wrapper = context_repo / "bin" / "catalog.py"
+    wrapper.parent.mkdir()
+    wrapper.write_text(f"import runpy, sys\nsys.argv[0] = {str(FAKE)!r}\n"
+                       f"runpy.run_path({str(FAKE)!r}, run_name='__main__')\n")
+    profile = context_repo / ".thunderstruck.toml"
+    profile.write_text(profile.read_text().replace(json.dumps(str(FAKE)), '"bin/catalog.py"'))
+    assert '"bin/catalog.py"' in profile.read_text()
+    context.approve_config(context_repo, _definition_hash(context_repo))
+    assert context.run(context_repo, now=NOW)["status"] == "fresh"
+    wrapper.write_text(wrapper.read_text() + "# changed after approval\n")
+    assert context.run(context_repo, now=NOW)["status"] == "untrusted"

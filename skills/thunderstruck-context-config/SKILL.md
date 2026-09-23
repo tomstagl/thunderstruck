@@ -52,16 +52,26 @@ the team shares the mapping; do not commit it yourself.
 
 ## 4. Approve
 
-Show the user the exact `argv` and `preflight` lists and say that they will
-run on this machine whenever a scan needs fresh context. Only after an
-explicit yes:
+Print the definition. This runs nothing and changes nothing:
 
 ```bash
-uv run "$T/context.py" --approve
+uv run "$T/context.py" --show
 ```
 
-Approval is per machine and per definition. Any later change to the command
-needs approval again. Never approve on the user's behalf.
+Show its output to the user verbatim: the `argv` and `preflight` lists, any
+repo-local files they name with their content hashes, and the `definition`
+hash. Say that this command will run on this machine whenever a scan needs
+fresh context. Only after an explicit yes, approve exactly the hash that
+`--show` printed:
+
+```bash
+uv run "$T/context.py" --approve --expect <definition hash from --show>
+```
+
+`--approve` refuses when the hash differs, so an edit made after the user
+looked is never trusted. Approval is per machine and per definition: any
+later change to the command, or to a repo-local script it runs, needs
+approval again. Never approve on the user's behalf.
 
 ## 5. Check
 
