@@ -236,9 +236,12 @@ class Validator:
         errors: list[str] = []
         if not isinstance(doc, dict):
             return ["top level is not a JSON object"]
-        self._pinned = self.bundle_context.get(doc.get("hotspot_id"))
-        if not doc.get("hotspot_id"):
+        hid = doc.get("hotspot_id")
+        self._pinned = self.bundle_context.get(hid) if isinstance(hid, str) else None
+        if not hid:
             errors.append("hotspot_id is missing")
+        elif not isinstance(hid, str):
+            errors.append(f"hotspot_id {hid!r} must be a string")
         findings = doc.get("findings")
         if findings is None:
             errors.append("findings is missing (use [] when there is nothing to report)")

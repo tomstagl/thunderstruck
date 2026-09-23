@@ -171,3 +171,12 @@ def test_catalog_ref_without_context_is_rejected(scanned_copy, plugin_root):
     proc = _validate(scanned_copy, plugin_root, hid, doc)
     assert proc.returncode == 1
     assert "no service context" in proc.stdout
+
+
+def test_malformed_hotspot_id_is_rejected_not_crashed(context_scanned_copy, plugin_root):
+    hid, doc = _catalog_finding(_hotspots(context_scanned_copy), [WEB])
+    doc["hotspot_id"] = ["H01"]
+    proc = _validate(context_scanned_copy, plugin_root, hid, doc)
+    assert proc.returncode == 1
+    assert "Traceback" not in proc.stderr
+    assert "hotspot_id" in proc.stdout
