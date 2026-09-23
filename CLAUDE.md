@@ -51,6 +51,7 @@ python3 tests/fixtures/build_fixture.py /tmp/fixture
 
 ```
 signals.py    deterministic   churn × complexity × (1+weight), coupling, detectors
+context.py    deterministic   runs the approved catalog command → context.json (optional)
 bundle.py     deterministic   one token-budgeted briefing per hotspot
 investigator  ← MODEL →       the only inference in the system
 validate.py   deterministic   resolves every evidence ref

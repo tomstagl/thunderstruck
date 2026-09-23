@@ -4,6 +4,7 @@
 
 ```
 signals.py   →  hotspots.json          deterministic: churn, complexity, detectors, coupling
+context.py   →  context.json           deterministic: runs the approved catalog command, if configured
 bundle.py    →  bundles/*.md           deterministic: one briefing per hotspot
 investigator →  findings/*.json        the only LLM step
 validate.py  →  validation.json        deterministic: schema + evidence resolution
@@ -45,6 +46,8 @@ To force a full re-investigation, delete `.thunderstruck/findings/`.
 | No commits in the window | `signals.py` says so and suggests a wider `--since`. Relay it. |
 | `lizard` missing | The run continues on churn alone and warns. Relay the warning — the ranking is weaker, not wrong. |
 | No supported language changed | Stop. Say which languages are supported. |
+| Service context command fails or times out | The scan continues. With a cached copy younger than 2 × `max_age_days` it reuses that and warns; otherwise it runs without context and warns. Relay the warning. |
+| Service context not approved on this machine | Continue without it and say so. The user approves with `/thunderstruck-context-config`; never approve on their behalf. |
 | An investigator returns prose, not JSON | `save_finding.py` strips a markdown fence automatically. If it still fails, record `--failed`. |
 | Validation fails | Exactly one repair round for that hotspot, then `--failed`. |
 | Everything fails | Still run `report.py`. A report that says "6 hotspots, 0 analysed" is information. |
@@ -61,5 +64,8 @@ Nothing that Claude Code was not already going to see. The scripts run
 locally and write only into `.thunderstruck/`. The bundles contain source and
 commit history from the repository, and those bundles are what the
 investigator subagents read — so repository content reaches the model exactly
-as it would if you had asked Claude to read those files directly. No network
-calls, no telemetry, no external service.
+as it would if you had asked Claude to read those files directly. The scripts
+make no network calls, send no telemetry and talk to no external
+service. The one opt-in exception: when you configure and approve a service
+context command, `context.py` runs it, and that command may call your service
+catalog. thunderstruck passes it nothing but the entity ref.

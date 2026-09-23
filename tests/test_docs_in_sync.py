@@ -128,3 +128,15 @@ def test_manifest_does_not_redeclare_other_autodiscovered_dirs():
             assert field not in manifest, (
                 f"plugin.json declares `{field}` while {default_dir}/ exists; "
                 f"rely on auto-discovery instead")
+
+
+def test_service_context_is_wired_into_the_prompts():
+    config = (ROOT / "skills" / "thunderstruck-context-config" / "SKILL.md").read_text()
+    assert config.startswith("---\nname: thunderstruck-context-config\n")
+    assert "--approve" in config and "enabled = false" in config
+    scan = (ROOT / "skills" / "thunderstruck-scan" / "SKILL.md").read_text()
+    assert "context.py" in scan and "thunderstruck-context-config" in scan
+    agent = (ROOT / "agents" / "thunderstruck-investigator.md").read_text()
+    assert "Service context" in agent and "`catalog`" in agent
+    plugin = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())
+    assert "skills" not in plugin
