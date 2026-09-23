@@ -40,3 +40,41 @@ def test_no_java_detector_claims_high_confidence(catalog):
     high = [det["id"] for _, det in _java_detectors(catalog)
             if det.get("confidence") == "high"]
     assert not high, f"Java detectors at confidence: high before calibration earned it: {high}"
+
+
+# Synthetic inputs that have each exposed super-linear backtracking in a Java
+# detector on this branch. The catch body is sized so the S15 regex that
+# backtracked (~n^4) takes seconds rather than hours, and the test still ends.
+_PATHOLOGICAL = {
+    "long catch body": (
+        "class A {\n  String f() {\n"
+        "    try { return restTemplate.getForObject(u, String.class); }\n"
+        "    catch (Exception e) {\n" + '      log.warn("x", e);\n' * 50
+        + "    }\n    throw new IllegalStateException();\n  }\n}\n"),
+    "many small methods": (
+        "class A {\n" + ("  @Retryable(maxAttempts = 3)\n"
+                         "  public String m(int a) { return x(a); }\n") * 2000 + "}\n"),
+    "many for-loops": (
+        "class A {\n  void f() {\n" + ("    for (int attempt = 0; attempt < n; attempt++) {\n"
+                                      "      restTemplate.getForObject(u, String.class);\n"
+                                      "    }\n") * 500 + "  }\n}\n"),
+    "one long line": (
+        "class A { void f() { " + "for ( catch ( q.poll( x.get( xs.forEach( " * 1000 + "} }\n"),
+    "unclosed poll calls": "class A {\n" + "  q.poll(a\n" * 5000 + "}\n",
+}
+_BUDGET_S = 1.0
+
+
+def test_java_detectors_are_fast_on_pathological_input(catalog):
+    import time
+
+    slow = []
+    for pattern, det in _java_detectors(catalog):
+        solo = {**catalog, "patterns": [{**pattern, "detectors": {"java": [det]}}]}
+        for name, text in _PATHOLOGICAL.items():
+            start = time.perf_counter()
+            run_detectors(solo, "src/A.java", text, "java")
+            took = time.perf_counter() - start
+            if took > _BUDGET_S:
+                slow.append(f"{det['id']} on {name}: {took:.2f}s")
+    assert not slow, f"Java detectors over the {_BUDGET_S}s budget: " + "; ".join(slow)

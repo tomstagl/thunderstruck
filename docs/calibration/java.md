@@ -615,7 +615,8 @@ required-silent sample.
     → `S15/java/negative_client_config.java`
   - **A catch that returns a value.** `catch (RestClientException e) { return
     Collections.emptyList(); }` is a fallback. Such a catch now suppresses the
-    detector if it returns within its first four statements. The catch must be
+    detector if `return` is its first statement or comes after at most three
+    brace-free statements. A `return` after four statements does not count. The catch must be
     of a client, IO or generic exception: `Exception`, `RuntimeException`,
     `Throwable`, or a `…RestClient/WebClient/Http/IO/Rpc/StatusRuntime/Feign/`
     `Timeout/Connect/Socket/ResourceAccess/CallNotPermitted…Exception`.
@@ -625,6 +626,54 @@ required-silent sample.
     null; }` in `VectorStoreController` then hid a TP (see Hits).
     `S15/java/positive.java` now appends a class with exactly that shape, so the
     TP cannot be lost again.
+
+### Fix round 1 (review findings)
+
+- **`S15-java-no-fallback`: catastrophic backtracking.** The catch-return
+  fragment `\)\s*\{\s*(?:[^{}]*?;\s*){0,3}?return\b` could split one
+  statement run in many ways. A catch body of 50 brace-free statements took
+  about 7 s, and one of 60 took 65 s. The fragment is now
+  `\)\s*\{(?:[^{};]*;){0,3}\s*return\b`, where each statement is consumed
+  exactly one way, so a 2000-statement body takes 0.004 s. Its meaning is
+  unchanged: `return` first, or after up to three statements, suppresses the
+  detector. A new branch-wide guard, `test_java_detectors_are_fast_on_pathological_input`
+  in `tests/detectors/test_java_detectors.py`, runs every Java detector on
+  its own against five synthetic inputs, with a 1.0 s budget for each:
+  - a 50-statement catch;
+  - 2000 annotated methods;
+  - 500 retry loops;
+  - a 40 000-character line of `for (`/`catch (`/`poll(`/`.get(`/`.forEach(`;
+  - 5000 unclosed `q.poll(a` lines.
+
+  Before the fix it failed on S15 alone ("S15-java-no-fallback on long catch
+  body: 6.95s"), and it passes after.
+- **`S15-java-no-fallback`: Spring fallbacks.** Spring Retry's `@Recover`
+  method is a fallback, and so is Spring Cloud CircuitBreaker's
+  `CircuitBreakerFactory…create(…).run(supplier, fallback)`, whose fallback
+  lambda need not use the word. Both now suppress the detector.
+  → `S15/java/negative_recover.java`, `negative_circuit_breaker_factory.java`
+- **`S10-java-nested-retry`: parameter annotations.** `METHOD_JAVA` rejected
+  `=` anywhere after the opening parenthesis. So
+  `page(@RequestParam(defaultValue = "1") String page) {` was not a
+  declaration, and its retry loop merged into the previous method's
+  `@Retryable`. The parameter list now allows one level of nested
+  parentheses containing `=`, and stays linear.
+  → `S10/java/negative_param_annotation_merge.java`
+- **`S10-java-nested-retry`: qualified annotations.** The Java layer regexes
+  missed fully qualified annotations (`@org.springframework.retry.annotation.Retryable`,
+  `@io.github.resilience4j.retry.annotation.Retry(`). They now accept a
+  qualified name.
+- **`S10-java-nested-retry`: recall pins.** `S10/java/positive.java` now also
+  holds `@Retryable` over a method with its own attempt loop, and resilience4j
+  `@Retry` over `retryTemplate.execute(…)`. Each fires on its own.
+- **The `@Configuration` guard is exercised.**
+  `S10/java/negative_config_stack.java` stacks `Retry.decorateSupplier` and
+  `retryTemplate.execute` in one `@Bean` method. It is silent only because of
+  `SPRING_CONFIG`: with the guard disabled it fires "2 retry layers (Spring
+  Retry, resilience4j retry)".
+- **Re-sweep.** `--patterns S05,S10,S11,S12,S15` over all 16 repositories, with
+  grpc-java filtered to `examples/`, is byte-identical to the sweep recorded
+  above. The Hits section is unchanged.
 
 ### Hits
 
@@ -727,7 +776,18 @@ required-silent sample.
   calibration**). It misses stacking across methods (a `@Retryable` method that
   calls a helper with its own retry loop) and across files (a `@Retryable`
   method that calls another class's `@Retryable` method, or a Feign client
-  whose `Retryer` is a bean). Any `@Configuration` class is silent.
+  whose `Retryer` is a bean). Any `@Configuration` class is silent. The
+  declaration heuristic splits methods wrongly in three shapes:
+  - a `throws` clause that continues onto the next line;
+  - a lambda assigned to a field (`Supplier<String> b = () -> { … }`), whose
+    body is attributed to the previous method;
+  - a call statement whose arguments continue onto the next line
+    (`log("starting",` followed by `"x");`). Its first line looks like the
+    start of a multi-line declaration, so the statements after it get a new
+    owner. `@Retryable` plus a loop below such a call is missed.
+
+  In each shape, layers from two methods can merge into one owner (a false
+  positive) or be separated (a miss).
 - **S11 is file-scoped, and any identifier containing `deadline` suppresses it.**
   A business field such as `finalDeadline` can hide a real miss.
   - **Construction-time deadlines are silent.**
@@ -737,6 +797,10 @@ required-silent sample.
     is silent on it anyway, because this is a wrong deadline, not a missing one.
     This was decided deliberately. The shape is not distinguishable from a
     per-call `stub.withDeadlineAfter(…)` without data flow.
+  - **Interceptors in another file.** The detector still fires when a
+    `ClientInterceptor` defined in another file sets the deadline, which is a
+    common production setup. The `deadline` substring suppression only works
+    when the interceptor is named in the same file.
   - **Async stubs are not anchored.** Future and async stubs (`newFutureStub`,
     `newStub`) are missed.
   - **Two file-wide exemptions.**
@@ -749,6 +813,9 @@ required-silent sample.
   - `do { … } while (attempt < max)` loops.
   - Retry loops without a `try` within 3 lines.
   - Retries on a line that also names `OptimisticLock`.
+  - A fully qualified `@org.springframework.retry.annotation.Retryable` (the
+    anchor matches only the simple name; S10 was widened in fix round 1, and
+    S12 was not).
   - A retry in a file that mentions resilience4j at all, as in the brief: an
     `@Retry` with no breaker is silent.
   - `retryTemplate.execute(…)` around local work fires. There is 1
@@ -763,4 +830,6 @@ required-silent sample.
   - A qualifying `catch … return` anywhere in the file suppresses it, even
     around a different call.
   - A call made only through a chain that starts with construction
-    (`WebClient.create(url).get()…`) is missed.
+    (`WebClient.create(url).get()…`) is missed. So is a chain that starts
+    from a builder (`webClientBuilder.build().get()…`), because the receiver
+    before the call is `build()`, not a client name.

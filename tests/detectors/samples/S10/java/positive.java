@@ -12,3 +12,36 @@ public class DoublyRetriedClient {
 
     private String doCall() { return "ok"; }
 }
+
+class LoopInsideRetryable {
+    @org.springframework.retry.annotation.Retryable(maxAttempts = 3)
+    public String call() {
+        for (int attempt = 0; attempt < 3; attempt++) {
+            try {
+                return doCall();
+            } catch (RuntimeException e) {
+                if (attempt == 2) {
+                    throw e;
+                }
+            }
+        }
+        return null;
+    }
+
+    private String doCall() { return "ok"; }
+}
+
+class TemplateInsideResilience4j {
+    private final org.springframework.retry.support.RetryTemplate retryTemplate;
+
+    TemplateInsideResilience4j(org.springframework.retry.support.RetryTemplate retryTemplate) {
+        this.retryTemplate = retryTemplate;
+    }
+
+    @io.github.resilience4j.retry.annotation.Retry(name = "orders")
+    public String call() {
+        return retryTemplate.execute(ctx -> doCall());
+    }
+
+    private String doCall() { return "ok"; }
+}

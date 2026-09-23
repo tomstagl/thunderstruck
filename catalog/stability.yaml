@@ -773,7 +773,7 @@ patterns:
         - id: S15-java-no-fallback
           kind: file_absent
           anchor: '\w*(?:[Hh]ttp[Cc]lient|[Rr]estTemplate|[Ww]eb[Cc]lient)\s*\.\s*(?!(?:builder|newBuilder|newHttpClient|create|mutate)\s*\()\w+\s*\('
-          absent: '(?i)(fallback|degrade|stale|default(Value|Response)|onErrorReturn|onErrorResume|\.exceptionally\s*\()|\bcatch\s*\(\s*(?:final\s+)?(?:[\w.]+\s*\|\s*)*(?:Exception|RuntimeException|Throwable|[\w.]*(?:RestClient|WebClient|Http|IO|Rpc|StatusRuntime|Feign|Timeout|Connect|Socket|ResourceAccess|CallNotPermitted)\w*Exception)\s+\w+\s*\)\s*\{\s*(?:[^{}]*?;\s*){0,3}?return\b'
+          absent: '(?i)(fallback|degrade|stale|default(Value|Response)|onErrorReturn|onErrorResume|\.exceptionally\s*\()|\bcatch\s*\(\s*(?:final\s+)?(?:[\w.]+\s*\|\s*)*(?:Exception|RuntimeException|Throwable|[\w.]*(?:RestClient|WebClient|Http|IO|Rpc|StatusRuntime|Feign|Timeout|Connect|Socket|ResourceAccess|CallNotPermitted)\w*Exception)\s+\w+\s*\)\s*\{(?:[^{};]*;){0,3}\s*return\b|@\s*Recover\b|CircuitBreakerFactory'
           confidence: low
           note: "external call with no fallback branch"
 

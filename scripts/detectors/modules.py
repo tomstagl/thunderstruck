@@ -298,9 +298,9 @@ RETRY_LAYERS: dict[str, list[tuple[str, re.Pattern]]] = {
         ("own retry loop", re.compile(
             r"\b(for|while)\s*\(.*\b(attempt|attempts|retry|retries|tries)\b", re.I)),
         ("Spring Retry", re.compile(
-            r"@\s*Retryable\b|\bRetryTemplate\b|[Rr]etryTemplate\s*\.\s*execute\s*\(")),
+            r"@\s*(?:[\w$]+\s*\.\s*)*Retryable\b|\bRetryTemplate\b|[Rr]etryTemplate\s*\.\s*execute\s*\(")),
         ("resilience4j retry", re.compile(
-            r"@\s*Retry\s*\(|\bRetry\s*\.\s*(of\w*|decorate\w*)\s*\(|\bRetryRegistry\b"
+            r"@\s*(?:[\w$]+\s*\.\s*)*Retry\s*\(|\bRetry\s*\.\s*(of\w*|decorate\w*)\s*\(|\bRetryRegistry\b"
             r"|\bRetryConfig\s*\.\s*(custom|of\w*)\s*\(")),
         ("Failsafe retry", re.compile(r"\bFailsafe\s*\.\s*with\b|\bRetryPolicy\s*\.\s*builder\s*\(")),
     ],
@@ -333,7 +333,8 @@ METHOD_JAVA = re.compile(
     r"(?:(?!(?:return|new|else|throw|case|yield|assert)\b)[\w$.]+(?:<[^;=(){}]*>)?"
     r"(?:\[\])*\s+)?"
     r"(?!(?:if|for|while|switch|catch|synchronized|try|return|new|throw)\b)[\w$]+\s*\("
-    r"(?:[^;=]*\)\s*(?:throws\s+[\w$.,\s]+)?\{|[^;)]*$)")
+    r"(?:(?:[^;()]|\([^;()]*\))*\)\s*(?:throws\s+[\w$.,\s]+)?\{"
+    r"|(?:[^;()]|\([^;()]*\))*$)")
 IMPORT_JAVA = re.compile(r"^\s*import\s")
 
 
