@@ -21,6 +21,10 @@ OUTPUT_DIRNAME = ".thunderstruck"
 PROFILE_FILENAME = ".thunderstruck.toml"
 REPORT_SCHEMA_VERSION = "thunderstruck.report/v1"
 FINDING_SCHEMA_VERSION = "thunderstruck.finding/v1"
+CONTEXT_SCHEMA = "thunderstruck.context/v1"
+CONTEXT_FILENAME = "context.json"
+CONTEXT_USABLE = ("fresh", "cached", "stale")
+MAX_NEIGHBOURS_PER_DIRECTION = 25
 
 # Files that are churn-heavy or complexity-heavy for reasons that say nothing
 # about fragility. Scanning them wastes subagents on noise.
@@ -188,6 +192,14 @@ def load_profile(repo_root: Path) -> dict[str, Any]:
             return tomllib.load(fh)
     except (tomllib.TOMLDecodeError, OSError) as exc:
         raise ThunderstruckError(f"could not read {path}: {exc}")
+
+
+def load_service_context(repo_root: Path) -> dict[str, Any] | None:
+    """context.json when it holds edges a bundle may show, else None."""
+    doc = load_json(out_dir(repo_root) / CONTEXT_FILENAME)
+    if isinstance(doc, dict) and doc.get("status") in CONTEXT_USABLE:
+        return doc
+    return None
 
 
 def effective_patterns(catalog: dict[str, Any], profile: dict[str, Any]) -> dict[str, dict]:

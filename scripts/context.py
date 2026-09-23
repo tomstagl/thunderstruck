@@ -27,14 +27,17 @@ import re
 import signal
 import subprocess
 import sys
-from dataclasses import dataclass
+import time
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _common as c  # noqa: E402
-from context_extract import DIRECTIONS, ENTITY_REF, RELATION_TYPE  # noqa: E402
+from context_extract import (DIRECTIONS, ENTITY_REF, RELATION_TYPE,  # noqa: E402
+                             extract_attributes, extract_edges)
 
 DEFAULT_TIMEOUT_S = 20
 MAX_TIMEOUT_S = 60
@@ -223,3 +226,92 @@ def run_command(argv: list[str], entity_ref: str, timeout: float, cwd: Path,
     if not isinstance(doc, dict):
         return Fetched(error=f"{name} printed JSON that is not an object")
     return Fetched(doc=doc, raw=out)
+
+
+# --------------------------------------------------------------------------
+# fetching one source
+# --------------------------------------------------------------------------
+
+MAX_PARALLEL = 4
+TOTAL_BUDGET_S = 60.0
+
+
+@dataclass
+class SourceResult:
+    edges: list[dict] = field(default_factory=list)
+    truncated: dict[str, int] = field(default_factory=lambda: {"inbound": 0, "outbound": 0})
+    warnings: list[str] = field(default_factory=list)
+    raws: dict[str, str] = field(default_factory=dict)
+    error: str | None = None
+
+
+def _listing(items: list[str], limit: int = 5) -> str:
+    shown = ", ".join(items[:limit])
+    return shown + (f" and {len(items) - limit} more" if len(items) > limit else "")
+
+
+def cap_edges(edges: list[dict]) -> tuple[list[dict], dict[str, int]]:
+    kept: list[dict] = []
+    counts = {"inbound": 0, "outbound": 0}
+    truncated = {"inbound": 0, "outbound": 0}
+    for edge in edges:
+        direction = edge["direction"]
+        if counts[direction] < c.MAX_NEIGHBOURS_PER_DIRECTION:
+            kept.append(edge)
+            counts[direction] += 1
+        else:
+            truncated[direction] += 1
+    return kept, truncated
+
+
+def fetch_source(entity_ref: str, source: dict, cwd: Path, budget_s: float) -> SourceResult:
+    deadline = time.monotonic() + budget_s
+
+    def allowance() -> float:
+        return min(float(source["timeout_s"]), deadline - time.monotonic())
+
+    if source["preflight"]:
+        pre = run_command(source["preflight"], entity_ref, allowance(), cwd, want_json=False)
+        if pre.error:
+            return SourceResult(error=f"preflight failed: {pre.error}")
+    main = run_command(source["argv"], entity_ref, allowance(), cwd)
+    if main.error:
+        return SourceResult(error=main.error)
+
+    edges, truncated = cap_edges(extract_edges(main.doc, source["edge_types"], source["name"]))
+    result = SourceResult(edges=edges, truncated=truncated, raws={entity_ref: main.raw})
+    if any(truncated.values()):
+        result.warnings.append(
+            f"service context shows the first {c.MAX_NEIGHBOURS_PER_DIRECTION} neighbours "
+            f"per direction; {truncated['inbound']} inbound and {truncated['outbound']} "
+            f"outbound are not listed")
+    mapping = source["neighbour_attributes"]
+    if not mapping or not edges:
+        return result
+
+    def fetch(edge: dict) -> Fetched:
+        return run_command(source["argv"], edge["neighbour"], allowance(), cwd)
+
+    skipped: list[str] = []
+    failed: list[str] = []
+    rejected: list[str] = []
+    with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as pool:
+        for edge, got in zip(edges, pool.map(fetch, edges)):
+            if got.error == BUDGET_EXHAUSTED:
+                skipped.append(edge["neighbour"])
+            elif got.error:
+                failed.append(f"{edge['neighbour']} ({got.error})")
+            else:
+                edge["attributes"], bad = extract_attributes(got.doc, mapping)
+                rejected += [f"{edge['neighbour']} {label}" for label in bad]
+                result.raws[edge["neighbour"]] = got.raw
+    if skipped:
+        result.warnings.append(
+            f"{len(skipped)} neighbour(s) not fetched within the {budget_s:g}s context "
+            f"budget, so they have no attributes: {_listing(skipped)}")
+    if failed:
+        result.warnings.append(f"attributes unavailable for {_listing(failed)}")
+    if rejected:
+        result.warnings.append(
+            f"attribute value rejected (not a short label): {_listing(rejected)}")
+    return result
