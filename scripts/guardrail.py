@@ -33,6 +33,9 @@ MAX_PARENTS = 8
 MIN_CONFIDENCE = ("medium", "high")
 MAX_FINDINGS_SHOWN = 3
 OUTPUT_DIRNAME = ".thunderstruck"
+MAX_NEIGHBOURS_SHOWN = 5
+EDGE_PHRASES = (("inbound", "Cited dependents of this component"),
+                ("outbound", "Cited dependencies of this component"))
 
 
 def _project_dir(hook_input: dict) -> Path | None:
@@ -85,6 +88,31 @@ def _current_hash(path: Path) -> str | None:
         return None
 
 
+def _neighbour_lines(findings: list[dict]) -> list[str]:
+    lines = []
+    for direction, phrase in EDGE_PHRASES:
+        names: dict[str, str] = {}
+        for f in findings:
+            evidence = f.get("catalog_evidence")
+            for ev in evidence if isinstance(evidence, list) else []:
+                if not isinstance(ev, dict) or ev.get("direction") != direction:
+                    continue
+                ref = ev.get("neighbour")
+                if not isinstance(ref, str) or not ref or ref in names:
+                    continue
+                attrs = ev.get("attributes") if isinstance(ev.get("attributes"), dict) else {}
+                detail = "; ".join(f"{k}: {v}" for k, v in sorted(attrs.items()))
+                label = ref.rsplit("/", 1)[-1]
+                names[ref] = f"{label} ({detail})" if detail else label
+        if names:
+            shown = list(names.values())
+            text = ", ".join(shown[:MAX_NEIGHBOURS_SHOWN])
+            if len(shown) > MAX_NEIGHBOURS_SHOWN:
+                text += f" and {len(shown) - MAX_NEIGHBOURS_SHOWN} more"
+            lines.append(f"{phrase}: {text}.")
+    return lines
+
+
 def build_context(entry: dict, rel: str, stale: bool) -> str | None:
     findings = [f for f in entry.get("findings", [])
                 if f.get("confidence") in MIN_CONFIDENCE]
@@ -109,6 +137,10 @@ def build_context(entry: dict, rel: str, stale: bool) -> str | None:
             lines.append(f"  what keeps it failing: {f['sustaining_effect']}")
     if extra > 0:
         lines.append(f"- and {extra} more, in .thunderstruck/report.md")
+    neighbours = _neighbour_lines(findings)
+    if neighbours:
+        lines.append("")
+        lines += neighbours
     lines.append("")
     lines.append("The full report is at .thunderstruck/report.md. These are "
                  "hypotheses from a past scan, not verified defects.")
