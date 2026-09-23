@@ -44,3 +44,27 @@ class JmsReader {
         return ((javax.jms.TextMessage) consumer.receive()).getText();
     }
 }
+
+class JmsBatchReader {
+    String drain(javax.jms.Session session, javax.jms.Queue queue) throws Exception {
+        javax.jms.MessageConsumer consumer = session.createConsumer(queue);
+        StringBuilder out = new StringBuilder();
+        out.append("step 1");
+        out.append("step 2");
+        out.append("step 3");
+        out.append("step 4");
+        out.append("step 5");
+        out.append("step 6");
+        out.append("step 7");
+        out.append("step 8");
+        out.append("step 9");
+        out.append("step 10");
+        out.append("step 11");
+        out.append("step 12");
+        out.append("step 13");
+        out.append("step 14");
+        out.append("step 15");
+        out.append(consumer.receive());
+        return out.toString();
+    }
+}

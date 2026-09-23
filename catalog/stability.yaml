@@ -168,9 +168,11 @@ patterns:
           pattern: '\.\s*receive\s*\(\s*\)'
           # Evidence of a JMS consumer on a line that is not an import, so a
           # JMS import does not make an application type's receive() a JMS one.
+          # 50 lines back: a consumer is often created at the top of a method
+          # and read from much further down (artemis's XA example: 43 lines).
           present_within: '^(?!\s*import\s)[^\n]*?(?:\b(?:MessageConsumer|JMSConsumer|QueueReceiver|TopicSubscriber)\b|\bcreate(?:Consumer|Receiver|Subscriber|DurableSubscriber|DurableConsumer|SharedConsumer|SharedDurableConsumer)\s*\(|\b(?:javax|jakarta)\s*\.\s*jms\b)'
           window: 1
-          window_before: 10
+          window_before: 50
           confidence: low
           note: "JMS receive() with no timeout — blocks the thread until a message arrives, forever if none does"
 

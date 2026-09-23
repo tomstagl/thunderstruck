@@ -882,7 +882,7 @@ JMH benchmark; they are not judged.
 |---|---|---|---|---|---|---|
 | S06-java-single-pool-no-priority | 13 | 0 | 13 | 0 | | 0 |
 | S18-java-validate-after-call | 8 | 0 | 8 | 0 | | 0 |
-| S01-java-jms-receive-no-timeout | 3 | 3 (+1) | 0 | 0 | | 4 |
+| S01-java-jms-receive-no-timeout | 3 | 3 (+9) | 0 | 0 | | 12 |
 | S07-java-rabbitmq-auto-ack | 18 | 6 | 12 | 0 | | 6 |
 | S13-java-akka-blocking-default-dispatcher | 0 | 0 | 0 | 0 | | 0 |
 | S14-java-rabbitmq-no-prefetch | 18 | 0 | 18 | 0 | | 0 |
@@ -893,10 +893,12 @@ JMH benchmark; they are not judged.
   most was 18 each for the two RabbitMQ detectors in rabbitmq-tutorials, which
   holds the same six consumers three times (`java/`, `java-mvn/`,
   `java-gradle/`).
-- **S01's extra hit.** The final `present_within` also recognises
+- **S01's extra hits.** The final `present_within` also recognises
   `TopicSubscriber`/`createDurableSubscriber`, which the brief's did not, so
   artemis `DurableSubscriptionExample.java:95` appears only in the final sweep.
-  It is a TP. That is the "(+1)".
+  Fix round 1 widened the look-back from 10 to 50 lines, which reaches 8 more
+  untimed `receive()` calls whose consumer is created 12–43 lines above. All 9
+  are TP. That is the "(+9)".
 - **No S06, S13 or S14 true positive, and no S18 one.** None of the 18
   repositories mixes interactive and background work on one pool, blocks
   inside an actor, or runs a manual-ack RabbitMQ consumer without `basicQos`,
@@ -943,12 +945,38 @@ and had no instance in the corpus. Each became a required-silent sample.
   actor blocks its dispatcher thread, and the brief's `require` did not see
   it. It is now one of the blocking calls.
 
+### Fix round 1 (controller ruling)
+
+- `S01-java-jms-receive-no-timeout`: `window_before` 10 → 50. The first
+  recorded sweep left 8 inspected, genuine untimed `receive()` calls in artemis
+  silent because the consumer was created 12–43 lines above the call. This is
+  coverage for inspected TPs, not loosening to create hits, and the
+  non-import evidence requirement is unchanged, so an import alone still does
+  not qualify. `S01/java/positive.java` appends `JmsBatchReader`, whose
+  `consumer.receive()` is 16 lines below `createConsumer` with no other JMS
+  name in between; it fires alone under the new window and not under the old
+  one. Every S01 negative stays silent, and the speed guard passes.
+- **Re-sweep.** `--patterns S01` over all 18 repositories, filtered to this
+  detector (grpc-java `examples/` and spring-data-examples without
+  `jpa/deferred` as before): 12 lines, all in artemis — the 4 recorded before
+  plus exactly the 8 former misses. No other repository gains a hit, and the
+  tripwire is not reached. The Batch 5 final sweep is now 18 lines
+  (12 S01 + 6 S07; S06, S13, S14 and S18 unchanged at 0).
+
 ### Hits
 
 - `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/broker-connection/ha-with-dual-mirror/src/main/java/org/apache/artemis/jms/example/Consumer.java:49` — TP: the consumer thread loops on `consumer.receive()` over a `failover:` URL with `maxReconnectAttempts=-1`. While the failover transport reconnects forever, `receive()` neither returns nor throws, so the loop never reaches its error handling and the thread cannot report that it has stopped consuming. A timed `receive(ms)` would let it notice.
 - `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/broker-connection/ha-with-mesh-mirror/src/main/java/org/apache/artemis/jms/example/Consumer.java:49` — TP: the same consumer.
+- `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/standard/durable-subscription/src/main/java/org/apache/activemq/artemis/jms/example/DurableSubscriptionExample.java:74` — TP: a single `subscriber.receive()` for the message just published to the topic. If it is lost, the program hangs forever instead of failing (the subscriber is created 12 lines up; reached since fix round 1).
 - `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/standard/durable-subscription/src/main/java/org/apache/activemq/artemis/jms/example/DurableSubscriptionExample.java:95` — TP: a single `subscriber.receive()` for one expected message. If the message is lost or the subscription was not durable after all, the program hangs forever instead of failing.
+- `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/standard/request-reply/src/main/java/org/apache/activemq/artemis/jms/example/RequestReplyExample.java:100` — TP: the requester waits on `replyConsumer.receive()` for the reply with no timeout. A responder that is down or drops the request blocks the requester forever, the textbook request-reply hang (consumer created 20 lines up; fix round 1).
+- `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/standard/topic/src/main/java/org/apache/activemq/artemis/jms/example/TopicExample.java:73` — TP: `messageConsumer1.receive()` for the one published message; a lost message hangs the program (consumer created 17 lines up; fix round 1).
+- `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/standard/topic/src/main/java/org/apache/activemq/artemis/jms/example/TopicExample.java:78` — TP: the same for `messageConsumer2` (19 lines up; fix round 1).
 - `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/standard/scheduled-message/src/main/java/org/apache/activemq/artemis/jms/example/ScheduledMessageExample.java:78` — TP: `receive()` waits for a message scheduled 5 s ahead. If the broker drops or never delivers the scheduled message, the program blocks forever; a timeout of the schedule plus a margin would bound it.
+- `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/standard/xa-receive/src/main/java/org/apache/activemq/artemis/jms/example/XAReceiveExample.java:91` — TP: `xaConsumer.receive()` inside an open XA transaction branch. If the message never arrives, the thread blocks forever with the branch still open, so the transaction manager can neither commit nor time it out cleanly (consumer created 20 lines up; fix round 1).
+- `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/standard/xa-receive/src/main/java/org/apache/activemq/artemis/jms/example/XAReceiveExample.java:93` — TP: the second receive in the same branch (fix round 1).
+- `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/standard/xa-receive/src/main/java/org/apache/activemq/artemis/jms/example/XAReceiveExample.java:112` — TP: the same shape after the rollback, waiting for redelivery (41 lines up; fix round 1).
+- `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/standard/xa-receive/src/main/java/org/apache/activemq/artemis/jms/example/XAReceiveExample.java:114` — TP: the second redelivery receive (43 lines up; fix round 1).
 - `S07-java-rabbitmq-auto-ack` rabbitmq-tutorials `java/Recv.java:25` — TP: autoAck on a durable quorum queue (`queueDeclare(QUEUE_NAME, true, …)`). A message is acked on delivery, so a crash while it is printed loses it although the queue was made durable to keep it.
 - `S07-java-rabbitmq-auto-ack` rabbitmq-tutorials `java-mvn/src/main/java/Recv.java:25` — TP: the same file.
 - `S07-java-rabbitmq-auto-ack` rabbitmq-tutorials `java-gradle/src/main/java/Recv.java:25` — TP: the same file.
@@ -982,8 +1010,9 @@ and had no instance in the corpus. Each became a required-silent sample.
   inside an actor: they use `ask` with `pipeToSelf`/`CompletionStage`, and no
   `Thread.sleep`, JDBC, `RestTemplate`, `HttpClient.send` or `ask(…).get()`
   appears in the Java sources.
-- **artemis's other JMS consumers** mostly call `receive(timeout)` and are
-  silent. Eight untimed `receive()` calls are missed; see Known limitations.
+- **artemis's other JMS consumers** call `receive(timeout)` and are silent.
+  After fix round 1, every untimed `receive()` in artemis's non-test sources
+  is a hit.
 - **TypeScript/Python S18 is unchanged (AC-16).** `s18_fail_fast` at HEAD and
   after this task were run on every TypeScript, JavaScript and Python file under
   `tests/`, `scripts/` and the built fixture repository (101 files, 10 S18
@@ -1041,13 +1070,11 @@ and had no instance in the corpus. Each became a required-silent sample.
   - The member boundary inherits `METHOD_JAVA`'s limitations (Batch 4): a call
     statement whose arguments continue onto the next line starts a spurious
     member, which can only split a method (a miss).
-- **S01's JMS detector looks 10 lines back for the consumer.** A consumer
-  created further up, or held in a field, is missed. artemis has eight such
-  misses, all genuine untimed receives in one-shot demos:
-  `DurableSubscriptionExample.java:74`, `RequestReplyExample.java:100`,
-  `TopicExample.java:73`, `:78` and `XAReceiveExample.java:91`, `:93`, `:112`,
-  `:114`. Widening the window would catch them; it was left at the brief's 10
-  lines because calibration does not loosen a detector to create hits. JMS 2.0 `receiveBody(Class)`, which also blocks
+- **S01's JMS detector looks 50 lines back for the consumer.** A consumer
+  created further up, or held in a field declared further up, is missed; so
+  is one passed in as a parameter of a type not named on a line in reach. A
+  non-JMS `x.receive()` within 50 lines of a JMS consumer would fire; there is
+  no instance in the corpus. JMS 2.0 `receiveBody(Class)`, which also blocks
   forever, is not matched. A dedicated consumer thread that relies on
   `connection.close()` at shutdown to unblock `receive()` will fire.
 - **S07's autoAck detector reads only a literal `true`.** `boolean autoAck =
