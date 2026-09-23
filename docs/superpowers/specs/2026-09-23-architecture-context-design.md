@@ -122,6 +122,13 @@ This is a deterministic step, no model involved. It runs once per scan, before `
 
 `--refresh-context` forces a fetch.
 
+**Stale fallback.** If the cache has expired and the refresh fails (preflight failure, lapsed login, timeout, bad JSON), the scan keeps using the existing `context.json`. The report then carries a visible warning, e.g. `service context is 34 days old; refresh failed: preflight exited 1`. Three limits apply:
+- **Same source only.** The fallback applies only while the source-definition hash is unchanged. Data fetched for a different `entity_ref` or command is never reused.
+- **Hard age limit.** The fallback is allowed until the context is 2 × `max_age` old (60 days by default). Past that, the context is dropped and the scan degrades as in §12.
+- **No retry.** The failed refresh is not retried within the scan. The next scan tries again.
+
+This matters because dropping the context removes the Service context section from every bundle, so every hotspot is investigated again twice: once without the context and once more when the refresh succeeds. Keeping the old edges avoids both rounds.
+
 **Determinism.** The cache and bundle hashes are computed over the extracted, sorted edges and attributes, never over raw responses. Volatile catalog fields (`uid`, `etag`, timestamps, relation order) therefore cannot trigger re-investigation. `fetched_at` never enters a bundle.
 
 ## 8. Bundles
@@ -183,11 +190,14 @@ All schema changes are **additive**. `thunderstruck.report/v1` and `thunderstruc
 
 ## 12. Degradation
 
+A failed refresh with a usable cache is **not** degradation. It uses the stale fallback from §7.
+
 In every one of these cases the scan behaves exactly as it does today, with no `catalog` evidence available that run, plus a visible warning naming the reason:
 - no config, or context declined;
 - untrusted source in a non-interactive run;
 - preflight or command failure;
-- timeout.
+- timeout;
+- stale fallback past its hard age limit, or a source definition that has changed since the cache was written.
 
 ## 13. Acceptance criteria
 
@@ -202,6 +212,7 @@ In every one of these cases the scan behaves exactly as it does today, with no `
 9. The context step never takes more than 60s in total, whatever the neighbour count or how slow the command is. Neighbours not fetched are listed as incomplete.
 10. Editing a file whose finding cites catalog edges makes the guardrail emit the dependents line. The guardrail latency test still passes.
 11. A catalog ref validated against a `context.json` other than the one its bundle was built from is rejected.
+12. When the cache has expired and the refresh fails, the scan reuses the old context and emits a warning showing its age and the failure reason. Bundles stay byte-identical, so no hotspot is investigated again. Past 2 × `max_age`, or after a source-definition change, the old context is not used.
 
 ## 13a. Success measures
 
@@ -226,6 +237,11 @@ These are the outcome targets, measured by hand while dogfooding. They're separa
   - failures: timeout, non-zero exit, bad JSON, preflight failure;
   - trust and headless: untrusted source not executed, headless skip;
   - caching: cache hit, `--refresh-context`;
+  - stale fallback:
+    - expired cache plus a failing refresh reuses the old context and warns;
+    - fallback past 2 × `max_age` is refused;
+    - fallback after a source-definition change is refused;
+    - a successful refresh with identical edges leaves bundles unchanged;
   - neighbour handling: truncation at the cap, total-budget exhaustion (the stub sleeps), a neighbour fetch failing while its edge is kept.
 - **`validate.py` snapshot pinning:** a catalog ref checked against a changed `context_hash` is rejected.
 - **Determinism:** raw responses that differ only in volatile fields produce identical `context.json` edges, an identical `context_hash` and identical bundles.
