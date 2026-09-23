@@ -419,15 +419,19 @@ patterns:
           kind: file_absent
           # Not the import line: the hit lands where the consumer is used.
           anchor: '^(?!\s*import\s).*\bKafkaConsumer\b'
-          # A one-argument poll (Kafka's poll(Duration)/poll(long), not a
-          # BlockingQueue's poll() or poll(timeout, unit)), in a file where
-          # auto-commit can ack a record whose processing has not finished:
-          # the records are handed to another thread, or auto-commit is off
+          # A poll with an argument on one line (Kafka's poll(Duration) or
+          # poll(long), not a BlockingQueue's poll() or poll(timeout,
+          # TimeUnit)), in a file where auto-commit can ack a record whose
+          # processing has not finished: the polled records are handed to an
+          # executor or async stage (`submit(() -> process(records))`,
+          # `records.forEach(r -> pool.submit(...))`), or auto-commit is off
           # and nothing commits, so every restart re-reads from the reset
-          # point. A synchronous loop under auto-commit is at-least-once —
+          # point. Starting the loop's own thread (`new Thread(runner)`,
+          # `executor.submit(this::run)`) is not a hand-off, and a parallel
+          # stream finishes before the next poll. A synchronous loop under auto-commit is at-least-once —
           # poll() commits only what the previous poll returned — and is the
           # KafkaConsumer javadoc's own example, so it is left alone.
-          require: '\A(?=[\s\S]*?\.\s*poll\s*\(\s*[^\s,)][^,)]*\))[\s\S]*?(?:(?i:executor)\w*\s*\.\s*(?:submit|execute)\s*\(|\.\s*submit\s*\(|\b(?:runAsync|supplyAsync)\s*\(|\bnew\s+Thread\s*\(|\.\s*parallelStream\s*\(|(?i:enable[._]?auto[._]?commit)\w*"?\s*[,(=:]\s*(?:"?false"?|Boolean\s*\.\s*FALSE))'
+          require: '\A(?=[\s\S]*?\.\s*poll\s*\((?![^;\n]*TimeUnit)\s*[^\s)][^;\n]*\))[\s\S]*?(?:\b(?:submit|execute|runAsync|supplyAsync)\s*\([^;\n]*(?i:records?|recs?)\b|(?i:records?)\s*\.\s*forEach\s*\([^;\n]*\b(?:submit|execute|runAsync|supplyAsync)\s*\(|(?i:enable[._]?auto[._]?commit)\w*"?\s*[,(=:]\s*(?:"?false"?|Boolean\s*\.\s*FALSE))'
           # Manual commits, a listener acknowledgment, offsets committed in a
           # producer transaction, or offsets kept in an external store (seek).
           absent: '\b(commitSync|commitAsync|acknowledge|sendOffsetsToTransaction)\s*\(|\.\s*seek\s*\('
@@ -511,7 +515,7 @@ patterns:
           # or a blocking wait on a producer send. The default 500 records is
           # already a bound; it overruns max.poll.interval.ms only when each
           # record is slow, which a print or an in-memory update never is.
-          require: '\A(?=[\s\S]*?\.\s*poll\s*\(\s*[^\s,)][^,)]*\))[\s\S]*?(?:\b(?:RestTemplate|RestClient|WebClient|HttpClient|OkHttpClient|JdbcTemplate)\b|\.\s*(?:executeUpdate|executeBatch|batchUpdate|saveAll|save|postForObject|postForEntity|exchange)\s*\(|\bThread\s*\.\s*sleep\s*\(|\.\s*send\s*\([^;]*\)\s*\.\s*get\s*\(|\.\s*block\s*\(\s*\))'
+          require: '\A(?=[\s\S]*?\.\s*poll\s*\((?![^;\n]*TimeUnit)\s*[^\s)][^;\n]*\))[\s\S]*?(?:\b(?:RestTemplate|RestClient|WebClient|HttpClient|OkHttpClient|JdbcTemplate)\b|\.\s*(?:executeUpdate|executeBatch|batchUpdate|saveAll|save|postForObject|postForEntity|exchange)\s*\(|\bThread\s*\.\s*sleep\s*\(|\.\s*send\s*\([^;]*\)\s*\.\s*get\s*\(|\.\s*block\s*\(\s*\))'
           # max.poll.records set in the file (constant, property string or
           # setter), or max.poll.interval.ms raised to fit the work.
           absent: 'max\.poll\.(records|interval)|MAX_POLL_(RECORDS|INTERVAL)|[Mm]axPoll(Records|Interval)\w*\s*\(\s*[^\s)]'
