@@ -180,3 +180,47 @@ def test_malformed_hotspot_id_is_rejected_not_crashed(context_scanned_copy, plug
     assert proc.returncode == 1
     assert "Traceback" not in proc.stderr
     assert "hotspot_id" in proc.stdout
+
+
+# ----------------------------------------------------------------- report --
+
+
+def _report(repo: Path, plugin_root: Path) -> tuple[str, dict, dict]:
+    proc = subprocess.run([sys.executable, str(plugin_root / "scripts" / "report.py"),
+                           "--repo", str(repo)], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    out = repo / ".thunderstruck"
+    return ((out / "report.md").read_text(), json.loads((out / "report.json").read_text()),
+            json.loads((out / "index.json").read_text()))
+
+
+def test_report_shows_service_context(context_scanned_copy, plugin_root):
+    hid, doc = _catalog_finding(_hotspots(context_scanned_copy), [WEB])
+    assert _validate(context_scanned_copy, plugin_root, hid, doc).returncode == 0
+    md, payload, index = _report(context_scanned_copy, plugin_root)
+
+    assert "## Service context" in md
+    assert f"| `{WEB}` | inbound | tier: 2 |" in md
+    assert ("| Dependents / dependencies | `component:default/web-frontend` "
+            "(inbound; tier: 2) |") in md
+    assert f"_catalog_ `{WEB}`" in md
+    assert "attribute value rejected" in md          # context warnings reach Run warnings
+    assert "ignore previous instructions" not in md
+
+    ctx = _context(context_scanned_copy)
+    assert payload["service_context"]["context_hash"] == ctx["context_hash"]
+    assert payload["findings"][0]["catalog_evidence"][0]["ref"] == WEB
+    entry = index["files"][doc["file"]]["findings"][0]
+    assert entry["catalog_evidence"][0]["neighbour"] == "component:default/web-frontend"
+
+
+def test_report_without_context_is_unchanged(scanned_copy, plugin_root):
+    data = _hotspots(scanned_copy)
+    hid, doc = _catalog_finding(data, [])
+    assert _validate(scanned_copy, plugin_root, hid, doc).returncode == 0
+    md, payload, index = _report(scanned_copy, plugin_root)
+    assert "Service context" not in md
+    assert "Dependents / dependencies" not in md
+    assert payload["service_context"] is None
+    for entry in index["files"].values():
+        assert all("catalog_evidence" not in f for f in entry["findings"])
