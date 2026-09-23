@@ -21,6 +21,7 @@ and a warning in context.json.
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
@@ -30,6 +31,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -37,7 +39,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _common as c  # noqa: E402
 from context_extract import (DIRECTIONS, ENTITY_REF, RELATION_TYPE,  # noqa: E402
-                             extract_attributes, extract_edges)
+                             context_hash, detect_entity_ref, extract_attributes,
+                             extract_edges)
 
 DEFAULT_TIMEOUT_S = 20
 MAX_TIMEOUT_S = 60
@@ -315,3 +318,164 @@ def fetch_source(entity_ref: str, source: dict, cwd: Path, budget_s: float) -> S
         result.warnings.append(
             f"attribute value rejected (not a short label): {_listing(rejected)}")
     return result
+
+
+# --------------------------------------------------------------------------
+# status, cache and stale fallback
+# --------------------------------------------------------------------------
+
+STALE_WARNING = re.compile(r"^service context is -?\d+ days old; refresh failed: ")
+UNTRUSTED_WARNING = ("service context source is not approved on this machine; run "
+                     "/thunderstruck-context-config to review and approve it")
+CATALOG_INFO_NAMES = ("catalog-info.yaml", "catalog-info.yml")
+
+
+def _doc(status: str, cfg: dict | None = None, chash: str | None = None,
+         warnings: list[str] | None = None) -> dict:
+    return {"schema": c.CONTEXT_SCHEMA, "status": status,
+            "entity_ref": (cfg or {}).get("entity_ref"), "config_hash": chash,
+            "context_hash": None, "fetched_at": None, "edges": [],
+            "truncated": {"inbound": 0, "outbound": 0}, "warnings": warnings or []}
+
+
+def _reusable(previous: Any, chash: str) -> bool:
+    return (isinstance(previous, dict)
+            and previous.get("schema") == c.CONTEXT_SCHEMA
+            and previous.get("status") in c.CONTEXT_USABLE
+            and previous.get("config_hash") == chash
+            and isinstance(previous.get("edges"), list))
+
+
+def _age_days(doc: dict, now: datetime) -> int | None:
+    try:
+        fetched = datetime.fromisoformat(str(doc.get("fetched_at")))
+    except ValueError:
+        return None
+    if fetched.tzinfo is None:
+        return None
+    return (now - fetched).days
+
+
+def _write_raw(repo: Path, raws: dict[str, str]) -> None:
+    raw_dir = c.out_dir(repo) / "context" / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    for old in raw_dir.glob("*.json"):
+        old.unlink()
+    for ref, text in sorted(raws.items()):
+        name = re.sub(r"[^A-Za-z0-9_.-]", "_", ref) + ".json"
+        (raw_dir / name).write_text(text, encoding="utf-8")
+
+
+def resolve(repo: Path, profile: dict, previous: Any, *, now: datetime,
+            refresh: bool = False, budget_s: float = TOTAL_BUDGET_S) -> dict:
+    cfg, errors = load_config(profile)
+    if cfg is None and not errors:
+        return _doc("not_configured")
+    if errors:
+        return _doc("invalid_config",
+                    warnings=[f"service context config: {e}" for e in errors])
+    if not cfg["enabled"]:
+        return _doc("disabled", cfg)
+    chash = config_hash(cfg)
+    if not is_trusted(repo, chash):
+        return _doc("untrusted", cfg, chash, [UNTRUSTED_WARNING])
+
+    age = _age_days(previous, now) if _reusable(previous, chash) else None
+    kept = ([w for w in previous.get("warnings") or [] if not STALE_WARNING.match(str(w))]
+            if age is not None else [])
+    if age is not None and not refresh and age < cfg["max_age_days"]:
+        return {**previous, "status": "cached", "warnings": kept}
+
+    result = fetch_source(cfg["entity_ref"], cfg["sources"][0], repo, budget_s)
+    if result.error is None:
+        _write_raw(repo, result.raws)
+        doc = _doc("fresh", cfg, chash, result.warnings)
+        doc.update(context_hash=context_hash(cfg["entity_ref"], result.edges, result.truncated),
+                   fetched_at=now.isoformat(timespec="seconds"),
+                   edges=result.edges, truncated=result.truncated)
+        return doc
+    if age is not None and age < 2 * cfg["max_age_days"]:
+        return {**previous, "status": "stale", "warnings": [
+            f"service context is {age} days old; refresh failed: {result.error}", *kept]}
+    return _doc("failed", cfg, chash, [f"service context unavailable: {result.error}"])
+
+
+def run(repo: Path, *, refresh: bool = False, now: datetime | None = None,
+        budget_s: float = TOTAL_BUDGET_S) -> dict:
+    path = c.out_dir(repo) / c.CONTEXT_FILENAME
+    doc = resolve(repo, c.load_profile(repo), c.load_json(path),
+                  now=now or datetime.now(timezone.utc), refresh=refresh, budget_s=budget_s)
+    c.write_json(path, doc)
+    return doc
+
+
+def detect(repo: Path) -> str | None:
+    for name in CATALOG_INFO_NAMES:
+        text = c.read_text(Path(repo) / name)
+        if text is not None:
+            return detect_entity_ref(text)
+    return None
+
+
+def approve_config(repo: Path) -> tuple[dict, str]:
+    cfg, errors = load_config(c.load_profile(repo))
+    if cfg is None or errors:
+        raise c.ThunderstruckError(
+            "no valid [context] table in .thunderstruck.toml: "
+            + "; ".join(errors or ["it is missing"]))
+    if not cfg["enabled"]:
+        raise c.ThunderstruckError("[context] has enabled = false; there is nothing to approve")
+    chash = config_hash(cfg)
+    approve(repo, chash)
+    return cfg, chash
+
+
+# --------------------------------------------------------------------------
+# main
+# --------------------------------------------------------------------------
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="context.py",
+                                 description="fetch service-catalog context")
+    ap.add_argument("--repo", default=None)
+    ap.add_argument("--refresh", action="store_true",
+                    help="fetch even when the cached context is fresh")
+    ap.add_argument("--approve", action="store_true",
+                    help="trust the configured command on this machine")
+    ap.add_argument("--detect-entity", action="store_true",
+                    help="print the entity ref declared in catalog-info.yaml")
+    args = ap.parse_args(argv)
+
+    try:
+        repo = c.find_repo_root(args.repo)
+        if args.detect_entity:
+            ref = detect(repo)
+            if ref:
+                print(ref)
+            return 0 if ref else 1
+        if args.approve:
+            cfg, chash = approve_config(repo)
+            src = cfg["sources"][0]
+            print(f"approved on this machine for {repo}:")
+            print(f"  argv: {src['argv']}")
+            if src["preflight"]:
+                print(f"  preflight: {src['preflight']}")
+            print(f"  definition {chash}")
+            return 0
+        doc = run(repo, refresh=args.refresh)
+    except c.ThunderstruckError as exc:
+        c.die(str(exc))
+        return 2
+
+    summary = f"service context: {doc['status']}"
+    if doc["status"] in c.CONTEXT_USABLE:
+        summary += f" — {len(doc['edges'])} edge(s) for {doc['entity_ref']}"
+    print(summary)
+    for warning in doc["warnings"]:
+        print(f"  warning: {warning}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
