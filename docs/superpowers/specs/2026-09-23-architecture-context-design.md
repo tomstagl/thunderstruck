@@ -2,7 +2,7 @@
 
 Tracks [#1](https://github.com/tomstagl/thunderstruck/issues/1). Follow-up: [#6](https://github.com/tomstagl/thunderstruck/issues/6) (file-level linking of outbound edges).
 
-Status: draft v2 (revised after critique and a feasibility spike against a real Backstage catalog).
+Status: draft v3. Revised after the critique, after a feasibility spike against a real Backstage catalog, and again after a gap review.
 
 ## 1. Problem
 
@@ -35,7 +35,6 @@ The mechanism must be **company-agnostic**. Thunderstruck ships a generic source
 - **Observed topology from APM tools** (e.g. Dynatrace via `dtctl`). It is the natural second source and is expected to reuse the `command` kind. It is deferred until a spike confirms a working query and measures how much the edge set changes with the query window. Comparing declared and observed edges is the most valuable open question.
 - **ADR registries, agentic docs, architecture diagrams.** These are future context categories.
 - **Graph walks beyond 1 hop.**
-- **Guardrail changes.** `guardrail.py` is untouched in v1.
 
 ## 5. Configuration
 
@@ -105,7 +104,17 @@ This is a deterministic step, no model involved. It runs once per scan, before `
    - coarse labels only: a label like `HIGH` qualifies, and floats should be configured out.
 
    Anything over the cap is recorded as a count and shown as "and N more", never silently dropped. Neighbour fetches are *detail fetches*, not graph expansion. A neighbour's own neighbours are never read.
-5. Write `.thunderstruck/context.json`: the edges plus a `fetched_at` timestamp and source metadata. Raw responses go to `.thunderstruck/context/raw/` for audit. They are never embedded in bundles.
+
+   **Budget.** At most 4 neighbour fetches run at once, matching the plugin's existing concurrency limit. All fetches together, the main one included, share a **total budget of 60s**. When the budget runs out, no new fetches start, and the neighbours that weren't fetched are listed as incomplete in `warnings`.
+
+   **Partial failure.** If one neighbour fetch fails (timeout, non-zero exit, bad JSON), its edge is kept and only its attributes are dropped, with a warning. Only a failure of the main entity fetch skips the whole source.
+5. Write `.thunderstruck/context.json` containing:
+   - the edges;
+   - `context_hash`: sha256 of the canonical, sorted edges and attributes;
+   - a `fetched_at` timestamp;
+   - source metadata.
+
+   Raw responses go to `.thunderstruck/context/raw/` for audit. They are never embedded in bundles.
 
 **Caching.** `context.json` is reused without running any command if both hold:
 - it is younger than `max_age` (default 24h);
@@ -129,26 +138,42 @@ Depended on by: dependencyOf component:default/web-frontend [tier: 2]
 
 Each edge line starts with its exact **catalog ref**: `<type> <neighbour_ref>`.
 
+`bundles/index.json` records the `context_hash` each bundle was built from.
+
 A real catalog change changes this section and therefore every bundle, so every hotspot is investigated again. This is intended: the blast radius of every finding may have changed. Coarse attribute values keep this from happening on noise.
 
 ## 9. Evidence: `catalog` type
 
 - Evidence items stay `{type, ref}`. A `catalog` ref is the edge string copied verbatim from the bundle, e.g. `dependencyOf component:default/web-frontend`. Our own entity is implied, because every edge is 1 hop from it.
 - `validate.py` accepts a `catalog` ref only if it exactly matches an edge in `context.json`. This is the same rule as `detector` refs against `hotspots.json`.
+- Validation is **pinned to the snapshot** each bundle was built from. If the `context_hash` recorded for a finding's bundle doesn't equal the current `context.json`'s hash (e.g. the cache expired and refreshed mid-scan), the finding's catalog refs fail validation with a "context changed since bundling" reason. The finding goes to the repair round, or is listed under **Incomplete**. It is never validated against newer data.
 - The existing rule still applies: every finding needs at least one `code` evidence item. A finding resting only on catalog evidence is rejected.
 - The validator does **not** parse `blast_radius` prose for service names. Short names like `api` make that unreliable. Instead, the report shows cited catalog edges, with attributes taken from `context.json`, as structured data beside the prose. The report is the source of truth for the attributes; the investigator's text isn't.
 - Wording is component-level: "web-frontend depends on this component", not "on this file". The investigator prompt states this rule. It can't be enforced mechanically, and the spec says so.
 
-## 10. Report
+## 10. Report & guardrail
 
-- `report.md` / `report.json` gain a **Service context** section listing the edge table once.
-- Each finding lists its cited catalog edges with their attributes.
+All schema changes are **additive**. `thunderstruck.report/v1` and `thunderstruck.index/v1` keep their version, because existing consumers ignore unknown fields. `skills/thunderstruck-scan/references/report-format.md` documents the new fields.
+
+**`report.md`**
+- A **Service context** section after the summary: the edge table once (ref, direction, attributes) and the `context_hash`.
+- Each finding's table gains a **Dependents / dependencies** row listing its cited catalog refs with attributes. The attributes are taken from `context.json`, not from the investigator's text.
 - Warnings cover:
   - skipped sources, with the reason;
   - truncated neighbour lists;
+  - incomplete fetches (budget exhausted);
   - dropped attribute values;
   - untrusted sources.
-- `index.json` (the guardrail's input) is unchanged in v1.
+
+**`report.json`**
+- Top-level `service_context`: `{entity_ref, context_hash, edges: [{ref, type, direction, neighbour, attributes}], truncated: {inbound: n, outbound: n}}`, or `null` when no context was used.
+- Per finding: `catalog_evidence: [{ref, direction, attributes}]`. It's resolved from `context.json` and is empty when the finding cites none.
+
+**`index.json` → guardrail**
+- `render_index()` copies each finding's `catalog_evidence` into its index entry.
+- `guardrail.py` appends **one statement-of-fact line** per warned file when any finding there cites catalog edges, e.g. `Cited dependents of this component: web-frontend (tier: 2), mobile-bff (tier: 1).`
+- At most 5 neighbours on that line, then "and N more".
+- The existing hard constraints are unchanged: stdlib only, always exit 0, median under 100ms, facts rather than instructions.
 
 ## 11. Security & data handling
 
@@ -174,6 +199,18 @@ In every one of these cases the scan behaves exactly as it does today, with no `
 6. Neighbour lists over 25 per direction are truncated with the count reported. Depth never exceeds 1 hop.
 7. A repo without `context.yml` scans exactly as before this feature.
 8. The checked-in sample report contains at least one validated finding that cites a `catalog` edge.
+9. The context step never takes more than 60s in total, whatever the neighbour count or how slow the command is. Neighbours not fetched are listed as incomplete.
+10. Editing a file whose finding cites catalog edges makes the guardrail emit the dependents line. The guardrail latency test still passes.
+11. A catalog ref validated against a `context.json` other than the one its bundle was built from is rejected.
+
+## 13a. Success measures
+
+These are the outcome targets, measured by hand while dogfooding. They're separate from the functional acceptance criteria above.
+
+- **Relevance:** on the first 3 real repos, ≥ 70% of cited catalog edges are judged relevant by the repo owner. Sample: about 20 findings.
+- **Coverage:** every dogfooded repo with a configured catalog gets ≥ 1 validated finding that cites an edge.
+- **Cost:** the context step adds ≤ 60s to a scan. This is enforced by the budget, so it's measured only to confirm typical runs sit well below it.
+- **No regression:** a repo without `context.yml` produces a byte-identical report to a scan without this feature, apart from the timestamp.
 
 ## 14. Testing
 
@@ -185,10 +222,20 @@ In every one of these cases the scan behaves exactly as it does today, with no `
   - unknown relation types ignored;
   - negative: an injection-shaped annotation value is rejected.
 - **`validate.py`:** valid catalog ref; ref not in `context.json`; catalog-only finding.
-- **`context.py`:** timeout; non-zero exit; bad JSON; preflight failure; untrusted source not executed; headless skip; cache hit; `--refresh-context`; truncation at the cap.
-- **Determinism:** raw responses that differ only in volatile fields produce identical `context.json` edges and identical bundles.
-- **`gen_sample_report.py`** exercises the new evidence type (criterion 8).
-- **The dialog skill** is verified manually. The plugin install check does *not* exercise it.
+- **`context.py`:**
+  - failures: timeout, non-zero exit, bad JSON, preflight failure;
+  - trust and headless: untrusted source not executed, headless skip;
+  - caching: cache hit, `--refresh-context`;
+  - neighbour handling: truncation at the cap, total-budget exhaustion (the stub sleeps), a neighbour fetch failing while its edge is kept.
+- **`validate.py` snapshot pinning:** a catalog ref checked against a changed `context_hash` is rejected.
+- **Determinism:** raw responses that differ only in volatile fields produce identical `context.json` edges, an identical `context_hash` and identical bundles.
+- **`gen_sample_report.py`** exercises the new evidence type (criterion 8). Generation and CI run with `THUNDERSTRUCK_TRUST_CONTEXT=1`, so the stub CLI passes the trust gate non-interactively.
+- **Report and guardrail:**
+  - `report.json` `service_context` and `catalog_evidence` shape;
+  - `index.json` carries `catalog_evidence`;
+  - the guardrail emits the dependents line, capped at 5;
+  - the existing latency and stdlib-only AST tests still pass.
+- **Setup dialog:** `entity_ref` detection from `catalog-info.yaml` is a plain function with pytest cases (namespace present or absent, multiple documents in one file, no Backstage document). The conversation itself is verified manually. The plugin install check does *not* exercise it.
 
 ## 15. Open questions
 
