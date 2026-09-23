@@ -18,9 +18,9 @@ import re
 from typing import Any
 
 ENTITY_REF = re.compile(
-    r"^[A-Za-z][A-Za-z0-9_.-]*:[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$")
-RELATION_TYPE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
-ATTRIBUTE_VALUE = re.compile(r"^[A-Za-z0-9_.:-]{1,32}$")
+    r"^[A-Za-z][A-Za-z0-9_.-]*:[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*\Z")
+RELATION_TYPE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,63}\Z")
+ATTRIBUTE_VALUE = re.compile(r"^[A-Za-z0-9_.:-]{1,32}\Z")
 DIRECTIONS = ("inbound", "outbound")
 
 
