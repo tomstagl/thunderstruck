@@ -344,6 +344,14 @@ patterns:
           require: '(?i)(asyncio\s*\.\s*gather|^\s*(async\s+)?for\b|^\s*while\b|ThreadPoolExecutor|create_task|\.map\s*\()'
           confidence: medium
           note: "HTTP calls made in a loop or fan-out with no local rate limiter or concurrency gate in this file"
+      java:
+        - id: S05-java-client-calls-without-limiter
+          kind: file_absent
+          anchor: '^[ \t]*(?:for|while)\s*\((?![^\n]*\b(?:List|Set|Stream|Arrays)\s*\.\s*(?:of|asList)\s*\()[^\n]*\n(?:(?![ \t]*\}[ \t]*$)[^\n]*\n){0,8}?[^\n]*(?:[Hh]ttp[Cc]lient|[Rr]estTemplate|[Ww]eb[Cc]lient|[Ss]tub)\s*\.\s*(?!(?:builder|newBuilder|newHttpClient|create|mutate)\s*\()\w+\s*\(|\.\s*(?:forEach|parallelStream\s*\(\s*\)[^;]{0,200}?\.\s*(?:map|forEach))\s*\([^;]{0,300}?(?:[Hh]ttp[Cc]lient|[Rr]estTemplate|[Ww]eb[Cc]lient|[Ss]tub)\s*\.\s*(?!(?:builder|newBuilder|newHttpClient|create|mutate)\s*\()\w+\s*\('
+          require: '(?m)^\s*(for|while)\s*\(|\.\s*forEach\s*\(|\.\s*parallelStream\s*\(|CompletableFuture\s*\.\s*allOf\s*\('
+          absent: '(?i)(ratelimit|rate_limit|limiter|throttle|bucket4j|\bBucket\b|Semaphore|\.acquire\s*\(|\bsleep\s*\()'
+          confidence: low
+          note: "outbound calls made in a loop or fan-out with no local rate limiter or concurrency gate in this file"
 
   - id: S06
     name: Request prioritization (interactive over background)
@@ -589,6 +597,12 @@ patterns:
           handler: s10_retry_layers
           confidence: medium
           note: "more than one retry layer in the same call path, with no shared budget"
+      java:
+        - id: S10-java-nested-retry
+          kind: module
+          handler: s10_retry_layers
+          confidence: low
+          note: "more than one retry mechanism in the same call path, with no shared budget"
 
   # ---------------------------------------------------------------- Tier B --
   - id: S11
@@ -616,6 +630,13 @@ patterns:
           absent: '(?i)\b(deadline|cancel|remaining|time_budget|CancelledError)\b'
           confidence: low
           note: "outbound calls with no deadline or cancellation passed through"
+      java:
+        - id: S11-java-grpc-no-deadline
+          kind: file_absent
+          anchor: '^(?![ \t]*import\b).*?(?:BlockingStub\b|newBlockingStub\s*\()'
+          absent: '(?i)deadline|\bstatic\s+void\s+main\s*\(|\bextends\s+[\w.]*ImplBase\b|\bimplements\s+[\w.]*AsyncService\b|\bBindableService\b'
+          confidence: low
+          note: "gRPC blocking stub call with no deadline"
 
   - id: S12
     name: Circuit breaker or retry token bucket
@@ -642,6 +663,13 @@ patterns:
           absent: '(?i)\b(circuit|breaker|pybreaker|half.?open|token.?bucket)\b'
           confidence: low
           note: "retries with no circuit breaker or retry token bucket"
+      java:
+        - id: S12-java-no-breaker
+          kind: file_absent
+          anchor: '^(?![^\n]*OptimisticLock)(?:[ \t]*(?:for|while)\s*\([^\n]*(?i:attempt|retries|retrycount|\btries\b|\bretry\b)[^\n]*\n(?:[^\n]*\n){0,2}?[ \t]*try\s*\{|[^\n]*?(?:@\s*Retryable\b|[Rr]etryTemplate\s*\.\s*execute\s*\(|\bFailsafe\s*\.\s*with\b))'
+          absent: '(?i)(circuit.?breaker|breaker|resilience4j|half.?open)|@\s*(?:Configuration|AutoConfiguration|ConfigurationProperties)\b'
+          confidence: low
+          note: "retries with no circuit breaker"
 
   - id: S13
     name: Bulkheads (separate pools, queues, workers)
@@ -739,6 +767,13 @@ patterns:
           kind: file_absent
           anchor: '\b(requests|httpx|aiohttp)\s*[.(]'
           absent: '(?i)\b(fallback|degrade|stale|default_value|cached_value)\b'
+          confidence: low
+          note: "external call with no fallback branch"
+      java:
+        - id: S15-java-no-fallback
+          kind: file_absent
+          anchor: '\w*(?:[Hh]ttp[Cc]lient|[Rr]estTemplate|[Ww]eb[Cc]lient)\s*\.\s*(?!(?:builder|newBuilder|newHttpClient|create|mutate)\s*\()\w+\s*\('
+          absent: '(?i)(fallback|degrade|stale|default(Value|Response)|onErrorReturn|onErrorResume|\.exceptionally\s*\()|\bcatch\s*\(\s*(?:final\s+)?(?:[\w.]+\s*\|\s*)*(?:Exception|RuntimeException|Throwable|[\w.]*(?:RestClient|WebClient|Http|IO|Rpc|StatusRuntime|Feign|Timeout|Connect|Socket|ResourceAccess|CallNotPermitted)\w*Exception)\s+\w+\s*\)\s*\{\s*(?:[^{}]*?;\s*){0,3}?return\b'
           confidence: low
           note: "external call with no fallback branch"
 

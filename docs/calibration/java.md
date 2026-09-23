@@ -477,3 +477,290 @@ had no instance in the corpus. Each became a required-silent sample.
 - Both Kafka detectors are file-scoped. Consumer properties built in another class (or in `application.yml`) are invisible. So is a commit made by a collaborator, or per-record work done in a handler class. `S08-java-kafka-no-max-poll-records` knows only the blocking-work vocabulary listed above, so a slow call through any other client is missed.
 - Neither Kafka detector reads the Spring Kafka listener container, Reactor Kafka or Kafka Streams APIs. Their commit and batching settings live in container properties.
 - `S07-java-uncheckpointed-loop` has no real-world true positive in this batch. It recognises a Java paging loop only through a `page`/`cursor`-named step, a `hasMore` flag, a page or slice receiver's `hasNext()`/`nextPageable()`, a `next…Page/Cursor/Token` name, or an offset stepped by a limit or page size. A paging loop written with other names (`from += 100`, `while (resp.getNextLink() != null)`) is missed.
+
+## Batch 4 — resilience4j/gRPC (Task 10): S05, S10, S11, S12, S15
+
+The sweep ran `--patterns S05,S10,S11,S12,S15`. Each pattern gains its first
+Java detector: `S05-java-client-calls-without-limiter`, `S10-java-nested-retry`
+(the shared `s10_retry_layers` module, with `RETRY_LAYERS["java"]` and a
+Java-only per-method grouping), `S11-java-grpc-no-deadline`,
+`S12-java-no-breaker` and `S15-java-no-fallback`. The brief's four
+repositories come first. The twelve clones from Batches 1–3 were swept as
+well, because the two resilience4j demos are ten files each.
+
+**grpc-java is swept on `examples/` only.** `calibrate.py` ran over the whole
+repository (1132 Java files), and its TSV was then filtered with
+`grep -P "\texamples/"`, the same kind of scope rule as the `jpa/deferred`
+exclusion in Batch 2. Every count and every hit below is for `examples/` only
+(98 files). For the record, the unfiltered sweep had 132 lines under the
+brief's detectors (52 in `examples/`) and 10 under the final detectors
+(4 in `examples/`). The 6 final lines outside `examples/` are benchmarks,
+interop-test harnesses, the `AbstractBlockingStub` class itself and a Jetty
+smoke test, and they are not judged here.
+
+| Repo | Commit | Java files swept |
+|---|---|---|
+| resilience4j/resilience4j-spring-boot3-demo | `6c3e644d53174182fb79c0e49770b191a1d7287c` | 10 |
+| resilience4j/resilience4j-spring-boot2-demo | `85590a025d1ff6ecf97f26502a14ab595a664305` | 10 |
+| grpc/grpc-java | `9e0ff283e9a727546c46d889e02a9376c36ab411` | 98 in `examples/` (1132 in the repository) |
+| spring-petclinic/spring-petclinic-microservices | `295fa8d5ee10f7b6daddf83a2c65f9051a87564b` | 53 |
+| spring-projects/spring-kafka | `fff33914d4e450a33e17195e11a79937c3505605` | 387 |
+| confluentinc/kafka-streams-examples | `3c40c0e27dd988d8b2d72951802d8fd9c9940a64` | 58 |
+| apache/activemq-artemis-examples | `37a1052bad9928f04f983fb6619088d43855f4a2` | 194 |
+| rabbitmq/rabbitmq-tutorials | `586f18f75693d7fffe16ff3d29775f4176ba4ecc` | 90 |
+| jhy/jsoup | `49a15317317970a7ea3f0a5ded303ef319860f4a` | 98 |
+| brettwooldridge/HikariCP | `a4d93f4f85517f90e632b795486d7102e933d7ff` | 49 |
+| apache/commons-pool | `c4aba65cd8445685f89422b18219ea9853e4306d` | 57 |
+| iExecBlockchainComputing/iexec-core | `a09dbba123f09ae352410c87bcb3788610536809` | 129 |
+| spring-projects/spring-petclinic | `818c4136ea971c21674525f9053de0d9c7ad8cfe` | 30 |
+| spring-projects/spring-data-examples | `7747029e6157cb780862826b6ae87c88d7a4df3c` | 6504 (no hits anywhere, so the `jpa/deferred` exclusion does not arise) |
+| jhipster/jhipster-sample-app | `6b000b5d23a36c45e01472471b84a44fa2464044` | 81 |
+| spring-petclinic/spring-petclinic-reactive | `68534cf88a9d022467b9590b953ea4fc7f78bd6b` | 39 |
+
+| Detector | Hits | TP | FP-fixed | FP-accepted | Deferred | Final |
+|---|---|---|---|---|---|---|
+| S05-java-client-calls-without-limiter | 19 | 0 | 19 | 0 | | 0 |
+| S10-java-nested-retry | 0 | 0 | 0 | 0 | | 0 |
+| S11-java-grpc-no-deadline | 34 | 4 | 30 | 0 | | 4 |
+| S12-java-no-breaker | 12 | 1 | 11 (+1) | 1 | | 2 |
+| S15-java-no-fallback | 5 | 1 | 4 | 0 | | 1 |
+
+**Hits** is the first sweep, made with the brief's detectors unchanged.
+
+- **Precision tripwire.** `S11-java-grpc-no-deadline` had 34 hits in grpc-java
+  `examples/`, which is over the limit of 25. The tightening that brought it to 4 is
+  described under **Fixed during calibration**.
+- **S12's extra hits.** The tightened S12 anchor (the retry mechanism, not retry
+  vocabulary) surfaced two lines the brief's anchor never reached:
+  - spring-kafka `ExponentialBackOffWithMaxRetries.java:80`, which was fixed in
+    a further round. That is the "(+1)" in the table.
+  - spring-kafka `KafkaStreamsInteractiveQueryService.java:94`, which is
+    FP-accepted.
+
+  So S12 has 1 FP-accepted hit out of 2 final hits. That is half, not more than
+  half, so the detector is not deferred.
+- **No S10 hit.** Nothing in the 16 repositories stacks two retry mechanisms on
+  one method, and nothing does so file-wide either: the brief's file-scoped
+  handler found nothing too. S10 is proven by its samples and the recall probes
+  under **Silences checked**.
+- **No S05 true positive.** No repository has one. Every first-sweep hit was a
+  loop that shared a file with a client call but did not contain it.
+
+### Tightened before calibration
+
+Common shapes of correct Java were run against the brief's detectors at the
+same time as the first sweep. The shapes below fired, and each one became a
+required-silent sample.
+
+- `S05-java-client-calls-without-limiter`:
+  - **Locality.** The brief's `require` accepted a loop anywhere in the file. The
+    anchor is now the loop with the call inside it: a `for`/`while` header
+    followed, within 8 lines and before a line that is only `}`, by a client
+    call. The other accepted form is a `.forEach(…)`, or a
+    `.parallelStream()…map/forEach(…)`, whose lambda makes the call within 300
+    characters with no `;` in between. The hit lands on the loop.
+    → `S05/java/negative_unrelated_loop.java` (a header-building loop before a
+    single call)
+  - **Fixed literal list.** A loop over a `List.of(…)`, `Set.of(…)`,
+    `Stream.of(…)` or `Arrays.asList(…)` literal is not a fan-out.
+    → `S05/java/negative_fixed_list.java`
+  - **Construction is not a call.** `HttpClient.newBuilder()`,
+    `WebClient.builder()`, `.create(`, `.newHttpClient(` and `.mutate(` no
+    longer count as a call. → `S05/java/negative_client_factory_loop.java`
+  - **Paced loops.** A `sleep(` anywhere in the file suppresses the detector: a
+    loop paced by a sleep is a governor. → `S05/java/negative_polling_sleep.java`
+  - **Performance.** The span of the `forEach` alternative is bounded. Unbounded,
+    5000 unclosed `xs.forEach(` lines took 37 s. They now take 0.17 s.
+- `S10-java-nested-retry`:
+  - **Per-method grouping.** Java layers are grouped by the method that owns
+    them:
+    - an annotation binds to the next method or constructor declaration;
+    - a statement belongs to the nearest declaration above it.
+
+    Two different mechanisms must share an owner. Before this, `@Retryable` on
+    one method and resilience4j `@Retry` on another fired as "2 layers".
+    → `S10/java/negative_separate_methods.java`
+  - **Import lines** never count as a layer.
+  - **Instance calls count as Spring Retry.** `retryTemplate.execute(…)`, on the
+    instance, now counts. The brief's case-sensitive `\bRetryTemplate\b` saw only
+    the type name, so resilience4j `@Retry` wrapped around a
+    `retryTemplate.execute(…)` body was silent. That was a recall fix, not a
+    precision one.
+  - **The `@Configuration` guard.** The brief's guard is kept.
+    `negative_defines_retry_bean.java` is silent even without it, because its
+    two bean methods are now two owners. The guard remains as defence in depth.
+- `S11-java-grpc-no-deadline`:
+  - **Import lines.** The anchor skips the `import` line.
+  - **Broader `absent`.** It is now any `deadline` substring
+    (case-insensitive). The brief's `absent` required a `withDeadline…(` call in
+    the same file, so a stub whose deadline an interceptor sets
+    (`ClientInterceptors.intercept(channel, new DeadlineInterceptor(…))`) fired.
+    → `S11/java/negative_deadline_interceptor.java`
+- `S12-java-no-breaker`:
+  - **Holder and config classes.** A constant holder (`MAX_RETRIES = 3` and
+    nothing else) fired, and so did an `@ConfigurationProperties` class with a
+    `maxAttempts` field and a `@Configuration` class building a `RetryTemplate`
+    bean. None of them retries anything.
+    - `@Configuration`, `@AutoConfiguration` and `@ConfigurationProperties` now
+      suppress the detector.
+    - The anchor was rewritten during calibration (below), so a constant alone
+      no longer anchors.
+
+    → `S12/java/negative_constant_holder.java`, `negative_properties_holder.java`,
+    `negative_retry_bean_config.java`
+- `S15-java-no-fallback`:
+  - **Configuration classes.** A client configuration class
+    (`WebClient.builder()` and a `RestTemplateBuilder` bean) fired. The anchor
+    now ignores the same construction calls as S05.
+    → `S15/java/negative_client_config.java`
+  - **A catch that returns a value.** `catch (RestClientException e) { return
+    Collections.emptyList(); }` is a fallback. Such a catch now suppresses the
+    detector if it returns within its first four statements. The catch must be
+    of a client, IO or generic exception: `Exception`, `RuntimeException`,
+    `Throwable`, or a `…RestClient/WebClient/Http/IO/Rpc/StatusRuntime/Feign/`
+    `Timeout/Connect/Socket/ResourceAccess/CallNotPermitted…Exception`.
+    → `S15/java/negative_catch_returns_default.java`
+  - **Why the exception list.** The first version accepted any catch. On
+    petclinic-microservices, an unrelated `catch (JacksonException e) { return
+    null; }` in `VectorStoreController` then hid a TP (see Hits).
+    `S15/java/positive.java` now appends a class with exactly that shape, so the
+    TP cannot be lost again.
+
+### Hits
+
+- `S11-java-grpc-no-deadline` grpc-java `examples/android/clientcache/app/src/main/java/io/grpc/clientcacheexample/ClientCacheExampleActivity.java:136` — TP: `stub.sayHello(request)` runs in an Android `AsyncTask` with no deadline. If the server stalls, the task never finishes. The server keeps working on a call that the user has already abandoned by leaving the screen.
+- `S11-java-grpc-no-deadline` grpc-java `examples/android/helloworld/app/src/main/java/io/grpc/helloworldexample/HelloworldActivity.java:95` — TP: the same shape. The call gets no deadline, and the send button stays disabled until `onPostExecute`, which a hung call never reaches.
+- `S11-java-grpc-no-deadline` grpc-java `examples/android/routeguide/app/src/main/java/io/grpc/routeguideexample/RouteGuideActivity.java:157` — TP: the blocking stub is handed to the `GetFeature` runnable, and `blockingStub.getFeature(request)` (line 200) is called with no deadline anywhere in the file.
+- `S11-java-grpc-no-deadline` grpc-java `examples/android/strictmode/app/src/main/java/io/grpc/strictmodehelloworldexample/StrictModeHelloworldActivity.java:125` — TP: the same `AsyncTask` shape, over OkHttp, with no deadline.
+- `S12-java-no-breaker` iexec-core `src/main/java/com/iexec/core/result/ResultService.java:50` — TP: `@Retryable(retryFor = FeignException.class)` retries calls to the result proxy (`resultProxyClient.getJwt(…)`, a Feign client) with Spring Retry's default 3 attempts. There is no breaker. While the proxy is down, every task check makes three calls into it.
+- `S12-java-no-breaker` spring-kafka `spring-kafka/src/main/java/org/springframework/kafka/streams/KafkaStreamsInteractiveQueryService.java:94` — FP-accepted: `retryTemplate.execute(() -> kafkaStreams.store(…))` waits for a *local* state store to become queryable during a rebalance. No remote dependency is being called, so a breaker has no meaning. A regex cannot tell what the retried lambda does.
+- `S15-java-no-fallback` spring-petclinic-microservices `spring-petclinic-genai-service/src/main/java/org/springframework/samples/petclinic/genai/VectorStoreController.java:68` — TP: on `ApplicationStartedEvent`, when no pre-built `vectorstore.json` exists, the listener calls `vets-service` through `WebClient…block()`. There is no fallback. If vets-service is down at that moment, the exception escapes the listener, and the genai service fails to start rather than starting with an empty vet index.
+
+### Fixed during calibration
+
+- `S11-java-grpc-no-deadline`: 29 hits on single-file CLI programs that declare `public static void main`, which is over the tripwire together with the next item. All in `examples/`:
+  - `example-alts/…/HelloWorldAltsClient.java:88`, `example-debug/…/HelloWorldDebuggableClient.java:47`, `example-dualstack/…/DualStackClient.java:42`, `example-gauth/…/GoogleAuthClient.java:48`
+  - `example-gcp-csm-observability/…/CsmObservabilityClient.java:44`, `example-gcp-observability/…/GcpObservabilityClient.java:39`, `example-jwt-auth/…/AuthClient.java:37`, `example-oauth/…/AuthClient.java:38`
+  - `example-opentelemetry/…/OpenTelemetryClient.java:44`, `…/logging/LoggingOpenTelemetryClient.java:46`, `example-orca/…/CustomBackendMetricsClient.java:42`, `example-tls/…/HelloWorldClientTls.java:38`, `example-xds/…/XdsHelloWorldClient.java:41`
+  - `src/main/java/io/grpc/examples/`: `cancellation/CancellationClient.java:118`, `customloadbalance/CustomLoadBalanceClient.java:45`, `errordetails/ErrorDetailsExample.java:38`, `errorhandling/DetailErrorSample.java:38`, `errorhandling/ErrorHandlingClient.java:36`
+  - `src/main/java/io/grpc/examples/`: `experimental/CompressingHelloWorldClient.java:42`, `header/CustomHeaderClient.java:41`, `healthservice/HealthServiceClient.java:48`, `hedging/HedgingHelloWorldClient.java:50`, `helloworld/HelloWorldClient.java:34`
+  - `src/main/java/io/grpc/examples/`: `keepalive/KeepAliveClient.java:37`, `loadbalance/LoadBalanceClient.java:34`, `multiplex/SharingClient.java:52`, `nameresolve/NameResolveClient.java:31`, `retrying/RetryingHelloWorldClient.java:49`, `routeguide/RouteGuideClient.java:27`
+
+  FP-fixed. S11 is about propagating a deadline across hops: downstream work should not keep running after the caller has given up. A one-shot command-line client is the originating caller. When its user gives up, the process exits, and closing the channel cancels the server-side call, so the failure S11 describes cannot occur. A missing timeout on such a program is an S01 question. A `static void main(` in the file now suppresses the detector. → `S11/java/negative_cli_main.java`
+
+  The line numbers are the first sweep's. The brief's anchor put four of these (`ErrorDetailsExample`, `DetailErrorSample`, `ErrorHandlingClient`, `RouteGuideClient`) on the `import` line, and it did the same to the `RouteGuideActivity` TP (`:33` in the first sweep, `:157` in the final one). The anchor now skips `import` lines.
+- `S11-java-grpc-no-deadline` grpc-java `examples/src/main/java/io/grpc/examples/deadline/DeadlineServer.java:49` — FP-fixed. This is grpc-java's deadline-propagation demo. Its `SlowGreeter` service implementation calls a blocking stub from inside the request handler. grpc-java carries the inbound call's deadline in `io.grpc.Context` and applies it to outgoing calls made in that context, so the call has the caller's deadline without any `withDeadline`. A file that implements a gRPC service (`extends …ImplBase`, `implements …AsyncService`, `BindableService`) now suppresses the detector. (This file also has `main`, and a `Deadline…` identifier.) → `S11/java/negative_grpc_server_hop.java`
+- `S05-java-client-calls-without-limiter`, 17 hits in grpc-java `examples/`:
+  - `android/routeguide/…/RouteGuideActivity.java:200`, `example-alts/…/HelloWorldAltsClient.java:89`, `example-debug/…/HelloWorldDebuggableClient.java:60`, `example-dualstack/…/DualStackClient.java:88`
+  - `example-gcp-csm-observability/…/CsmObservabilityClient.java:57`, `example-opentelemetry/…/OpenTelemetryClient.java:57`, `…/logging/LoggingOpenTelemetryClient.java:59`
+  - `src/main/java/io/grpc/examples/`: `customloadbalance/CustomLoadBalanceClient.java:55`, `healthservice/HealthServiceClient.java:59`, `hedging/HedgingHelloWorldClient.java:86`, `loadbalance/LoadBalanceClient.java:44`
+  - `src/main/java/io/grpc/examples/`: `manualflowcontrol/BidiBlockingClient.java:106`, `manualflowcontrol/ManualFlowControlClient.java:114`, `multiplex/SharingClient.java:76`, `nameresolve/NameResolveClient.java:76`, `retrying/RetryingHelloWorldClient.java:93`, `routeguide/RouteGuideClient.java:67`
+
+  FP-fixed. In every one of these files, the stub call is outside every loop in the file. The loops are of four kinds:
+  - fixed 5–50-iteration demo loops in `main` that drive a `greet()` helper;
+  - `while (sendRpcs.get()) { client.greet(user); Thread.sleep(1000); }`, which is paced;
+  - iteration over a streaming response or over a list of requests;
+  - a 2000-task fan-out onto a `ForkJoinPool` (the hedging and retrying demos), whose parallelism is bounded by the core count.
+
+  → `S05/java/negative_unrelated_loop.java` (locality) and `negative_polling_sleep.java` (the three paced loops)
+- `S05-java-client-calls-without-limiter` jsoup `src/main/java11/org/jsoup/helper/HttpClientExecutor.java:87` and activemq-artemis-examples `examples/features/standard/security-oidc/src/main/java/org/apache/activemq/artemis/jms/example/OIDCSecurityExample.java:73` — FP-fixed. The anchor was `HttpClient.newBuilder()`, which builds a client and makes no call. → `S05/java/negative_client_factory_loop.java`
+- `S15-java-no-fallback` jsoup `HttpClientExecutor.java:87` and activemq-artemis-examples `OIDCSecurityExample.java:73` (same lines), and spring-petclinic-microservices `spring-petclinic-api-gateway/…/ApiGatewayApplication.java:62` and `spring-petclinic-genai-service/…/AIBeanConfiguration.java:27` (`return WebClient.builder();` in a `@Bean` method) — FP-fixed. All four anchor on client construction, not on a call. → `S15/java/negative_client_config.java`
+- `S12-java-no-breaker` iexec-core `src/main/java/com/iexec/core/replicate/ReplicateSupplyService.java:88` and `ReplicatesService.java:254` — FP-fixed. `@Retryable(retryFor = OptimisticLockingFailureException.class, …)` retries a conflicting write to the service's own database. That is contention, not a dead dependency, and a breaker would turn a harmless write conflict into an outage. A line that names `OptimisticLock` no longer anchors. → `S12/java/negative_optimistic_lock_retry.java`
+- `S12-java-no-breaker` iexec-core `src/main/java/com/iexec/core/chain/IexecHubService.java:121` — FP-fixed. `MAX_RETRIES` is passed to `web3jService.repeatCheck(…)`, which waits for a chain state to appear, and nothing in this file retries. The anchor is now a retry mechanism in the file:
+  - a `for`/`while` whose header names an attempt/retries/retryCount/tries/retry counter and which has a `try {` within 3 lines;
+  - `@Retryable`;
+  - `retryTemplate.execute(`;
+  - `Failsafe.with`.
+
+  → `S12/java/negative_constant_holder.java`
+- `S12-java-no-breaker`, 4 hits anchored on the word "retries" in a string: grpc-java `examples/src/main/java/io/grpc/examples/retrying/RetryingHelloWorldClient.java:118` (a log message); spring-kafka `spring-kafka/src/main/java/org/springframework/kafka/listener/ErrorHandlingUtils.java:173` (`"Container stopped during retries"`), `listener/KafkaMessageListenerContainer.java:2209` (`"Commit retries exhausted"`), `retrytopic/ListenerContainerFactoryConfigurer.java:136` (`"Blocking retries back off has already been set…"`) — FP-fixed by the mechanism anchor. ErrorHandlingUtils's `while (retryable && nextBackOff != STOP)` names no counter. KafkaMessageListenerContainer's real commit retry is recursive (`doCommitSync(commits, retries + 1)`), which the anchor does not see (Known limitations). → `S12/java/negative_retry_word_in_message.java`
+- `S12-java-no-breaker` spring-kafka `annotation/RetryableTopicAnnotationProcessor.java:172` (`builder.maxAttempts(attempts)`), `retrytopic/DestinationTopic.java:138`, `retrytopic/DestinationTopicPropertiesFactory.java:58` and `retrytopic/RetryTopicConfigurationBuilder.java:61` (`maxAttempts` fields) — FP-fixed. These classes compute retry-topic configuration and call nothing. `DestinationTopicPropertiesFactory`'s `for (… < this.retryTopicsAmount; …)` no longer counts as a retry loop: `retryTopicsAmount` is not a counter name, and the loop has no `try`. → `S12/java/negative_retry_topic_properties.java`
+- `S12-java-no-breaker` spring-kafka `spring-kafka/src/main/java/org/springframework/kafka/support/ExponentialBackOffWithMaxRetries.java:80` — FP-fixed, found in the intermediate sweep after the mechanism anchor went in. `for (int i = 1; i < this.maxRetries; i++)` computes a backoff schedule. The loop-form anchor now requires a `try {` within 3 lines of the header. → `S12/java/negative_backoff_schedule_loop.java`
+
+### Silences checked
+
+- **The two resilience4j demos** produced no hit from any detector, before or after
+  the fixes.
+  - Their services stack `@CircuitBreaker`, `@Bulkhead`, `@Retry` and
+    `@RateLimiter` on the same methods. That is one retry mechanism (S10), and
+    its breaker is visible (S12).
+  - Their controllers fall back with `.onErrorResume(…, fallback)` and
+    `Try…recover(this::fallback)`.
+  - They make no outbound HTTP call, so S05 and S15 have no anchor.
+- **Probes of correct code** are silent under the final detectors
+  (`$SCRATCH/t10/probes/`):
+  - S05: a resilience4j `@RateLimiter` method called in a loop; a `@Scheduled`
+    single call; a bounded `Flux.flatMap(…, 4)`.
+  - S10: a resilience4j `@Retry` over a plain `RestTemplate`; a Feign `Retryer`
+    bean.
+  - S11: a deadline set with `CallOptions`/`Deadline.after`; a stub given a
+    deadline at construction (see Known limitations); a future stub.
+  - S12: resilience4j `@CircuitBreaker` beside `@Retryable`; Spring Cloud
+    `CircuitBreakerFactory`.
+  - S15: `@CircuitBreaker(fallbackMethod = …)`; Reactor `.onErrorResume`;
+    `CompletableFuture.exceptionally`.
+- **Recall probes** fire under the final detectors (`$SCRATCH/t10/recall/`):
+  - S05: `ids.forEach(id -> { restTemplate.postForObject(…); })`, and a
+    blocking-stub call inside a `for` loop's `try`.
+  - S10: `@Retryable` on a method whose body runs its own `for (attempt …)`
+    loop; resilience4j `@Retry` around `retryTemplate.execute(…)`.
+  - S11: a blocking stub in a plain client class.
+  - S12: a bare `@Retryable` method.
+  - S15: a `WebClient` call beside an unrelated `JacksonException` catch (pinned
+    in `positive.java`).
+
+### Known limitations (noted, not fixed)
+
+- **S05 is local to one loop body.**
+  - It misses a loop in one method that drives a helper which makes the call.
+    The grpc hedging and retrying demos' `ForkJoinPool` fan-outs have this
+    shape.
+  - It misses a call more than 8 lines below the loop header, or one that
+    follows a line holding only `}` (the close of an inner block).
+  - Any `sleep(` in the file suppresses it.
+  - Only receivers named `…HttpClient`, `…RestTemplate`, `…WebClient` or `…Stub`
+    count, so a `java.net.http.HttpClient` held in a variable called `client` is
+    invisible.
+  - An unbounded reactive fan-out (`Flux.flatMap` at its default concurrency of
+    256) has no loop and is missed.
+- **S10 groups layers by method** (grouping rules under **Tightened before
+  calibration**). It misses stacking across methods (a `@Retryable` method that
+  calls a helper with its own retry loop) and across files (a `@Retryable`
+  method that calls another class's `@Retryable` method, or a Feign client
+  whose `Retryer` is a bean). Any `@Configuration` class is silent.
+- **S11 is file-scoped, and any identifier containing `deadline` suppresses it.**
+  A business field such as `finalDeadline` can hide a real miss.
+  - **Construction-time deadlines are silent.**
+    `newBlockingStub(ch).withDeadlineAfter(2, SECONDS)` stored in a field is a
+    known gRPC defect: the deadline is absolute, so every call made more than
+    two seconds after construction fails with `DEADLINE_EXCEEDED`. The detector
+    is silent on it anyway, because this is a wrong deadline, not a missing one.
+    This was decided deliberately. The shape is not distinguishable from a
+    per-call `stub.withDeadlineAfter(…)` without data flow.
+  - **Async stubs are not anchored.** Future and async stubs (`newFutureStub`,
+    `newStub`) are missed.
+  - **Two file-wide exemptions.**
+    - A `main` method anywhere in the file exempts it.
+    - So does implementing a gRPC service, even when the blocking call is made
+      outside a handler's `Context` (from a constructor or a background thread,
+      where no deadline is inherited).
+- **S12 misses several kinds of retry.**
+  - Recursive retries (`doCommitSync(…, retries + 1)`).
+  - `do { … } while (attempt < max)` loops.
+  - Retry loops without a `try` within 3 lines.
+  - Retries on a line that also names `OptimisticLock`.
+  - A retry in a file that mentions resilience4j at all, as in the brief: an
+    `@Retry` with no breaker is silent.
+  - `retryTemplate.execute(…)` around local work fires. There is 1
+    FP-accepted instance of this.
+- **S15 is file-scoped.**
+  - A thin client wrapper that catches the client exception and rethrows a
+    domain exception still fires. That was decided deliberately. The wrapper
+    delegates degradation to its callers, which the detector cannot see,
+    exactly as a client that lets `RestClientException` propagate does. The
+    hit is a lead for the investigator to follow to the call sites. There is
+    no instance in this corpus.
+  - A qualifying `catch … return` anywhere in the file suppresses it, even
+    around a different call.
+  - A call made only through a chain that starts with construction
+    (`WebClient.create(url).get()…`) is missed.

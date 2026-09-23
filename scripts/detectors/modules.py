@@ -11,6 +11,7 @@ layer) must produce zero hits. Tests in tests/detectors/ pin that.
 
 from __future__ import annotations
 
+import bisect
 import re
 from typing import Callable
 
@@ -293,6 +294,16 @@ RETRY_LAYERS: dict[str, list[tuple[str, re.Pattern]]] = {
         ("SDK retry config", re.compile(
             r"\b(max_attempts|Retry\s*\(|retry_strategy|retry_config|urllib3\.Retry)\b")),
     ],
+    "java": [
+        ("own retry loop", re.compile(
+            r"\b(for|while)\s*\(.*\b(attempt|attempts|retry|retries|tries)\b", re.I)),
+        ("Spring Retry", re.compile(
+            r"@\s*Retryable\b|\bRetryTemplate\b|[Rr]etryTemplate\s*\.\s*execute\s*\(")),
+        ("resilience4j retry", re.compile(
+            r"@\s*Retry\s*\(|\bRetry\s*\.\s*(of\w*|decorate\w*)\s*\(|\bRetryRegistry\b"
+            r"|\bRetryConfig\s*\.\s*(custom|of\w*)\s*\(")),
+        ("Failsafe retry", re.compile(r"\bFailsafe\s*\.\s*with\b|\bRetryPolicy\s*\.\s*builder\s*\(")),
+    ],
 }
 BUDGET = re.compile(r"(?i)(retry.?budget|token.?bucket|retry.?quota|budget_remaining)")
 
@@ -305,12 +316,68 @@ DECLARATION = re.compile(
     r"|const\s+\w+\s*=\s*(async\s*)?(\(|function)"
     r"|(public|private|protected)\s+)")
 
+# A Spring @Configuration class defines retry beans; it never calls through
+# them. Two bean definitions in one config class are not two stacked layers.
+SPRING_CONFIG = re.compile(r"@\s*(Configuration|AutoConfiguration)\b")
+
+
+# A Java method or constructor declaration line. Annotations above a
+# declaration belong to it; statements below it, up to the next declaration,
+# are its body. Good enough to tell "two mechanisms on one method" from "one
+# mechanism on each of two methods" without a parser.
+_JAVA_MODS = (r"(?:@[\w.]+(?:\([^)]*\))?\s+)*"
+              r"(?:(?:public|protected|private|static|final|synchronized|abstract"
+              r"|default|native|strictfp)\s+)*")
+METHOD_JAVA = re.compile(
+    r"^\s*" + _JAVA_MODS + r"(?:<[^>]+>\s+)?"
+    r"(?:(?!(?:return|new|else|throw|case|yield|assert)\b)[\w$.]+(?:<[^;=(){}]*>)?"
+    r"(?:\[\])*\s+)?"
+    r"(?!(?:if|for|while|switch|catch|synchronized|try|return|new|throw)\b)[\w$]+\s*\("
+    r"(?:[^;=]*\)\s*(?:throws\s+[\w$.,\s]+)?\{|[^;)]*$)")
+IMPORT_JAVA = re.compile(r"^\s*import\s")
+
+
+def _s10_java(ctx) -> Result:
+    """Java counts layers per method: `@Retryable` on one method and `@Retry`
+    on another are one retry layer each, not two stacked ones."""
+    lines = ctx.code_lines
+    decls = [i for i, line in enumerate(lines) if METHOD_JAVA.match(line)]
+
+    def owner(i: int) -> int:
+        if lines[i].lstrip().startswith("@"):  # an annotation binds forward
+            k = bisect.bisect_left(decls, i)
+            return decls[k] if k < len(decls) else -1
+        k = bisect.bisect_right(decls, i)
+        return decls[k - 1] if k else -1
+
+    by_owner: dict[int, dict[str, int]] = {}
+    for label, rx in RETRY_LAYERS["java"]:
+        for i, line in enumerate(lines):
+            if not rx.search(line) or IMPORT_JAVA.match(line):
+                continue
+            if DECLARATION.match(line):
+                continue  # defining a retry helper is not calling one
+            by_owner.setdefault(owner(i), {}).setdefault(label, i + 1)
+    out: Result = []
+    for layers in by_owner.values():
+        if len(layers) < 2:
+            continue
+        labels = ", ".join(layers)
+        out.append((max(layers.values()), (
+            f"{len(layers)} retry layers in one call path ({labels}) with no "
+            f"shared budget — attempts multiply rather than add")))
+    return sorted(out)
+
 
 def s10_retry_layers(ctx) -> Result:
+    if _lang_key(ctx) == "java":
+        if SPRING_CONFIG.search(ctx.code_text) or BUDGET.search(ctx.code_text):
+            return []
+        return _s10_java(ctx)
     if BUDGET.search(ctx.code_text):
         return []
     found: list[tuple[str, int]] = []
-    for label, rx in RETRY_LAYERS[_lang_key(ctx)]:
+    for label, rx in RETRY_LAYERS.get(_lang_key(ctx), []):
         for i, line in enumerate(ctx.code_lines):
             if not rx.search(line):
                 continue
