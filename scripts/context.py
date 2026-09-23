@@ -38,7 +38,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _common as c  # noqa: E402
-from context_extract import (DIRECTIONS, ENTITY_REF, RELATION_TYPE,  # noqa: E402
+from context_extract import (DIRECTIONS, ENTITY_REF, LABEL, RELATION_TYPE,  # noqa: E402
                              context_hash, detect_entity_ref, extract_attributes,
                              extract_edges)
 
@@ -48,7 +48,6 @@ DEFAULT_MAX_AGE_DAYS = 30
 TRUST_ENV = "THUNDERSTRUCK_TRUST_CONTEXT"
 KINDS = ("command",)
 EXTRACTORS = ("backstage-relations",)
-LABEL = re.compile(r"^[a-z][a-z0-9_]{0,31}\Z")
 
 
 # --------------------------------------------------------------------------
@@ -343,7 +342,7 @@ def _reusable(previous: Any, chash: str) -> bool:
             and previous.get("schema") == c.CONTEXT_SCHEMA
             and previous.get("status") in c.CONTEXT_USABLE
             and previous.get("config_hash") == chash
-            and isinstance(previous.get("edges"), list)
+            and c._well_formed_context(previous)
             and isinstance(previous.get("warnings", []), list)):
         return False
     try:

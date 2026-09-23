@@ -17,6 +17,8 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Iterable
 
+from context_extract import ATTRIBUTE_VALUE, DIRECTIONS, ENTITY_REF, LABEL, RELATION_TYPE
+
 OUTPUT_DIRNAME = ".thunderstruck"
 PROFILE_FILENAME = ".thunderstruck.toml"
 REPORT_SCHEMA_VERSION = "thunderstruck.report/v1"
@@ -194,23 +196,36 @@ def load_profile(repo_root: Path) -> dict[str, Any]:
         raise ThunderstruckError(f"could not read {path}: {exc}")
 
 
+def _well_formed_edge(edge: Any) -> bool:
+    if not isinstance(edge, dict):
+        return False
+    if not all(isinstance(edge.get(k), str) for k in ("ref", "type", "direction", "neighbour")):
+        return False
+    if not (RELATION_TYPE.match(edge["type"]) and ENTITY_REF.match(edge["neighbour"])
+            and edge["direction"] in DIRECTIONS
+            and edge["ref"] == f"{edge['type']} {edge['neighbour']}"):
+        return False
+    attrs = edge.get("attributes")
+    return isinstance(attrs, dict) and all(
+        isinstance(k, str) and LABEL.match(k) and isinstance(v, str) and ATTRIBUTE_VALUE.match(v)
+        for k, v in attrs.items())
+
+
 def _well_formed_context(doc: dict[str, Any]) -> bool:
-    """True when context.json's shape is safe for callers to index directly."""
-    if not isinstance(doc.get("entity_ref"), str) or not isinstance(doc.get("context_hash"), str):
+    """True when context.json holds only what the extractor could have produced.
+
+    The same allow-lists as context_extract, because a hand-written or
+    tampered file must not smuggle free text past them into a bundle."""
+    ref = doc.get("entity_ref")
+    if not isinstance(ref, str) or not ENTITY_REF.match(ref) \
+            or not isinstance(doc.get("context_hash"), str):
         return False
     edges = doc.get("edges")
-    if not isinstance(edges, list):
+    if not isinstance(edges, list) or not all(_well_formed_edge(e) for e in edges):
         return False
-    for edge in edges:
-        if not isinstance(edge, dict):
-            return False
-        if not all(isinstance(edge.get(k), str) for k in ("ref", "type", "direction", "neighbour")):
-            return False
-        if not isinstance(edge.get("attributes"), dict):
-            return False
-    if not isinstance(doc.get("truncated"), dict):
-        return False
-    return True
+    truncated = doc.get("truncated")
+    return isinstance(truncated, dict) and all(
+        isinstance(n, int) and not isinstance(n, bool) and n >= 0 for n in truncated.values())
 
 
 def load_service_context(repo_root: Path) -> dict[str, Any] | None:
