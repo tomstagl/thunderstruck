@@ -117,7 +117,7 @@ patterns:
           kind: regex
           pattern: '\bHttpClient\s*\.\s*(newBuilder\s*\(\s*\)|newHttpClient\s*\(\s*\))'
           absent_within: '\bconnectTimeout\s*\('
-          window: 6
+          window: 10
           confidence: medium
           note: "java.net.http.HttpClient built with no connectTimeout()"
         - id: S01-java-httprequest-no-timeout
@@ -130,22 +130,23 @@ patterns:
         - id: S01-java-okhttp-no-timeout
           kind: regex
           pattern: '\bOkHttpClient\s*\.\s*Builder\s*\(\s*\)|new\s+OkHttpClient\s*\(\s*\)'
-          absent_within: '\b(connectTimeout|readTimeout|writeTimeout|callTimeout)\s*\('
+          absent_within: '\bcallTimeout\s*\('
           window: 8
           confidence: low
-          note: "OkHttpClient with no timeout configured — per-read defaults only, no bound on the whole call"
+          note: "OkHttpClient with no callTimeout — the per-operation defaults do not bound a slow-drip response"
         - id: S01-java-jdbc-no-login-timeout
           kind: regex
           pattern: '\bDriverManager\s*\.\s*getConnection\s*\('
-          absent_within: '\bsetLoginTimeout\s*\(|[?&;](connectTimeout|loginTimeout|socketTimeout)='
+          absent_within: '\bsetLoginTimeout\s*\(|[''"?&;](connectTimeout|loginTimeout|socketTimeout)[''"=]'
           window: 4
           window_before: 6
           confidence: low
           note: "DriverManager.getConnection with no login timeout — some drivers wait forever for an unreachable host"
         - id: S01-java-future-get-no-timeout
           kind: regex
-          pattern: '\.\s*(get|join)\s*\(\s*\)'
+          pattern: '\b\w*[Ff]uture\w*\s*\.\s*(get|join)\s*\(\s*\)|\.\s*join\s*\(\s*\)'
           present_within: '\b(CompletableFuture|Future)\b'
+          absent_within: '\b(orTimeout|completeOnTimeout)\s*\('
           window: 2
           window_before: 6
           confidence: low
@@ -747,7 +748,7 @@ patterns:
       java:
         - id: S27-java-blocking-in-reactive
           kind: regex
-          pattern: '\bThread\s*\.\s*sleep\s*\(|\bDriverManager\s*\.\s*getConnection\s*\(|\.\s*block(First|Last|Optional)?\s*\(|\.\s*execute(Query|Update)\s*\(|\w*[Hh]ttp[Cc]lient\s*\.\s*send\s*\(|\w*(restTemplate|RestTemplate|jdbcTemplate|JdbcTemplate)\s*\.\s*\w+\s*\('
+          pattern: '\bThread\s*\.\s*sleep\s*\(|\bDriverManager\s*\.\s*getConnection\s*\(|\.\s*execute(Query|Update)\s*\(|[Hh]ttp[Cc]lient\s*\.\s*send\s*\(|(restTemplate|RestTemplate|jdbcTemplate|JdbcTemplate)\s*\.\s*\w+\s*\('
           present_within: '\b(Mono|Flux)\b|reactor\.core|io\.netty|ChannelHandlerContext|akka\.stream'
           absent_within: 'Schedulers\s*\.\s*(boundedElastic|fromExecutor\w*|newBoundedElastic)|\bsubscribeOn\s*\(|\bpublishOn\s*\('
           window: 12
@@ -772,20 +773,20 @@ patterns:
         - id: S28-java-monitor-held-across-io
           kind: regex
           pattern: '\bsynchronized\s*\(|\bsynchronized\s+[\w<]'
-          present_within: '\bThread\s*\.\s*sleep\s*\(|\.\s*(send|exchange|executeQuery|executeUpdate|getForObject|getForEntity|postForObject|postForEntity|getConnection|block|read|write)\s*\(|\.\s*(get|join)\s*\(\s*\)'
+          present_within: '(?s)\A(?:(?!\}).)*?(?:\bThread\s*\.\s*sleep\s*\(|\.\s*(send|exchange|executeQuery|executeUpdate|getForObject|getForEntity|postForObject|postForEntity|getConnection|block)\s*\(|\.\s*join\s*\(\s*\))'
           window: 15
           confidence: low
-          note: "synchronized section makes a blocking call — a stalled call holds the monitor and every other thread queues behind it"
+          note: "synchronized section makes a blocking call before it closes — a stalled call holds the monitor and every other thread queues behind it"
         - id: S28-java-untimed-lock-across-io
           kind: regex
           pattern: '\.\s*(lock|lockInterruptibly)\s*\(\s*\)'
-          present_within: '\bThread\s*\.\s*sleep\s*\(|\.\s*(send|exchange|executeQuery|executeUpdate|getForObject|getForEntity|postForObject|postForEntity|getConnection|block|read|write)\s*\(|\.\s*(get|join)\s*\(\s*\)'
+          present_within: '(?s)\A(?:(?!\.\s*unlock\s*\().)*?(?:\bThread\s*\.\s*sleep\s*\(|\.\s*(send|exchange|executeQuery|executeUpdate|getForObject|getForEntity|postForObject|postForEntity|getConnection|block)\s*\(|\.\s*join\s*\(\s*\))'
           window: 15
           confidence: low
-          note: "Lock.lock() with no timed tryLock, held across a blocking call"
+          note: "Lock.lock() with no timed tryLock, held across a blocking call before unlock()"
         - id: S28-java-untimed-wait
           kind: regex
-          pattern: '(\.\s*|^\s*)(await|wait)\s*\(\s*\)'
+          pattern: '(\.\s*|^\s*)(await|wait)\s*\(\s*\)(?!\s*\.\s*atMost)'
           confidence: low
           note: "Condition.await()/Object.wait() with no timeout — waits forever if the signal never comes"
 
