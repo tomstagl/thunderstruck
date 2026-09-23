@@ -145,7 +145,8 @@ patterns:
           kind: regex
           pattern: '\b\w*[Ff]uture\w*\s*\.\s*(get|join)\s*\(\s*\)|\.\s*join\s*\(\s*\)'
           present_within: '\b(CompletableFuture|Future)\b'
-          absent_within: '\b(orTimeout|completeOnTimeout)\s*\('
+          # A get() behind a positive `if (f.isDone())` guard returns at once.
+          absent_within: '\b(orTimeout|completeOnTimeout)\s*\(|\bif\s*\(\s*[\w.]+\s*\.\s*isDone\s*\(\s*\)\s*\)'
           window: 2
           window_before: 6
           confidence: low
@@ -204,7 +205,7 @@ patterns:
         - id: S02-java-backoff
           kind: module
           handler: s02_backoff
-          confidence: medium
+          confidence: low
           note: "retry backoff missing a cap, jitter, or growth"
         - id: S02-java-retryable-no-jitter
           kind: regex
@@ -261,14 +262,14 @@ patterns:
           kind: file_absent
           anchor: '\b429\b|TOO_MANY_REQUESTS'
           absent: '[Rr]etry-?[Aa]fter|RETRY_AFTER'
-          require: '(?s)\A(?=.*?(?i:\b(retry|retries|retrying|attempt|attempts|backoff|sleep|delay)\b)|.*?\w+[Rr]etry\w*\s*\()(?=.*?(\.\s*(send|sendAsync|exchange|execute|retrieve|getForObject|getForEntity|postForObject|postForEntity|newCall)\s*\(|\bstatusCode\s*\(\s*\)|getStatusCode\s*\(\s*\)|\.\s*code\s*\(\s*\)))'
-          confidence: medium
+          require: '(?s)\A(?=.*?(?i:\b(retry|retries|retrying|attempt|attempts|backoff|sleep|delay)\b)|.*?\b(?!(?:set|get|is|has)[A-Z])\w+[Rr]etry\w*\s*\()(?=.*?(\.\s*(send|sendAsync|exchange|execute|retrieve|getForObject|getForEntity|postForObject|postForEntity|newCall)\s*\(|\bstatusCode\s*\(\s*\)|getStatusCode\s*\(\s*\)|\.\s*code\s*\(\s*\)))'
+          confidence: low
           note: "file handles 429 but never reads Retry-After"
         - id: S03-java-503-ignores-retry-after
           kind: file_absent
           anchor: '\b503\b|SERVICE_UNAVAILABLE|HTTP_UNAVAILABLE'
           absent: '[Rr]etry-?[Aa]fter|RETRY_AFTER'
-          require: '(?s)\A(?=.*?(?i:\b(retry|retries|retrying|attempt|attempts|backoff|sleep|delay)\b)|.*?\w+[Rr]etry\w*\s*\()(?=.*?(\.\s*(send|sendAsync|exchange|execute|retrieve|getForObject|getForEntity|postForObject|postForEntity|newCall)\s*\(|\bstatusCode\s*\(\s*\)|getStatusCode\s*\(\s*\)|\.\s*code\s*\(\s*\)))'
+          require: '(?s)\A(?=.*?(?i:\b(retry|retries|retrying|attempt|attempts|backoff|sleep|delay)\b)|.*?\b(?!(?:set|get|is|has)[A-Z])\w+[Rr]etry\w*\s*\()(?=.*?(\.\s*(send|sendAsync|exchange|execute|retrieve|getForObject|getForEntity|postForObject|postForEntity|newCall)\s*\(|\bstatusCode\s*\(\s*\)|getStatusCode\s*\(\s*\)|\.\s*code\s*\(\s*\)))'
           confidence: low
           note: "file handles 503 but never reads Retry-After"
 
@@ -308,7 +309,10 @@ patterns:
         - id: S04-java-catch-all-retry
           kind: regex
           pattern: 'catch\s*\(\s*(final\s+)?(Exception|Throwable|RuntimeException)\s+\w+\s*\)'
-          present_within: '\b(attempt|attempts|retry|retries|retrying)\b'
+          # Retry vocabulary counts only outside a string literal (an even
+          # number of quotes follows it on its line): a log message that says
+          # "retry" is not a retry.
+          present_within: '(?m)\b(attempt|attempts|retry|retries|retrying)\b(?=(?:[^"\n]*"[^"\n]*")*[^"\n]*$)'
           absent_within: '\bthrow\b|isRetryable|isTransient|shouldRetry|instanceof'
           window: 4
           window_before: 6
@@ -790,12 +794,12 @@ patterns:
           kind: regex
           pattern: 'new\s+([\w$]+\s*\.\s*)*(LinkedBlockingQueue|LinkedBlockingDeque)\s*(<[^>]*>)?\s*\(\s*\)'
           absent_within: '(?i)idle\w*\s*=\s*new\s'
-          confidence: medium
+          confidence: low
           note: "LinkedBlockingQueue() with no capacity — unbounded by default, absorbs overload instead of shedding it"
         - id: S14-java-executors-unbounded-queue
           kind: regex
           pattern: '\bExecutors\s*\.\s*(newFixedThreadPool|newSingleThreadExecutor)\s*\('
-          confidence: medium
+          confidence: low
           note: "Executors.newFixedThreadPool/newSingleThreadExecutor queue on an unbounded LinkedBlockingQueue"
         - id: S14-java-rabbitmq-no-prefetch
           kind: file_absent
@@ -1005,6 +1009,11 @@ patterns:
           # parameter list is bounded ({0,200}) so a pathological line of
           # unclosed `catch (` stays linear.
           pattern: 'catch\s*\((?![^)]{0,200}[\s|](?i:ignored?|expected|unused)\d*\s*\)|[^)]{0,200}\s_\s*\))[^)]{0,200}\)\s*\{\s*\}'
+          # Parking a thread until the process is killed: a latch nobody
+          # counts down, or joining the current thread. The interrupt is the
+          # intended exit, so swallowing it loses nothing.
+          absent_within: 'new\s+CountDownLatch\s*\(\s*1\s*\)\s*\.\s*await\s*\(\s*\)|Thread\s*\.\s*currentThread\s*\(\s*\)\s*\.\s*join\s*\(\s*\)'
+          window_before: 2
           confidence: medium
           note: "empty catch block — the failure leaves no trace"
         - id: S19-java-catch-only-comment
@@ -1072,7 +1081,10 @@ patterns:
         - id: S28-java-untimed-wait
           kind: regex
           pattern: '(\.\s*|^\s*)(await|wait)\s*\(\s*\)(?!\s*\.\s*atMost)'
-          absent_within: '@Override\s+(public\s+)?[\w<>\[\],\s]*?\b(put|take)\w*\s*\('
+          # Contracts that block by definition: BlockingQueue put*/take*, and
+          # the untimed awaitTermination() beside its timed variant. A latch
+          # nobody counts down parks a launcher's main thread on purpose.
+          absent_within: '@Override\s+(public\s+)?[\w<>\[\],\s]*?\b(put|take)\w*\s*\(|\bvoid\s+awaitTermination\s*\(\s*\)|new\s+CountDownLatch\s*\(\s*1\s*\)\s*\.\s*await\s*\(\s*\)'
           window_before: 8
           confidence: low
           note: "Condition.await()/Object.wait() with no timeout — waits forever if the signal never comes"

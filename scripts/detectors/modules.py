@@ -91,6 +91,40 @@ def _lang_key(ctx) -> str:
 # --------------------------------------------------------------------------
 
 
+# Java: a retry wait sits inside the loop that retries. A sleep with no
+# enclosing `for`/`while`/`do` is simulated latency, a pacing delay or a
+# one-off pause, even when `@Retry` or `retry` appears a few lines away.
+# (TS/Python keep the shared window-only rule; AC-16.)
+_LOOP_HEADER_JAVA = re.compile(r"\b(?:while|for|do)\b")
+_TYPE_HEADER_JAVA = re.compile(r"\b(?:class|interface|enum|record)\s+[\w$]")
+_LOOP_LOOKBACK = 400
+
+
+def _inside_loop_java(lines: list[str], i: int, col: int) -> bool:
+    """True when line `i` (from column `col` back) is enclosed by a loop."""
+    if re.search(r"\b(?:while|for)\s*\(", lines[i][:col]):
+        return True  # `while (x) Thread.sleep(n);` or `for (...) { sleep(n); }`
+    depth = 0
+    for j in range(i, max(-1, i - _LOOP_LOOKBACK), -1):
+        text = lines[j][:col] if j == i else lines[j]
+        for k in range(len(text) - 1, -1, -1):
+            ch = text[k]
+            if ch == "}":
+                depth += 1
+            elif ch == "{":
+                if depth:
+                    depth -= 1
+                    continue
+                header = text[:k]
+                if not header.strip() and j > 0:
+                    header = lines[j - 1]  # Allman brace: header on the line above
+                if _TYPE_HEADER_JAVA.search(header):
+                    return False
+                if _LOOP_HEADER_JAVA.search(header):
+                    return True
+    return False
+
+
 def s02_backoff(ctx) -> Result:
     """Flag a retry wait that is constant, uncapped, or unjittered.
 
@@ -111,6 +145,7 @@ def s02_backoff(ctx) -> Result:
 
     out: Result = []
     reported: set[str] = set()
+    is_java = _lang_key(ctx) == "java"
 
     for i, line in enumerate(ctx.code_lines):
         near = "\n".join(ctx.code_lines[max(0, i - 12):i + 13])
@@ -124,6 +159,8 @@ def s02_backoff(ctx) -> Result:
             arg = (m.group("arg") or "").strip()
             if not arg:
                 continue
+            if is_java and not _inside_loop_java(ctx.code_lines, i, m.start()):
+                break  # not a wait between attempts
 
             literal = arg if _LITERAL_MS.match(arg) else constants.get(arg)
             if literal is not None:

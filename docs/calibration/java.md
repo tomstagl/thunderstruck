@@ -1150,3 +1150,374 @@ and had no instance in the corpus. Each became a required-silent sample.
   factory) is invisible, and any `prefetch` substring suppresses it. An autoAck
   consumer on a server-named queue still receives an unbounded push, and
   neither S14 nor S07 reports it.
+
+## Batch 6 — cross-batch HEAD sweep (final fix wave): every Java pattern
+
+Batches 1–5 each swept only their own patterns, and some only part of a
+repository. Batch 6 sweeps **every** Java pattern (S01–S19, S27–S29) over all
+18 clones at the final catalog, so a detector written in one batch is also
+judged on the repositories of the others. The whole grpc-java tree is in
+scope this time, not only `examples/`. The only exclusion is the generated
+`jpa/deferred` fixtures of spring-data-examples (2000 identical S08 hits;
+see Batch 2), recorded the same way as before.
+
+`calibrate.py` skips test directories using the shared filter (`test/`,
+`tests/`, `src/test/` and similar). grpc-java also keeps test code in
+`src/testFixtures/`, `src/androidTest/`, `src/jmh/`, `src/jettyTest/` and in
+whole modules (`testing/`, `interop-testing/`, `android-interop-testing/`,
+`istio-interop-testing/`, `gae-interop-testing/`, `benchmarks/`). The filter
+does not recognise these, so those hits are swept here too. They are judged
+against the pattern like any other hit. An unbounded queue in a test harness
+is a genuine instance of the pattern and is recorded as `TP (test code)`: the
+detector is right about the code, even though no production path runs it.
+Excluding these source sets is a shared-filter change (AC-16) and is left as
+a follow-up.
+
+| Repo | Commit | Java files swept |
+|---|---|---|
+| jhy/jsoup | `49a15317317970a7ea3f0a5ded303ef319860f4a` | 98 |
+| brettwooldridge/HikariCP | `a4d93f4f85517f90e632b795486d7102e933d7ff` | 49 |
+| apache/commons-pool | `c4aba65cd8445685f89422b18219ea9853e4306d` | 57 |
+| spring-petclinic/spring-petclinic-reactive | `68534cf88a9d022467b9590b953ea4fc7f78bd6b` | 39 |
+| spring-projects/spring-petclinic | `818c4136ea971c21674525f9053de0d9c7ad8cfe` | 30 |
+| spring-petclinic/spring-petclinic-microservices | `295fa8d5ee10f7b6daddf83a2c65f9051a87564b` | 53 |
+| iExecBlockchainComputing/iexec-core | `a09dbba123f09ae352410c87bcb3788610536809` | 129 |
+| spring-projects/spring-data-examples | `7747029e6157cb780862826b6ae87c88d7a4df3c` | 6504 (6001 in `jpa/deferred`, whose hits are excluded) |
+| jhipster/jhipster-sample-app | `6b000b5d23a36c45e01472471b84a44fa2464044` | 81 |
+| spring-projects/spring-kafka | `fff33914d4e450a33e17195e11a79937c3505605` | 387 |
+| confluentinc/kafka-streams-examples | `3c40c0e27dd988d8b2d72951802d8fd9c9940a64` | 58 |
+| apache/activemq-artemis-examples | `37a1052bad9928f04f983fb6619088d43855f4a2` | 194 |
+| rabbitmq/rabbitmq-tutorials | `586f18f75693d7fffe16ff3d29775f4176ba4ecc` | 90 |
+| resilience4j/resilience4j-spring-boot3-demo | `6c3e644d53174182fb79c0e49770b191a1d7287c` | 10 |
+| resilience4j/resilience4j-spring-boot2-demo | `85590a025d1ff6ecf97f26502a14ab595a664305` | 10 |
+| grpc/grpc-java | `9e0ff283e9a727546c46d889e02a9376c36ab411` | 1132 (whole tree) |
+| spring-projects/spring-amqp-samples | `eee2e80577d2e22415ace5ad6a69dfd0ec2e6789` | 38 |
+| akka/akka-samples | `eab644e38375553bafe1742baaa5a5aaff270621` | 39 (Java only) |
+
+**Hits** is the sweep at the head of the branch before this wave (`1e63a2d`):
+187 lines outside `jpa/deferred`. **Final** is the sweep after the fixes
+below: 167 lines. Every final line appears exactly once under **Hits** below.
+
+### Medium-confidence detectors
+
+The rule for this wave: a detector stays `medium` only if the final sweep
+shows at least one inspected TP and every FP was fixed with a negative
+sample. Otherwise it drops to `low`. Every hit of every detector that was
+`medium` at the start of the wave was inspected.
+
+| Detector | Hits | TP | FP-fixed | FP-accepted | Final | Confidence |
+|---|---|---|---|---|---|---|
+| S01-java-httpclient-no-connect-timeout | 1 | 1 | 0 | 0 | 1 | medium (kept) |
+| S01-java-httprequest-no-timeout | 2 | 1 | 1 | 0 | 1 | medium (kept) |
+| S19-java-empty-catch | 3 | 2 | 1 | 0 | 2 | medium (kept) |
+| S19-java-catch-only-comment | 2 | 2 | 0 | 0 | 2 | medium (kept) |
+| S02-java-backoff | 9 | 2 | 6 | 1 | 3 | **low** (was medium) |
+| S03-java-429-ignores-retry-after | 1 | 0 | 1 | 0 | 0 | **low** (was medium) |
+| S14-java-unbounded-blocking-queue | 29 | 25 | 0 | 4 | 29 | **low** (was medium) |
+| S14-java-executors-unbounded-queue | 11 | 7 | 0 | 4 | 11 | **low** (was medium) |
+
+Why each detector was demoted:
+
+- **S02-java-backoff** — 6 of its 9 hits were simulated latency in the
+  resilience4j demos, a `Thread.sleep` a few lines from `@Retry`. That shape is
+  now fixed for Java only (see below). The spring-kafka hit
+  (`ShareKafkaMessageListenerContainer.java:556`) is a 10 ms pause in a poll
+  loop, which has the same catch-then-`continue` shape as the two artemis
+  reconnect loops that are genuine TPs. Regex cannot tell them apart without
+  changing the shared retry-context rule (AC-16), so it is FP-accepted, and a
+  `medium` detector may not carry one.
+- **S03-java-429-ignores-retry-after** — its only hit anywhere in six batches
+  was the grpc-java status-mapping table (`GrpcUtil.java:321`), an FP now
+  fixed. It has no inspected TP.
+- **S14-java-unbounded-blocking-queue** — 25 TPs, but 22 are in grpc-java
+  test code. The 4 spring-kafka hits are queues that are bounded by
+  construction or are pools and control hand-offs: a per-prefix producer
+  cache, a suffix queue filled to `maxCache`, and the ack and seek hand-offs
+  drained every poll. Regex cannot see those bounds.
+- **S14-java-executors-unbounded-queue** — 7 TPs (including the production S2A
+  handshake pool and two example gRPC servers), but 4 FP-accepted: executors
+  that run one task, or a fixed set of long-lived workers, submitted once.
+  Regex cannot count submissions.
+
+### Low-confidence detectors: per-repository counts and the tripwire
+
+| Detector | Final hits per repository |
+|---|---|
+| S01-java-future-get-no-timeout | grpc-java 2, spring-amqp-samples 1, spring-kafka 1 |
+| S01-java-jms-receive-no-timeout | activemq-artemis-examples 12 |
+| S01-java-resttemplate-no-timeout | spring-petclinic-microservices 1 |
+| S01-java-webclient-no-timeout | spring-petclinic-microservices 2 |
+| S02-java-backoff | activemq-artemis-examples 2, spring-kafka 1 |
+| S02-java-retryable-no-jitter | iexec-core 3 |
+| S06-java-single-pool-no-priority | grpc-java 2 |
+| S07-java-rabbitmq-auto-ack | rabbitmq-tutorials 6 |
+| S08-java-repository-no-pageable | spring-data-examples 18, iexec-core 2, spring-petclinic-microservices 2, spring-petclinic 1 |
+| S09-java-cache-aside-no-singleflight | akka-samples 1, grpc-java 1, spring-kafka 1 |
+| S09-java-cacheable-no-sync | spring-data-examples 2, spring-petclinic 2, spring-petclinic-microservices 1 |
+| S11-java-grpc-no-deadline | grpc-java 9 |
+| S12-java-no-breaker | iexec-core 1, spring-kafka 1 |
+| S13-java-shared-executor | grpc-java 2 |
+| S14-java-executors-unbounded-queue | grpc-java 9, iexec-core 1, kafka-streams-examples 1 |
+| S14-java-unbounded-blocking-queue | grpc-java 22, spring-kafka 4, spring-data-examples 3 |
+| S15-java-no-fallback | grpc-java 1, spring-petclinic-microservices 1 |
+| S16-java-scheduled-no-jitter | jhipster-sample-app 1 |
+| S17-java-unbounded-cache | spring-kafka 1 |
+| S27-java-blocking-in-reactive | resilience4j-spring-boot2-demo 1, resilience4j-spring-boot3-demo 1 |
+| S28-java-monitor-held-across-io | grpc-java 3, activemq-artemis-examples 1 |
+| S28-java-untimed-lock-across-io | spring-kafka 1 |
+| S28-java-untimed-wait | grpc-java 14, rabbitmq-tutorials 12, activemq-artemis-examples 1, commons-pool 1, kafka-streams-examples 1, spring-data-examples 1, spring-kafka 1 |
+| S29-java-n-plus-one | spring-data-examples 2 |
+
+Every other Java detector has 0 final hits in all 18 repositories.
+
+- **Tripwire.** No detector exceeds 25 hits in one repository. The largest
+  counts are S14-java-unbounded-blocking-queue in grpc-java (22, all in test
+  code), S08 in spring-data-examples (18, excluding
+  `jpa/deferred`), S28-java-untimed-wait in grpc-java (14) and
+  rabbitmq-tutorials (12: four waits in `PublisherConfirms.java`, copied
+  byte for byte into `java/`, `java-mvn/` and `java-gradle/`).
+- **Judged hits.** Every hit of a low detector that has 10 or fewer final
+  hits was judged. S28-java-untimed-wait has 31. Ten are judged: the Batch 1
+  commons-pool TP, the four `java/PublisherConfirms.java` waits, and grpc-java
+  `NettyServer.java:393`, `OkHttpClientTransport.java:714`,
+  `ClientCalls.java:916`, `ManualFlowControlClient.java:116` and
+  `EchoTestServer.java:430`. The other 21 are marked `uninspected (low)`. Hits
+  already judged in an earlier batch keep that verdict and say which batch.
+- **Majority FP-accepted on the widened scope (open).** Step 4 of the
+  protocol defers a detector when more than half of its hits are
+  FP-accepted. Five low detectors meet that condition on this batch's scope,
+  each on 1–4 hits:
+  - S06-java-single-pool-no-priority (2 of 2, both grpc-java test or
+    benchmark code)
+  - S09-java-cache-aside-no-singleflight (3 of 3, all local computations
+    with no upstream call)
+  - S17-java-unbounded-cache (1 of 1)
+  - S27-java-blocking-in-reactive (2 of 2, the same resilience4j demo file in
+    two repositories)
+  - S28-java-monitor-held-across-io (4 of 4: a string literal and three
+    oneway binder sends)
+
+  The ruling for this wave gives low detectors the tripwire only, so none of
+  them is deferred here. The decision is left to the controller, and all five
+  stay at `low`.
+
+### Hits
+
+- `S01-java-httpclient-no-connect-timeout` activemq-artemis-examples `examples/features/standard/security-oidc/src/main/java/org/apache/activemq/artemis/jms/example/OIDCSecurityExample.java:73` — TP: `HttpClient.newBuilder().build()` with no `connectTimeout`, and the token request built from it at :91 sets no `.timeout(...)` either. If Keycloak accepts the TCP connection but never answers, `client.send` blocks the example forever.
+- `S01-java-httprequest-no-timeout` activemq-artemis-examples `examples/features/standard/security-oidc/src/main/java/org/apache/activemq/artemis/jms/example/OIDCSecurityExample.java:91` — TP: the token request has no `.timeout(...)`, and the client at :73 has no connect timeout, so nothing bounds `client.send`.
+- `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/broker-connection/ha-with-dual-mirror/src/main/java/org/apache/artemis/jms/example/Consumer.java:49` — TP (Batch 5 verdict)
+- `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/broker-connection/ha-with-mesh-mirror/src/main/java/org/apache/artemis/jms/example/Consumer.java:49` — TP (Batch 5 verdict)
+- `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/standard/durable-subscription/src/main/java/org/apache/activemq/artemis/jms/example/DurableSubscriptionExample.java:74` — TP (Batch 5 verdict)
+- `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/standard/durable-subscription/src/main/java/org/apache/activemq/artemis/jms/example/DurableSubscriptionExample.java:95` — TP (Batch 5 verdict)
+- `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/standard/request-reply/src/main/java/org/apache/activemq/artemis/jms/example/RequestReplyExample.java:100` — TP (Batch 5 verdict)
+- `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/standard/scheduled-message/src/main/java/org/apache/activemq/artemis/jms/example/ScheduledMessageExample.java:78` — TP (Batch 5 verdict)
+- `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/standard/topic/src/main/java/org/apache/activemq/artemis/jms/example/TopicExample.java:73` — TP (Batch 5 verdict)
+- `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/standard/topic/src/main/java/org/apache/activemq/artemis/jms/example/TopicExample.java:78` — TP (Batch 5 verdict)
+- `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/standard/xa-receive/src/main/java/org/apache/activemq/artemis/jms/example/XAReceiveExample.java:91` — TP (Batch 5 verdict)
+- `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/standard/xa-receive/src/main/java/org/apache/activemq/artemis/jms/example/XAReceiveExample.java:93` — TP (Batch 5 verdict)
+- `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/standard/xa-receive/src/main/java/org/apache/activemq/artemis/jms/example/XAReceiveExample.java:112` — TP (Batch 5 verdict)
+- `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/standard/xa-receive/src/main/java/org/apache/activemq/artemis/jms/example/XAReceiveExample.java:114` — TP (Batch 5 verdict)
+- `S02-java-backoff` activemq-artemis-examples `examples/features/standard/security-keycloak/src/main/java/org/apache/activemq/artemis/jms/example/KeycloakSecurityExample.java:76` — TP: the connect-until-the-broker-is-up loop waits a constant `TimeUnit.SECONDS.sleep(10)` after every `JMSException`. Every client started with the broker reconnects on the same 10 s beat.
+- `S02-java-backoff` activemq-artemis-examples `examples/features/standard/security-oidc/src/main/java/org/apache/activemq/artemis/jms/example/OIDCSecurityExample.java:112` — TP: the same constant 10 s reconnect wait as the Keycloak example.
+- `S19-java-catch-only-comment` activemq-artemis-examples `examples/features/standard/management-notifications/src/main/java/org/apache/activemq/artemis/jms/example/ManagementNotificationExample.java:72` — TP (Batch 3 verdict)
+- `S19-java-catch-only-comment` activemq-artemis-examples `examples/features/standard/management-notifications/src/main/java/org/apache/activemq/artemis/jms/example/ManagementNotificationExample.java:90` — TP (Batch 3 verdict)
+- `S28-java-monitor-held-across-io` activemq-artemis-examples `examples/features/standard/topic-hierarchies/src/main/java/org/apache/activemq/artemis/jms/example/TopicHierarchyExample.java:73` — FP-accepted: `synchronized` appears inside the string literal "Lewis Hamilton joins European synchronized swimming team". String literals are not blanked (see Known limitations).
+- `S28-java-untimed-wait` activemq-artemis-examples `examples/features/perf/perf/src/main/java/org/apache/activemq/artemis/jms/example/PerfBase.java:237` — uninspected (low)
+- `S09-java-cache-aside-no-singleflight` akka-samples `akka-sample-cluster-java/src/main/java/sample/cluster/stats/StatsWorker.java:73` — FP-accepted: the actor handles one message at a time and computes the cached value locally (`word.length()`). There is no upstream call for concurrent misses to multiply.
+- `S28-java-untimed-wait` commons-pool `src/main/java/org/apache/commons/pool3/impl/GenericKeyedObjectPool.java:780` — TP (Batch 1 verdict)
+- `S01-java-future-get-no-timeout` grpc-java `benchmarks/src/main/java/io/grpc/benchmarks/qps/AsyncClient.java:133` — TP (test code): the benchmark client waits on each worker's `future.get()` with no timeout. The workers make RPCs with no deadline, so one stalled RPC hangs the benchmark run.
+- `S01-java-future-get-no-timeout` grpc-java `stub/src/main/java/io/grpc/stub/ClientCalls.java:341` — FP-accepted: `getUnchecked` waits on the blocking-stub future. The RPC's own deadline completes that future, and the untimed wait is the documented behaviour of a stub with no deadline, which S11 reports.
+- `S06-java-single-pool-no-priority` grpc-java `android-interop-testing/src/main/java/io/grpc/android/integrationtest/UdsTcpEndpointConnector.java:45` — FP-accepted: the accept loop and the two stream pumps per connection share one pool. That is long-lived work of one kind, not interactive work queued behind batch work. The real defect, an unbounded queue that keeps the pool at its 5 core threads, is reported by S14 at :50.
+- `S06-java-single-pool-no-priority` grpc-java `core/src/jmh/java/io/grpc/internal/SerializingExecutorBenchmark.java:43` — FP-accepted: a JMH benchmark submitting its own tasks. There is only one kind of work.
+- `S09-java-cache-aside-no-singleflight` grpc-java `grpclb/src/main/java/io/grpc/grpclb/CachedSubchannelPool.java:93` — FP-accepted: a pool of subchannels keyed by address, not a cache-aside read in front of a dependency.
+- `S11-java-grpc-no-deadline` grpc-java `benchmarks/src/jmh/java/io/grpc/benchmarks/TransportBenchmark.java:79` — FP-accepted (test code): a JMH benchmark against an in-process server. There is no inbound deadline to propagate. S11's failure is deadline propagation across hops (Batch 4 ruling).
+- `S11-java-grpc-no-deadline` grpc-java `benchmarks/src/main/java/io/grpc/benchmarks/driver/LoadClient.java:68` — FP-accepted (test code): the benchmark driver's load generator. It has no inbound request whose deadline could propagate.
+- `S11-java-grpc-no-deadline` grpc-java `examples/android/clientcache/app/src/main/java/io/grpc/clientcacheexample/ClientCacheExampleActivity.java:136` — TP (Batch 4 verdict)
+- `S11-java-grpc-no-deadline` grpc-java `examples/android/helloworld/app/src/main/java/io/grpc/helloworldexample/HelloworldActivity.java:95` — TP (Batch 4 verdict)
+- `S11-java-grpc-no-deadline` grpc-java `examples/android/routeguide/app/src/main/java/io/grpc/routeguideexample/RouteGuideActivity.java:157` — TP (Batch 4 verdict)
+- `S11-java-grpc-no-deadline` grpc-java `examples/android/strictmode/app/src/main/java/io/grpc/strictmodehelloworldexample/StrictModeHelloworldActivity.java:125` — TP (Batch 4 verdict)
+- `S11-java-grpc-no-deadline` grpc-java `gae-interop-testing/gae-jdk8/src/main/java/io/grpc/testing/integration/LongLivedChannel.java:64` — TP (test code, GAE interop app): a servlet handles an inbound HTTP request with a blocking stub that has no deadline. A stalled backend pins the servlet thread past the request's own limit.
+- `S11-java-grpc-no-deadline` grpc-java `interop-testing/src/main/java/io/grpc/testing/integration/SoakClient.java:91` — FP-accepted (test code): a soak-test client run from the command line. The missing timeout is S01's concern, not S11's (Batch 4 ruling).
+- `S11-java-grpc-no-deadline` grpc-java `stub/src/main/java/io/grpc/stub/AbstractBlockingStub.java:35` — FP-accepted: the blocking-stub base class itself. It makes no call.
+- `S13-java-shared-executor` grpc-java `android-interop-testing/src/main/java/io/grpc/android/integrationtest/UdsTcpEndpointConnector.java:45` — TP (test code, Android interop test app): the accept loop and every connection's two stream pumps share one 5-thread pool (the unbounded queue means it never grows to 10). Once two connections are open, a third connection's pumps queue behind them and never run.
+- `S13-java-shared-executor` grpc-java `core/src/jmh/java/io/grpc/internal/SerializingExecutorBenchmark.java:43` — FP-accepted: a JMH benchmark with one workload. There is nothing to isolate.
+- `S14-java-executors-unbounded-queue` grpc-java `android-interop-testing/src/androidTest/java/io/grpc/android/integrationtest/InteropInstrumentationTest.java:49` — TP (test code): the instrumentation test runs its cases on a single-thread executor.
+- `S14-java-executors-unbounded-queue` grpc-java `android-interop-testing/src/androidTest/java/io/grpc/android/integrationtest/UdsChannelInteropTest.java:58` — TP (test code): the same, in the UDS interop test.
+- `S14-java-executors-unbounded-queue` grpc-java `android-interop-testing/src/main/java/io/grpc/android/integrationtest/TesterActivity.java:81` — TP (test code, Android interop test app): every button press queues another interop run behind one thread with no bound.
+- `S14-java-executors-unbounded-queue` grpc-java `benchmarks/src/main/java/io/grpc/benchmarks/driver/LoadClient.java:117` — FP-accepted: the benchmark submits its fixed set of long-lived workers once, at start. Nothing arrives later to queue.
+- `S14-java-executors-unbounded-queue` grpc-java `core/src/jmh/java/io/grpc/internal/SerializingExecutorBenchmark.java:43` — TP (test code): the benchmark's executor under test.
+- `S14-java-executors-unbounded-queue` grpc-java `examples/example-alts/src/main/java/io/grpc/examples/alts/HelloWorldAltsClient.java:84` — FP-accepted: the channel executor of a client that makes a single blocking call and exits.
+- `S14-java-executors-unbounded-queue` grpc-java `examples/example-alts/src/main/java/io/grpc/examples/alts/HelloWorldAltsServer.java:88` — TP: the example server runs every RPC on `newFixedThreadPool(1)`. Under load, RPCs queue without bound behind one thread.
+- `S14-java-executors-unbounded-queue` grpc-java `examples/src/main/java/io/grpc/examples/helloworld/HelloWorldServer.java:47` — TP: `newFixedThreadPool(2)` as the server executor. The comment chooses to "let RPCs queue when the CPU is saturated", but the queue has no bound, so overload becomes unbounded latency and memory instead of rejections.
+- `S14-java-executors-unbounded-queue` grpc-java `s2a/src/main/java/io/grpc/s2a/internal/handshaker/S2AProtocolNegotiatorFactory.java:112` — TP: every S2A handshake runs on `newFixedThreadPool(1)`. During a reconnect storm, handshakes queue without bound behind one thread.
+- `S14-java-unbounded-blocking-queue` grpc-java `android-interop-testing/src/main/java/io/grpc/android/integrationtest/UdsTcpEndpointConnector.java:50` — TP (test code, Android interop test app): `new ThreadPoolExecutor(5, 10, …, new LinkedBlockingQueue<>(), DiscardOldestPolicy)`. The unbounded queue means the pool never grows past 5 threads and the rejection policy never runs, so connections queue without bound.
+- `S14-java-unbounded-blocking-queue` grpc-java `benchmarks/src/jmh/java/io/grpc/benchmarks/ThreadlessExecutor.java:24` — TP (test code): the benchmark executor's task queue has no bound.
+- `S14-java-unbounded-blocking-queue` grpc-java `binder/src/androidTest/java/io/grpc/binder/internal/BinderClientTransportTest.java:663` — TP (test code): collects results for assertions.
+- `S14-java-unbounded-blocking-queue` grpc-java `binder/src/testFixtures/java/io/grpc/binder/internal/OneWayBinderProxies.java:57` — TP (test code): a test fixture's request queue.
+- `S14-java-unbounded-blocking-queue` grpc-java `binder/src/testFixtures/java/io/grpc/binder/internal/OneWayBinderProxies.java:58` — TP (test code): a test fixture's result queue.
+- `S14-java-unbounded-blocking-queue` grpc-java `binder/src/testFixtures/java/io/grpc/binder/internal/OneWayBinderProxies.java:167` — TP (test code): a test fixture's transaction queue.
+- `S14-java-unbounded-blocking-queue` grpc-java `binder/src/testFixtures/java/io/grpc/binder/internal/SettableAsyncSecurityPolicy.java:34` — TP (test code): pending authorisation requests in a test fixture.
+- `S14-java-unbounded-blocking-queue` grpc-java `core/src/testFixtures/java/io/grpc/internal/ClientStreamListenerBase.java:31` — TP (test code): records messages for assertions.
+- `S14-java-unbounded-blocking-queue` grpc-java `core/src/testFixtures/java/io/grpc/internal/ClientStreamListenerBase.java:33` — TP (test code): records readiness events.
+- `S14-java-unbounded-blocking-queue` grpc-java `core/src/testFixtures/java/io/grpc/internal/FakeClock.java:56` — TP (test code): due tasks in a fake clock.
+- `S14-java-unbounded-blocking-queue` grpc-java `core/src/testFixtures/java/io/grpc/internal/MockServerListener.java:34` — TP (test code): records transports for assertions.
+- `S14-java-unbounded-blocking-queue` grpc-java `core/src/testFixtures/java/io/grpc/internal/MockServerTransportListener.java:38` — TP (test code): records streams for assertions.
+- `S14-java-unbounded-blocking-queue` grpc-java `core/src/testFixtures/java/io/grpc/internal/ServerStreamListenerBase.java:34` — TP (test code): records messages for assertions.
+- `S14-java-unbounded-blocking-queue` grpc-java `core/src/testFixtures/java/io/grpc/internal/ServerStreamListenerBase.java:36` — TP (test code): records readiness events.
+- `S14-java-unbounded-blocking-queue` grpc-java `core/src/testFixtures/java/io/grpc/internal/ServerStreamListenerBase.java:92` — TP (test code): records events for assertions.
+- `S14-java-unbounded-blocking-queue` grpc-java `core/src/testFixtures/java/io/grpc/internal/TestUtils.java:116` — TP (test code): captures transports for assertions.
+- `S14-java-unbounded-blocking-queue` grpc-java `interop-testing/src/main/java/io/grpc/testing/integration/AbstractInteropTest.java:180` — TP (test code): the interop harness captures server-call records.
+- `S14-java-unbounded-blocking-queue` grpc-java `interop-testing/src/main/java/io/grpc/testing/integration/AbstractInteropTest.java:298` — TP (test code): the interop harness captures client stream tracers.
+- `S14-java-unbounded-blocking-queue` grpc-java `interop-testing/src/main/java/io/grpc/testing/integration/TestServiceClient.java:1053` — TP (test code): an interop-client response queue.
+- `S14-java-unbounded-blocking-queue` grpc-java `testing/src/main/java/io/grpc/internal/testing/StatsTestUtils.java:157` — TP (test code): records stats for assertions.
+- `S14-java-unbounded-blocking-queue` grpc-java `testing/src/main/java/io/grpc/internal/testing/TestStreamTracer.java:95` — TP (test code): records outbound tracer events.
+- `S14-java-unbounded-blocking-queue` grpc-java `testing/src/main/java/io/grpc/internal/testing/TestStreamTracer.java:96` — TP (test code): records inbound tracer events.
+- `S15-java-no-fallback` grpc-java `servlet/src/jettyTest/java/io/grpc/servlet/GrpcServletSmokeTest.java:117` — FP-accepted (test code): a smoke test calling an HTTP endpoint. A test should fail, not fall back.
+- `S28-java-monitor-held-across-io` grpc-java `binder/src/main/java/io/grpc/binder/internal/MultiMessageClientStream.java:69` — FP-accepted: `outbound.send()` issues oneway binder transactions, which do not wait for the peer. The monitor serialises writes to one stream and is not held across a blocking wait.
+- `S28-java-monitor-held-across-io` grpc-java `binder/src/main/java/io/grpc/binder/internal/MultiMessageClientStream.java:96` — FP-accepted: same oneway `outbound.send()` as :69.
+- `S28-java-monitor-held-across-io` grpc-java `binder/src/main/java/io/grpc/binder/internal/MultiMessageServerStream.java:100` — FP-accepted: same oneway `outbound.send()` on the server side.
+- `S28-java-untimed-wait` grpc-java `binder/src/androidTest/java/io/grpc/binder/internal/BinderClientTransportTest.java:592` — uninspected (low)
+- `S28-java-untimed-wait` grpc-java `binder/src/androidTest/java/io/grpc/binder/internal/BinderClientTransportTest.java:601` — uninspected (low)
+- `S28-java-untimed-wait` grpc-java `binder/src/androidTest/java/io/grpc/binder/internal/BinderClientTransportTest.java:619` — uninspected (low)
+- `S28-java-untimed-wait` grpc-java `examples/src/main/java/io/grpc/examples/manualflowcontrol/ManualFlowControlClient.java:116` — TP: the example waits on `done` with no timeout for a bidirectional stream opened without a deadline. A server that stalls mid-stream hangs the client forever.
+- `S28-java-untimed-wait` grpc-java `istio-interop-testing/src/main/java/io/grpc/testing/istio/EchoTestServer.java:430` — TP: the forward-echo handler waits on `latch.await()` with no timeout for all its outbound calls. One call that never completes pins the handler thread, and the inbound request's own deadline does not bound the wait.
+- `S28-java-untimed-wait` grpc-java `netty/src/main/java/io/grpc/netty/NettyServer.java:393` — FP-accepted: `shutdown()` waits for `channelGroup.close()`. Closing local channels completes without any peer taking part, so the wait is bounded in practice.
+- `S28-java-untimed-wait` grpc-java `okhttp/src/main/java/io/grpc/okhttp/OkHttpClientTransport.java:714` — FP-accepted: `latch` is counted down in a `finally` on the starting thread right after the connection preface is queued (:797), so it is released by construction.
+- `S28-java-untimed-wait` grpc-java `okhttp/src/main/java/io/grpc/okhttp/OkHttpClientTransport.java:784` — uninspected (low)
+- `S28-java-untimed-wait` grpc-java `stub/src/main/java/io/grpc/stub/ClientCalls.java:916` — FP-accepted: this is the `waitForever` branch of `waitAndDrainWithTimeout`. The timed branch sits next to it, and the caller picks it when the call has a deadline. Whether a deadline is set is S11's concern.
+- `S28-java-untimed-wait` grpc-java `testing/src/main/java/io/grpc/internal/testing/StreamRecorder.java:82` — uninspected (low)
+- `S28-java-untimed-wait` grpc-java `testing/src/main/java/io/grpc/internal/testing/TestClientStreamTracer.java:41` — uninspected (low)
+- `S28-java-untimed-wait` grpc-java `testing/src/main/java/io/grpc/internal/testing/TestServerStreamTracer.java:34` — uninspected (low)
+- `S28-java-untimed-wait` grpc-java `testing/src/main/java/io/grpc/internal/testing/TestStreamTracer.java:104` — uninspected (low)
+- `S28-java-untimed-wait` grpc-java `testing/src/main/java/io/grpc/testing/StreamRecorder.java:87` — uninspected (low)
+- `S02-java-retryable-no-jitter` iexec-core `src/main/java/com/iexec/core/replicate/ReplicateSupplyService.java:88` — TP (Batch 1 verdict)
+- `S02-java-retryable-no-jitter` iexec-core `src/main/java/com/iexec/core/replicate/ReplicatesService.java:254` — TP (Batch 1 verdict)
+- `S02-java-retryable-no-jitter` iexec-core `src/main/java/com/iexec/core/result/ResultService.java:50` — TP (Batch 1 verdict)
+- `S08-java-repository-no-pageable` iexec-core `src/main/java/com/iexec/core/task/TaskRepository.java:27` — TP (Batch 2 verdict)
+- `S08-java-repository-no-pageable` iexec-core `src/main/java/com/iexec/core/worker/WorkerRepository.java:25` — FP-accepted (Batch 2 verdict)
+- `S12-java-no-breaker` iexec-core `src/main/java/com/iexec/core/result/ResultService.java:50` — TP (Batch 4 verdict)
+- `S14-java-executors-unbounded-queue` iexec-core `src/main/java/com/iexec/core/task/TaskService.java:89` — FP-accepted: a try-with-resources executor that runs exactly one task at startup and is closed in the same block.
+- `S16-java-scheduled-no-jitter` jhipster-sample-app `src/main/java/io/github/jhipster/sample/service/UserService.java:290` — TP (Batch 2 verdict)
+- `S14-java-executors-unbounded-queue` kafka-streams-examples `src/main/java/io/confluent/examples/streams/microservices/OrderDetailsService.java:55` — FP-accepted: the executor runs one long-lived `startService` task. Nothing else is submitted.
+- `S28-java-untimed-wait` kafka-streams-examples `src/main/java/io/confluent/examples/streams/ApplicationResetExample.java:184` — uninspected (low)
+- `S07-java-rabbitmq-auto-ack` rabbitmq-tutorials `java-gradle/src/main/java/ReceiveLogHeader.java:54` — TP (Batch 5 verdict)
+- `S07-java-rabbitmq-auto-ack` rabbitmq-tutorials `java-gradle/src/main/java/Recv.java:25` — TP (Batch 5 verdict)
+- `S07-java-rabbitmq-auto-ack` rabbitmq-tutorials `java-mvn/src/main/java/ReceiveLogHeader.java:54` — TP (Batch 5 verdict)
+- `S07-java-rabbitmq-auto-ack` rabbitmq-tutorials `java-mvn/src/main/java/Recv.java:25` — TP (Batch 5 verdict)
+- `S07-java-rabbitmq-auto-ack` rabbitmq-tutorials `java/ReceiveLogHeader.java:54` — TP (Batch 5 verdict)
+- `S07-java-rabbitmq-auto-ack` rabbitmq-tutorials `java/Recv.java:25` — TP (Batch 5 verdict)
+- `S28-java-untimed-wait` rabbitmq-tutorials `java-gradle/src/main/java/PublisherConfirms.java:166` — uninspected (low); byte-identical copy of `java/PublisherConfirms.java:166`
+- `S28-java-untimed-wait` rabbitmq-tutorials `java-gradle/src/main/java/PublisherConfirms.java:178` — uninspected (low); byte-identical copy of `java/PublisherConfirms.java:178`
+- `S28-java-untimed-wait` rabbitmq-tutorials `java-gradle/src/main/java/PublisherConfirms.java:221` — uninspected (low); byte-identical copy of `java/PublisherConfirms.java:221`
+- `S28-java-untimed-wait` rabbitmq-tutorials `java-gradle/src/main/java/PublisherConfirms.java:242` — uninspected (low); byte-identical copy of `java/PublisherConfirms.java:242`
+- `S28-java-untimed-wait` rabbitmq-tutorials `java-mvn/src/main/java/PublisherConfirms.java:166` — uninspected (low); byte-identical copy of `java/PublisherConfirms.java:166`
+- `S28-java-untimed-wait` rabbitmq-tutorials `java-mvn/src/main/java/PublisherConfirms.java:178` — uninspected (low); byte-identical copy of `java/PublisherConfirms.java:178`
+- `S28-java-untimed-wait` rabbitmq-tutorials `java-mvn/src/main/java/PublisherConfirms.java:221` — uninspected (low); byte-identical copy of `java/PublisherConfirms.java:221`
+- `S28-java-untimed-wait` rabbitmq-tutorials `java-mvn/src/main/java/PublisherConfirms.java:242` — uninspected (low); byte-identical copy of `java/PublisherConfirms.java:242`
+- `S28-java-untimed-wait` rabbitmq-tutorials `java/PublisherConfirms.java:166` — TP: the publisher waits on `outstandingConfirms` with no timeout until the confirm window has room. If the broker stops confirming (a dropped connection, a blocked broker), the publisher hangs forever instead of failing.
+- `S28-java-untimed-wait` rabbitmq-tutorials `java/PublisherConfirms.java:178` — TP: waits with no timeout for the last confirms. Same failure as :166.
+- `S28-java-untimed-wait` rabbitmq-tutorials `java/PublisherConfirms.java:221` — TP: the same untimed window wait in the second strategy.
+- `S28-java-untimed-wait` rabbitmq-tutorials `java/PublisherConfirms.java:242` — TP: the same untimed wait for the remaining confirms.
+- `S27-java-blocking-in-reactive` resilience4j-spring-boot2-demo `src/main/java/io/github/robwin/controller/BackendBController.java:141` — FP-accepted: `timeout()` is only called through `executeAsyncWithFallback`, which runs it on resilience4j's thread-pool bulkhead, not on a Reactor thread. Regex cannot follow the call path.
+- `S27-java-blocking-in-reactive` resilience4j-spring-boot3-demo `src/main/java/io/github/robwin/controller/BackendBController.java:141` — FP-accepted: the same as the Boot 2 demo.
+- `S01-java-future-get-no-timeout` spring-amqp-samples `spring-rabbit-streams/src/main/java/org/springframework/amqp/samples/streams/SpringRabbitStreamsApplication.java:61` — TP: the startup runner joins all 100 stream sends with no timeout. If the broker never confirms, application startup hangs.
+- `S08-java-repository-no-pageable` spring-data-examples `cassandra/example/src/main/java/example/springdata/cassandra/projection/CustomerRepository.java:28` — TP (Batch 2 verdict)
+- `S08-java-repository-no-pageable` spring-data-examples `cassandra/example/src/main/java/example/springdata/cassandra/streamoptional/PersonRepository.java:29` — FP-accepted (Batch 2 verdict)
+- `S08-java-repository-no-pageable` spring-data-examples `couchbase/example/src/main/java/example/springdata/couchbase/repository/AirlineRepository.java:32` — TP (Batch 2 verdict)
+- `S08-java-repository-no-pageable` spring-data-examples `jdbc/aot-optimization/src/main/java/example/springdata/aot/CategoryRepository.java:28` — TP (Batch 2 verdict)
+- `S08-java-repository-no-pageable` spring-data-examples `jdbc/basics/src/main/java/example/springdata/jdbc/basics/aggregate/LegoSetRepository.java:30` — TP (Batch 2 verdict)
+- `S08-java-repository-no-pageable` spring-data-examples `jdbc/howto/bidirectionalexternal/src/main/java/example/springdata/jdbc/howto/bidirectionalexternal/MinionRepository.java:23` — TP (Batch 2 verdict)
+- `S08-java-repository-no-pageable` spring-data-examples `jpa/example/src/main/java/example/springdata/jpa/custom/UserRepository.java:31` — TP (Batch 2 verdict)
+- `S08-java-repository-no-pageable` spring-data-examples `jpa/jpa21/src/main/java/example/springdata/jpa/resultsetmappings/SubscriptionRepository.java:28` — TP (Batch 2 verdict)
+- `S08-java-repository-no-pageable` spring-data-examples `jpa/multiple-datasources/src/main/java/example/springdata/jpa/multipleds/order/OrderRepository.java:30` — TP (Batch 2 verdict)
+- `S08-java-repository-no-pageable` spring-data-examples `jpa/security/src/main/java/example/springdata/jpa/security/SecureBusinessObjectRepository.java:28` — TP (Batch 2 verdict)
+- `S08-java-repository-no-pageable` spring-data-examples `jpa/showcase/src/main/java/example/springdata/jpa/showcase/after/AccountRepository.java:30` — TP (Batch 2 verdict)
+- `S08-java-repository-no-pageable` spring-data-examples `jpa/showcase/src/snippets/java/example/springdata/jpa/showcase/snippets/AccountRepository.java:33` — TP (Batch 2 verdict)
+- `S08-java-repository-no-pageable` spring-data-examples `ldap/example/src/main/java/example/springdata/ldap/PersonRepository.java:29` — TP (Batch 2 verdict)
+- `S08-java-repository-no-pageable` spring-data-examples `map/src/main/java/example/springdata/map/PersonRepository.java:28` — TP (Batch 2 verdict)
+- `S08-java-repository-no-pageable` spring-data-examples `mongodb/example/src/main/java/example/springdata/mongodb/advanced/AdvancedRepository.java:30` — TP (Batch 2 verdict)
+- `S08-java-repository-no-pageable` spring-data-examples `mongodb/geo-json/src/main/java/example/springdata/mongodb/geojson/StoreRepository.java:29` — TP (Batch 2 verdict)
+- `S08-java-repository-no-pageable` spring-data-examples `mongodb/text-search/src/main/java/example/springdata/mongodb/textsearch/BlogPostRepository.java:26` — TP (Batch 2 verdict)
+- `S08-java-repository-no-pageable` spring-data-examples `neo4j/example/src/main/java/example/springdata/neo4j/ActorRepository.java:29` — FP-accepted (Batch 2 verdict)
+- `S09-java-cacheable-no-sync` spring-data-examples `jdbc/howto/caching/src/main/java/example.springdata/jdbc/howto/caching/MinionRepository.java:31` — TP (Batch 2 verdict)
+- `S09-java-cacheable-no-sync` spring-data-examples `jpa/example/src/main/java/example/springdata/jpa/caching/CachingUserRepository.java:35` — TP (Batch 2 verdict)
+- `S14-java-unbounded-blocking-queue` spring-data-examples `mongodb/change-streams/src/main/java/example/springdata/mongodb/CollectingMessageListener.java:34` — TP: the example change-stream listener appends every received message to an unbounded deque. It grows with the stream for as long as the listener runs.
+- `S14-java-unbounded-blocking-queue` spring-data-examples `redis/pubsub-listener/src/main/java/example/springdata/redis/listener/Messages.java:52` — TP: the example pub/sub listener keeps every received message in an unbounded queue.
+- `S14-java-unbounded-blocking-queue` spring-data-examples `redis/streams/src/main/java/example/springdata/redis/sync/CapturingStreamListener.java:32` — TP: the example stream listener keeps every record in an unbounded deque.
+- `S19-java-empty-catch` spring-data-examples `couchbase/transactions/src/main/java/com/example/demo/CmdRunner.java:42` — TP (Batch 3 verdict)
+- `S19-java-empty-catch` spring-data-examples `couchbase/transactions/src/main/java/com/example/demo/CmdRunner.java:45` — TP (Batch 3 verdict)
+- `S28-java-untimed-wait` spring-data-examples `cassandra/util/src/main/java/example/springdata/cassandra/util/CassandraExtension.java:70` — uninspected (low)
+- `S29-java-n-plus-one` spring-data-examples `jdbc/graalvm-native/src/main/java/example/springdata/jdbc/graalvmnative/CLR.java:81` — FP-accepted (Batch 2 verdict)
+- `S29-java-n-plus-one` spring-data-examples `jpa/graalvm-native/src/main/java/com/example/data/jpa/CLR.java:81` — TP (Batch 2 verdict)
+- `S01-java-future-get-no-timeout` spring-kafka `spring-kafka/src/main/java/org/springframework/kafka/listener/ShareKafkaMessageListenerContainer.java:331` — TP: `doStop()` joins every consumer future with no timeout while holding `lifecycleLock` (see the S28 lock hit at :329). A consumer that never exits hangs `stop()`.
+- `S02-java-backoff` spring-kafka `spring-kafka/src/main/java/org/springframework/kafka/listener/ShareKafkaMessageListenerContainer.java:556` — FP-accepted: a 10 ms pause while `poll()` refuses to run until pending acknowledgements are sent. It paces a local wait for this thread's own state, not a retry against a dependency, and has the same catch-plus-`continue` shape as a genuine retry loop, so regex cannot tell them apart (Batch 1 Known limitations).
+- `S09-java-cache-aside-no-singleflight` spring-kafka `spring-kafka/src/main/java/org/springframework/kafka/listener/adapter/DelegatingInvocableHandler.java:207` — FP-accepted: a reflective handler lookup cached with `putIfAbsent`. A concurrent miss repeats a local lookup, not an upstream call.
+- `S12-java-no-breaker` spring-kafka `spring-kafka/src/main/java/org/springframework/kafka/streams/KafkaStreamsInteractiveQueryService.java:94` — FP-accepted (Batch 4 verdict)
+- `S14-java-unbounded-blocking-queue` spring-kafka `spring-kafka/src/main/java/org/springframework/kafka/core/DefaultKafkaProducerFactory.java:987` — FP-accepted: the per-prefix cache of idle transactional producers. It holds pooled objects, not pending work, like the `idle*` pools exempted in Batch 1, but the name is `cache`.
+- `S14-java-unbounded-blocking-queue` spring-kafka `spring-kafka/src/main/java/org/springframework/kafka/core/DefaultTransactionIdSuffixStrategy.java:101` — FP-accepted: filled with exactly `maxCache` suffixes by the loop that follows, and returned suffixes are only re-added if they are absent, so the queue is bounded by construction.
+- `S14-java-unbounded-blocking-queue` spring-kafka `spring-kafka/src/main/java/org/springframework/kafka/listener/KafkaMessageListenerContainer.java:743` — FP-accepted: acks handed from listener threads to the consumer thread. At most one poll's records are in flight, and the queue is drained every poll loop.
+- `S14-java-unbounded-blocking-queue` spring-kafka `spring-kafka/src/main/java/org/springframework/kafka/listener/KafkaMessageListenerContainer.java:745` — FP-accepted: seek requests from the application, drained every poll loop.
+- `S17-java-unbounded-cache` spring-kafka `spring-kafka/src/main/java/org/springframework/kafka/core/DefaultTransactionIdSuffixStrategy.java:46` — FP-accepted: `suffixCache` is keyed by transactional-id prefix, a set fixed by configuration.
+- `S28-java-untimed-lock-across-io` spring-kafka `spring-kafka/src/main/java/org/springframework/kafka/listener/ShareKafkaMessageListenerContainer.java:329` — TP: `doStop()` takes `lifecycleLock` with an untimed `lock()` and then waits with an untimed `join()` for every consumer thread to finish. A consumer stuck in a listener holds the lock, and every later `start()`/`stop()` queues behind it.
+- `S28-java-untimed-wait` spring-kafka `samples/sample-03/src/main/java/com/example/Application.java:56` — uninspected (low)
+- `S01-java-resttemplate-no-timeout` spring-petclinic-microservices `spring-petclinic-api-gateway/src/main/java/org/springframework/samples/petclinic/api/ApiGatewayApplication.java:56` — TP (Batch 2 verdict)
+- `S01-java-webclient-no-timeout` spring-petclinic-microservices `spring-petclinic-api-gateway/src/main/java/org/springframework/samples/petclinic/api/ApiGatewayApplication.java:62` — TP (Batch 2 verdict)
+- `S01-java-webclient-no-timeout` spring-petclinic-microservices `spring-petclinic-genai-service/src/main/java/org/springframework/samples/petclinic/genai/AIBeanConfiguration.java:27` — TP (Batch 2 verdict)
+- `S08-java-repository-no-pageable` spring-petclinic-microservices `spring-petclinic-customers-service/src/main/java/org/springframework/samples/petclinic/customers/model/PetRepository.java:35` — FP-accepted (Batch 2 verdict)
+- `S08-java-repository-no-pageable` spring-petclinic-microservices `spring-petclinic-visits-service/src/main/java/org/springframework/samples/petclinic/visits/model/VisitRepository.java:33` — TP (Batch 2 verdict)
+- `S09-java-cacheable-no-sync` spring-petclinic-microservices `spring-petclinic-vets-service/src/main/java/org/springframework/samples/petclinic/vets/web/VetResource.java:45` — TP (Batch 2 verdict)
+- `S15-java-no-fallback` spring-petclinic-microservices `spring-petclinic-genai-service/src/main/java/org/springframework/samples/petclinic/genai/VectorStoreController.java:68` — TP (Batch 4 verdict)
+- `S08-java-repository-no-pageable` spring-petclinic `src/main/java/org/springframework/samples/petclinic/owner/PetTypeRepository.java:30` — FP-accepted (Batch 2 verdict)
+- `S09-java-cacheable-no-sync` spring-petclinic `src/main/java/org/springframework/samples/petclinic/vet/VetRepository.java:45` — TP (Batch 2 verdict)
+- `S09-java-cacheable-no-sync` spring-petclinic `src/main/java/org/springframework/samples/petclinic/vet/VetRepository.java:55` — TP (Batch 2 verdict)
+
+### Fixed during calibration
+
+- `S01-java-httprequest-no-timeout` grpc-java `xds/src/main/java/io/grpc/xds/internal/extauthz/CheckRequestBuilder.java:240` — FP-fixed: `AttributeContext.HttpRequest.newBuilder()` builds Envoy's protobuf `HttpRequest` attribute message, not a `java.net.http` request. The final review found the same shape in Cloud Tasks: `Task.newBuilder().setHttpRequest(HttpRequest.newBuilder().setUrl(url)…)`, a protobuf message with an unqualified name. The pattern now rejects a qualified `X.HttpRequest.newBuilder(` unless the qualifier is `java.net.http.`, and `absent_within` takes the protobuf setters (`setUrl`, `setHttpMethod`, `setBody`, `setOidcToken`, `setOauthToken`, `putHeaders`). The `S01-java-httpclient-no-connect-timeout` anchor gets the same qualified-name guard. It had no qualified-name hit. → `S01/java/negative_protobuf_http_request.java`
+- `S02-java-backoff`, 6 hits on simulated latency near resilience4j's `@Retry`: resilience4j-spring-boot2-demo and resilience4j-spring-boot3-demo `src/main/java/io/github/robwin/controller/BackendBController.java:141`, `src/main/java/io/github/robwin/service/BackendAService.java:146`, `src/main/java/io/github/robwin/service/BackendCService.java:143` — FP-fixed. The sleeps stand in for a slow backend so that the `TimeLimiter` has something to cut off. They are not waits between attempts: resilience4j schedules those itself, from configuration. The shared handler finds retry vocabulary within 12 lines (`@Retry`, the `retry` field), and that rule stays as it is for TS and Python. For Java only, a sleep now counts as a retry wait only when a `for`/`while`/`do` loop encloses it. The handler walks back up the enclosing braces from the sleep call, and stops at a class header. → `S02/java/negative_simulated_latency.java`
+- `S03-java-429-ignores-retry-after` grpc-java `core/src/main/java/io/grpc/internal/GrpcUtil.java:321` and `S03-java-503-ignores-retry-after` `GrpcUtil.java:323` — FP-fixed: `httpStatusToGrpcCode` is a status-mapping `switch`. It neither sends a request nor retries one. `require` was satisfied by two incidental tokens: the builder setter `setIsTransparentRetry(` counted as a retry call, and the enum accessor `error.code()` counted as reading a response status. The retry-call alternative now skips accessor-prefixed names (`set`/`get`/`is`/`has` followed by a capital letter). → `S03/java/negative_status_mapping_table.java`
+- `S19-java-empty-catch` akka-samples `akka-sample-persistence-dc-java/src/main/java/sample/persistence/res/MainApp.java:40` — FP-fixed: `try { new CountDownLatch(1).await(); } catch (InterruptedException e) {}` parks `main` until the process is killed. Nobody counts the latch down, so the interrupt is the intended way out and nothing is lost. `absent_within` (2 lines back) now takes the two park-forever idioms, `new CountDownLatch(1).await()` and `Thread.currentThread().join()`. Swallowing an `InterruptedException` anywhere else still fires. → `S19/java/negative_park_forever.java`
+- `S01-java-future-get-no-timeout` spring-kafka `spring-kafka/src/main/java/org/springframework/kafka/core/KafkaTemplate.java:863` — FP-fixed: `sendFuture.get()` runs only inside `if (sendFuture.isDone())`, so it returns at once. `absent_within` now takes a positive `if (f.isDone())` guard. A negated guard does not count. → `S01/java/negative_future_done_check.java`
+- `S04-java-catch-all-retry`, 5 hits where "retry" appears only inside a string literal: spring-kafka `spring-kafka/src/main/java/org/springframework/kafka/listener/FailedBatchProcessor.java:288` and `spring-kafka/src/main/java/org/springframework/kafka/listener/SeekUtils.java:111` (log messages "… due to retry back off"), `spring-kafka/src/main/java/org/springframework/kafka/listener/KafkaMessageListenerContainer.java:1447` ("Failed to process async retry messages…" in the consumer loop's guard), and activemq-artemis-examples `examples/features/standard/security-keycloak/src/main/java/org/apache/activemq/artemis/jms/example/KeycloakSecurityExample.java:51` and `examples/features/standard/security-oidc/src/main/java/org/apache/activemq/artemis/jms/example/OIDCSecurityExample.java:58` ("…, retry in 5s" in a readiness poll bounded to 30 s by `Waiter.waitFor`) — FP-fixed. String literals are not blanked, so the retry vocabulary in `present_within` now has to be followed on its line by an even number of quotes, which puts it outside any literal. → `S04/java/negative_retry_word_in_log.java`
+- `S28-java-untimed-wait` grpc-java `core/src/main/java/io/grpc/internal/ServerImpl.java:324` and `xds/src/main/java/io/grpc/xds/XdsServerWrapper.java:471` — FP-fixed: both are the body of `void awaitTermination()`, the untimed half of `Server.awaitTermination`, and the timed `awaitTermination(timeout, unit)` sits beside it. This is the same kind of blocking-by-contract API as the `BlockingQueue` `put*`/`take*` exemption from Batch 1, which `absent_within` now extends to a `void awaitTermination()` declaration. → `S28/java/negative_await_termination_contract.java`
+- `S28-java-untimed-wait` akka-samples `akka-sample-persistence-dc-java/src/main/java/sample/persistence/res/MainApp.java:39` — FP-fixed: the park-forever `new CountDownLatch(1).await()` also fixed under S19 above. → `S28/java/negative_park_forever.java`
+
+### Lost to tightening (recall trade)
+
+- `S04-java-catch-all-retry` kafka-streams-examples `src/main/java/io/confluent/examples/streams/microservices/PostOrdersAndPayments.java:161` — would be a TP: the loop catches every `Exception` from posting an order, logs "retrying shortly" and tries again after 5 s, so a permanent 4xx or a validation error is retried forever. The only retry vocabulary is inside the log message, so the string-literal rule silences it. Precision is preferred here: the rule removes 5 false positives and costs this one TP.
+
+### Ledger: S13/S14 real-world TPs (closed)
+
+Batch 1 left "S13/S14 have zero real-world TPs — watch in later batches".
+This batch closes the item. S14 now has real-world TPs: 25 for
+`S14-java-unbounded-blocking-queue` (3 in spring-data-examples' listener
+examples, 1 in grpc-java's Android interop app, 21 in test harnesses) and 7
+for `S14-java-executors-unbounded-queue` (grpc-java's production S2A
+handshake pool, two example gRPC servers and four test-code executors). It also has 8 FP-accepted, which is why both
+detectors drop to `low`. `S13-java-shared-executor` has 1 TP, in test code
+(the grpc-java Android interop app's connector pool), and 1 FP-accepted.
+`S13-java-akka-blocking-default-dispatcher` still has none. S13 stays `low`,
+and the investigator, not the detector, decides whether a shared pool
+matters.
+
+### Silences checked
+
+- Every Java detector still fires alone on its pattern's `positive.java`
+  (`test_every_java_detector_fires_on_its_positive_sample`), and the
+  pathological-input speed guard passes after the new Java loop walk in
+  `s02_backoff` (bounded to 400 lines back per sleep call).
+- `java.net.http.HttpRequest.newBuilder()` written fully qualified still
+  fires `S01-java-httprequest-no-timeout`. This was checked with a probe file.
+- TS/Python behaviour is unchanged. The `s02_backoff` loop gate runs only
+  when `_lang_key(ctx) == "java"`, and every other change in this batch
+  edits a `java:` catalog entry.
+
+### Known limitations (noted, not fixed)
+
+- `S28-java-monitor-held-across-io`: string literals are not blanked, so `synchronized` inside a string ("… synchronized swimming team", `TopicHierarchyExample.java:73`) anchors a section, and a later `send(` in the window fires it.
+- `S14-java-unbounded-blocking-queue`: the type-argument group `(<[^>]*>)?` does not span nested generics, so `new LinkedBlockingQueue<Future<?>>()` is not matched. This is a miss.
+- `S01-java-httprequest-no-timeout` / `S01-java-httpclient-no-connect-timeout`: any qualifier other than `java.net.http.` is skipped. That is the intent, since it marks another library's `HttpRequest`/`HttpClient`. A protobuf `HttpRequest` imported unqualified and built without any of the listed setters in the next 8 lines still fires.
+- `S02-java-backoff` (Java loop gate): a retry driven by recursion, a scheduler (`schedule(this::retry, 5, SECONDS)`) or a framework callback has no enclosing loop and is missed. Braces inside string literals can mislead the backwards brace walk. A poll loop that sleeps a constant after catching a local state error (`ShareKafkaMessageListenerContainer.java:556`) still fires.
+- `S04-java-catch-all-retry`: the string-literal test counts quotes on the line, so an escaped quote (`\"`) inside a literal, or a text block, can misplace the boundary. Retry vocabulary that exists only in a log message is ignored by design (see Lost to tightening).
+- `S19-java-empty-catch` / `S28-java-untimed-wait`: the park-forever exemption recognises only the two literal idioms. A latch held in a field and never counted down is not recognised.
+- `S03-java-*-ignores-retry-after`: `require` still accepts `.code()` on any receiver as reading a response status, so an enum accessor plus a genuine retry word elsewhere in the file can still satisfy it.
