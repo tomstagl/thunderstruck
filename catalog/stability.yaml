@@ -116,7 +116,7 @@ patterns:
         - id: S01-java-httpclient-no-connect-timeout
           kind: file_absent
           anchor: '\bHttpClient\s*\.\s*(newBuilder\s*\(\s*\)|newHttpClient\s*\(\s*\))'
-          absent: '\bconnectTimeout\s*\(|\.\s*timeout\s*\('
+          absent: '\bconnectTimeout\s*\(|\.\s*timeout\s*\(\s*[^\s)]'
           confidence: medium
           note: "java.net.http.HttpClient built with no connectTimeout(), and no request in the file sets .timeout() (which also bounds the connect)"
         - id: S01-java-httprequest-no-timeout
@@ -175,6 +175,19 @@ patterns:
           handler: s02_backoff
           confidence: medium
           note: "retry backoff missing a cap, jitter, or growth"
+      java:
+        - id: S02-java-backoff
+          kind: module
+          handler: s02_backoff
+          confidence: medium
+          note: "retry backoff missing a cap, jitter, or growth"
+        - id: S02-java-retryable-no-jitter
+          kind: regex
+          pattern: '@\s*Retryable\b'
+          absent_within: 'random\s*=\s*true|RandomBackOffPolicy|ExponentialRandomBackOffPolicy'
+          window: 6
+          confidence: low
+          note: "@Retryable with no randomised backoff — Spring Retry defaults to a fixed 1s wait, so every client retries in lockstep"
 
   - id: S03
     name: Honor server pushback (Retry-After, 429/503)
@@ -218,6 +231,21 @@ patterns:
           require: '(?i)\b(retry|retries|retrying|attempt|attempts|backoff|sleep|setTimeout|delay|wait)\b'
           confidence: low
           note: "file handles 503 but never reads Retry-After"
+      java:
+        - id: S03-java-429-ignores-retry-after
+          kind: file_absent
+          anchor: '\b429\b|TOO_MANY_REQUESTS'
+          absent: '[Rr]etry-?[Aa]fter|RETRY_AFTER'
+          require: '(?i)\b(retry|retries|retrying|attempt|attempts|backoff|sleep|delay)\b|\w+[Rr]etry\w*\s*\('
+          confidence: medium
+          note: "file handles 429 but never reads Retry-After"
+        - id: S03-java-503-ignores-retry-after
+          kind: file_absent
+          anchor: '\b503\b|SERVICE_UNAVAILABLE|HTTP_UNAVAILABLE'
+          absent: '[Rr]etry-?[Aa]fter|RETRY_AFTER'
+          require: '(?i)\b(retry|retries|retrying|attempt|attempts|backoff|sleep|delay)\b|\w+[Rr]etry\w*\s*\('
+          confidence: low
+          note: "file handles 503 but never reads Retry-After"
 
   - id: S04
     name: Retry only transient errors
@@ -251,6 +279,21 @@ patterns:
           absent: '\b(5\d\d|status_code\s*>=\s*500|is_transient|is_retryable|ConnectionError|Timeout|429|retry_if\w*|status_forcelist|allowed_methods|giveup|retry_on_exception|retry_on_result|retryable_exceptions)\b'
           confidence: medium
           note: "retry construct with no visible transient/permanent discrimination"
+      java:
+        - id: S04-java-catch-all-retry
+          kind: regex
+          pattern: 'catch\s*\(\s*(final\s+)?(Exception|Throwable|RuntimeException)\s+\w+\s*\)'
+          present_within: '\b(continue|retry|retries|attempt)\b|\w*[Rr]etry\w*\s*\('
+          window: 6
+          confidence: medium
+          note: "catch (Exception e) followed by a retry — retries permanent errors too"
+        - id: S04-java-retryable-all-exceptions
+          kind: regex
+          pattern: '@\s*Retryable\b'
+          absent_within: '\b(retryFor|include|value|noRetryFor|exclude|exceptionExpression)\s*=|@\s*Retryable\s*\(\s*\{?\s*[\w.]+\.class'
+          window: 6
+          confidence: low
+          note: "@Retryable with no exception filter — retries every exception, permanent ones included"
 
   - id: S05
     name: Client-side rate limiting / budget gating
@@ -580,7 +623,7 @@ patterns:
         - id: S14-java-unbounded-blocking-queue
           kind: regex
           pattern: 'new\s+([\w$]+\s*\.\s*)*(LinkedBlockingQueue|LinkedBlockingDeque)\s*(<[^>]*>)?\s*\(\s*\)'
-          absent_within: '(?i)(idle|free|spare)\w*\s*=\s*new\s'
+          absent_within: '(?i)idle\w*\s*=\s*new\s'
           confidence: medium
           note: "LinkedBlockingQueue() with no capacity — unbounded by default, absorbs overload instead of shedding it"
         - id: S14-java-executors-unbounded-queue

@@ -66,6 +66,10 @@ SLEEP_RES: dict[str, list[re.Pattern]] = {
         re.compile(r"\b(?:time|asyncio)\s*\.\s*sleep\s*\(\s*(?P<arg>[^),]*)"),
         re.compile(r"\b(?:sleep|delay)\s*\(\s*(?P<arg>[^),]*)"),
     ],
+    "java": [
+        # Thread.sleep(ms), TimeUnit.SECONDS.sleep(n), an injected unit.sleep(n)
+        re.compile(r"\b\w+\s*\.\s*sleep\s*\(\s*(?P<arg>[^),]*)"),
+    ],
 }
 
 
