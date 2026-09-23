@@ -24,7 +24,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import signal
+import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -162,3 +165,57 @@ def approve(repo: Path, chash: str) -> Path:
         trusted.append(key)
     c.write_json(path, {"schema": "thunderstruck.trust/v1", "trusted": sorted(trusted)})
     return path
+
+
+# --------------------------------------------------------------------------
+# running a command
+# --------------------------------------------------------------------------
+
+BUDGET_EXHAUSTED = "not started: the context time budget was used up"
+
+
+@dataclass
+class Fetched:
+    doc: dict | None = None
+    raw: str = ""
+    error: str | None = None
+
+
+def _kill_group(proc: subprocess.Popen) -> None:
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (AttributeError, ProcessLookupError, PermissionError):
+        proc.kill()
+    proc.communicate()
+
+
+def run_command(argv: list[str], entity_ref: str, timeout: float, cwd: Path,
+                want_json: bool = True) -> Fetched:
+    if timeout <= 0:
+        return Fetched(error=BUDGET_EXHAUSTED)
+    cmd = [part.replace("{entity_ref}", entity_ref) for part in argv]
+    name = Path(cmd[0]).name
+    try:
+        # Own session, so a timeout can kill the whole process group: a login
+        # helper that inherits stdout would otherwise keep communicate() waiting.
+        proc = subprocess.Popen(cmd, cwd=str(cwd), stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                text=True, start_new_session=True)
+    except OSError as exc:
+        return Fetched(error=f"could not start {name!r} ({exc.strerror or exc})")
+    try:
+        out, _ = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_group(proc)
+        return Fetched(error=f"{name} timed out after {timeout:.1f}s")
+    if proc.returncode != 0:
+        return Fetched(error=f"{name} exited {proc.returncode}")
+    if not want_json:
+        return Fetched()
+    try:
+        doc = json.loads(out)
+    except json.JSONDecodeError:
+        return Fetched(error=f"{name} did not print JSON")
+    if not isinstance(doc, dict):
+        return Fetched(error=f"{name} printed JSON that is not an object")
+    return Fetched(doc=doc, raw=out)
