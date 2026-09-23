@@ -10,7 +10,7 @@
       "name": "thunderstruck",
       "source": "./",
       "description": "Resilience forensics for your codebase. Find the thundering herd before it finds you.",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "category": "code-analysis",
       "keywords": ["resilience", "hotspots", "failure-analysis", "reliability"],
       "license": "MIT"
