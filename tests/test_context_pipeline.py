@@ -6,6 +6,8 @@ import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
 import bundle
 
 WEB = "dependencyOf component:default/web-frontend"
@@ -224,3 +226,38 @@ def test_report_without_context_is_unchanged(scanned_copy, plugin_root):
     assert payload["service_context"] is None
     for entry in index["files"].values():
         assert all("catalog_evidence" not in f for f in entry["findings"])
+
+
+@pytest.mark.parametrize("corrupt", ["missing_direction", "edges_not_list"])
+def test_report_ignores_malformed_context(context_scanned_copy, plugin_root, corrupt):
+    hid, doc = _catalog_finding(_hotspots(context_scanned_copy), [WEB])
+    assert _validate(context_scanned_copy, plugin_root, hid, doc).returncode == 0
+
+    path = context_scanned_copy / ".thunderstruck" / "context.json"
+    ctx = json.loads(path.read_text())
+    if corrupt == "missing_direction":
+        del ctx["edges"][0]["direction"]
+    else:
+        ctx["edges"] = "junk"
+    path.write_text(json.dumps(ctx))
+
+    proc = subprocess.run([sys.executable, str(plugin_root / "scripts" / "report.py"),
+                           "--repo", str(context_scanned_copy)],
+                          capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    md = (context_scanned_copy / ".thunderstruck" / "report.md").read_text()
+    assert "## Service context" not in md
+
+
+def test_load_service_context_rejects_non_dict_edge(tmp_path):
+    import _common
+
+    out = tmp_path / ".thunderstruck"
+    out.mkdir()
+    (out / "context.json").write_text(json.dumps({
+        "status": "fresh", "entity_ref": "component:default/web-frontend",
+        "context_hash": "sha256:" + "0" * 64,
+        "fetched_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "edges": ["not-a-dict"], "truncated": {},
+    }))
+    assert _common.load_service_context(tmp_path) is None

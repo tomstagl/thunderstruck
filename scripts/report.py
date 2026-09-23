@@ -81,10 +81,11 @@ def collect(repo: Path) -> dict[str, Any]:
     context_doc = c.load_json(out / c.CONTEXT_FILENAME, {}) or {}
     if not isinstance(context_doc, dict):
         context_doc = {}
+    raw_warnings = context_doc.get("warnings")
     return {"hotspots": hotspots, "findings": findings,
             "failed": failed, "clean": clean, "validation": validation,
-            "context": context_doc if context_doc.get("status") in c.CONTEXT_USABLE else None,
-            "context_warnings": [str(w) for w in context_doc.get("warnings") or []]}
+            "context": c.load_service_context(repo),
+            "context_warnings": [str(w) for w in raw_warnings] if isinstance(raw_warnings, list) else []}
 
 
 # --------------------------------------------------------------------------

@@ -104,10 +104,13 @@ def test_load_service_context_only_returns_usable_docs(tmp_path):
     import _common
     out = tmp_path / ".thunderstruck"
     out.mkdir()
+    def doc(status):
+        return json.dumps({"status": status, "entity_ref": "component:default/web-frontend",
+                           "context_hash": "sha256:" + "0" * 64, "edges": [], "truncated": {}})
     assert _common.load_service_context(tmp_path) is None
-    (out / "context.json").write_text('{"status": "failed", "edges": []}')
+    (out / "context.json").write_text(doc("failed"))
     assert _common.load_service_context(tmp_path) is None
-    (out / "context.json").write_text('{"status": "stale", "edges": []}')
+    (out / "context.json").write_text(doc("stale"))
     assert _common.load_service_context(tmp_path)["status"] == "stale"
 
 

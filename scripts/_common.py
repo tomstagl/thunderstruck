@@ -194,10 +194,29 @@ def load_profile(repo_root: Path) -> dict[str, Any]:
         raise ThunderstruckError(f"could not read {path}: {exc}")
 
 
+def _well_formed_context(doc: dict[str, Any]) -> bool:
+    """True when context.json's shape is safe for callers to index directly."""
+    if not isinstance(doc.get("entity_ref"), str) or not isinstance(doc.get("context_hash"), str):
+        return False
+    edges = doc.get("edges")
+    if not isinstance(edges, list):
+        return False
+    for edge in edges:
+        if not isinstance(edge, dict):
+            return False
+        if not all(isinstance(edge.get(k), str) for k in ("ref", "type", "direction", "neighbour")):
+            return False
+        if not isinstance(edge.get("attributes"), dict):
+            return False
+    if not isinstance(doc.get("truncated"), dict):
+        return False
+    return True
+
+
 def load_service_context(repo_root: Path) -> dict[str, Any] | None:
     """context.json when it holds edges a bundle may show, else None."""
     doc = load_json(out_dir(repo_root) / CONTEXT_FILENAME)
-    if isinstance(doc, dict) and doc.get("status") in CONTEXT_USABLE:
+    if isinstance(doc, dict) and doc.get("status") in CONTEXT_USABLE and _well_formed_context(doc):
         return doc
     return None
 
