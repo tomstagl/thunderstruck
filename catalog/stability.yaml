@@ -730,6 +730,31 @@ patterns:
           confidence: medium
           note: "bare except catches SystemExit and KeyboardInterrupt too"
 
+  # ------------------------------------------- Tier A (JVM-specific) --
+  - id: S27
+    name: No blocking calls on non-blocking/event-loop threads
+    tier: A
+    weight: 1.0
+    metastable_role: amplifier
+    failure_if_absent: >-
+      A blocking call inside a reactive pipeline or an event-loop handler
+      occupies a thread meant to service many concurrent requests. One slow
+      call starves the whole event loop instead of one request.
+    references:
+      - "Project Reactor reference docs — Schedulers and blocking calls"
+      - "Nygard, Release It! (2nd ed.), ch. 4 — Blocked Threads"
+    detectors:
+      java:
+        - id: S27-java-blocking-in-reactive
+          kind: regex
+          pattern: '\bThread\s*\.\s*sleep\s*\(|\bDriverManager\s*\.\s*getConnection\s*\(|\.\s*block(First|Last|Optional)?\s*\(|\.\s*execute(Query|Update)\s*\(|\w*[Hh]ttp[Cc]lient\s*\.\s*send\s*\(|\w*(restTemplate|RestTemplate|jdbcTemplate|JdbcTemplate)\s*\.\s*\w+\s*\('
+          present_within: '\b(Mono|Flux)\b|reactor\.core|io\.netty|ChannelHandlerContext|akka\.stream'
+          absent_within: 'Schedulers\s*\.\s*(boundedElastic|fromExecutor\w*|newBoundedElastic)|\bsubscribeOn\s*\(|\bpublishOn\s*\('
+          window: 12
+          window_before: 12
+          confidence: low
+          note: "blocking call inside a Reactor/WebFlux/Netty/Akka-Streams context with no scheduler offload — starves the event loop"
+
 # ---------------------------------------------------------------- Tier C ----
 # Catalogued for the investigator's vocabulary; not scanned in v1.
 tier_c:
