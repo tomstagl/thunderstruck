@@ -42,6 +42,7 @@ uv run scripts/signals.py --repo /path/to/repo --top 10 --since 12m
 uv run scripts/bundle.py  --repo /path/to/repo
 uv run scripts/validate.py --repo /path/to/repo    # exit 1 == repair round needed
 uv run scripts/report.py  --repo /path/to/repo
+uv run scripts/calibrate.py --repo /path/to/repo --lang java --patterns S01,S27   # every hit, every tracked file
 
 # Build the fixture repo to poke at by hand
 python3 tests/fixtures/build_fixture.py /tmp/fixture

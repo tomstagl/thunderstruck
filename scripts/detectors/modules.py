@@ -70,7 +70,11 @@ SLEEP_RES: dict[str, list[re.Pattern]] = {
 
 
 def _lang_key(ctx) -> str:
-    return "python" if ctx.lang == "python" else "typescript"
+    if ctx.lang == "python":
+        return "python"
+    if ctx.lang == "java":
+        return "java"
+    return "typescript"
 
 
 # --------------------------------------------------------------------------

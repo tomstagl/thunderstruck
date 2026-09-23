@@ -34,6 +34,8 @@ languages:
     extensions: [".js", ".jsx", ".mjs", ".cjs"]
   python:
     extensions: [".py", ".pyi"]
+  java:
+    extensions: [".java"]
 
 # Language aliases: a detector written for `typescript` also runs on javascript.
 aliases:
