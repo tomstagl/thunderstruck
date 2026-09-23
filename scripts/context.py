@@ -1,0 +1,164 @@
+#!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["pyyaml>=6.0"]
+# ///
+"""Fetch service-catalog context for this repository, deterministically.
+
+Runs the command configured under [context] in .thunderstruck.toml, narrows
+its JSON to 1-hop edges with context_extract.py, and writes
+.thunderstruck/context.json. No model is involved, so every edge a finding
+cites traces back to a command the user approved on this machine.
+
+Never interactive and never fatal to a scan: every problem becomes a status
+and a warning in context.json.
+
+    uv run scripts/context.py                  # fetch, or reuse the cache
+    uv run scripts/context.py --refresh        # fetch even if the cache is fresh
+    uv run scripts/context.py --approve        # trust the configured command here
+    uv run scripts/context.py --detect-entity  # print the ref from catalog-info.yaml
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import sys
+from pathlib import Path
+from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import _common as c  # noqa: E402
+from context_extract import DIRECTIONS, ENTITY_REF, RELATION_TYPE  # noqa: E402
+
+DEFAULT_TIMEOUT_S = 20
+MAX_TIMEOUT_S = 60
+DEFAULT_MAX_AGE_DAYS = 30
+TRUST_ENV = "THUNDERSTRUCK_TRUST_CONTEXT"
+KINDS = ("command",)
+EXTRACTORS = ("backstage-relations",)
+LABEL = re.compile(r"^[a-z][a-z0-9_]{0,31}\Z")
+
+
+# --------------------------------------------------------------------------
+# config
+# --------------------------------------------------------------------------
+
+
+def _is_argv(value: Any) -> bool:
+    return (isinstance(value, list) and bool(value)
+            and all(isinstance(part, str) and part for part in value))
+
+
+def _check_source(src: Any, where: str) -> list[str]:
+    if not isinstance(src, dict):
+        return [f"{where} must be a table"]
+    errors: list[str] = []
+    if not isinstance(src.get("name"), str) or not src["name"].strip():
+        errors.append(f"{where}.name is missing")
+    if src.get("kind") not in KINDS:
+        errors.append(f"{where}.kind must be one of {list(KINDS)}")
+    if not _is_argv(src.get("argv")):
+        errors.append(f"{where}.argv must be a non-empty list of strings")
+    if "preflight" in src and not _is_argv(src["preflight"]):
+        errors.append(f"{where}.preflight must be a non-empty list of strings")
+    timeout = src.get("timeout_s", DEFAULT_TIMEOUT_S)
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) \
+            or not 1 <= timeout <= MAX_TIMEOUT_S:
+        errors.append(f"{where}.timeout_s must be between 1 and {MAX_TIMEOUT_S} seconds")
+    if src.get("extractor") not in EXTRACTORS:
+        errors.append(f"{where}.extractor must be one of {list(EXTRACTORS)}")
+    types = src.get("edge_types")
+    if not isinstance(types, dict) or not types or not all(
+            isinstance(k, str) and RELATION_TYPE.match(k) and v in DIRECTIONS
+            for k, v in types.items()):
+        errors.append(f'{where}.edge_types must map relation types to "inbound" or "outbound"')
+    attrs = src.get("neighbour_attributes", {})
+    if not isinstance(attrs, dict) or not all(
+            isinstance(k, str) and LABEL.match(k) and isinstance(v, str) and v
+            for k, v in attrs.items()):
+        errors.append(f"{where}.neighbour_attributes must map short lowercase labels "
+                      f"to annotation keys")
+    return errors
+
+
+def _normalise_source(src: dict) -> dict:
+    return {"name": src.get("name"), "kind": src.get("kind"), "argv": src.get("argv"),
+            "preflight": src.get("preflight") or [],
+            "timeout_s": src.get("timeout_s", DEFAULT_TIMEOUT_S),
+            "extractor": src.get("extractor"), "edge_types": src.get("edge_types"),
+            "neighbour_attributes": src.get("neighbour_attributes") or {}}
+
+
+def load_config(profile: dict) -> tuple[dict | None, list[str]]:
+    """The [context] table, normalised, plus every problem found in it."""
+    raw = profile.get("context")
+    if raw is None:
+        return None, []
+    if not isinstance(raw, dict):
+        return None, ["[context] must be a table"]
+    errors: list[str] = []
+    cfg: dict[str, Any] = {"enabled": raw.get("enabled", True),
+                           "entity_ref": raw.get("entity_ref"),
+                           "max_age_days": raw.get("max_age_days", DEFAULT_MAX_AGE_DAYS),
+                           "sources": []}
+    if not isinstance(cfg["enabled"], bool):
+        errors.append("context.enabled must be true or false")
+    if cfg["enabled"] is False:
+        return cfg, errors
+    if not isinstance(cfg["entity_ref"], str) or not ENTITY_REF.match(cfg["entity_ref"]):
+        errors.append("context.entity_ref must look like kind:namespace/name")
+    age = cfg["max_age_days"]
+    if isinstance(age, bool) or not isinstance(age, int) or age < 1:
+        errors.append("context.max_age_days must be a whole number of days, at least 1")
+    sources = raw.get("sources")
+    if not isinstance(sources, list) or not sources:
+        errors.append("context.sources must list at least one [[context.sources]] table")
+        sources = []
+    elif len(sources) > 1:
+        errors.append("context.sources: this version supports one source")
+    for i, src in enumerate(sources):
+        errors += _check_source(src, f"context.sources[{i}]")
+        if isinstance(src, dict):
+            cfg["sources"].append(_normalise_source(src))
+    return cfg, errors
+
+
+def config_hash(cfg: dict) -> str:
+    """Identity of what will run. The cache lifetime is not part of it."""
+    return c.sha256_text(json.dumps(
+        {"entity_ref": cfg["entity_ref"], "sources": cfg["sources"]}, sort_keys=True))
+
+
+# --------------------------------------------------------------------------
+# trust on first use
+# --------------------------------------------------------------------------
+
+
+def trust_store_path() -> Path:
+    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return Path(base) / "thunderstruck" / "trusted-sources.json"
+
+
+def _trust_key(repo: Path, chash: str) -> str:
+    return f"{Path(repo).resolve()}::{chash}"
+
+
+def is_trusted(repo: Path, chash: str) -> bool:
+    if os.environ.get(TRUST_ENV) == "1":
+        return True
+    store = c.load_json(trust_store_path(), {}) or {}
+    return _trust_key(repo, chash) in (store.get("trusted") or [])
+
+
+def approve(repo: Path, chash: str) -> Path:
+    path = trust_store_path()
+    store = c.load_json(path, {}) or {}
+    trusted = [k for k in (store.get("trusted") or []) if isinstance(k, str)]
+    key = _trust_key(repo, chash)
+    if key not in trusted:
+        trusted.append(key)
+    c.write_json(path, {"schema": "thunderstruck.trust/v1", "trusted": sorted(trusted)})
+    return path

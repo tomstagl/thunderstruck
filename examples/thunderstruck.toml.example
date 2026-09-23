@@ -90,3 +90,30 @@ exclude_globs = ["*.tfvars"]
 # Test files are excluded by default: they churn like production code but
 # their failure mode is a red CI run, not an outage.
 include_tests = false
+
+# --------------------------------------------------------------------------
+# Service context
+# --------------------------------------------------------------------------
+# Which services depend on this one, and which it depends on, from your
+# service catalog. thunderstruck runs the command below, reads the
+# Backstage-style relations[] from the JSON it prints, and lists the 1-hop
+# neighbours in every bundle. A finding can then cite "web-frontend depends on
+# this component" as checked evidence.
+#
+# The command runs on your machine, with your environment, never through a
+# shell, and only after you approve it with /thunderstruck-context-config.
+# No credentials belong in this file.
+
+[context]
+entity_ref = "component:default/checkout"
+max_age_days = 30
+
+[[context.sources]]
+name = "catalog"
+kind = "command"
+argv = ["catalogctl", "get", "entity", "{entity_ref}", "-o", "json"]
+preflight = ["catalogctl", "auth", "status"]
+timeout_s = 20
+extractor = "backstage-relations"
+edge_types = { dependsOn = "outbound", dependencyOf = "inbound" }
+neighbour_attributes = { tier = "example.com/criticality-tier" }
