@@ -1,141 +1,197 @@
-# Architecture context for system analysis — design spec
+# Architecture context for system analysis — PRD & design
 
-Tracks GitHub issue [#1](https://github.com/tomstagl/thunderstruck/issues/1).
+Tracks [#1](https://github.com/tomstagl/thunderstruck/issues/1). Follow-up: [#6](https://github.com/tomstagl/thunderstruck/issues/6) (file-level linking of outbound edges).
 
-## Problem
+Status: draft v2 (revised after critique and a feasibility spike against a real Backstage catalog).
 
-Thunderstruck currently analyses one repository in isolation. A hotspot's
-`blast_radius` field is free-text prose written by the investigator from
-in-repo evidence only (call sites, imports, other hotspots in the same scan —
-see `scripts/bundle.py`'s "related" section). It cannot say a change also
-risks breaking a *different* service, because it has no notion that other
-services exist.
+## 1. Problem
 
-The issue asks to connect external architecture information — starting with
-whatever is reachable over MCP — so cross-service impact can inform findings,
-not just single-repo blast radius.
+Thunderstruck analyses one repository in isolation. A finding's `blast_radius` is prose written from in-repo evidence only. Nothing in a scan knows that other services exist, so it cannot say that a failure here reaches a service that depends on this one.
 
-## Goal (v1)
+## 2. Goal
 
-Let a scan know which other services depend on the one being scanned, sourced
-from the org's own service catalog (e.g. Backstage), and let a finding's
-`blast_radius` cite a specific dependency edge as mechanically-verified
-evidence — with the same rigor `code`/`commit`/`detector` evidence already
-gets.
+Let a scan know the scanned component's direct neighbours in the org's service catalog: who it depends on and who depends on it. Those neighbours then appear in bundles, in findings and in the report. Every cited edge must be mechanically verified, with the same rigour as `code`/`commit`/`detector` evidence.
 
-Every org's tooling differs (this project's own author uses Backstage +
-an ADR registry + agentic docs; another org will have none of those). The
-contract must not hardcode Backstage or any other vendor.
+The mechanism must be **company-agnostic**. Thunderstruck ships a generic source type and a generic extractor. Everything specific to one organisation (CLI name, catalog namespace, annotation keys) lives in that organisation's checked-in config, never in plugin code.
 
-## Non-goals (v1)
+## 3. Users & stories
 
-- ADR/decision-registry context, agentic-docs context — same category
-  contract should accommodate them later, but v1 ships catalog +
-  dependencies only.
-- Architecture-diagram sources (e.g. IcePanel) mentioned in the issue.
-- CLI-tool-backed context sources — considered and explicitly deferred;
-  the setup dialog only detects and suggests MCP servers.
-- Multi-repo scanning or ranking hotspots across repos. This is single-repo
-  scanning enriched with one fact about its neighbours, not a fleet-wide
-  scan.
+- **Developer scanning a service repo.** Sees which services depend on this component, with the risk labels their catalog provides, next to findings, and can judge how far a failure spreads.
+- **Maintainer at another company.** Points thunderstruck at their own catalog by writing config. No plugin code changes.
+- **CI owner.** Runs scans headless. A scan never hangs on a login prompt or an interactive dialog.
+- **Anyone scanning a repo they don't control.** A checked-in config never runs a command on their machine without their explicit approval.
 
-## Configuration & setup flow
+## 4. Scope
 
-A new skill, **`thunderstruck-context-config`**, matching the naming of
-`thunderstruck-scan` / `thunderstruck-verify`:
+### In (v1)
+- One context category: **service catalog, 1-hop dependencies**, both directions.
+- One source kind: **`command`**. Thunderstruck runs a configured CLI that prints JSON.
+- One built-in extractor: **`backstage-relations`**. It reads Backstage's processed `relations[]` graph, so it works against any Backstage instance, whatever CLI fronts it.
+- Edges are **component-level** context. They are not tied to specific files.
 
-- Runs an interactive dialog: lists MCP servers already connected in the
-  environment as suggested candidates (no manual server-name typing unless
-  none match), asks the user to pick the one that serves their service
-  catalog, then asks which catalog entity this repo maps to.
-- Persists the result to `.thunderstruck/context.yml`, committed to the
-  repo (same treatment as the existing `.thunderstruck/profile.yml`):
-  server reference and entity id only — never credentials or tokens.
-- Re-runnable any time the mapping needs to change (server renamed,
-  entity renamed, repo re-pointed at a different service).
+### Out (v1)
+- **File-level linking of outbound edges.** Tracked in #6.
+- **MCP-only sources.** A deterministic script cannot call MCP; only an agent can. An agent-based fetch would put model output underneath mechanically validated evidence. A catalog reachable only through MCP is unsupported in v1. Any CLI, including `curl` against a REST API, qualifies as a command source.
+- **Observed topology from APM tools** (e.g. Dynatrace via `dtctl`). It is the natural second source and is expected to reuse the `command` kind. It is deferred until a spike confirms a working query and measures how much the edge set changes with the query window. Comparing declared and observed edges is the most valuable open question.
+- **ADR registries, agentic docs, architecture diagrams.** These are future context categories.
+- **Graph walks beyond 1 hop.**
+- **Guardrail changes.** `guardrail.py` is untouched in v1.
 
-**Trigger:** `thunderstruck-scan` auto-prompts this dialog on first run if
-`.thunderstruck/context.yml` doesn't exist yet. Declining just proceeds
-without architecture context, identical to today's behaviour. On later
-scans, if the configured server or entity no longer resolves, the scan
-prints a visible warning (same slot as the existing "lizard missing"
-warning) pointing at `thunderstruck-context-config` to fix it — it does not
-silently drop the context step.
+## 5. Configuration
 
-## Fetch mechanism
+`.thunderstruck/context.yml` is committed to the repo, next to `profile.yml`. Example with generic names:
 
-A new agent, **`thunderstruck-context-fetcher`**, with a single narrow job:
-given `.thunderstruck/context.yml`, call the configured MCP server's catalog
-tools for the mapped entity and emit a fixed-schema JSON document listing its
-dependency edges:
-
-```json
-{
-  "entity": "checkout-service",
-  "edges": [
-    { "name": "payments-api", "type": "depends_on", "direction": "outbound" },
-    { "name": "web-frontend", "type": "depended_on_by", "direction": "inbound" }
-  ]
-}
+```yaml
+version: 1
+enabled: true                                  # false = user declined; never prompt again
+entity_ref: component:default/checkout         # detected from catalog-info.yaml, confirmed by the user
+sources:
+  - name: catalog
+    kind: command
+    argv: [catalogctl, get, entity, "{entity_ref}", -o, json]
+    preflight: [catalogctl, auth, status]      # optional; must exit 0 or the source is skipped
+    timeout_s: 20
+    extractor: backstage-relations
+    edge_types:                                # relation type -> direction; others ignored
+      dependsOn: outbound
+      dependencyOf: inbound
+    neighbour_attributes:                      # label -> annotation key, copied verbatim
+      tier: example.com/criticality-tier
 ```
 
-This is a deliberate, scoped exception to "no MCP tools in agents": its only
-output is this fixed schema, and that output is mechanically re-validated
-immediately afterward (see Evidence below) — the same way the investigator's
-own findings are never trusted at face value. It carries no judgment calls
-about findings, only a translation from whatever tool shape the org's MCP
-server exposes into thunderstruck's fixed edge format.
+Rules:
+- **No secrets in the file.** Commands inherit the environment. Credentials are whatever the CLI already reads, and CI sets them the way it sets any other env var. Thunderstruck never reads, stores or passes tokens.
+- `{entity_ref}` is the only placeholder. Substitution happens per argument. A command runs as an argument list and **never through a shell**.
+- `edge_types` is config because catalogs model dependencies differently. Some use `dependsOn`/`dependencyOf`; many use `consumesApi`/`apiConsumedBy`.
+- **Depth is a constant (1 hop), not config.** A hard cap you can raise isn't a cap.
 
-Runs once per scan, before bundling, writing `.thunderstruck/context.json`.
-Cached by content hash: if the fetched edge list is byte-identical to the
-last run's, downstream bundles built from it don't change either, preserving
-the existing bundle-caching guarantee (`test_bundles_are_within_budget_and_deterministic`
-already covers bundle-side determinism; the fetcher's own output is what's
-allowed to legitimately change between scans, exactly like git history does).
+### Trust on first use
 
-## Data flow into bundles
+A checked-in `argv` is code execution. Before a source runs for the first time on a machine, thunderstruck:
+1. shows the exact `argv` and `preflight`;
+2. asks for approval;
+3. stores the approval outside the repo, in `~/.config/thunderstruck/trusted-sources.json`, keyed by the repo's absolute path plus the sha256 of the source definition.
 
-`context-fetcher` → `.thunderstruck/context.json` → `bundle.py` embeds the
-edges relevant to a hotspot's file into that hotspot's bundle as a new
-section, alongside the existing "related" section → the investigator can now
-cite a specific edge when writing `blast_radius`.
+Any change to the source definition requires approval again. In non-interactive runs an untrusted source is skipped with a warning. CI can pre-approve with `THUNDERSTRUCK_TRUST_CONTEXT=1`.
 
-## Evidence schema
+## 6. Setup: `thunderstruck-context-config` skill
 
-A 4th evidence type, `catalog`, referencing one edge by
-`catalog:<entity>-><dependency>`. `validate.py` resolves it by checking the
-edge exists in `context.json`, exactly as a `detector` ref must match a hit
-already present in `hotspots.json`. A `blast_radius` naming another service
-without a matching `catalog` evidence ref is rejected the same way an
-unresolvable `code` ref is today — this is what keeps the claim from being
-just more unverified prose.
+This skill has the same naming shape as `thunderstruck-scan` and `thunderstruck-verify`. It runs the first-time setup, and it's the one way to update the config later.
 
-## Degradation
+1. Look for `catalog-info.yaml` (or any `apiVersion: backstage.io` document). Propose `entity_ref` as `<kind>:<namespace|default>/<metadata.name>`.
+2. Ask for the command that fetches an entity as JSON. Test-run it once, after trust approval.
+3. Show the extracted edges and ask the user to confirm them.
+4. Write `context.yml`. If the user declines, write `enabled: false`.
 
-No context configured, entity unresolvable, or server unreachable at fetch
-time → scan proceeds exactly as it does today: no `catalog` evidence type is
-available that run, `blast_radius` stays prose-only, and a warning names the
-reason (matches "Degradation is visible, never silent" in CLAUDE.md).
+`thunderstruck-scan` runs this dialog automatically only when **all** of these hold:
+- the session is interactive;
+- no `context.yml` exists;
+- the user hasn't declined before.
 
-## Testing
+In every other case the scan continues without context.
 
-- `context-fetcher` output validated against a fixture MCP server stub
-  (no real Backstage dependency in tests).
-- `validate.py` cases for the new `catalog` evidence type: valid edge,
-  edge absent from `context.json`, edge naming the wrong repo/entity.
-- Pipeline test: scan with no `.thunderstruck/context.yml` present
-  degrades cleanly (matches today's behaviour, no crash, warning emitted
-  only when a config exists but fails to resolve).
-- `thunderstruck-context-config` dialog: manual/exploratory only for v1
-  (interactive dialogs aren't a natural fit for the existing pytest suite);
-  covered by the same "plugin manifest install" smoke check used for other
-  interactive surfaces.
+## 7. Fetch: `scripts/context.py`
 
-## Open questions for implementation planning
+This is a deterministic step, no model involved. It runs once per scan, before `bundle.py`:
 
-- Exact MCP tool-call shape thunderstruck's context-fetcher expects a
-  catalog server to expose (tool name/args) — likely needs to tolerate
-  variation across Backstage-MCP implementations rather than assuming one
-  fixed tool signature.
-- Whether `context.yml` needs a schema version field from day one, given
-  `profile.yml` precedent.
+1. Load `context.yml`. If context is disabled, missing or untrusted, write nothing and emit a warning.
+2. Run `preflight`, then `argv`, with stdin closed and `timeout_s` applied. **No retries.** A failure (timeout, non-zero exit, unparsable JSON) skips the source with the reason in `warnings`.
+3. Extract edges from `relations[]`:
+   - keep only types listed in `edge_types`;
+   - record the neighbour ref;
+   - deduplicate and sort by `(type, ref)`.
+4. For each neighbour, up to **25 per direction**, fetch the neighbour entity with the same `argv` and copy `neighbour_attributes`:
+   - values must match `^[A-Za-z0-9_.:-]{1,32}$`, otherwise they're dropped with a warning;
+   - coarse labels only: a label like `HIGH` qualifies, and floats should be configured out.
+
+   Anything over the cap is recorded as a count and shown as "and N more", never silently dropped. Neighbour fetches are *detail fetches*, not graph expansion. A neighbour's own neighbours are never read.
+5. Write `.thunderstruck/context.json`: the edges plus a `fetched_at` timestamp and source metadata. Raw responses go to `.thunderstruck/context/raw/` for audit. They are never embedded in bundles.
+
+**Caching.** `context.json` is reused without running any command if both hold:
+- it is younger than `max_age` (default 24h);
+- the source-definition hash is unchanged.
+
+`--refresh-context` forces a fetch.
+
+**Determinism.** The cache and bundle hashes are computed over the extracted, sorted edges and attributes, never over raw responses. Volatile catalog fields (`uid`, `etag`, timestamps, relation order) therefore cannot trigger re-investigation. `fetched_at` never enters a bundle.
+
+## 8. Bundles
+
+`bundle.py` adds a **Service context** section, identical in every bundle of a scan:
+
+```
+## Service context (component-level, 1 hop)
+This component: component:default/checkout
+Depends on:     dependsOn component:default/payments-api   [tier: 1]
+Depended on by: dependencyOf component:default/web-frontend [tier: 2]
+                … and 3 more (cap 25)
+```
+
+Each edge line starts with its exact **catalog ref**: `<type> <neighbour_ref>`.
+
+A real catalog change changes this section and therefore every bundle, so every hotspot is investigated again. This is intended: the blast radius of every finding may have changed. Coarse attribute values keep this from happening on noise.
+
+## 9. Evidence: `catalog` type
+
+- Evidence items stay `{type, ref}`. A `catalog` ref is the edge string copied verbatim from the bundle, e.g. `dependencyOf component:default/web-frontend`. Our own entity is implied, because every edge is 1 hop from it.
+- `validate.py` accepts a `catalog` ref only if it exactly matches an edge in `context.json`. This is the same rule as `detector` refs against `hotspots.json`.
+- The existing rule still applies: every finding needs at least one `code` evidence item. A finding resting only on catalog evidence is rejected.
+- The validator does **not** parse `blast_radius` prose for service names. Short names like `api` make that unreliable. Instead, the report shows cited catalog edges, with attributes taken from `context.json`, as structured data beside the prose. The report is the source of truth for the attributes; the investigator's text isn't.
+- Wording is component-level: "web-frontend depends on this component", not "on this file". The investigator prompt states this rule. It can't be enforced mechanically, and the spec says so.
+
+## 10. Report
+
+- `report.md` / `report.json` gain a **Service context** section listing the edge table once.
+- Each finding lists its cited catalog edges with their attributes.
+- Warnings cover:
+  - skipped sources, with the reason;
+  - truncated neighbour lists;
+  - dropped attribute values;
+  - untrusted sources.
+- `index.json` (the guardrail's input) is unchanged in v1.
+
+## 11. Security & data handling
+
+- **Catalog content is data, not instruction.** Only structured fields enter bundles: relation types, entity refs and allow-listed attribute values that pass the value regex. Free-text descriptions are never copied, which shrinks the prompt-injection surface.
+- **Trust on first use** gates every command (see §5).
+- **Update `orchestration.md` → "What leaves the machine".** A configured context source runs a user-approved command, and that command may make network calls. Thunderstruck itself still makes none.
+
+## 12. Degradation
+
+In every one of these cases the scan behaves exactly as it does today, with no `catalog` evidence available that run, plus a visible warning naming the reason:
+- no config, or context declined;
+- untrusted source in a non-interactive run;
+- preflight or command failure;
+- timeout.
+
+## 13. Acceptance criteria
+
+1. Scanning a repo with a valid `context.yml` produces a `context.json` holding exactly the configured relation types from `relations[]`, sorted and deduplicated.
+2. Two scans against an unchanged catalog produce byte-identical bundles, even when raw responses differ in volatile fields.
+3. A finding citing a `catalog` ref absent from `context.json` fails validation. A finding with only catalog evidence fails validation.
+4. A checked-in source never runs without approval on that machine. Changing its `argv` requires approval again.
+5. A headless scan never prompts. With a failing or unauthenticated command it finishes, and a warning names the reason, within `timeout_s` plus normal scan time.
+6. Neighbour lists over 25 per direction are truncated with the count reported. Depth never exceeds 1 hop.
+7. A repo without `context.yml` scans exactly as before this feature.
+8. The checked-in sample report contains at least one validated finding that cites a `catalog` edge.
+
+## 14. Testing
+
+- **Fixture.** The fixture repo gains a `catalog-info.yaml` and a stub CLI: a small Python script that prints canned Backstage JSON and can simulate timeout, non-zero exit and bad JSON. Every test is deterministic, with no real catalog involved.
+- **Extractor samples**, following the negative-control discipline:
+  - positive: relations present;
+  - positive: `relations[]` present while `spec.dependsOn` is absent;
+  - duplicates;
+  - unknown relation types ignored;
+  - negative: an injection-shaped annotation value is rejected.
+- **`validate.py`:** valid catalog ref; ref not in `context.json`; catalog-only finding.
+- **`context.py`:** timeout; non-zero exit; bad JSON; preflight failure; untrusted source not executed; headless skip; cache hit; `--refresh-context`; truncation at the cap.
+- **Determinism:** raw responses that differ only in volatile fields produce identical `context.json` edges and identical bundles.
+- **`gen_sample_report.py`** exercises the new evidence type (criterion 8).
+- **The dialog skill** is verified manually. The plugin install check does *not* exercise it.
+
+## 15. Open questions
+
+- **Dynatrace as a second source:** the working `dtctl` query, stable entity-id mapping between catalog and APM, and sensitivity to the query window. Declared vs observed edges is the key question.
+- **Default `max_age`:** 24h is a guess.
+- **A second extractor**, for non-Backstage catalogs. Deferred until a real non-Backstage user appears.
