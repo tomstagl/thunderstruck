@@ -19,3 +19,22 @@ public class OrderReportService {
         return total;
     }
 }
+
+class AuthorCatalogService {
+    private final AuthorRepository authorRepository;
+
+    AuthorCatalogService(AuthorRepository authorRepository) {
+        this.authorRepository = authorRepository;
+    }
+
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    java.util.List<String> titles() {
+        java.util.List<String> titles = new java.util.ArrayList<>();
+        for (Author author : authorRepository.findAll()) {
+            for (Book book : author.getBooks()) {
+                titles.add(book.getTitle());
+            }
+        }
+        return titles;
+    }
+}

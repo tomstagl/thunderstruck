@@ -246,14 +246,15 @@ The sweep ran `--patterns S29,S08`. S29 is a new pattern (N+1 query
 fan-out) with one module detector, `S29-java-n-plus-one`. S08 gains its
 first Java detector, `S08-java-repository-no-pageable`. The four
 repositories listed in the brief come first. The Task 7 clones of the other
-five were swept as well, at no extra cost, and iexec-core, a Spring Data
-MongoDB service, is where S29's only real-world hits came from.
+five were swept as well, at no extra cost. iexec-core, a Spring Data MongoDB
+service, is where S29's first two hits came from, and both were false
+positives.
 
 | Repo | Commit | Java files swept |
 |---|---|---|
 | spring-projects/spring-petclinic | `818c4136ea971c21674525f9053de0d9c7ad8cfe` | 30 |
 | spring-petclinic/spring-petclinic-microservices | `295fa8d5ee10f7b6daddf83a2c65f9051a87564b` | 53 |
-| spring-projects/spring-data-examples | `7747029e6157cb780862826b6ae87c88d7a4df3c` | 6504 (6001 are the generated entities and repositories of `jpa/deferred`) |
+| spring-projects/spring-data-examples | `7747029e6157cb780862826b6ae87c88d7a4df3c` | 6504 (6001 are the generated entities and repositories of `jpa/deferred`, whose hits are excluded; see below) |
 | jhipster/jhipster-sample-app | `6b000b5d23a36c45e01472471b84a44fa2464044` | 81 |
 | iExecBlockchainComputing/iexec-core | `a09dbba123f09ae352410c87bcb3788610536809` | 129 |
 | jhy/jsoup | `49a15317317970a7ea3f0a5ded303ef319860f4a` | 98 |
@@ -263,29 +264,28 @@ MongoDB service, is where S29's only real-world hits came from.
 
 | Detector | Hits | TP | FP-fixed | FP-accepted | Deferred | Final |
 |---|---|---|---|---|---|---|
-| S29-java-n-plus-one | 2 | 0 | 2 | 0 | | 0 |
-| S08-java-repository-no-pageable | 2023 | 2018 | 0 | 5 | | 2023 |
+| S29-java-n-plus-one | 4 | 1 | 2 | 1 | | 2 |
+| S08-java-repository-no-pageable | 23 | 18 | 0 | 5 | | 23 |
 
-S08's 2023 hits are 2000 in `jpa/deferred` plus 23 in hand-written code.
-Of the 23, 18 are TP and 5 are FP-accepted.
+S08's counts exclude the 2000 `jpa/deferred` hits (see below).
 
-### The tripwire and `jpa/deferred`
+### Generated fixtures excluded: `jpa/deferred`
 
-S08 has 2018 hits in spring-data-examples, far over the 25-hit tripwire.
-2000 of them are in `jpa/deferred`, a bootstrap benchmark whose
-`Customer1Repository` … `Customer1999Repository` and `CustomerRepository` are
-machine-generated copies of one file:
-`List<CustomerN> findByLastName(String lastName);` on a `CrudRepository`.
-That is the shape the pattern describes and the shape of the positive
-sample. No tightening can separate it from `positive.java`, so under a
-literal reading the detector would be deferred. It was not deferred. The
-tripwire exists to catch a detector that over-matches, and these hits are
-one distinct shape repeated, judged once below. Without `jpa/deferred`,
-spring-data-examples has 18 hits, which is under the tripwire. This is
-flagged for a controller ruling in the Task 8 report. In a real scan,
-`signals.py --top` would surface at most a handful of such files.
+The raw sweep of spring-data-examples has 2020 hits: 2018 for S08 and 2
+for S29. **2000 hits in generated jpa/deferred, byte-identical copies of one
+shape — excluded as duplicated input** (controller ruling after Task 8's
+first review). `jpa/deferred` is a bootstrap benchmark. Its
+`CustomerRepository` and `Customer1Repository` … `Customer1999Repository` are
+machine-generated copies of one file, each declaring
+`List<CustomerN> findByLastName(String lastName);` on a `CrudRepository`. The
+recorded sweep for that repository is the raw TSV with paths under
+`jpa/deferred/` filtered out, which leaves 20 lines (18 S08, 2 S29). The
+tripwire therefore applies to 18 distinct S08 hits, which is within the
+limit, and S08 stays.
 
-S29 had 2 hits before its fix and 0 after, well under the tripwire.
+S29 had 4 hits in all: 2 before its document-store fix, and 2 after the
+nested-loop rule was added. Both of those numbers are well under the
+tripwire.
 
 ### Tightened before calibration
 
@@ -301,6 +301,8 @@ came from a calibration hit, so none is counted in the table above.
   - A loop whose iterable is already mapped (`.map(…)`, or a `Dto` in the source expression) is skipped.
   - One level of nested generics is parsed (`Map.Entry<String, List<Order>>`), so an entry loop is recognised and skipped instead of being missed by accident.
   - The eager-fetch vocabulary also covers `@NamedEntityGraph`, `@BatchSize`, `FetchMode.SUBSELECT`/`JOIN` and a `…fetchgraph`/`…loadgraph` query hint. Batch fetching makes N+1 into N/size+1, and a fetch graph makes it one query.
+
+  - (Fix round 1, controller ruling) An inner for-each over a getter of the outer element, `for (Book book : author.getBooks())`, counts as navigation, next to the chained-getter rule. Every suppression above still applies to it. So a DTO- or value-typed outer element, an eager or batch hint, or a document-store file stays silent → `S29/java/positive.java` (appended `AuthorCatalogService`) and `negative_nested_eager.java` (the same nested shape with `join fetch`).
 
   The handler catches every exception and returns what it has, and a 50 000-character line or a 30 000-link getter chain runs in milliseconds.
 
@@ -336,9 +338,11 @@ came from a calibration hit, so none is counted in the table above.
 - `S08-java-repository-no-pageable` spring-data-examples `mongodb/geo-json/src/main/java/example/springdata/mongodb/geojson/StoreRepository.java:29` — TP: `findByLocationWithin(Polygon)` grows with the polygon and with store density.
 - `S08-java-repository-no-pageable` spring-data-examples `mongodb/text-search/src/main/java/example/springdata/mongodb/textsearch/BlogPostRepository.java:26` — TP: the full-text `findAllBy(TextCriteria)` returns every matching post.
 - `S08-java-repository-no-pageable` spring-data-examples `neo4j/example/src/main/java/example/springdata/neo4j/ActorRepository.java:29` — FP-accepted: `findAllByRolesMovieTitle` returns one film's cast, which the domain bounds and which does not grow over time.
-- `S08-java-repository-no-pageable` spring-data-examples `jpa/deferred/src/main/java/example/repo/CustomerRepository.java:9` and `Customer1Repository.java:9` … `Customer1999Repository.java:9` (2000 hits, one per generated file) — TP: each is `List<CustomerN> findByLastName(String)` on a `CrudRepository`, the unbounded derived finder the pattern describes. See the tripwire note above.
 - `S08-java-repository-no-pageable` iexec-core `src/main/java/com/iexec/core/task/TaskRepository.java:27` — TP: `findByCurrentStatus(TaskStatus)` and `findChainTaskIdsByFinalDeadlineBefore(Date)` return every task in a status, or every task past a deadline. Terminal statuses accumulate for the life of the deployment.
 - `S08-java-repository-no-pageable` iexec-core `src/main/java/com/iexec/core/worker/WorkerRepository.java:25` — FP-accepted: the only collection finder is `findByWalletAddressIn(Collection<String>)`, which looks up a unique key, so the caller's list bounds the result. Regex cannot tell a unique column from a non-unique one, and `…In(Collection)` on a status column really is unbounded.
+
+- `S29-java-n-plus-one` spring-data-examples `jpa/graalvm-native/src/main/java/com/example/data/jpa/CLR.java:81` — TP: `listAllAuthors()` loads `authorRepository.findAll()` and then iterates `author.getBooks()` for each author. `Author.books` is a `@OneToMany` with the default LAZY fetch, and neither `AuthorRepository` nor `CLR` has an entity graph or fetch join, so inside the `@Transactional` `run()` it issues one select for the authors and one more for each author's books.
+- `S29-java-n-plus-one` spring-data-examples `jdbc/graalvm-native/src/main/java/example/springdata/jdbc/graalvmnative/CLR.java:81` — FP-accepted: the same code on Spring Data JDBC. A JDBC aggregate loads its `books` with the author inside `findAll()`, so the loop issues no query. The file imports no store package (the dependency is only in the module's `pom.xml`), so file-local regex cannot tell it from the JPA twin above.
 
 ### Fixed during calibration
 
@@ -349,14 +353,14 @@ came from a calibration hit, so none is counted in the table above.
 
 ### Silences checked
 
-- `S29-java-n-plus-one` has no hit in the final sweep, so it has no real-world true positive yet. The four brief repositories contain 12 for-each loops outside tests. None of them reads through a getter on the loop element in a JPA file. In petclinic, `Owner.getPet` loops over `getPets()` and reads `pet.getName()`, a column. jhipster's `UserMapper` passes each `User` to a mapper. So silence is correct there. The brief's unmodified handler also had zero hits on those four repositories.
+- `S29-java-n-plus-one` has one real-world true positive, the nested loop in jpa/graalvm-native `CLR.java`. The four brief repositories contain 12 for-each loops outside tests. Apart from the two `CLR.java` hits, none reads through a getter on the loop element. In petclinic, `Owner.getPet` loops over `getPets()` and reads `pet.getName()`, a column. jhipster's `UserMapper` passes each `User` to a mapper. So silence is correct there.
 - No `@Embedded` value or DTO getter chain appears in any swept repository, so the expected class of accepted false positives (`order.getAddress().getCity()` through an embeddable) has **0** instances in this batch. A probe confirms it still fires, and that is accepted at `confidence: low`. DTO-named element types are suppressed, so they account for 0 as well.
 - `S08-java-repository-no-pageable` is silent on jhipster-sample-app, whose `UserRepository` finders return `Optional` or take a `Pageable`, and on the reactive petclinic, whose finders return `Flux`.
 
 ### Known limitations (noted, not fixed)
 
-- `S29-java-n-plus-one` misses a nested for-each over the association itself, `for (Book book : author.getBooks())` inside `for (Author author : authors)` (spring-data-examples `jpa/graalvm-native/…/CLR.java:83`). That is the textbook N+1 shape, but adding it would loosen the detector to create a hit, which the calibration rules forbid in this pass. It also misses stream and lambda forms (`orders.forEach(o -> o.getItems().size())`, `.map(o -> o.getCustomer().getName())`) and indexed loops.
+- `S29-java-n-plus-one` misses stream and lambda forms (`orders.forEach(o -> o.getItems().size())`, `.map(o -> o.getCustomer().getName())`) and indexed loops.
 - `S29-java-n-plus-one` is file-scoped. An `@EntityGraph` or `JOIN FETCH` on a repository interface in another file does not suppress it, and that is the usual layout. Conversely, one hint anywhere in the file silences every loop in it.
-- `S29-java-n-plus-one` cannot tell an `@Embedded` value, an enum (`getStatus().getLabel()`) or a DTO without a conventional suffix from a lazy association. It also skips a real entity that happens to be named `…Event` or `…Request`. A Spring Data JDBC or MongoDB file that also imports JPA is treated as JPA.
+- `S29-java-n-plus-one` cannot tell an `@Embedded` value, an enum (`getStatus().getLabel()`) or a DTO without a conventional suffix from a lazy association. It also skips a real entity that happens to be named `…Event` or `…Request`. A Spring Data JDBC or MongoDB file that also imports JPA is treated as JPA. A JDBC or Mongo file that imports no store package at all is also treated as JPA (1 FP-accepted, `jdbc/graalvm-native/…/CLR.java:81`).
 - `S08-java-repository-no-pageable` is file-scoped. One `Pageable`, `Limit`, `Top`/`First`-N or `LIMIT` anywhere in the repository silences its other, unbounded finders. It only sees finders declared in the interface, so an inherited `findAll()` is not reported. It misses return types written fully qualified (`java.util.List<…>`) or with nested generics (`List<Map<String, Object>>`).
 - `S08-java-repository-no-pageable` cannot see selectivity. Lookup tables (`PetType`), cast lists and `…In(Collection)` on a unique key fire (4 of this batch's 5 FP-accepted). It cannot see store paging either: a `Stream<>` finder fires unless the file sets a fetch size, even on stores whose driver pages streams (Cassandra: 1 FP-accepted).

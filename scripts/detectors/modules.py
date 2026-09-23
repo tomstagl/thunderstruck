@@ -400,6 +400,13 @@ S29_VALUE_GETTERS = re.compile(
 
 
 def _s29_navigates(body: str, var: str) -> bool:
+    # The canonical N+1: an inner for-each over an association of the outer
+    # element, `for (Book book : author.getBooks())`.
+    nested = re.compile(
+        rf"\bfor\s*\([^:;\n]*:\s*{re.escape(var)}\s*\.\s*(get[A-Z]\w*)\s*\(\s*\)\s*\)")
+    for m in nested.finditer(body):
+        if not S29_VALUE_GETTERS.fullmatch(m.group(1)):
+            return True
     chain = re.compile(
         rf"\b{re.escape(var)}\s*\.\s*get[A-Z]\w*\s*\(\s*\)\s*\.\s*(\w+)\s*\(\s*(\S?)")
     for m in chain.finditer(body):
