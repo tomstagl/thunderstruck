@@ -238,3 +238,125 @@ nine repositories was byte-identical (9 hits).
 - `S09-java-cache-aside-no-singleflight` / `S17-java-unbounded-cache`: enum-keyed cache maps (`Map<Status, X>`) fire even though the enum's cardinality bounds them. The field gate misses a field whose annotation shares its line (`@Getter private final Map… = new HashMap<>()`), and it still counts a method-local `final Map… = new HashMap<>()` as a field.
 - `S16-java-scheduled-no-jitter` reads 10 lines, so jitter vocabulary in the next method can silence it. That is a miss.
 - `S01-java-webclient-no-timeout`: a builder bean whose consumers apply `.timeout()` in other files, or wrap the call in a Resilience4j `TimeLimiter`, still fires, because file-local regex cannot see the consumer. None of this batch's hits was that shape (the gateway's owner call is not time-limited).
+- `S09-java-cache-aside-no-singleflight` / `S17-java-unbounded-cache`: the field gate misses a cache built through a wrapper or factory, for example `private final Map<String,String> cache = Collections.synchronizedMap(new HashMap<>());`. That is a miss.
+
+## Batch 2 — Spring/Hibernate, part 2 (Task 8): S29, S08
+
+The sweep ran `--patterns S29,S08`. S29 is a new pattern (N+1 query
+fan-out) with one module detector, `S29-java-n-plus-one`. S08 gains its
+first Java detector, `S08-java-repository-no-pageable`. The four
+repositories listed in the brief come first. The Task 7 clones of the other
+five were swept as well, at no extra cost, and iexec-core, a Spring Data
+MongoDB service, is where S29's only real-world hits came from.
+
+| Repo | Commit | Java files swept |
+|---|---|---|
+| spring-projects/spring-petclinic | `818c4136ea971c21674525f9053de0d9c7ad8cfe` | 30 |
+| spring-petclinic/spring-petclinic-microservices | `295fa8d5ee10f7b6daddf83a2c65f9051a87564b` | 53 |
+| spring-projects/spring-data-examples | `7747029e6157cb780862826b6ae87c88d7a4df3c` | 6504 (6001 are the generated entities and repositories of `jpa/deferred`) |
+| jhipster/jhipster-sample-app | `6b000b5d23a36c45e01472471b84a44fa2464044` | 81 |
+| iExecBlockchainComputing/iexec-core | `a09dbba123f09ae352410c87bcb3788610536809` | 129 |
+| jhy/jsoup | `49a15317317970a7ea3f0a5ded303ef319860f4a` | 98 |
+| brettwooldridge/HikariCP | `a4d93f4f85517f90e632b795486d7102e933d7ff` | 49 |
+| apache/commons-pool | `c4aba65cd8445685f89422b18219ea9853e4306d` | 57 |
+| spring-petclinic/spring-petclinic-reactive | `68534cf88a9d022467b9590b953ea4fc7f78bd6b` | 39 |
+
+| Detector | Hits | TP | FP-fixed | FP-accepted | Deferred | Final |
+|---|---|---|---|---|---|---|
+| S29-java-n-plus-one | 2 | 0 | 2 | 0 | | 0 |
+| S08-java-repository-no-pageable | 2023 | 2018 | 0 | 5 | | 2023 |
+
+S08's 2023 hits are 2000 in `jpa/deferred` plus 23 in hand-written code.
+Of the 23, 18 are TP and 5 are FP-accepted.
+
+### The tripwire and `jpa/deferred`
+
+S08 has 2018 hits in spring-data-examples, far over the 25-hit tripwire.
+2000 of them are in `jpa/deferred`, a bootstrap benchmark whose
+`Customer1Repository` … `Customer1999Repository` and `CustomerRepository` are
+machine-generated copies of one file:
+`List<CustomerN> findByLastName(String lastName);` on a `CrudRepository`.
+That is the shape the pattern describes and the shape of the positive
+sample. No tightening can separate it from `positive.java`, so under a
+literal reading the detector would be deferred. It was not deferred. The
+tripwire exists to catch a detector that over-matches, and these hits are
+one distinct shape repeated, judged once below. Without `jpa/deferred`,
+spring-data-examples has 18 hits, which is under the tripwire. This is
+flagged for a controller ruling in the Task 8 report. In a real scan,
+`signals.py --top` would surface at most a handful of such files.
+
+S29 had 2 hits before its fix and 0 after, well under the tripwire.
+
+### Tightened before calibration
+
+Before the sweep, both detectors were run against common shapes of correct
+Java. Every shape that fired became a required-silent sample, and the
+detector was then tightened until the sample passed. None of these fixes
+came from a calibration hit, so none is counted in the table above.
+
+- `S29-java-n-plus-one`. The brief's handler flagged any `el.getX().` inside a for-each over `el`. It now has these rules:
+  - Only a collection operation (`size`, `isEmpty`, `stream`, `forEach`, `contains`, `add`, `iterator`, `get(<index>)`, …) or a further getter counts as navigation. `trim()`, `toLowerCase()`, `equals()`, `compareTo()`, `name()`, `toString()`, `orElse()`, `isPresent()` and `Optional.get()` read a column that is already loaded.
+  - Getters that never initialise a proxy or that belong to JDK value types do not count: `getId()` (a Hibernate proxy returns its key without a query), `getClass()`, `getYear()`/`getMonth…`/`getDay…`/`getTime()`/`getEpoch…`, `getBytes()`, `getSimpleName()`.
+  - An element of a JDK value type (`String`, boxed and primitive types, `BigDecimal`, `UUID`, `Optional`, `Map.Entry`/`Entry`, `java.time` types, …) is skipped. So is one whose type follows a DTO naming convention (`…Dto`, `…DTO`, `…Request`, `…Response`, `…View`, `…Vm`, `…Projection`, `…Payload`, `…Command`, `…Event`, `…Form`).
+  - A loop whose iterable is already mapped (`.map(…)`, or a `Dto` in the source expression) is skipped.
+  - One level of nested generics is parsed (`Map.Entry<String, List<Order>>`), so an entry loop is recognised and skipped instead of being missed by accident.
+  - The eager-fetch vocabulary also covers `@NamedEntityGraph`, `@BatchSize`, `FetchMode.SUBSELECT`/`JOIN` and a `…fetchgraph`/`…loadgraph` query hint. Batch fetching makes N+1 into N/size+1, and a fetch graph makes it one query.
+
+  The handler catches every exception and returns what it has, and a 50 000-character line or a 30 000-link getter chain runs in milliseconds.
+
+  → `S29/java/negative_dto_element.java`, `negative_map_entry.java`, `negative_value_methods.java`, `negative_batch_size.java` and `negative_named_entity_graph.java`
+- `S08-java-repository-no-pageable`:
+  - A by-id finder (`findAllById(Iterable)`, `findByIdIn(Collection)`) is bounded by the ids the caller passes, so it no longer satisfies `require`.
+  - A `LIMIT n`/`LIMIT :p`/`LIMIT ?` or `FETCH FIRST` in a `@Query`, a Spring Data `Limit` parameter and a `Window<>` (scroll) return type all count as bounded.
+  - A `Stream<>` finder still counts as unbounded, because on JDBC and JPA most drivers (MySQL, and PostgreSQL without a fetch size and a transaction) materialise the whole result before the first element arrives. A fetch-size hint (`HINT_FETCH_SIZE`, `fetchSize`) in the file makes it a cursor and suppresses the hit.
+  - `Optional<>`-only repositories, `Flux<>` (reactive) finders and `findTopN…`/`findFirstN…` were already silent.
+
+  → `S08/java/negative_find_all_by_id.java`, `negative_query_limit.java`, `negative_limit_param.java` and `negative_stream_fetch_size.java`
+
+### Hits
+
+- `S08-java-repository-no-pageable` spring-petclinic `src/main/java/org/springframework/samples/petclinic/owner/PetTypeRepository.java:30` — FP-accepted: `findPetTypes()` reads a reference table of pet types that the domain keeps to a handful of rows. Regex cannot tell a lookup table from a growing one.
+- `S08-java-repository-no-pageable` spring-petclinic-microservices `spring-petclinic-customers-service/src/main/java/org/springframework/samples/petclinic/customers/model/PetRepository.java:35` — FP-accepted: the same `findPetTypes()` lookup table.
+- `S08-java-repository-no-pageable` spring-petclinic-microservices `spring-petclinic-visits-service/src/main/java/org/springframework/samples/petclinic/visits/model/VisitRepository.java:33` — TP: `findByPetIdIn(Collection<Integer>)` returns every visit of every pet passed in, and the API gateway calls it for all of an owner's pets. The result grows with visit history and has no bound.
+- `S08-java-repository-no-pageable` spring-data-examples `cassandra/example/src/main/java/example/springdata/cassandra/projection/CustomerRepository.java:28` — TP: `findAllProjectedBy()`/`findAllSummarizedBy()` read the whole table into a `Collection`.
+- `S08-java-repository-no-pageable` spring-data-examples `cassandra/example/src/main/java/example/springdata/cassandra/streamoptional/PersonRepository.java:29` — FP-accepted: the only collection finder is `Stream<Person> findAll()`, and the Cassandra driver pages a stream by its default page size. The detector cannot tell the store's paging behaviour from the file.
+- `S08-java-repository-no-pageable` spring-data-examples `couchbase/example/src/main/java/example/springdata/couchbase/repository/AirlineRepository.java:32` — TP: `findAllBy()` returns every airline document.
+- `S08-java-repository-no-pageable` spring-data-examples `jdbc/aot-optimization/src/main/java/example/springdata/aot/CategoryRepository.java:28` — TP: `findAllByNameContaining` is an unbounded substring search.
+- `S08-java-repository-no-pageable` spring-data-examples `jdbc/basics/src/main/java/example/springdata/jdbc/basics/aggregate/LegoSetRepository.java:30` — TP: `reportModelForAge(int)` and `findByName` return every match, with no limit in either `@Query`.
+- `S08-java-repository-no-pageable` spring-data-examples `jdbc/howto/bidirectionalexternal/src/main/java/example/springdata/jdbc/howto/bidirectionalexternal/MinionRepository.java:23` — TP: `findByEvilMaster` returns all of a master's minions, a child set that only grows.
+- `S08-java-repository-no-pageable` spring-data-examples `jpa/example/src/main/java/example/springdata/jpa/custom/UserRepository.java:31` — TP: `findByLastname`/`findByFirstname` return every user with that name.
+- `S08-java-repository-no-pageable` spring-data-examples `jpa/jpa21/src/main/java/example/springdata/jpa/resultsetmappings/SubscriptionRepository.java:28` — TP: `findAllSubscriptionSummaries()`/`findAllSubscriptionProjections()` aggregate the whole table.
+- `S08-java-repository-no-pageable` spring-data-examples `jpa/multiple-datasources/src/main/java/example/springdata/jpa/multipleds/order/OrderRepository.java:30` — TP: `findByCustomer` returns a customer's entire order history.
+- `S08-java-repository-no-pageable` spring-data-examples `jpa/security/src/main/java/example/springdata/jpa/security/SecureBusinessObjectRepository.java:28` — TP: `findBusinessObjectsForCurrentUser()` matches `like '%'` for an admin, which is the whole table.
+- `S08-java-repository-no-pageable` spring-data-examples `jpa/showcase/src/main/java/example/springdata/jpa/showcase/after/AccountRepository.java:30` — TP: `findByCustomer` returns all of a customer's accounts, with no bound.
+- `S08-java-repository-no-pageable` spring-data-examples `jpa/showcase/src/snippets/java/example/springdata/jpa/showcase/snippets/AccountRepository.java:33` — TP: the same finder in the snippet copy.
+- `S08-java-repository-no-pageable` spring-data-examples `ldap/example/src/main/java/example/springdata/ldap/PersonRepository.java:29` — TP: `findByLastnameStartsWith` is an unbounded prefix search over the directory.
+- `S08-java-repository-no-pageable` spring-data-examples `map/src/main/java/example/springdata/map/PersonRepository.java:28` — TP: `findByAgeGreaterThan` is an open range.
+- `S08-java-repository-no-pageable` spring-data-examples `mongodb/example/src/main/java/example/springdata/mongodb/advanced/AdvancedRepository.java:30` — TP: `findByFirstname` returns every match.
+- `S08-java-repository-no-pageable` spring-data-examples `mongodb/geo-json/src/main/java/example/springdata/mongodb/geojson/StoreRepository.java:29` — TP: `findByLocationWithin(Polygon)` grows with the polygon and with store density.
+- `S08-java-repository-no-pageable` spring-data-examples `mongodb/text-search/src/main/java/example/springdata/mongodb/textsearch/BlogPostRepository.java:26` — TP: the full-text `findAllBy(TextCriteria)` returns every matching post.
+- `S08-java-repository-no-pageable` spring-data-examples `neo4j/example/src/main/java/example/springdata/neo4j/ActorRepository.java:29` — FP-accepted: `findAllByRolesMovieTitle` returns one film's cast, which the domain bounds and which does not grow over time.
+- `S08-java-repository-no-pageable` spring-data-examples `jpa/deferred/src/main/java/example/repo/CustomerRepository.java:9` and `Customer1Repository.java:9` … `Customer1999Repository.java:9` (2000 hits, one per generated file) — TP: each is `List<CustomerN> findByLastName(String)` on a `CrudRepository`, the unbounded derived finder the pattern describes. See the tripwire note above.
+- `S08-java-repository-no-pageable` iexec-core `src/main/java/com/iexec/core/task/TaskRepository.java:27` — TP: `findByCurrentStatus(TaskStatus)` and `findChainTaskIdsByFinalDeadlineBefore(Date)` return every task in a status, or every task past a deadline. Terminal statuses accumulate for the life of the deployment.
+- `S08-java-repository-no-pageable` iexec-core `src/main/java/com/iexec/core/worker/WorkerRepository.java:25` — FP-accepted: the only collection finder is `findByWalletAddressIn(Collection<String>)`, which looks up a unique key, so the caller's list bounds the result. Regex cannot tell a unique column from a non-unique one, and `…In(Collection)` on a status column really is unbounded.
+
+### Fixed during calibration
+
+- `S29-java-n-plus-one` iexec-core `src/main/java/com/iexec/core/replicate/ReplicatesList.java:94` — FP-fixed: `replicate.getStatusUpdateList().stream()` in a loop over a MongoDB `@Document`'s embedded list. A document store loads the nested list with its parent, so there is nothing to lazy-load.
+- `S29-java-n-plus-one` iexec-core `src/main/java/com/iexec/core/worker/WorkerService.java:105` — FP-fixed: `worker.getComputingChainTaskIds().isEmpty()` over `Worker` documents read through `MongoTemplate`, the same shape.
+
+  Lazy loading is a JPA/Hibernate behaviour. A file that imports a Spring Data document or aggregate store (`org.springframework.data.mongodb`, `jdbc`, `cassandra`, `couchbase`, `elasticsearch`, `redis`, `neo4j`, `r2dbc`) or `com.mongodb`, and does not also import `javax`/`jakarta.persistence` or `org.hibernate`, is now skipped → `S29/java/negative_document_store.java`
+
+### Silences checked
+
+- `S29-java-n-plus-one` has no hit in the final sweep, so it has no real-world true positive yet. The four brief repositories contain 12 for-each loops outside tests. None of them reads through a getter on the loop element in a JPA file. In petclinic, `Owner.getPet` loops over `getPets()` and reads `pet.getName()`, a column. jhipster's `UserMapper` passes each `User` to a mapper. So silence is correct there. The brief's unmodified handler also had zero hits on those four repositories.
+- No `@Embedded` value or DTO getter chain appears in any swept repository, so the expected class of accepted false positives (`order.getAddress().getCity()` through an embeddable) has **0** instances in this batch. A probe confirms it still fires, and that is accepted at `confidence: low`. DTO-named element types are suppressed, so they account for 0 as well.
+- `S08-java-repository-no-pageable` is silent on jhipster-sample-app, whose `UserRepository` finders return `Optional` or take a `Pageable`, and on the reactive petclinic, whose finders return `Flux`.
+
+### Known limitations (noted, not fixed)
+
+- `S29-java-n-plus-one` misses a nested for-each over the association itself, `for (Book book : author.getBooks())` inside `for (Author author : authors)` (spring-data-examples `jpa/graalvm-native/…/CLR.java:83`). That is the textbook N+1 shape, but adding it would loosen the detector to create a hit, which the calibration rules forbid in this pass. It also misses stream and lambda forms (`orders.forEach(o -> o.getItems().size())`, `.map(o -> o.getCustomer().getName())`) and indexed loops.
+- `S29-java-n-plus-one` is file-scoped. An `@EntityGraph` or `JOIN FETCH` on a repository interface in another file does not suppress it, and that is the usual layout. Conversely, one hint anywhere in the file silences every loop in it.
+- `S29-java-n-plus-one` cannot tell an `@Embedded` value, an enum (`getStatus().getLabel()`) or a DTO without a conventional suffix from a lazy association. It also skips a real entity that happens to be named `…Event` or `…Request`. A Spring Data JDBC or MongoDB file that also imports JPA is treated as JPA.
+- `S08-java-repository-no-pageable` is file-scoped. One `Pageable`, `Limit`, `Top`/`First`-N or `LIMIT` anywhere in the repository silences its other, unbounded finders. It only sees finders declared in the interface, so an inherited `findAll()` is not reported. It misses return types written fully qualified (`java.util.List<…>`) or with nested generics (`List<Map<String, Object>>`).
+- `S08-java-repository-no-pageable` cannot see selectivity. Lookup tables (`PetType`), cast lists and `…In(Collection)` on a unique key fire (4 of this batch's 5 FP-accepted). It cannot see store paging either: a `Stream<>` finder fires unless the file sets a fetch size, even on stores whose driver pages streams (Cassandra: 1 FP-accepted).

@@ -467,6 +467,18 @@ patterns:
           window: 6
           confidence: low
           note: "SELECT with no LIMIT"
+      java:
+        - id: S08-java-repository-no-pageable
+          kind: file_absent
+          anchor: 'interface\s+\w+\s+extends\s+[\w<>, .]*Repository\b'
+          # A by-id finder is bounded by the ids the caller passes in.
+          require: '(?m)^\s*(List|Collection|Set|Iterable|Stream)\s*<[^>]*>\s+(?!\w*ByIds?(?:In)?\s*\()(find|read|get|query|stream)\w*\s*\('
+          # Bounded forms: paging/slicing/scrolling, a Top-N/First-N name, a
+          # Limit parameter, a LIMIT/FETCH FIRST in a @Query, and a Stream
+          # finder given a fetch size (a cursor, not a materialised list).
+          absent: '\bPageable\b|\b(Page|Slice|Window)\s*<|\b(find|read|get|query|stream)\w*?(Top|First)\d+|\bLimit\s+\w+\s*[,)]|(?i:\bLIMIT\s+(\d|:|\?)|\bFETCH\s+FIRST\b)|FETCH_SIZE|[Ff]etchSize'
+          confidence: low
+          note: "Spring Data repository with collection finders and no Pageable/Slice/Top-N form — every call returns the whole match set"
 
   - id: S09
     name: Single-flight / request coalescing plus caching
@@ -900,6 +912,27 @@ patterns:
           window_before: 8
           confidence: low
           note: "Condition.await()/Object.wait() with no timeout — waits forever if the signal never comes"
+
+  - id: S29
+    name: Bounded query fan-out (no N+1 lazy-loading amplification)
+    tier: A
+    weight: 1.0
+    metastable_role: amplifier
+    failure_if_absent: >-
+      Iterating a result set and touching a lazy association per row turns
+      one query into N+1. Under load this is a fan-out amplifier — the same
+      mechanism as an unbounded result set, but produced by ORM lazy loading
+      rather than a missing limit.
+    references:
+      - "Hibernate ORM user guide — Fetching"
+      - "Nygard, Release It! (2nd ed.), ch. 4 — Unbounded Result Sets"
+    detectors:
+      java:
+        - id: S29-java-n-plus-one
+          kind: module
+          handler: s29_n_plus_one
+          confidence: low
+          note: "loop navigates an association per row with no eager fetch hint in the file"
 
 # ---------------------------------------------------------------- Tier C ----
 # Catalogued for the investigator's vocabulary; not scanned in v1.

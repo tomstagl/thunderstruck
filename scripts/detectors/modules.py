@@ -341,3 +341,114 @@ def s18_fail_fast(ctx) -> Result:
             if len(out) >= 3:
                 break
     return out
+
+
+# --------------------------------------------------------------------------
+# S29 — bounded query fan-out (no N+1 lazy-loading amplification)
+# --------------------------------------------------------------------------
+
+# Only files that touch persistence can lazy-load; a DTO loop elsewhere is not
+# a query.
+PERSISTENCE_CONTEXT = re.compile(
+    r"(javax|jakarta)\.persistence|org\.hibernate|org\.springframework\.data"
+    r"|@\s*(Entity|Transactional)\b|\bEntityManager\b|\w+Repository\b")
+# Lazy loading is a JPA/Hibernate behaviour. A document or aggregate store
+# (Spring Data MongoDB, JDBC, Cassandra, …) loads a nested list with its
+# parent, so reading through it per element is not a query — unless the file
+# is JPA as well.
+NON_ORM_STORE = re.compile(
+    r"org\.springframework\.data\.(mongodb|jdbc|cassandra|couchbase"
+    r"|elasticsearch|redis|neo4j|r2dbc)|\bcom\.mongodb\.")
+JPA_CONTEXT = re.compile(r"(javax|jakarta)\.persistence|org\.hibernate")
+# Batch fetching (`@BatchSize`, `FetchMode.SUBSELECT`) and fetch/load graphs
+# bound the fan-out as well: N+1 becomes N/size+1, or one query.
+EAGER_FETCH_HINT = re.compile(
+    r"(?i)@\s*(Named)?EntityGraph\b|JOIN\s+FETCH|Hibernate\s*\.\s*initialize\s*\("
+    r"|FetchType\s*\.\s*EAGER|@\s*BatchSize\b|FetchMode\s*\.\s*(SUBSELECT|JOIN)"
+    r"|\.(fetch|load)graph\b")
+# `for (Order order : orders)` / `for (final Order order : repo.findAll())`.
+# One level of nested generics (`Map.Entry<String, List<Order>>`); the two
+# alternatives start with disjoint characters, so this cannot backtrack
+# catastrophically on a long line.
+FOREACH_JAVA = re.compile(
+    r"\bfor\s*\(\s*(?:final\s+)?([\w.]+)(?:<(?:[^<>]|<[^<>]*>)*>)?(?:\[\])*"
+    r"\s+(\w+)\s*:([^\n]*)")
+# Element types that are never managed entities: JDK values, map entries, and
+# the DTO naming conventions. Reading through them is not a query.
+S29_VALUE_TYPE = re.compile(
+    r"(?:^|\.)(?:String|CharSequence|Integer|Long|Short|Byte|Double|Float"
+    r"|Boolean|Character|Number|BigDecimal|BigInteger|UUID|Object|Optional"
+    r"|Entry|File|Path|URI|URL|Instant|Duration|Date|Local\w*|Zoned\w*"
+    r"|Offset\w*|Class|int|long|short|byte|double|float|boolean|char)$"
+    r"|(?:Dto|DTO|Request|Response|View|Vm|VM|Projection|Payload|Command"
+    r"|Event|Form)$")
+# An iterable already mapped (`.map(OrderDto::from)`) yields DTOs, not rows.
+S29_MAPPED_SOURCE = re.compile(r"\.\s*map\s*\(|Dto|DTO")
+# What follows `el.getX().` — a collection operation or a further getter is
+# what touches an association. String/Optional/value calls (`trim`, `orElse`,
+# `equals`, `compareTo`, `name`) read a column that is already loaded.
+S29_COLLECTION_OPS = frozenset((
+    "size", "isEmpty", "stream", "parallelStream", "iterator", "forEach",
+    "contains", "containsAll", "containsKey", "add", "addAll", "remove",
+    "removeAll", "removeIf", "clear", "toArray", "values", "keySet",
+    "entrySet"))
+# Getters that never initialise a proxy or that belong to JDK value types.
+# `getId()` on a Hibernate proxy returns the key without a query.
+S29_VALUE_GETTERS = re.compile(
+    r"get(?:Id|Class|Year|Month\w*|Day\w*|Hour|Minute|Second|Nano|Time"
+    r"|Epoch\w*|Bytes|SimpleName)$")
+
+
+def _s29_navigates(body: str, var: str) -> bool:
+    chain = re.compile(
+        rf"\b{re.escape(var)}\s*\.\s*get[A-Z]\w*\s*\(\s*\)\s*\.\s*(\w+)\s*\(\s*(\S?)")
+    for m in chain.finditer(body):
+        op, first_arg = m.group(1), m.group(2)
+        if op in S29_COLLECTION_OPS:
+            return True
+        if op == "get" and first_arg and first_arg != ")":
+            return True  # `getLineItems().get(0)`, not `Optional.get()`
+        if re.fullmatch(r"get[A-Z]\w*", op) and not S29_VALUE_GETTERS.fullmatch(op):
+            return True
+    return False
+
+
+def s29_n_plus_one(ctx) -> Result:
+    """Flag a for-each whose body navigates *through* a getter on the loop
+    element — `order.getLineItems().size()`, `order.getCustomer().getName()`.
+
+    A bare `order.getId()` reads a column of the row already loaded and is not
+    flagged; chaining off the getter is what touches an association. This is a
+    heuristic, not dataflow: it cannot know the association is lazy, so any
+    eager-fetch hint anywhere in the file suppresses it. It also cannot tell an
+    `@Embedded` value (`order.getAddress().getCity()`) from an association.
+    """
+    out: Result = []
+    try:
+        text = ctx.code_text
+        if not PERSISTENCE_CONTEXT.search(text) or EAGER_FETCH_HINT.search(text):
+            return []
+        if NON_ORM_STORE.search(text) and not JPA_CONTEXT.search(text):
+            return []
+        lines = ctx.code_lines
+        for i, line in enumerate(lines):
+            if "for" not in line:
+                continue
+            m = FOREACH_JAVA.search(line)
+            if not m:
+                continue
+            elem_type, var, source = m.group(1), m.group(2), m.group(3)
+            if S29_VALUE_TYPE.search(elem_type) or S29_MAPPED_SOURCE.search(source):
+                continue
+            end = _ts_block_end(lines, i) if "{" in line else min(i + 1, len(lines) - 1)
+            body = "\n".join(lines[i:end + 1])
+            if _s29_navigates(body, var):
+                out.append((i + 1, (
+                    f"loop over `{var}` navigates an association on each element "
+                    "with no eager fetch hint (@EntityGraph, JOIN FETCH, "
+                    "Hibernate.initialize) in this file — likely N+1 queries")))
+                if len(out) >= 3:
+                    break
+    except Exception:  # a lead generator never breaks the scan
+        return out
+    return out
