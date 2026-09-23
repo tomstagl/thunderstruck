@@ -78,8 +78,14 @@ def collect(repo: Path) -> dict[str, Any]:
     ))
     for n, f in enumerate(findings, 1):
         f["id"] = f"FR-{n:03d}"
+    context_doc = c.load_json(out / c.CONTEXT_FILENAME, {}) or {}
+    if not isinstance(context_doc, dict):
+        context_doc = {}
+    raw_warnings = context_doc.get("warnings")
     return {"hotspots": hotspots, "findings": findings,
-            "failed": failed, "clean": clean, "validation": validation}
+            "failed": failed, "clean": clean, "validation": validation,
+            "context": c.load_service_context(repo),
+            "context_warnings": [str(w) for w in raw_warnings] if isinstance(raw_warnings, list) else []}
 
 
 # --------------------------------------------------------------------------
@@ -87,7 +93,48 @@ def collect(repo: Path) -> dict[str, Any]:
 # --------------------------------------------------------------------------
 
 
-def render_markdown(data: dict, repo: Path) -> str:
+def _edge_attrs(edge: dict) -> str:
+    attrs = edge.get("attributes") or {}
+    return "; ".join(f"{k}: {v}" for k, v in sorted(attrs.items()))
+
+
+def _deps(deps: list[dict]) -> str:
+    return ", ".join(
+        f"`{d['neighbour']}` ({d['direction']}"
+        + (f"; {_edge_attrs(d)}" if d.get("attributes") else "") + ")"
+        for d in deps)
+
+
+def _age_days(iso: str, now: datetime) -> int | None:
+    try:
+        return max(0, (now - datetime.fromisoformat(iso)).days)
+    except (TypeError, ValueError):
+        return None
+
+
+def render_service_context(ctx: dict | None, now: datetime) -> list[str]:
+    if not ctx:
+        return []
+    fetched = str(ctx.get("fetched_at") or "")
+    age = _age_days(fetched, now)
+    L = ["## Service context", "",
+         f"`{ctx['entity_ref']}` · {len(ctx['edges'])} edge(s), 1 hop · fetched "
+         f"{fetched[:10]}" + (f" ({age} days ago)" if age is not None else "")
+         + f" · context `{str(ctx.get('context_hash'))[:19]}`", "",
+         "Component-level context from the service catalog: it describes the whole "
+         "component, not a file.", "",
+         "| Edge | Direction | Attributes |", "|---|---|---|"]
+    for edge in ctx["edges"]:
+        L.append(f"| `{edge['ref']}` | {edge['direction']} | {_edge_attrs(edge) or '—'} |")
+    hidden = [f"{n} {d}" for d, n in sorted((ctx.get("truncated") or {}).items()) if n]
+    if hidden:
+        L += ["", f"_… and {', '.join(hidden)} not listed "
+                  f"(cap {c.MAX_NEIGHBOURS_PER_DIRECTION} per direction)._"]
+    L.append("")
+    return L
+
+
+def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
     hs, findings = data["hotspots"], data["findings"]
     repo_name = Path(hs["repo"]["root"]).name
     counts: dict[str, int] = {}
@@ -109,16 +156,18 @@ def render_markdown(data: dict, repo: Path) -> str:
         + (f" — {breakdown}" if breakdown else ""),
         "",
         "> Findings are **falsifiable hypotheses**, not verified defects. Every "
-        "claim cites evidence that resolved to a real file:line, commit or "
-        "detector hit, and every finding names one concrete way to prove it "
+        "claim cites evidence that resolved to a real file:line, commit, "
+        "detector hit or catalog edge, and every finding names one concrete way to prove it "
         "wrong. Check the `Verify` line before you act on one.",
         "",
     ]
 
-    if hs.get("warnings"):
+    warnings = list(hs.get("warnings") or []) + list(data.get("context_warnings") or [])
+    if warnings:
         L += ["## Run warnings", ""]
-        L += [f"- {w}" for w in hs["warnings"]]
+        L += [f"- {w}" for w in warnings]
         L.append("")
+    L += render_service_context(data.get("context"), now or datetime.now(timezone.utc))
 
     # ---- coverage table
     lead_files = {pid: cov["files"] for pid, cov in hs["pattern_coverage"].items()}
@@ -149,18 +198,21 @@ def render_markdown(data: dict, repo: Path) -> str:
             loc = f.get("location") or {}
             symbol = f" · `{loc['symbol']}`" if loc.get("symbol") else ""
             lines = f":{loc['lines']}" if loc.get("lines") else ""
+            rows = ["| | |", "|---|---|",
+                    f"| Trigger | {f.get('trigger_condition', '—')} |",
+                    f"| Amplifier | {f.get('amplifier', '—')} |",
+                    f"| Sustaining effect | {f.get('sustaining_effect') or '_none — this one stops when the trigger stops_'} |",
+                    f"| Blast radius | {f.get('blast_radius', '—')} |"]
+            if f.get("catalog_evidence"):
+                rows.append(f"| Dependents / dependencies | {_deps(f['catalog_evidence'])} |")
+            rows.append(f"| Missing patterns | {', '.join(f'`{p}`' for p in f.get('missing_patterns') or []) or '—'} |")
             L += [f"### {f['id']} · {f.get('failure_mode', '(no failure mode)')}",
                   "",
                   f"**{BADGE.get(f.get('confidence'), '?')} confidence** · "
                   f"`{loc.get('file', '?')}{lines}`{symbol} · "
                   f"hotspot {f['hotspot_id']} (score {f.get('hotspot_score')})",
                   "",
-                  "| | |", "|---|---|",
-                  f"| Trigger | {f.get('trigger_condition', '—')} |",
-                  f"| Amplifier | {f.get('amplifier', '—')} |",
-                  f"| Sustaining effect | {f.get('sustaining_effect') or '_none — this one stops when the trigger stops_'} |",
-                  f"| Blast radius | {f.get('blast_radius', '—')} |",
-                  f"| Missing patterns | {', '.join(f'`{p}`' for p in f.get('missing_patterns') or []) or '—'} |",
+                  *rows,
                   "",
                   "**Evidence**", ""]
             for ev in f.get("evidence") or []:
@@ -230,6 +282,10 @@ def render_json(data: dict) -> dict:
         },
         "warnings": hs.get("warnings", []),
         "degraded": hs.get("degraded", {}),
+        "service_context": ({k: data["context"].get(k) for k in
+                             ("status", "entity_ref", "context_hash", "fetched_at",
+                              "edges", "truncated")}
+                            if data.get("context") else None),
         "pattern_coverage": hs["pattern_coverage"],
         "findings": data["findings"],
         "clean": data["clean"],
@@ -251,14 +307,17 @@ def render_index(data: dict) -> dict:
             continue
         entry = files.setdefault(path, {"content_hash": f.get("content_hash"),
                                         "findings": []})
-        entry["findings"].append({
+        item = {
             "id": f["id"], "key": f.get("key"), "lines": loc.get("lines"),
             "symbol": loc.get("symbol"),
             "failure_mode": f.get("failure_mode"),
             "missing_patterns": f.get("missing_patterns") or [],
             "confidence": f.get("confidence"),
             "sustaining_effect": f.get("sustaining_effect"),
-        })
+        }
+        if f.get("catalog_evidence"):
+            item["catalog_evidence"] = f["catalog_evidence"]
+        entry["findings"].append(item)
     return {"schema": "thunderstruck.index/v1",
             "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "head": data["hotspots"]["repo"]["head"],

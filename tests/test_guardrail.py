@@ -31,7 +31,16 @@ def project(tmp_path: Path) -> Path:
     (tmp_path / "src" / "clean.ts").write_text("const b = 2;\n")
     moved = tmp_path / "src" / "moved.ts"
     moved.write_text("const c = 3;\n")
+    linked = tmp_path / "src" / "linked.ts"
+    linked.write_text("const d = 4;\n")
 
+    inbound = [{"ref": f"dependencyOf component:default/{n}", "direction": "inbound",
+                "neighbour": f"component:default/{n}", "attributes": {}}
+               for n in ("d1", "d2", "d3", "d4", "d5", "d6")]
+    web = {"ref": "dependencyOf component:default/web-frontend", "direction": "inbound",
+           "neighbour": "component:default/web-frontend", "attributes": {"tier": "2"}}
+    pay = {"ref": "dependsOn component:default/payments-api", "direction": "outbound",
+           "neighbour": "component:default/payments-api", "attributes": {"tier": "1"}}
     index = {
         "schema": "thunderstruck.index/v1",
         "files": {
@@ -49,6 +58,16 @@ def project(tmp_path: Path) -> Path:
                 "content_hash": "sha256:" + "0" * 64,
                 "findings": [{"id": "FR-009", "failure_mode": "Something that moved",
                               "missing_patterns": ["S02"], "confidence": "medium"}]},
+            "src/linked.ts": {
+                "content_hash": _sha(linked),
+                "findings": [
+                    {"id": "FR-002", "failure_mode": "Checkout stalls under retry storms",
+                     "missing_patterns": ["S02"], "confidence": "high",
+                     "catalog_evidence": [web, *inbound[:2]]},
+                    {"id": "FR-003", "failure_mode": "Payment calls pile up",
+                     "missing_patterns": ["S01"], "confidence": "medium",
+                     "catalog_evidence": [*inbound[2:], web, pay]},
+                ]},
         }}
     out = tmp_path / ".thunderstruck"
     out.mkdir()
@@ -180,3 +199,34 @@ def test_hooks_json_matches_current_tool_names():
     command = entries[0]["hooks"][0]["command"]
     assert "${CLAUDE_PLUGIN_ROOT}" in command
     assert "exit 0" in command, "the hook command must fail open"
+
+
+def test_cited_neighbours_are_named(project):
+    context = json.loads(run_hook(project, "src/linked.ts").stdout)[
+        "hookSpecificOutput"]["additionalContext"]
+    assert ("Cited dependents of this component: web-frontend (tier: 2), d1, d2, d3, d4 "
+            "and 2 more.") in context
+    assert "Cited dependencies of this component: payments-api (tier: 1)." in context
+    lowered = context.lower()
+    for imperative in ("you must", "do not edit", "stop and", "ignore previous"):
+        assert imperative not in lowered
+
+
+def test_no_neighbour_line_without_catalog_evidence(project):
+    context = json.loads(run_hook(project, "src/flagged.ts").stdout)[
+        "hookSpecificOutput"]["additionalContext"]
+    assert "Cited dependents" not in context and "Cited dependencies" not in context
+
+
+def test_malformed_catalog_evidence_still_shows_findings(project):
+    path = project / ".thunderstruck" / "index.json"
+    index = json.loads(path.read_text())
+    findings = index["files"]["src/flagged.ts"]["findings"]
+    findings[0]["catalog_evidence"] = "oops"
+    findings.append({"id": "FR-010", "failure_mode": "x", "missing_patterns": [],
+                     "confidence": "high",
+                     "catalog_evidence": [None, 3, {"direction": "inbound"}]})
+    path.write_text(json.dumps(index))
+    context = json.loads(run_hook(project, "src/flagged.ts").stdout)[
+        "hookSpecificOutput"]["additionalContext"]
+    assert "FR-001" in context and "Cited" not in context

@@ -107,6 +107,7 @@ jobs:
           claude plugin details thunderstruck@thunderstruck | tee /tmp/details.txt
           grep -q "thunderstruck-scan" /tmp/details.txt
           grep -q "thunderstruck-verify" /tmp/details.txt
+          grep -q "thunderstruck-context-config" /tmp/details.txt
           grep -q "stability-catalog" /tmp/details.txt
           grep -q "thunderstruck-investigator" /tmp/details.txt
           grep -q "PreToolUse" /tmp/details.txt

@@ -14,6 +14,7 @@ fix-ratio classification and temporal coupling all have something to measure.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -246,6 +247,44 @@ HISTORY: list[tuple[str, list[str]]] = [
     ("fix: 429 storms from the scheduler", ["src/sync/scheduler.ts"]),
     ("refactor: tidy imports", ["src/util/format.ts"]),
 ]
+
+
+CATALOG_INFO = """\
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: fixture-app
+  description: The fixture service. Its catalog entry feeds the service context.
+spec:
+  type: service
+  lifecycle: production
+  owner: team-a
+"""
+
+
+def add_service_context(repo: Path, python: str, stub: Path) -> None:
+    """Declare the fixture as a catalog component and point [context] at the
+    stub CLI. Both files stay untracked, so history and SHAs are unchanged."""
+    (repo / "catalog-info.yaml").write_text(CATALOG_INFO, encoding="utf-8")
+    exe, script = json.dumps(python), json.dumps(str(stub))
+    lines = [
+        "[context]",
+        'entity_ref = "component:default/fixture-app"',
+        "",
+        "[[context.sources]]",
+        'name = "catalog"',
+        'kind = "command"',
+        f'argv = [{exe}, {script}, "{{entity_ref}}"]',
+        f'preflight = [{exe}, {script}, "--preflight"]',
+        "timeout_s = 10",
+        'extractor = "backstage-relations"',
+        'edge_types = { dependsOn = "outbound", dependencyOf = "inbound" }',
+        'neighbour_attributes = { tier = "example.com/tier" }',
+        "",
+    ]
+    profile = repo / ".thunderstruck.toml"
+    existing = profile.read_text(encoding="utf-8") if profile.is_file() else ""
+    profile.write_text(existing + "\n".join(lines), encoding="utf-8")
 
 
 def run(repo: Path, *args: str, env: dict | None = None) -> None:

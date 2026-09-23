@@ -20,6 +20,7 @@ Parse these from the user's invocation. All optional.
 | `--path P` | — | Restrict to a subdirectory. |
 | `--dry-run` | off | Steps 1–2 only. Print the plan and stop. |
 | `--include-tests` | off | Rank test files too. |
+| `--refresh-context` | off | Fetch the service context even if the cached copy is fresh. |
 
 `$T` below is `${CLAUDE_PLUGIN_ROOT}/scripts`.
 
@@ -47,6 +48,28 @@ uv run "$T/signals.py" --top N --since W [--path P] [--include-tests]
 Writes `.thunderstruck/hotspots.json`. Relay any warnings it prints — a
 degraded run (no `lizard`, thin history) ranks on churn alone and the user
 should know the ranking is weaker.
+
+## Step 1b — service context
+
+```bash
+uv run "$T/context.py" [--refresh]
+```
+
+Pass `--refresh` when the user gave `--refresh-context`. The first line is
+`service context: <status>`.
+
+- `not_configured`: if you can ask the user, offer once to set up service
+  context (which services depend on this one, from their service catalog). If
+  they accept, run the `thunderstruck-context-config` skill, then re-run this
+  step. If they decline, that skill records `enabled = false` so the offer is
+  never repeated. In a headless run where you cannot ask, continue without it.
+- `untrusted`: the configured command has not been approved on this machine.
+  Say so and continue. Do not approve it yourself; the user runs
+  `/thunderstruck-context-config` to review it.
+- anything else: continue, and relay any warnings as in step 1.
+
+This step never stops the scan. Without usable context, the rest of the scan
+runs exactly as it would have without it.
 
 ## Step 2 — bundles
 
@@ -106,8 +129,9 @@ its errors to the task:
 > <the errors verbatim>
 > Fix only these problems and return the corrected JSON. Every `ref` must
 > resolve: a code ref's file and line must exist, a commit SHA must be one
-> from the bundle's change history for this file, and a detector ref must be copied verbatim
-> from the bundle's Detector leads section. If you cannot support a claim with
+> from the bundle's change history for this file, a detector ref must be copied verbatim
+> from the bundle's Detector leads section, and a catalog ref must be copied verbatim from
+> its Service context section. If you cannot support a claim with
 > evidence that resolves, drop that finding.
 
 Save and re-validate. If it still fails, record it with `--failed` and move

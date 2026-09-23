@@ -17,10 +17,16 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Iterable
 
+from context_extract import ATTRIBUTE_VALUE, DIRECTIONS, ENTITY_REF, LABEL, RELATION_TYPE
+
 OUTPUT_DIRNAME = ".thunderstruck"
 PROFILE_FILENAME = ".thunderstruck.toml"
 REPORT_SCHEMA_VERSION = "thunderstruck.report/v1"
 FINDING_SCHEMA_VERSION = "thunderstruck.finding/v1"
+CONTEXT_SCHEMA = "thunderstruck.context/v1"
+CONTEXT_FILENAME = "context.json"
+CONTEXT_USABLE = ("fresh", "cached", "stale")
+MAX_NEIGHBOURS_PER_DIRECTION = 25
 
 # Files that are churn-heavy or complexity-heavy for reasons that say nothing
 # about fragility. Scanning them wastes subagents on noise.
@@ -188,6 +194,46 @@ def load_profile(repo_root: Path) -> dict[str, Any]:
             return tomllib.load(fh)
     except (tomllib.TOMLDecodeError, OSError) as exc:
         raise ThunderstruckError(f"could not read {path}: {exc}")
+
+
+def _well_formed_edge(edge: Any) -> bool:
+    if not isinstance(edge, dict):
+        return False
+    if not all(isinstance(edge.get(k), str) for k in ("ref", "type", "direction", "neighbour")):
+        return False
+    if not (RELATION_TYPE.match(edge["type"]) and ENTITY_REF.match(edge["neighbour"])
+            and edge["direction"] in DIRECTIONS
+            and edge["ref"] == f"{edge['type']} {edge['neighbour']}"):
+        return False
+    attrs = edge.get("attributes")
+    return isinstance(attrs, dict) and all(
+        isinstance(k, str) and LABEL.match(k) and isinstance(v, str) and ATTRIBUTE_VALUE.match(v)
+        for k, v in attrs.items())
+
+
+def _well_formed_context(doc: dict[str, Any]) -> bool:
+    """True when context.json holds only what the extractor could have produced.
+
+    The same allow-lists as context_extract, because a hand-written or
+    tampered file must not smuggle free text past them into a bundle."""
+    ref = doc.get("entity_ref")
+    if not isinstance(ref, str) or not ENTITY_REF.match(ref) \
+            or not isinstance(doc.get("context_hash"), str):
+        return False
+    edges = doc.get("edges")
+    if not isinstance(edges, list) or not all(_well_formed_edge(e) for e in edges):
+        return False
+    truncated = doc.get("truncated")
+    return isinstance(truncated, dict) and all(
+        isinstance(n, int) and not isinstance(n, bool) and n >= 0 for n in truncated.values())
+
+
+def load_service_context(repo_root: Path) -> dict[str, Any] | None:
+    """context.json when it holds edges a bundle may show, else None."""
+    doc = load_json(out_dir(repo_root) / CONTEXT_FILENAME)
+    if isinstance(doc, dict) and doc.get("status") in CONTEXT_USABLE and _well_formed_context(doc):
+        return doc
+    return None
 
 
 def effective_patterns(catalog: dict[str, Any], profile: dict[str, Any]) -> dict[str, dict]:
@@ -446,7 +492,8 @@ def write_json(path: Path, payload: Any) -> None:
 def load_json(path: Path, default: Any = None) -> Any:
     try:
         return json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, ValueError):
+        # ValueError covers json.JSONDecodeError and UnicodeDecodeError alike.
         return default
 
 
