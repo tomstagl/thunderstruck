@@ -186,7 +186,11 @@ def _kill_group(proc: subprocess.Popen) -> None:
         os.killpg(proc.pid, signal.SIGKILL)
     except (AttributeError, ProcessLookupError, PermissionError):
         proc.kill()
-    proc.communicate()
+    # Wait on the direct child only, then stop reading: a helper that left the
+    # process group (e.g. via its own setsid) can still hold stdout open, and
+    # draining the pipe with communicate() would hang until it exits.
+    proc.wait()
+    proc.stdout.close()
 
 
 def run_command(argv: list[str], entity_ref: str, timeout: float, cwd: Path,
@@ -200,7 +204,7 @@ def run_command(argv: list[str], entity_ref: str, timeout: float, cwd: Path,
         # helper that inherits stdout would otherwise keep communicate() waiting.
         proc = subprocess.Popen(cmd, cwd=str(cwd), stdin=subprocess.DEVNULL,
                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                text=True, start_new_session=True)
+                                encoding="utf-8", errors="replace", start_new_session=True)
     except OSError as exc:
         return Fetched(error=f"could not start {name!r} ({exc.strerror or exc})")
     try:

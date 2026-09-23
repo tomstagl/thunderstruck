@@ -77,6 +77,24 @@ def test_timeout_kills_helpers_that_hold_stdout(tmp_path, monkeypatch):
     assert time.monotonic() - start < 5
 
 
+def test_timeout_does_not_wait_for_helpers_that_leave_the_group(tmp_path, monkeypatch):
+    """A helper that calls setsid of its own escapes our process group and
+    survives the kill; the runner must not block draining its inherited stdout."""
+    monkeypatch.setenv("FAKE_CATALOG_ESCAPE_REFS", MAIN)
+    start = time.monotonic()
+    got = context.run_command(ARGV, MAIN, 1, tmp_path)
+    assert "timed out" in got.error
+    assert time.monotonic() - start < 5
+
+
+def test_non_utf8_output_is_an_error(tmp_path):
+    got = context.run_command(
+        [sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'\\xff\\xfe{}')"],
+        MAIN, 10, tmp_path)
+    assert got.doc is None
+    assert "did not print JSON" in got.error
+
+
 def test_stdin_is_closed(tmp_path, monkeypatch):
     monkeypatch.setenv("FAKE_CATALOG_READ_STDIN", "1")
     start = time.monotonic()

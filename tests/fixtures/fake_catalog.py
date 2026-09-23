@@ -68,6 +68,10 @@ def main(argv: list[str]) -> int:
     if ref in _refs("FAKE_CATALOG_GRANDCHILD_REFS"):
         subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
         time.sleep(30)
+    if ref in _refs("FAKE_CATALOG_ESCAPE_REFS"):
+        subprocess.Popen([sys.executable, "-c", "import time; time.sleep(10)"],
+                          start_new_session=True)
+        time.sleep(30)
     if ref in _refs("FAKE_CATALOG_TIMEOUT_REFS"):
         time.sleep(30)
     if ref in _refs("FAKE_CATALOG_FAIL_REFS"):
