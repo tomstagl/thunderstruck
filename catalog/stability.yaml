@@ -755,6 +755,40 @@ patterns:
           confidence: low
           note: "blocking call inside a Reactor/WebFlux/Netty/Akka-Streams context with no scheduler offload — starves the event loop"
 
+  - id: S28
+    name: Bounded, timed lock/wait acquisition
+    tier: A
+    weight: 1.0
+    metastable_role: sustaining
+    failure_if_absent: >-
+      A lock held across a slow call, or a wait with no bound, lets one
+      stalled holder block every other thread indefinitely — a convoy that
+      compounds under load instead of shedding it.
+    references:
+      - "Nygard, Release It! (2nd ed.), ch. 4 — Blocked Threads"
+      - "java.util.concurrent.locks.Lock javadoc — tryLock(long, TimeUnit)"
+    detectors:
+      java:
+        - id: S28-java-monitor-held-across-io
+          kind: regex
+          pattern: '\bsynchronized\s*\(|\bsynchronized\s+[\w<]'
+          present_within: '\bThread\s*\.\s*sleep\s*\(|\.\s*(send|exchange|executeQuery|executeUpdate|getForObject|getForEntity|postForObject|postForEntity|getConnection|block|read|write)\s*\(|\.\s*(get|join)\s*\(\s*\)'
+          window: 15
+          confidence: low
+          note: "synchronized section makes a blocking call — a stalled call holds the monitor and every other thread queues behind it"
+        - id: S28-java-untimed-lock-across-io
+          kind: regex
+          pattern: '\.\s*(lock|lockInterruptibly)\s*\(\s*\)'
+          present_within: '\bThread\s*\.\s*sleep\s*\(|\.\s*(send|exchange|executeQuery|executeUpdate|getForObject|getForEntity|postForObject|postForEntity|getConnection|block|read|write)\s*\(|\.\s*(get|join)\s*\(\s*\)'
+          window: 15
+          confidence: low
+          note: "Lock.lock() with no timed tryLock, held across a blocking call"
+        - id: S28-java-untimed-wait
+          kind: regex
+          pattern: '(\.\s*|^\s*)(await|wait)\s*\(\s*\)'
+          confidence: low
+          note: "Condition.await()/Object.wait() with no timeout — waits forever if the signal never comes"
+
 # ---------------------------------------------------------------- Tier C ----
 # Catalogued for the investigator's vocabulary; not scanned in v1.
 tier_c:
