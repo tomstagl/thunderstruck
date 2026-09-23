@@ -453,6 +453,34 @@ def _java_not_validation(lines: list[str], i: int) -> bool:
     return False
 
 
+# A check that reads what the call returned is response handling, not late
+# input validation: it names the variable the call line assigned (or one
+# assigned from it later), or reads a response body or status.
+RESPONSE_ACCESS_JAVA = re.compile(
+    r"\b(?:getBody|body|getStatusCode|getStatusCodeValue|statusCode)\s*\(")
+_IF_JAVA = re.compile(r"\bif\s*\(")
+
+
+def _java_assignment(line: str) -> tuple[str, str] | None:
+    """`Type name = rhs` / `name = rhs` → (name, rhs). Only the text before the
+    first `(` is searched for the `=`, so a call argument's `==` or `=` is
+    never taken for the assignment, and the scan stays linear."""
+    head = line.split("(", 1)[0]
+    k = head.find("=")
+    if k <= 0 or head[k - 1] in "=!<>" or head[k + 1:k + 2] == "=":
+        return None
+    words = re.findall(r"[\w$]+", head[:k])
+    return (words[-1], line[k + 1:]) if words else None
+
+
+_IDENT_JAVA = re.compile(r"(?<![\w$.])[\w$]+")
+
+
+def _mentions(text: str, names: set[str]) -> bool:
+    """A bare identifier in `text` (not a `.member`) is one of `names`."""
+    return bool(names) and not names.isdisjoint(_IDENT_JAVA.findall(text))
+
+
 # Java's own list rather than EXTERNAL_CALL plus extras: the shared list's
 # `fetch` prefix matches `fetchSize`/`FetchType`, `.invoke(` is reflection,
 # and `.execute(` on an executor or pool hands over a task, not a request.
@@ -462,6 +490,18 @@ EXTERNAL_CALL_JAVA = re.compile(
     r"|(?<!Query)\.\s*query\s*\("
     r"|(?<![Ee]xecutor)(?<![Pp]ool)(?<![Ss]ervice)\.\s*execute\s*\("
     r"|\bgenerateContent\b")
+
+
+def _java_reads_response(lines: list[str], i: int, derived: set[str]) -> bool:
+    """The check on line i, with the `if (…)` condition above a bare throw."""
+    text = lines[i]
+    if text.lstrip().startswith("throw"):
+        for k in range(i - 1, max(-1, i - 3), -1):
+            if lines[k].strip():
+                if _IF_JAVA.search(lines[k]):
+                    text = lines[k] + "\n" + text
+                break
+    return bool(RESPONSE_ACCESS_JAVA.search(text) or _mentions(text, derived))
 
 
 def s18_fail_fast(ctx) -> Result:
@@ -480,11 +520,23 @@ def s18_fail_fast(ctx) -> Result:
     out: Result = []
     for a, b in zip(starts, starts[1:]):
         first_call = first_valid = None
+        derived: set[str] = set()  # Java: variables holding the call's result
         for i in range(a, b):
             if first_call is None and call_re.search(lines[i]):
                 first_call = i
+                if is_java:
+                    asg = _java_assignment(lines[i])
+                    if asg:
+                        derived.add(asg[0])
+            elif is_java and first_call is not None:
+                asg = _java_assignment(lines[i])
+                if asg and (_mentions(asg[1], derived)
+                            or RESPONSE_ACCESS_JAVA.search(asg[1])):
+                    derived.add(asg[0])
             if (first_valid is None and valid_re.search(lines[i])
-                    and not (is_java and _java_not_validation(lines, i))):
+                    and not (is_java and (_java_not_validation(lines, i)
+                                          or (first_call is not None and i > first_call
+                                              and _java_reads_response(lines, i, derived))))):
                 first_valid = i
         if first_call is not None and first_valid is not None and first_call < first_valid:
             out.append((first_valid + 1, (

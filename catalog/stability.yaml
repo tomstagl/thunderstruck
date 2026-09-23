@@ -399,13 +399,18 @@ patterns:
           # number of workers.
           anchor: '\bExecutors\s*\.\s*new(?!VirtualThreadPerTaskExecutor|ThreadPerTaskExecutor)\w*\s*\(|new\s+ThreadPoolExecutor\s*\('
           # More than one kind of work reaches it: two submission sites, or a
-          # pass-through of a caller's task (`pool.submit(task)`). A pool that
-          # runs one job of its own (`submit(this)`, a scheduled flush), or is
-          # only built and handed on (a bean, a gRPC server's executor), has no
+          # pass-through of a caller's task — a `Runnable`/`Callable<…>`/
+          # `Supplier<…>` parameter submitted before the method's first `}`
+          # (within 600 characters, which keeps the scan linear).
+          # A pool that runs one job of its own (`submit(this)`, a Runnable
+          # field, a loader built in a loop, a scheduled flush), or is only
+          # built and handed on (a bean, a gRPC server's executor), has no
           # callers to prioritise. `execute(` counts only on an executor- or
           # pool-named receiver: `statement.execute(sql)` is JDBC.
-          require: '(?s)(?:\.\s*(?:submit|invokeAll|invokeAny)|\b(?:supplyAsync|runAsync)|(?i:exec|pool|workers?|scheduler)\w*\s*\.\s*execute)\s*\(.*(?:\.\s*(?:submit|invokeAll|invokeAny)|\b(?:supplyAsync|runAsync)|(?i:exec|pool|workers?|scheduler)\w*\s*\.\s*execute)\s*\(|(?:\.\s*submit|(?i:exec|pool|workers?|scheduler)\w*\s*\.\s*execute)\s*\(\s*(?!this\b)[a-z]\w*\s*\)'
-          absent: '(?i)(priority|interactive|criticality|urgent|foreground|background|batch)|(?s:(Executors\s*\.\s*new\w*|new\s+ThreadPoolExecutor)\s*\(.*(Executors\s*\.\s*new\w*|new\s+ThreadPoolExecutor)\s*\()'
+          require: '(?s)(?:\.\s*(?:submit|invokeAll|invokeAny)|\b(?:supplyAsync|runAsync)|(?i:exec|pool|workers?|scheduler)\w*\s*\.\s*execute)\s*\(.*(?:\.\s*(?:submit|invokeAll|invokeAny)|\b(?:supplyAsync|runAsync)|(?i:exec|pool|workers?|scheduler)\w*\s*\.\s*execute)\s*\(|[(,]\s*(?:final\s+)?(?:Runnable|Callable\s*<[^>]*>|Supplier\s*<[^>]*>)\s+(\w+)\s*[,)][^}]{0,600}?(?:\.\s*submit|(?i:exec|pool|workers?|scheduler)\w*\s*\.\s*execute)\s*\(\s*\1\s*\)'
+          # A second pool: two creations, or one made through a static import
+          # (a bare `newFixedThreadPool(…)`) beside the anchored one.
+          absent: '(?i)(priority|interactive|criticality|urgent|foreground|background|batch)|(?s:(Executors\s*\.\s*new\w*|new\s+ThreadPoolExecutor)\s*\(.*(Executors\s*\.\s*new\w*|new\s+ThreadPoolExecutor)\s*\()|(?<![\w.])new(?:Fixed|Cached|Scheduled|SingleThread|WorkStealing)\w*\s*\('
           confidence: low
           note: "one executor serves every caller; no priority or criticality separation"
 
@@ -476,7 +481,7 @@ patterns:
           note: "KafkaConsumer.poll() loop with no manual offset commit — auto-commit can ack a record before it is processed"
         - id: S07-java-rabbitmq-auto-ack
           kind: regex
-          pattern: '\.\s*basicConsume\s*\(\s*[^,()]+,\s*true\s*,'
+          pattern: '\.\s*basicConsume\s*\(\s*(?:[^,()]|\([^()]*\))+,\s*true\s*,'
           # A server-named queue (`queueDeclare()`) or one declared exclusive
           # is deleted with the consumer's connection, so acking saves nothing
           # after a crash; direct reply-to requires autoAck=true.
@@ -796,7 +801,7 @@ patterns:
           kind: file_absent
           # Not an autoAck consumer (second argument `true`): the broker
           # ignores prefetch for those, and S07 reports the autoAck itself.
-          anchor: '\.\s*basicConsume\s*\((?!\s*[^,()]+,\s*true\s*,)'
+          anchor: '\.\s*basicConsume\s*\((?!\s*(?:[^,()]|\([^()]*\))+,\s*true\s*,)'
           absent: '(?i)basicQos\s*\(|prefetch'
           confidence: low
           note: "RabbitMQ consumer with no basicQos prefetch — the broker pushes the whole queue into this process"

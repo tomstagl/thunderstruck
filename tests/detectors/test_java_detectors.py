@@ -61,6 +61,13 @@ _PATHOLOGICAL = {
     "one long line": (
         "class A { void f() { " + "for ( catch ( q.poll( x.get( xs.forEach( " * 1000 + "} }\n"),
     "unclosed poll calls": "class A {\n" + "  q.poll(a\n" * 5000 + "}\n",
+    "unclosed runnable params": (
+        "class A {\n  E p = Executors.newFixedThreadPool(2);\n"
+        + "  void m(Runnable r) { x();\n" * 5000 + "}\n"),
+    "long response chain": (
+        "class A {\n  public String f(String id) {\n    String a0 = rest.getForObject(u);\n"
+        + "".join(f"    String a{i} = a{i - 1}.trim();\n" for i in range(1, 3000))
+        + "    Objects.requireNonNull(id);\n  }\n}\n"),
 }
 _BUDGET_S = 1.0
 

@@ -47,3 +47,13 @@ class RabbitOrders {
         channel.basicConsume("orders", true, consumer);
     }
 }
+
+class RabbitConfiguredConsumer {
+    void start(com.rabbitmq.client.Channel channel, QueueSettings props, com.rabbitmq.client.DeliverCallback cb) throws Exception {
+        channel.basicConsume(props.getQueue(), true, cb, tag -> { });
+    }
+}
+
+interface QueueSettings {
+    String getQueue();
+}

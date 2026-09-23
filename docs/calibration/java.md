@@ -963,6 +963,45 @@ and had no instance in the corpus. Each became a required-silent sample.
   tripwire is not reached. The Batch 5 final sweep is now 18 lines
   (12 S01 + 6 S07; S06, S13, S14 and S18 unchanged at 0).
 
+### Fix round 2 (review findings)
+
+- `S18-java-validate-after-call`: a check after the call that reads the
+  call's result is response handling. It no longer counts as validation when
+  it (or the `if (…)` line above a bare `throw`) names the variable the call
+  line assigned, a variable later assigned from it (`Price body =
+  r.getBody();`), or reads `getBody()`, `body()`, `getStatusCode()` or
+  `statusCode()`. The reviewer's shapes: `Assert.notNull(p, …)` after
+  `p = rest.getForObject(…)`, `Objects.requireNonNull(r.getBody())`,
+  `Objects.requireNonNull(body, …)`, `validator.validate(result)`, and
+  `if (resp.statusCode() >= 400) throw new IllegalArgumentException(…)`.
+  Java-only; the TypeScript/Python path is unchanged and is now pinned by
+  `tests/detectors/test_s18_ts_python_unchanged.py`.
+  → `S18/java/negative_response_check.java`
+- `S06-java-single-pool-no-priority`: a pass-through now needs the submitted
+  identifier to be a `Runnable`/`Callable<…>`/`Supplier<…>` parameter,
+  submitted before the method's first `}` (bounded to 600 characters, so the
+  back-reference scan stays linear: 5000 unclosed `m(Runnable r) {` lines take
+  0.2 s, and the case joins the speed guard). A Runnable field or a loader
+  built in a loop is the class's own job. A bare `newFixedThreadPool(…)` (and
+  `newCached…`, `newScheduled…`, `newSingleThread…`, `newWorkStealing…`) from a
+  static import counts as a second pool.
+  → `S06/java/negative_field_runnable.java`, `negative_local_runnable.java`
+  (the ruling's two shapes are split across two files, because in one file
+  the second pool alone would silence both), `negative_static_import_pools.java`
+- `S07-java-rabbitmq-auto-ack` and `S14-java-rabbitmq-no-prefetch`: the queue
+  argument may contain one level of parentheses. `basicConsume(props.getQueue(),
+  true, cb)` now fires S07 (pinned by `RabbitConfiguredConsumer` in
+  `S07/java/positive.java`, which fires alone) and is skipped by S14 as an
+  autoAck consumer. → `S14/java/negative_auto_ack_call_arg.java`
+- **Re-sweep.** `--patterns S06,S18,S07,S14` over all 18 repositories: in
+  scope, S06, S18 and S14 remain at 0 and S07 at the same 6 lines; S01 is
+  unchanged at 12. The final sweep is still 18 lines and **Hits** is unchanged.
+  As a probe outside the recorded scope, grpc-java's 4 non-`examples/` S06
+  lines drop to 2: `LoadClient.java:117` and `StressTestClient.java:239` go
+  silent, and `UdsTcpEndpointConnector.java:45` and
+  `SerializingExecutorBenchmark.java:43` remain through the two-site rule
+  (see Known limitations).
+
 ### Hits
 
 - `S01-java-jms-receive-no-timeout` activemq-artemis-examples `examples/features/broker-connection/ha-with-dual-mirror/src/main/java/org/apache/artemis/jms/example/Consumer.java:49` — TP: the consumer thread loops on `consumer.receive()` over a `failover:` URL with `maxReconnectAttempts=-1`. While the failover transport reconnects forever, `receive()` neither returns nor throws, so the loop never reaches its error handling and the thread cannot report that it has stopped consuming. A timed `receive(ms)` would let it notice.
@@ -1052,8 +1091,14 @@ and had no instance in the corpus. Each became a required-silent sample.
     receiver not named like an executor, pool, worker or scheduler is not a
     submission.
   - Two submission sites of the *same* kind of work (two interactive
-    endpoints) still fire. Deciding which work is interactive needs the
-    investigator.
+    endpoints, or a benchmark's own tasks) still fire. Deciding which work is
+    interactive needs the investigator. Of the 4 grpc-java lines outside
+    `examples/`, 2 remain for this reason (`UdsTcpEndpointConnector.java:45`,
+    two stream pumps; `SerializingExecutorBenchmark.java:43`, a JMH benchmark).
+  - A pass-through counts only as a `Runnable`/`Callable<…>`/`Supplier<…>`
+    parameter submitted within 600 characters and before the method's first
+    `}`. A wrapper that checks its argument in an `if` block first, or takes
+    a task of its own interface type, is missed.
 - **S18 recognises a fixed vocabulary.**
   - A call counts only as `send`, `sendAsync`, `exchange`, `retrieve`,
     `get/postForObject/Entity`, `executeQuery`, `executeUpdate`, `query`,
@@ -1061,10 +1106,13 @@ and had no instance in the corpus. Each became a required-silent sample.
     call through a domain client (`pricingClient.quote(…)`), a Feign interface
     or a repository is missed. `.send(` counts on any receiver, including an
     `SseEmitter`.
-  - A check on the *response* written as `throw new
-    IllegalArgumentException(…)` after the call (for example on a bad status
-    code) still fires. It is indistinguishable from late input validation
-    without knowing what the condition reads. No instance in this corpus.
+  - A check after the call is treated as response handling, and ignored,
+    when it (or the `if (…)` line directly above a bare `throw`) names the
+    variable the call line assigned, a variable later assigned from it, or a
+    `getBody()`/`body()`/`getStatusCode()`/`statusCode()` read. A response
+    check that reads the result some other way (a field the call stored into
+    through a setter, or a helper's return value) still fires. Conversely, a
+    genuine input check that happens to name the result variable is ignored.
   - A validation-shaped throw within two code lines below any `catch (` is
     ignored, even when the catch block has already closed.
   - The member boundary inherits `METHOD_JAVA`'s limitations (Batch 4): a call
@@ -1074,7 +1122,8 @@ and had no instance in the corpus. Each became a required-silent sample.
   created further up, or held in a field declared further up, is missed; so
   is one passed in as a parameter of a type not named on a line in reach. A
   non-JMS `x.receive()` within 50 lines of a JMS consumer would fire; there is
-  no instance in the corpus. JMS 2.0 `receiveBody(Class)`, which also blocks
+  no instance in the corpus. Spring's `JmsTemplate.receive()`/`receive(dest)`,
+  which waits indefinitely under the default `receiveTimeout`, is missed. JMS 2.0 `receiveBody(Class)`, which also blocks
   forever, is not matched. A dedicated consumer thread that relies on
   `connection.close()` at shutdown to unblock `receive()` will fire.
 - **S07's autoAck detector reads only a literal `true`.** `boolean autoAck =
@@ -1082,7 +1131,8 @@ and had no instance in the corpus. Each became a required-silent sample.
   style) and an `AUTO_ACK` constant are missed, and so is Spring AMQP's
   `AcknowledgeMode.NONE`. The exclusive-queue exemption looks 25 lines back,
   not at the queue actually consumed, so a durable queue consumed within 25
-  lines of a `queueDeclare()` is silenced.
+  lines of a `queueDeclare()` is silenced. The queue argument may contain one
+  level of parentheses (`props.getQueue()`); deeper nesting is not matched.
 - **S13's Akka detector is file-scoped.** A dispatcher assigned in
   `application.conf` (`akka.actor.deployment`) is invisible, so such an actor
   still fires. `static void main(` anywhere in the file suppresses it, so a
