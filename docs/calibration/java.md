@@ -157,7 +157,7 @@ repositories to give S09 and S17 some library-style code.
 | S01-java-resttemplate-no-timeout | 1 | 1 | 0 | 0 | | 1 |
 | S01-java-webclient-no-timeout | 2 | 2 | 0 | 0 | | 2 |
 | S09-java-cache-aside-no-singleflight | 0 | 0 | 0 | 0 | | 0 |
-| S09-java-cacheable-no-sync | 7 | 7 | 0 | 0 | | 7 |
+| S09-java-cacheable-no-sync | 7 | 5 | 2 | 0 | | 5 |
 | S16-java-scheduled-no-jitter | 17 | 1 | 16 | 0 | | 1 |
 | S17-java-unbounded-cache | 0 | 0 | 0 | 0 | | 0 |
 
@@ -199,12 +199,12 @@ came from a calibration hit, so none is counted in the table above.
 - `S09-java-cacheable-no-sync` spring-petclinic-microservices `spring-petclinic-vets-service/src/main/java/org/springframework/samples/petclinic/vets/web/VetResource.java:45` — TP: `@Cacheable("vets")` on the controller's `showResourcesVetList()`. Concurrent misses each call `vetRepository.findAll()`.
 - `S09-java-cacheable-no-sync` spring-data-examples `jdbc/howto/caching/src/main/java/example.springdata/jdbc/howto/caching/MinionRepository.java:31` — TP: `@Cacheable("minions")` on `findById`, next to a `@CacheEvict` on `save`. After each save evicts an id, concurrent reads of that id all go to the database.
 - `S09-java-cacheable-no-sync` spring-data-examples `jpa/example/src/main/java/example/springdata/jpa/caching/CachingUserRepository.java:35` — TP: `@Cacheable("byUsername")` on `findByUsername`, with the same evict-on-save shape.
-- `S09-java-cacheable-no-sync` jhipster-sample-app `src/main/java/io/github/jhipster/sample/repository/UserRepository.java:28` — TP: `@Cacheable(cacheNames = USERS_BY_EMAIL_CACHE, unless = "#result == null")`. Concurrent misses for one email each run the `@EntityGraph` query. Spring rejects `sync = true` together with `unless`, so this code cannot be fixed by adding `sync = true` alone; `unless` has to be dropped first. The failure mode is still present.
-- `S09-java-cacheable-no-sync` jhipster-sample-app `src/main/java/io/github/jhipster/sample/repository/UserRepository.java:34` — TP: the same, for `USERS_BY_LOGIN_CACHE`. It sits on the authentication path, and `UserService.clearUserCaches` evicts it.
 - `S16-java-scheduled-no-jitter` jhipster-sample-app `src/main/java/io/github/jhipster/sample/service/UserService.java:290` — TP: `@Scheduled(cron = "0 0 1 * * ?")` `removeNotActivatedUsers` has no lock and no splay. Every instance of a scaled-out deployment runs the same find-and-delete against the same database at 01:00:00.
 
 ### Fixed during calibration
 
+- `S09-java-cacheable-no-sync` jhipster-sample-app `src/main/java/io/github/jhipster/sample/repository/UserRepository.java:28` — FP-fixed (controller ruling after Task 7's first review): `@Cacheable(cacheNames = USERS_BY_EMAIL_CACHE, unless = "#result == null")`. Spring rejects `sync = true` when `unless` is present, so the lead points at a remedy the code cannot adopt. It is not actionable, and the detector now treats `unless =` in its window as suppressing → `S09/java/negative_cacheable_unless.java`
+- `S09-java-cacheable-no-sync` jhipster-sample-app `src/main/java/io/github/jhipster/sample/repository/UserRepository.java:34` — FP-fixed: the same shape, for `USERS_BY_LOGIN_CACHE` → `S09/java/negative_cacheable_unless.java`
 - `S16-java-scheduled-no-jitter` iexec-core: 16 hits — FP-fixed. Fifteen are `@Scheduled(fixedRate…)`: `chain/BlockchainListener.java:52`, `chain/DealWatcherService.java:214`, `detector/WorkerLostDetector.java:56`, and in `detector/replicate/`: `ContributionAndFinalizationUnnotifiedDetector.java:51`, `ContributionUnnotifiedDetector.java:51`, `ReplicateResultUploadTimeoutDetector.java:54`, `RevealTimeoutDetector.java:49`, `RevealUnnotifiedDetector.java:51`, and in `detector/task/`: `ConsensusReachedTaskDetector.java:48`, `ContributionTimeoutTaskDetector.java:46`, `FinalDeadlineTaskDetector.java:46`, `FinalizedTaskDetector.java:57`, `InitializedTaskDetector.java:50`, `ReopenedTaskDetector.java:52`, `UnstartedTxDetector.java:42`. The sixteenth is the multi-line `@Scheduled(fixedRateString = …, timeUnit = DAYS)` at `logs/ComputeLogsCronService.java:47`.
 
   A `fixedRate` schedule is phased from each instance's own start time, not from the wall clock, so separate instances do not fire together the way cron does. The pattern's `failure_if_absent` ("every instance fires at :00 together") applies to cron. It would apply to fixed-rate work only after a synchronised fleet restart. iexec-core is also one scheduler per workerpool. The detector now requires `cron =` in the annotation, and `fixedRate` no longer counts. The brief's own negative sample (a fixed rate with a random `initialDelayString`) stays silent. → `S16/java/negative_fixed_rate.java`
@@ -219,6 +219,7 @@ came from a calibration hit, so none is counted in the table above.
 
 - `S16-java-scheduled-no-jitter` cannot see deployment topology. A cron job on a service that only ever runs as one instance still fires. That is accepted at `confidence: low`, and the investigator judges it. A `cron` attribute that is not on the `@Scheduled(` line itself (`@Scheduled(zone = "UTC",` on one line and `cron = …` on the next) is missed.
 - `S16-java-scheduled-no-jitter` no longer reports `fixedRate` jobs. That misses the case where a whole fleet restarts together and stays in phase.
+- `S09-java-cacheable-no-sync` is silent whenever `unless =` is present. Concurrent misses on such a method still call through to the source; the fix there is a cache-level loader, not the annotation, and this detector does not report it.
 - `S09-java-cacheable-no-sync` reads 8 lines from the annotation, so a `sync = true` on the *next* method's `@Cacheable` can silence it. That is a miss, not a false positive.
 - `S09-java-cache-aside-no-singleflight` is silenced by any `synchronized` or `lock()` in the file, even one that does not guard the load. That is a miss.
 - `S17-java-unbounded-cache`: the name rule misses caches named, for example, `lookup` or `byId`. The `CacheManager` suppression silences a file that has both a Spring-managed cache and an unbounded hand-rolled one. Both are misses.

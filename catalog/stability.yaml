@@ -508,7 +508,7 @@ patterns:
         - id: S09-java-cacheable-no-sync
           kind: regex
           pattern: '@\s*Cacheable\b'
-          absent_within: '\bsync\s*=\s*true'
+          absent_within: '\bsync\s*=\s*true|\bunless\s*='
           window: 8
           confidence: low
           note: "@Cacheable without sync = true — concurrent misses all call through to the source"
