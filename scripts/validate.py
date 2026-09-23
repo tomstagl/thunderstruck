@@ -15,6 +15,8 @@ So every ref is resolved mechanically:
             touched the finding's file or a file cited as code evidence — a
             SHA that merely exists is not history
   detector  S0x@path:line — copied exactly from a hit in hotspots.json
+  catalog   <type> <entity ref> — an edge in context.json, from the same
+            snapshot the finding's bundle was built from
 
 Anything that fails gets one repair round with the error text, then it is
 recorded as analysis_failed. No retry loops.
@@ -39,7 +41,7 @@ import _common as c  # noqa: E402
 VALIDATION_SCHEMA = "thunderstruck.validation/v1"
 MAX_FINDINGS_PER_HOTSPOT = 3
 CONFIDENCES = {"low", "medium", "high"}
-EVIDENCE_TYPES = {"code", "commit", "detector"}
+EVIDENCE_TYPES = {"code", "commit", "detector", "catalog"}
 
 REQUIRED_FIELDS = [
     "location", "missing_patterns", "failure_mode", "trigger_condition",
@@ -61,13 +63,20 @@ def _count_lines(path: Path) -> int | None:
 
 
 class Validator:
-    def __init__(self, repo: Path, hotspots: dict, catalog: dict) -> None:
+    def __init__(self, repo: Path, hotspots: dict, catalog: dict,
+                 context: dict | None = None,
+                 bundle_context: dict[str, str | None] | None = None) -> None:
         self.repo = repo
         self.valid_ids = c.catalog_ids(catalog)
         self.detector_refs: set[str] = set()
         for hs in hotspots.get("hotspots", []):
             for hit in hs.get("detector_hits", []):
                 self.detector_refs.add(hit["ref"])
+        self.context_hash = context.get("context_hash") if context else None
+        self.catalog_edges: dict[str, dict] = (
+            {e["ref"]: e for e in context.get("edges") or []} if context else {})
+        self.bundle_context = bundle_context or {}
+        self._pinned: str | None = None
         self._line_cache: dict[str, int | None] = {}
         self._sha_cache: dict[str, bool] = {}
 
@@ -119,7 +128,7 @@ class Validator:
                 errors.append(
                     f"{where}.ref {ref!r} — no such commit in this repository. "
                     f"Use a SHA from the bundle's change history.")
-        else:  # detector
+        elif etype == "detector":
             m = DETECTOR_REF.match(ref)
             if not m:
                 errors.append(f"{where}.ref {ref!r} is not S0x@path:line")
@@ -127,6 +136,19 @@ class Validator:
                 errors.append(
                     f"{where}.ref {ref!r} — no detector produced that hit. Copy a "
                     f"ref verbatim from the 'Detector leads' section of the bundle.")
+        else:  # catalog
+            if self.context_hash is None:
+                errors.append(
+                    f"{where}.ref {ref!r} — this scan has no service context, so no "
+                    f"catalog edge can be cited")
+            elif self._pinned != self.context_hash:
+                errors.append(
+                    f"{where}.ref {ref!r} — context changed since bundling. Re-run "
+                    f"bundle.py so the bundle and context.json agree.")
+            elif ref not in self.catalog_edges:
+                errors.append(
+                    f"{where}.ref {ref!r} — no such edge in the service context. Copy a "
+                    f"ref verbatim from the bundle's 'Service context' section.")
         return etype
 
     # ------------------------------------------------------------ findings
@@ -214,6 +236,7 @@ class Validator:
         errors: list[str] = []
         if not isinstance(doc, dict):
             return ["top level is not a JSON object"]
+        self._pinned = self.bundle_context.get(doc.get("hotspot_id"))
         if not doc.get("hotspot_id"):
             errors.append("hotspot_id is missing")
         findings = doc.get("findings")
@@ -236,6 +259,26 @@ def stable_key(file: str, failure_mode: str) -> str:
     """Identity that survives re-ranking, so a later run can tell whether a
     finding is the same one. Display IDs renumber; this does not."""
     return c.short_hash(f"{file}\x00{(failure_mode or '').strip().lower()}", 12)
+
+
+def catalog_evidence(finding: dict, edges: dict[str, dict]) -> list[dict]:
+    """The cited edges, resolved from context.json, so reports never take an
+    attribute from the investigator's own text."""
+    out: list[dict] = []
+    for ev in finding.get("evidence") or []:
+        if isinstance(ev, dict) and ev.get("type") == "catalog":
+            edge = edges.get(str(ev.get("ref") or "").strip())
+            if edge:
+                out.append({"ref": edge["ref"], "direction": edge["direction"],
+                            "neighbour": edge["neighbour"],
+                            "attributes": dict(edge.get("attributes") or {})})
+    return out
+
+
+def _bundle_context(repo: Path) -> dict[str, str | None]:
+    index = c.load_json(c.out_dir(repo) / "bundles" / "index.json", {}) or {}
+    return {b["id"]: b.get("context_hash") for b in index.get("bundles", [])
+            if isinstance(b, dict) and "id" in b}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -263,7 +306,9 @@ def main(argv: list[str] | None = None) -> int:
         c.die(f"no findings files in {findings_dir}. Run the investigators first.")
         return 2
 
-    validator = Validator(repo, hotspots, catalog)
+    validator = Validator(repo, hotspots, catalog,
+                          context=c.load_service_context(repo),
+                          bundle_context=_bundle_context(repo))
     results, all_ok = [], True
     for path in paths:
         try:
@@ -281,6 +326,7 @@ def main(argv: list[str] | None = None) -> int:
                                       f.get("failure_mode", ""))
                 f["content_hash"] = c.sha256_file(
                     repo / str(f.get("location", {}).get("file", "")).lstrip("./"))
+                f["catalog_evidence"] = catalog_evidence(f, validator.catalog_edges)
             path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
         results.append({"path": str(path), "hotspot_id": doc.get("hotspot_id", path.stem)
                         if isinstance(doc, dict) else path.stem,

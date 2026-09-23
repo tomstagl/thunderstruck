@@ -100,3 +100,10 @@ def context_scanned_copy(context_scanned_repo: Path, tmp_path: Path) -> Path:
     dest = tmp_path / "scanned"
     shutil.copytree(context_scanned_repo, dest, symlinks=True)
     return dest
+
+
+@pytest.fixture
+def scanned_copy(scanned_repo: Path, tmp_path: Path) -> Path:
+    dest = tmp_path / "scanned-plain"
+    shutil.copytree(scanned_repo, dest, symlinks=True)
+    return dest
