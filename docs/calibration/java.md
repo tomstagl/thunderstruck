@@ -95,3 +95,131 @@ No detector came near the 25-hits-per-repo tripwire. The largest count was
 - `S02-java-backoff` (shared handler, AC-16): a polling loop that sleeps a literal and `continue`s inside a `try`/`catch` (for example `if (job == null) { Thread.sleep(500); continue; }`) reads as a retry construct, because the handler's `catch` + `continue` retry-context rule is shared with TS/Python. It reports a constant wait on what is only idle polling. This is a known false-positive shape, not fixed.
 - `S02-java-backoff` (shared handler, AC-16): Java `long` literals (`Thread.sleep(2000L)`) and typed constants (`private static final long RETRY_DELAY_MS = 2000;`) are not recognised by the shared `_LITERAL_MS`/`_CONST_ASSIGN`. A constant retry wait written that way is missed.
 - This batch had few true-positive surfaces: 1 TP across six repositories, and none for S02–S04. The confidence levels (`medium` for the JDK-primitive detectors, `low` otherwise) stay as set and are not raised.
+
+### spring-retry surface (added in Task 7)
+
+None of Batch 1's six repositories uses spring-retry, so Task 7 added one
+repository that does. A GitHub code search (`gh search code "@Retryable"
+--language=java`) listed it, and it is a non-fork application, not
+spring-retry itself. It was swept with `--patterns S02,S04` only.
+
+| Repo | Commit | Java files swept |
+|---|---|---|
+| iExecBlockchainComputing/iexec-core | `a09dbba123f09ae352410c87bcb3788610536809` | 129 |
+
+| Detector | Hits | TP | FP-fixed | FP-accepted | Deferred | Final |
+|---|---|---|---|---|---|---|
+| S02-java-backoff | 0 | 0 | 0 | 0 | | 0 |
+| S02-java-retryable-no-jitter | 3 | 3 | 0 | 0 | | 3 |
+| S04-java-catch-all-retry | 0 | 0 | 0 | 0 | | 0 |
+| S04-java-retryable-all-exceptions | 0 | 0 | 0 | 0 | | 0 |
+
+#### Hits
+
+- `S02-java-retryable-no-jitter` iexec-core `src/main/java/com/iexec/core/replicate/ReplicateSupplyService.java:88` — TP: `@Retryable(retryFor = OptimisticLockingFailureException.class, maxAttempts = 5)` has no `backoff`, so spring-retry waits a fixed 1 s between attempts. Workers that collided on the same optimistic lock all retry after the same 1 s, and they collide again. `RetryConfig.java` only declares `@EnableRetry`, and nothing in the repository customises the backoff.
+- `S02-java-retryable-no-jitter` iexec-core `src/main/java/com/iexec/core/replicate/ReplicatesService.java:254` — TP: the same optimistic-lock retry on `updateReplicateStatus`, with `maxAttempts = 100` and a fixed 1 s wait. Contending status updates stay in phase for up to 99 s.
+- `S02-java-retryable-no-jitter` iexec-core `src/main/java/com/iexec/core/result/ResultService.java:50` — TP: `@Retryable(retryFor = FeignException.class)` around an HTTP call to the result proxy uses the default 3 attempts, 1 s apart, with no jitter. Every caller that saw the proxy fail retries on the same beat.
+
+#### Silences checked
+
+- `S04-java-retryable-all-exceptions`: all three `@Retryable` sites name `retryFor`, so the detector stays silent, which is correct.
+- `S04-java-catch-all-retry`: the five `catch (Exception|RuntimeException …)` blocks in `src/main` (`SmsService.java:182,231`, `BlockchainListener.java:70`, `DealWatcherService.java:239`, `Workflow.java:105`) log or return. None is inside a retry, so the detector stays silent, which is correct.
+- `S02-java-backoff`: `src/main` contains no sleep-named call, so the detector stays silent, which is correct.
+
+#### Known limitations
+
+- `S04-java-retryable-all-exceptions`: `retryFor = FeignException.class` (`ResultService.java:50`) counts as a narrowed exception list. However, `FeignException` covers 4xx as well as 5xx and I/O errors, so a permanent 4xx from the proxy is retried too. That is a miss, not a false positive.
+
+## Batch 2 — Spring/Hibernate, part 1 (Task 7): S01 Spring clients, S09, S16, S17
+
+The sweep ran `--patterns S01,S09,S16,S17`. Only the two new S01 detectors
+(`S01-java-resttemplate-no-timeout`, `S01-java-webclient-no-timeout`) are
+inspected here, because Batch 1 already calibrated the other five. None of
+those five fired in any repository below. The four repositories listed in
+the brief come first. The last five were also swept: iexec-core because it
+is the only one with a real `@Scheduled` fleet, and the four Batch 1
+repositories to give S09 and S17 some library-style code.
+
+| Repo | Commit | Java files swept |
+|---|---|---|
+| spring-projects/spring-petclinic | `818c4136ea971c21674525f9053de0d9c7ad8cfe` | 30 |
+| spring-petclinic/spring-petclinic-microservices | `295fa8d5ee10f7b6daddf83a2c65f9051a87564b` | 53 |
+| spring-projects/spring-data-examples | `7747029e6157cb780862826b6ae87c88d7a4df3c` | 6504 (6001 are the generated entities of `jpa/deferred`) |
+| jhipster/jhipster-sample-app | `6b000b5d23a36c45e01472471b84a44fa2464044` | 81 |
+| iExecBlockchainComputing/iexec-core | `a09dbba123f09ae352410c87bcb3788610536809` | 129 |
+| jhy/jsoup | `49a15317317970a7ea3f0a5ded303ef319860f4a` | 98 |
+| brettwooldridge/HikariCP | `a4d93f4f85517f90e632b795486d7102e933d7ff` | 49 |
+| apache/commons-pool | `c4aba65cd8445685f89422b18219ea9853e4306d` | 57 |
+| spring-petclinic/spring-petclinic-reactive | `68534cf88a9d022467b9590b953ea4fc7f78bd6b` | 39 |
+
+| Detector | Hits | TP | FP-fixed | FP-accepted | Deferred | Final |
+|---|---|---|---|---|---|---|
+| S01-java-resttemplate-no-timeout | 1 | 1 | 0 | 0 | | 1 |
+| S01-java-webclient-no-timeout | 2 | 2 | 0 | 0 | | 2 |
+| S09-java-cache-aside-no-singleflight | 0 | 0 | 0 | 0 | | 0 |
+| S09-java-cacheable-no-sync | 7 | 7 | 0 | 0 | | 7 |
+| S16-java-scheduled-no-jitter | 17 | 1 | 16 | 0 | | 1 |
+| S17-java-unbounded-cache | 0 | 0 | 0 | 0 | | 0 |
+
+The largest count in one repository was 16, for S16 in iexec-core, which is
+under the 25-hit tripwire.
+
+### Tightened before calibration
+
+Before the sweep, each detector was run against common shapes of correct
+Java. Every shape that fired became a required-silent sample, and the
+detector was then tightened until the sample passed. None of these fixes
+came from a calibration hit, so none is counted in the table above.
+
+- `S01-java-resttemplate-no-timeout`: `setRequestFactory(<configured factory>)` now counts as configured, but `setRequestFactory(new …())` does not. A timeout setter only counts when it has an argument, so a zero-arg getter like `props.connectTimeout()` no longer silences the detector → `S01/java/negative_resttemplate_request_factory.java`
+- `S01-java-webclient-no-timeout`: `window_before: 8` is added so that a Reactor `HttpClient` configured just above the builder counts. `.clientConnector(<variable or injected connector>)` also counts as configured, but `.clientConnector(new …(…))` inline does not. `timeout(` and `responseTimeout(` must have an argument → `S01/java/negative_webclient_configured_connector.java`
+- `S09-java-cache-aside-no-singleflight`:
+  - The receiver must be *named* a cache: a name ending in `cache`, `caches` or `cachemap`, or starting with `cached`. A name like `cacheConfigurations` does not count.
+  - `get(` needs an argument, so `ThreadLocal.get()` no longer counts.
+  - The file must also write to the cache (`require: put`), so a read-only lookup table no longer counts.
+  - `synchronized` or `lock()` in the file suppresses the hit, because that already serialises the load.
+
+  → `S09/java/negative_synchronized_load.java`, `negative_read_only_cache.java` and `negative_non_cache_maps.java`
+- `S09-java-cacheable-no-sync`: the window is now 8 (from 3), so `sync = true` on the fifth line of a multi-line annotation is seen → `S09/java/negative_multiline_sync.java`
+- `S16-java-scheduled-no-jitter`: `@SchedulerLock` (ShedLock), on either side of `@Scheduled`, now suppresses the hit, because only one instance runs the job (`window_before: 3`) → `S16/java/negative_scheduler_lock.java`. The detector also has a sample that pins `fixedDelay` as silent: `S16/java/negative_fixed_delay.java`. A later probe, run after the first sweep, found a second false positive. With `window_before`, a `fixedRate` job declared within 3 lines of a cron job picked up that job's `cron =` through `present_within`. `cron =` is now part of the line pattern (`@Scheduled([^)]*cron =`), so the look-behind window can only suppress a hit, never cause one. A re-sweep of all nine repositories was byte-identical → `S16/java/negative_fixed_rate_after_cron.java`
+- `S17-java-unbounded-cache`:
+  - The same cache-name rule applies, and `memo(?!ry)` means `inMemoryUsers` is no longer a memo.
+  - The file must construct an in-process map or a Caffeine builder (`require`).
+  - Several constructs now count as a bound or as someone else's bound: `removeIf(`, a `size() >` check, `softValues`/`weakKeys`/`weakValues`, `Class`-keyed maps (bounded by the number of classes), and a Spring `CacheManager`/`getCache(` (the provider's configuration bounds it).
+
+  → `S17/java/negative_explicit_eviction.java`, `negative_soft_values.java`, `negative_class_keyed.java`, `negative_cache_config_map.java`, `negative_in_memory_repository.java` and `negative_spring_cache_manager.java`
+
+### Hits
+
+- `S01-java-resttemplate-no-timeout` spring-petclinic-microservices `spring-petclinic-api-gateway/src/main/java/org/springframework/samples/petclinic/api/ApiGatewayApplication.java:56` — TP: the gateway's `@LoadBalanced` `RestTemplate` bean is `new RestTemplate()`, which uses `SimpleClientHttpRequestFactory` with no connect or read timeout. No code in `src/main` injects it today, so the risk is latent: the first caller inherits an unbounded wait.
+- `S01-java-webclient-no-timeout` spring-petclinic-microservices `spring-petclinic-api-gateway/src/main/java/org/springframework/samples/petclinic/api/ApiGatewayApplication.java:62` — TP: the `@LoadBalanced` `WebClient.Builder` bean is `WebClient.builder()`, with no `responseTimeout`, and Reactor Netty has no response timeout by default. `CustomersServiceClient.getOwner` uses it with no `.timeout()`. `ApiGatewayController.getOwnerDetails` wraps only the visits call in the 10 s circuit-breaker `TimeLimiter`, not the owner call, so a hung customers-service holds the gateway request open indefinitely.
+- `S01-java-webclient-no-timeout` spring-petclinic-microservices `spring-petclinic-genai-service/src/main/java/org/springframework/samples/petclinic/genai/AIBeanConfiguration.java:27` — TP: the same bare builder. `VectorStoreController.loadVetDataToVectorStoreOnStartup` calls `vets-service` through it and `.block()`s with no timeout, so a vets-service that accepts but never answers hangs genai-service startup.
+- `S09-java-cacheable-no-sync` spring-petclinic `src/main/java/org/springframework/samples/petclinic/vet/VetRepository.java:45` — TP: `@Cacheable("vets")` on the no-argument `findAll()`. Every request that misses concurrently, on a cold start or after the entry is evicted, runs the same full-table query. The impact is small because the table is small.
+- `S09-java-cacheable-no-sync` spring-petclinic `src/main/java/org/springframework/samples/petclinic/vet/VetRepository.java:55` — TP: the same, for `findAll(Pageable)`.
+- `S09-java-cacheable-no-sync` spring-petclinic-microservices `spring-petclinic-vets-service/src/main/java/org/springframework/samples/petclinic/vets/web/VetResource.java:45` — TP: `@Cacheable("vets")` on the controller's `showResourcesVetList()`. Concurrent misses each call `vetRepository.findAll()`.
+- `S09-java-cacheable-no-sync` spring-data-examples `jdbc/howto/caching/src/main/java/example.springdata/jdbc/howto/caching/MinionRepository.java:31` — TP: `@Cacheable("minions")` on `findById`, next to a `@CacheEvict` on `save`. After each save evicts an id, concurrent reads of that id all go to the database.
+- `S09-java-cacheable-no-sync` spring-data-examples `jpa/example/src/main/java/example/springdata/jpa/caching/CachingUserRepository.java:35` — TP: `@Cacheable("byUsername")` on `findByUsername`, with the same evict-on-save shape.
+- `S09-java-cacheable-no-sync` jhipster-sample-app `src/main/java/io/github/jhipster/sample/repository/UserRepository.java:28` — TP: `@Cacheable(cacheNames = USERS_BY_EMAIL_CACHE, unless = "#result == null")`. Concurrent misses for one email each run the `@EntityGraph` query. Spring rejects `sync = true` together with `unless`, so this code cannot be fixed by adding `sync = true` alone; `unless` has to be dropped first. The failure mode is still present.
+- `S09-java-cacheable-no-sync` jhipster-sample-app `src/main/java/io/github/jhipster/sample/repository/UserRepository.java:34` — TP: the same, for `USERS_BY_LOGIN_CACHE`. It sits on the authentication path, and `UserService.clearUserCaches` evicts it.
+- `S16-java-scheduled-no-jitter` jhipster-sample-app `src/main/java/io/github/jhipster/sample/service/UserService.java:290` — TP: `@Scheduled(cron = "0 0 1 * * ?")` `removeNotActivatedUsers` has no lock and no splay. Every instance of a scaled-out deployment runs the same find-and-delete against the same database at 01:00:00.
+
+### Fixed during calibration
+
+- `S16-java-scheduled-no-jitter` iexec-core: 16 hits — FP-fixed. Fifteen are `@Scheduled(fixedRate…)`: `chain/BlockchainListener.java:52`, `chain/DealWatcherService.java:214`, `detector/WorkerLostDetector.java:56`, and in `detector/replicate/`: `ContributionAndFinalizationUnnotifiedDetector.java:51`, `ContributionUnnotifiedDetector.java:51`, `ReplicateResultUploadTimeoutDetector.java:54`, `RevealTimeoutDetector.java:49`, `RevealUnnotifiedDetector.java:51`, and in `detector/task/`: `ConsensusReachedTaskDetector.java:48`, `ContributionTimeoutTaskDetector.java:46`, `FinalDeadlineTaskDetector.java:46`, `FinalizedTaskDetector.java:57`, `InitializedTaskDetector.java:50`, `ReopenedTaskDetector.java:52`, `UnstartedTxDetector.java:42`. The sixteenth is the multi-line `@Scheduled(fixedRateString = …, timeUnit = DAYS)` at `logs/ComputeLogsCronService.java:47`.
+
+  A `fixedRate` schedule is phased from each instance's own start time, not from the wall clock, so separate instances do not fire together the way cron does. The pattern's `failure_if_absent` ("every instance fires at :00 together") applies to cron. It would apply to fixed-rate work only after a synchronised fleet restart. iexec-core is also one scheduler per workerpool. The detector now requires `cron =` in the annotation, and `fixedRate` no longer counts. The brief's own negative sample (a fixed rate with a random `initialDelayString`) stays silent. → `S16/java/negative_fixed_rate.java`
+
+### Silences checked
+
+- S09 cache-aside and S17 have no candidate construct in the nine repositories. No `src/main` file has a map or Caffeine cache *named* as a cache. The `new HashMap<>()` sites are request parameters, aggregate fields and routing tables, for example spring-data-examples `TenantRoutingDatasource.java:36` and jhipster `LoggingConfiguration.java:29`. iexec-core's `jwTokensMap` and `workerStatsMap` (`JwtTokenProvider.java:36`, `WorkerService.java:66`) are not named as caches either. Both detectors therefore stay silent, which is correct, but they have no real-world evidence yet.
+- jhipster's cache code (`UserService.clearUserCaches`) goes through `cacheManager.getCache(…)`, and `.evict(` is provider-managed, so neither S09 nor S17 fires, which is correct.
+- `@Scheduled(fixedDelay…)` (iexec-core `WorkerService.java:97`) is silent, as required.
+
+### Known limitations (noted, not fixed)
+
+- `S16-java-scheduled-no-jitter` cannot see deployment topology. A cron job on a service that only ever runs as one instance still fires. That is accepted at `confidence: low`, and the investigator judges it. A `cron` attribute that is not on the `@Scheduled(` line itself (`@Scheduled(zone = "UTC",` on one line and `cron = …` on the next) is missed.
+- `S16-java-scheduled-no-jitter` no longer reports `fixedRate` jobs. That misses the case where a whole fleet restarts together and stays in phase.
+- `S09-java-cacheable-no-sync` reads 8 lines from the annotation, so a `sync = true` on the *next* method's `@Cacheable` can silence it. That is a miss, not a false positive.
+- `S09-java-cache-aside-no-singleflight` is silenced by any `synchronized` or `lock()` in the file, even one that does not guard the load. That is a miss.
+- `S17-java-unbounded-cache`: the name rule misses caches named, for example, `lookup` or `byId`. The `CacheManager` suppression silences a file that has both a Spring-managed cache and an unbounded hand-rolled one. Both are misses.
+- `S01-java-webclient-no-timeout`: a builder bean whose consumers apply `.timeout()` in other files, or wrap the call in a Resilience4j `TimeLimiter`, still fires, because file-local regex cannot see the consumer. None of this batch's hits was that shape (the gateway's owner call is not time-limited).

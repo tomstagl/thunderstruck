@@ -150,6 +150,21 @@ patterns:
           window_before: 6
           confidence: low
           note: "Future.get()/join() with no timeout — blocks forever if the future never completes"
+        - id: S01-java-resttemplate-no-timeout
+          kind: regex
+          pattern: 'new\s+(\w+\.)*RestTemplate\s*\(\s*\)|new\s+(\w+\.)*SimpleClientHttpRequestFactory\s*\(\s*\)'
+          absent_within: '\b(setConnectTimeout|setReadTimeout|setConnectionRequestTimeout|connectTimeout|readTimeout)\s*\(\s*[^\s)]|\bsetRequestFactory\s*\(\s*(?!new\s+[\w.]+\s*\(\s*\))[^\s)]'
+          window: 8
+          confidence: low
+          note: "RestTemplate with no connect/read timeout — its default request factory waits forever"
+        - id: S01-java-webclient-no-timeout
+          kind: regex
+          pattern: '\bWebClient\s*\.\s*(builder|create)\s*\('
+          absent_within: '\bresponseTimeout\s*\(\s*[^\s)]|\.\s*timeout\s*\(\s*[^\s)]|CONNECT_TIMEOUT_MILLIS|ReadTimeoutHandler|\bclientConnector\s*\(\s*(?!new\b)[^\s)]'
+          window: 10
+          window_before: 8
+          confidence: low
+          note: "WebClient with no responseTimeout() or per-call timeout()"
 
   - id: S02
     name: Capped exponential backoff with full jitter
@@ -482,6 +497,21 @@ patterns:
           absent: '(?i)\b(in.?flight|single.?flight|coalesc|dedupe|dedup|pending|lru_cache|memoiz)\b'
           confidence: medium
           note: "cache-aside read with no in-flight deduplication"
+      java:
+        - id: S09-java-cache-aside-no-singleflight
+          kind: file_absent
+          anchor: '(?i)\b\w*(cache|caches|cachemap|cached\w*)\s*\.\s*(get|getIfPresent|containsKey)\s*\(\s*[^\s)]'
+          require: '(?i)\b\w*(cache|caches|cachemap|cached\w*)\s*\.\s*(put|putIfAbsent)\s*\('
+          absent: '(?i)(single.?flight|coalesc|dedup|computeIfAbsent|LoadingCache|cache\w*\s*\.\s*get\s*\([^,()]+,)|\bsynchronized\b|\.\s*lock\s*\(\s*\)'
+          confidence: low
+          note: "cache-aside read with no in-flight deduplication (no computeIfAbsent, LoadingCache or loader-form get)"
+        - id: S09-java-cacheable-no-sync
+          kind: regex
+          pattern: '@\s*Cacheable\b'
+          absent_within: '\bsync\s*=\s*true'
+          window: 8
+          confidence: low
+          note: "@Cacheable without sync = true — concurrent misses all call through to the source"
 
   - id: S10
     name: Retry at one layer plus a retry budget
@@ -703,6 +733,15 @@ patterns:
           window: 5
           confidence: low
           note: "cron schedule pinned to a fixed minute with no splay"
+      java:
+        - id: S16-java-scheduled-no-jitter
+          kind: regex
+          pattern: '@\s*Scheduled\s*\([^)]*\bcron\s*='
+          absent_within: '(?i)(jitter|random|splay|stagger)|@\s*SchedulerLock\b'
+          window: 3
+          window_before: 3
+          confidence: low
+          note: "@Scheduled cron with no jitter — cron fires on the wall clock, so every instance fires in lockstep"
 
   - id: S17
     name: Steady state (TTLs, cleanup, growth bounds)
@@ -728,6 +767,14 @@ patterns:
           anchor: '(?i)cache\s*\[|cache\s*\.\s*(set|update)\s*\(|_cache\s*='
           absent: '(?i)\b(ttl|expire|expiry|evict|maxsize|max_size|max_age|lru|clear\s*\()\b'
           confidence: medium
+          note: "in-memory cache with no TTL, eviction, or size bound"
+      java:
+        - id: S17-java-unbounded-cache
+          kind: file_absent
+          anchor: '(?i)\b\w*(cache|caches|cachemap|cached\w*|memo(?!ry)\w*)\s*=\s*new\s+(Concurrent)?HashMap\b|\b\w*(cache|caches|cachemap|cached\w*)\s*\.\s*(put|putIfAbsent)\s*\(|Caffeine\s*\.\s*newBuilder\s*\('
+          require: '\bnew\s+(Concurrent)?HashMap\s*<|\bCaffeine\s*\.\s*newBuilder\s*\('
+          absent: '(?i)(ttl|expire|evict|maximumSize|maximumWeight|removeEldestEntry|\.clear\s*\(|removeIf\s*\(|\.\s*size\s*\(\s*\)\s*>|softValues|weakKeys|weakValues)|<\s*Class\s*<|\bCacheManager\b|\bgetCache\s*\('
+          confidence: low
           note: "in-memory cache with no TTL, eviction, or size bound"
 
   - id: S18

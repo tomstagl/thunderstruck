@@ -43,3 +43,21 @@ public class UserClient {
         return future.get(5, TimeUnit.SECONDS).body();
     }
 }
+
+class SpringClients {
+    private final org.springframework.web.client.RestTemplate rest = restTemplate();
+    private final org.springframework.web.reactive.function.client.WebClient web =
+            org.springframework.web.reactive.function.client.WebClient.builder()
+                    .clientConnector(new org.springframework.http.client.reactive.ReactorClientHttpConnector(
+                            reactor.netty.http.client.HttpClient.create()
+                                    .responseTimeout(java.time.Duration.ofSeconds(5))))
+                    .build();
+
+    private static org.springframework.web.client.RestTemplate restTemplate() {
+        org.springframework.http.client.SimpleClientHttpRequestFactory factory =
+                new org.springframework.http.client.SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(2000);
+        factory.setReadTimeout(5000);
+        return new org.springframework.web.client.RestTemplate(factory);
+    }
+}

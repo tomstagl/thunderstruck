@@ -30,3 +30,10 @@ public class UserClient {
         return future.get().body();
     }
 }
+
+class SpringClients {
+    private final org.springframework.web.client.RestTemplate rest =
+            new org.springframework.web.client.RestTemplate();
+    private final org.springframework.web.reactive.function.client.WebClient web =
+            org.springframework.web.reactive.function.client.WebClient.create("https://api.example.com");
+}
