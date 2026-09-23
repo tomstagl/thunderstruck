@@ -112,6 +112,44 @@ patterns:
           window: 10
           confidence: medium
           note: "raw socket with no settimeout()"
+      java:
+        - id: S01-java-httpclient-no-connect-timeout
+          kind: regex
+          pattern: '\bHttpClient\s*\.\s*(newBuilder\s*\(\s*\)|newHttpClient\s*\(\s*\))'
+          absent_within: '\bconnectTimeout\s*\('
+          window: 6
+          confidence: medium
+          note: "java.net.http.HttpClient built with no connectTimeout()"
+        - id: S01-java-httprequest-no-timeout
+          kind: regex
+          pattern: '\bHttpRequest\s*\.\s*newBuilder\s*\('
+          absent_within: '\.\s*timeout\s*\('
+          window: 8
+          confidence: medium
+          note: "HttpRequest with no .timeout() — HttpClient has no default request timeout, so send() can wait forever"
+        - id: S01-java-okhttp-no-timeout
+          kind: regex
+          pattern: '\bOkHttpClient\s*\.\s*Builder\s*\(\s*\)|new\s+OkHttpClient\s*\(\s*\)'
+          absent_within: '\b(connectTimeout|readTimeout|writeTimeout|callTimeout)\s*\('
+          window: 8
+          confidence: low
+          note: "OkHttpClient with no timeout configured — per-read defaults only, no bound on the whole call"
+        - id: S01-java-jdbc-no-login-timeout
+          kind: regex
+          pattern: '\bDriverManager\s*\.\s*getConnection\s*\('
+          absent_within: '\bsetLoginTimeout\s*\(|[?&;](connectTimeout|loginTimeout|socketTimeout)='
+          window: 4
+          window_before: 6
+          confidence: low
+          note: "DriverManager.getConnection with no login timeout — some drivers wait forever for an unreachable host"
+        - id: S01-java-future-get-no-timeout
+          kind: regex
+          pattern: '\.\s*(get|join)\s*\(\s*\)'
+          present_within: '\b(CompletableFuture|Future)\b'
+          window: 2
+          window_before: 6
+          confidence: low
+          note: "Future.get()/join() with no timeout — blocks forever if the future never completes"
 
   - id: S02
     name: Capped exponential backoff with full jitter
