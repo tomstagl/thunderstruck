@@ -117,7 +117,7 @@ This is a deterministic step, no model involved. It runs once per scan, before `
    Raw responses go to `.thunderstruck/context/raw/` for audit. They are never embedded in bundles.
 
 **Caching.** `context.json` is reused without running any command if both hold:
-- it is younger than `max_age` (default 24h);
+- it is younger than `max_age` (default 30 days; catalog entries change rarely, and a refresh with unchanged edges costs no re-investigation anyway);
 - the source-definition hash is unchanged.
 
 `--refresh-context` forces a fetch.
@@ -156,7 +156,7 @@ A real catalog change changes this section and therefore every bundle, so every 
 All schema changes are **additive**. `thunderstruck.report/v1` and `thunderstruck.index/v1` keep their version, because existing consumers ignore unknown fields. `skills/thunderstruck-scan/references/report-format.md` documents the new fields.
 
 **`report.md`**
-- A **Service context** section after the summary: the edge table once (ref, direction, attributes) and the `context_hash`.
+- A **Service context** section after the summary: the edge table once (ref, direction, attributes), the `context_hash`, and when the context was fetched (e.g. "fetched 2026-09-01, 22 days ago"). The report isn't a bundle, so a date here doesn't affect caching.
 - Each finding's table gains a **Dependents / dependencies** row listing its cited catalog refs with attributes. The attributes are taken from `context.json`, not from the investigator's text.
 - Warnings cover:
   - skipped sources, with the reason;
@@ -240,5 +240,4 @@ These are the outcome targets, measured by hand while dogfooding. They're separa
 ## 15. Open questions
 
 - **Dynatrace as a second source:** the working `dtctl` query, stable entity-id mapping between catalog and APM, and sensitivity to the query window. Declared vs observed edges is the key question.
-- **Default `max_age`:** 24h is a guess.
 - **A second extractor**, for non-Backstage catalogs. Deferred until a real non-Backstage user appears.
