@@ -114,12 +114,11 @@ patterns:
           note: "raw socket with no settimeout()"
       java:
         - id: S01-java-httpclient-no-connect-timeout
-          kind: regex
-          pattern: '\bHttpClient\s*\.\s*(newBuilder\s*\(\s*\)|newHttpClient\s*\(\s*\))'
-          absent_within: '\bconnectTimeout\s*\('
-          window: 10
+          kind: file_absent
+          anchor: '\bHttpClient\s*\.\s*(newBuilder\s*\(\s*\)|newHttpClient\s*\(\s*\))'
+          absent: '\bconnectTimeout\s*\(|\.\s*timeout\s*\('
           confidence: medium
-          note: "java.net.http.HttpClient built with no connectTimeout()"
+          note: "java.net.http.HttpClient built with no connectTimeout(), and no request in the file sets .timeout() (which also bounds the connect)"
         - id: S01-java-httprequest-no-timeout
           kind: regex
           pattern: '\bHttpRequest\s*\.\s*newBuilder\s*\('
@@ -542,6 +541,14 @@ patterns:
           absent: '(?i)\b(bulkhead|separate|dedicated|isolat|partition)\w*\b'
           confidence: low
           note: "one shared pool with no isolation between workloads"
+      java:
+        - id: S13-java-shared-executor
+          kind: file_absent
+          anchor: '\bExecutors\s*\.\s*new\w*\s*\(|new\s+ThreadPoolExecutor\s*\('
+          require: '(?s)\.\s*(submit|execute|invokeAll|supplyAsync|runAsync)\s*\(.*\.\s*(submit|execute|invokeAll|supplyAsync|runAsync)\s*\('
+          absent: '(?i)(bulkhead|dedicated|isolat|partition)|(?s:(Executors\s*\.\s*new\w*|new\s+ThreadPoolExecutor)\s*\(.*(Executors\s*\.\s*new\w*|new\s+ThreadPoolExecutor)\s*\()'
+          confidence: low
+          note: "one executor serves several submission sites with no second pool — every workload competes for the same threads"
 
   - id: S14
     name: Bounded queues with backpressure or load shedding
@@ -569,6 +576,18 @@ patterns:
           pattern: '\b(asyncio\s*\.\s*Queue|queue\s*\.\s*Queue|Queue)\s*\(\s*\)'
           confidence: medium
           note: "Queue() with no maxsize — unbounded by default"
+      java:
+        - id: S14-java-unbounded-blocking-queue
+          kind: regex
+          pattern: 'new\s+([\w$]+\s*\.\s*)*(LinkedBlockingQueue|LinkedBlockingDeque)\s*(<[^>]*>)?\s*\(\s*\)'
+          absent_within: '(?i)(idle|free|spare)\w*\s*=\s*new\s'
+          confidence: medium
+          note: "LinkedBlockingQueue() with no capacity — unbounded by default, absorbs overload instead of shedding it"
+        - id: S14-java-executors-unbounded-queue
+          kind: regex
+          pattern: '\bExecutors\s*\.\s*(newFixedThreadPool|newSingleThreadExecutor)\s*\('
+          confidence: medium
+          note: "Executors.newFixedThreadPool/newSingleThreadExecutor queue on an unbounded LinkedBlockingQueue"
 
   - id: S15
     name: Graceful degradation and fallbacks
@@ -787,6 +806,8 @@ patterns:
         - id: S28-java-untimed-wait
           kind: regex
           pattern: '(\.\s*|^\s*)(await|wait)\s*\(\s*\)(?!\s*\.\s*atMost)'
+          absent_within: '@Override\s+(public\s+)?[\w<>\[\],\s]*?\b(put|take)\w*\s*\('
+          window_before: 8
           confidence: low
           note: "Condition.await()/Object.wait() with no timeout — waits forever if the signal never comes"
 

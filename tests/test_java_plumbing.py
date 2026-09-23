@@ -66,6 +66,7 @@ def test_calibrate_sweeps_every_tracked_file(tmp_path, plugin_root):
         capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
-    # No Java S14 detector exists yet in Task 1; the sweep must still run
-    # cleanly and print nothing rather than fail.
+    # The unbounded LinkedBlockingQueue trips S14-java-unbounded-blocking-queue
+    # in both files; only the one outside the test directory may be reported.
+    assert "S14-java-unbounded-blocking-queue\tsrc/main/java/A.java:2" in result.stdout
     assert "ATest.java" not in result.stdout

@@ -1,0 +1,75 @@
+# Java detector calibration
+
+Synthetic samples prove that a detector's regex matches what it was written
+for. They do not prove it behaves on code nobody wrote for the test.
+Calibration closes that gap: each batch of Java detectors is swept with
+`scripts/calibrate.py` over every tracked, non-test Java file of several real
+public repositories. Every hit is inspected by hand and judged against the
+pattern's `failure_if_absent`, and each false positive either tightens the
+detector (with a `negative_<shape>.java` sample reproducing the real-world
+shape) or is recorded with a reason. This log is what a detector's
+`confidence` rests on. The method is set out in the
+[design spec, §5](../superpowers/specs/2026-09-23-java-language-support-design.md#5-test-strategy).
+
+Column meanings: **Hits** counts every hit a detector produced across the
+batch's repositories before any fix. **Final** counts the hits left in the
+final sweep, the one recorded under **Hits** below. An `FP-fixed` hit is gone
+from the final sweep by definition, so it is listed separately under
+**Fixed during calibration**.
+
+## Batch 1 — JDK/core (Tasks 5–6): S01, S27, S28, S13, S14, S02, S03, S04
+
+Task 5 covers S01, S27, S28, S13 and S14. S02–S04 are appended by Task 6.
+
+| Repo | Commit | Java files swept |
+|---|---|---|
+| jhy/jsoup | `49a15317317970a7ea3f0a5ded303ef319860f4a` | 98 |
+| brettwooldridge/HikariCP | `a4d93f4f85517f90e632b795486d7102e933d7ff` | 49 |
+| apache/commons-pool | `c4aba65cd8445685f89422b18219ea9853e4306d` | 57 |
+| spring-petclinic/spring-petclinic-reactive | `68534cf88a9d022467b9590b953ea4fc7f78bd6b` | 39 |
+| spring-projects/spring-petclinic | `818c4136ea971c21674525f9053de0d9c7ad8cfe` | 30 |
+
+| Detector | Hits | TP | FP-fixed | FP-accepted | Deferred | Final |
+|---|---|---|---|---|---|---|
+| S01-java-httpclient-no-connect-timeout | 1 | 0 | 1 | 0 | | 0 |
+| S01-java-httprequest-no-timeout | 0 | 0 | 0 | 0 | | 0 |
+| S01-java-okhttp-no-timeout | 0 | 0 | 0 | 0 | | 0 |
+| S01-java-jdbc-no-login-timeout | 0 | 0 | 0 | 0 | | 0 |
+| S01-java-future-get-no-timeout | 0 | 0 | 0 | 0 | | 0 |
+| S27-java-blocking-in-reactive | 0 | 0 | 0 | 0 | | 0 |
+| S28-java-monitor-held-across-io | 0 | 0 | 0 | 0 | | 0 |
+| S28-java-untimed-lock-across-io | 0 | 0 | 0 | 0 | | 0 |
+| S28-java-untimed-wait | 5 | 1 | 4 | 0 | | 1 |
+| S13-java-shared-executor | 0 | 0 | 0 | 0 | | 0 |
+| S14-java-unbounded-blocking-queue | 1 | 0 | 1 | 0 | | 0 |
+| S14-java-executors-unbounded-queue | 0 | 0 | 0 | 0 | | 0 |
+
+No detector came near the 25-hits-per-repo tripwire. The largest count was
+5, for S28-java-untimed-wait in commons-pool.
+
+### Hits
+
+- `S28-java-untimed-wait` commons-pool `src/main/java/org/apache/commons/pool3/impl/GenericKeyedObjectPool.java:780` — TP: `create(key)` waits on `makeObjectCountLock` with no bound while another thread's `makeObject()` is in flight, so a hung factory call (for example, connecting to an unreachable database) parks every borrower of that key forever, whatever `borrowMaxWaitMillis` says. The non-keyed `GenericObjectPool.create` bounds the same wait with `remainingWaitDuration`.
+
+### Fixed during calibration
+
+- `S01-java-httpclient-no-connect-timeout` jsoup `src/main/java11/org/jsoup/helper/HttpClientExecutor.java:87` — FP-fixed: the client has no `connectTimeout()`, but every request built in the same file sets `HttpRequest.Builder.timeout(...)`. In `java.net.http` the request timeout starts before the connection is made, so it bounds the connect too. The detector is now `file_absent`: it is silent when the file sets `connectTimeout(` or `.timeout(` anywhere → `S01/java/negative_request_timeout.java`
+- `S14-java-unbounded-blocking-queue` commons-pool `src/main/java/org/apache/commons/pool3/impl/SoftReferenceObjectPool.java:69` — FP-fixed: `idleReferences = new LinkedBlockingDeque<>()` holds idle pooled objects waiting to be borrowed, not pending work, so it cannot absorb request overload. The detector now skips a line that assigns the queue to an `idle*`/`free*`/`spare*` name → `S14/java/negative_idle_object_pool.java`
+- `S28-java-untimed-wait` commons-pool `src/main/java/org/apache/commons/pool3/impl/LinkedBlockingDeque.java:1057` — FP-fixed: `putFirst` implements `BlockingDeque.put*`, whose contract is to block until space is available. The timed variants (`offerFirst(e, timeout, unit)`) are the caller's bounded option. The detector now skips an untimed `await()`/`wait()` that has an `@Override` `put*`/`take*` signature within the 8 lines before it → `S28/java/negative_blocking_queue_contract.java`
+- `S28-java-untimed-wait` commons-pool `src/main/java/org/apache/commons/pool3/impl/LinkedBlockingDeque.java:1079` — FP-fixed: `putLast`, same contract as above → `S28/java/negative_blocking_queue_contract.java`
+- `S28-java-untimed-wait` commons-pool `src/main/java/org/apache/commons/pool3/impl/LinkedBlockingDeque.java:1319` — FP-fixed: `takeFirst`, the `BlockingDeque.take*` contract (`pollFirst(timeout, unit)` is the bounded variant) → `S28/java/negative_blocking_queue_contract.java`
+- `S28-java-untimed-wait` commons-pool `src/main/java/org/apache/commons/pool3/impl/LinkedBlockingDeque.java:1340` — FP-fixed: `takeLast`, same contract → `S28/java/negative_blocking_queue_contract.java`
+
+### Silences checked
+
+- HikariCP: its executors use `new LinkedBlockingQueue<>(queueSize)` (bounded) and `Executors.newCachedThreadPool` (a direct hand-off, not a queued pool), so S14 stays silent, which is correct. There is no `java.net.http`, OkHttp or untimed wait in `src/main`.
+- spring-petclinic-reactive: `src/main` has no `block()`, `Thread.sleep` or `synchronized`, so S27 and S28 are silent, which is correct. There is nothing to report.
+- spring-petclinic (Spring MVC): S27 is silent as required.
+
+### Known limitations (noted, not fixed)
+
+- `S27-java-blocking-in-reactive`: `absent_within` accepts any `subscribeOn`/`publishOn`, including `Schedulers.parallel()`, which is itself a non-blocking scheduler. None of the batch's repositories exercised this.
+- `S28-java-monitor-held-across-io`: the `}` boundary of the locked section also stops at a `}` inside a string literal, so a blocking call after such a literal inside the section is missed.
+- `S14-java-unbounded-blocking-queue`: the `idle|free|spare` exclusion is name-based. A genuine work queue named, say, `freeSlots` would be missed. That is a miss, not a false positive.
+- `S01-java-httpclient-no-connect-timeout`: the suppression is file-wide. A file that builds a client with no connect timeout and has an unrelated `.timeout(` call (Reactor `Mono.timeout`, say) is now silent. That is also a miss, not a false positive.
+- This batch had few true-positive surfaces: 1 TP across five repositories. The confidence levels (`medium` for the JDK-primitive detectors, `low` otherwise) stay as set and are not raised.
