@@ -115,14 +115,14 @@ patterns:
       java:
         - id: S01-java-httpclient-no-connect-timeout
           kind: file_absent
-          anchor: '\bHttpClient\s*\.\s*(newBuilder\s*\(\s*\)|newHttpClient\s*\(\s*\))'
+          anchor: '(?:(?<=java\.net\.http\.)|(?<![\w$]\.))\bHttpClient\s*\.\s*(newBuilder\s*\(\s*\)|newHttpClient\s*\(\s*\))'
           absent: '\bconnectTimeout\s*\(|\.\s*timeout\s*\(\s*[^\s)]'
           confidence: medium
           note: "java.net.http.HttpClient built with no connectTimeout(), and no request in the file sets .timeout() (which also bounds the connect)"
         - id: S01-java-httprequest-no-timeout
           kind: regex
-          pattern: '\bHttpRequest\s*\.\s*newBuilder\s*\('
-          absent_within: '\.\s*timeout\s*\('
+          pattern: '(?:(?<=java\.net\.http\.)|(?<![\w$]\.))\bHttpRequest\s*\.\s*newBuilder\s*\('
+          absent_within: '\.\s*timeout\s*\(|\.\s*set(Url|HttpMethod|Body|OidcToken|OauthToken)\s*\(|\bputHeaders\s*\('
           window: 8
           confidence: medium
           note: "HttpRequest with no .timeout() — HttpClient has no default request timeout, so send() can wait forever"
