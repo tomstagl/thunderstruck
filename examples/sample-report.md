@@ -6,7 +6,7 @@
 # thunderstruck — fixture
 
 **fixture** · `main` @ `446de9b`  
-Scanned 2026-09-22 · window `2020-01-01` (since 2020-01-01, 18 commits) · 9 files considered · 9 hotspots investigated  
+Scanned 2026-09-23 · window `2020-01-01` (since 2020-01-01, 18 commits) · 9 files considered · 9 hotspots investigated  
 **5 finding(s)** across 5 file(s) — 3 high, 2 medium
 
 > Findings are **falsifiable hypotheses**, not verified defects. Every claim cites evidence that resolved to a real file:line, commit or detector hit, and every finding names one concrete way to prove it wrong. Check the `Verify` line before you act on one.
@@ -14,6 +14,20 @@ Scanned 2026-09-22 · window `2020-01-01` (since 2020-01-01, 18 commits) · 9 fi
 ## Run warnings
 
 - only 18 commits since 2020-01-01 — churn ranking is weak on this little history. Widen the window with a longer --since than '2020-01-01', if the repository has one.
+- attribute value rejected (not a short label): component:default/mobile-bff tier
+
+## Service context
+
+`component:default/fixture-app` · 4 edge(s), 1 hop · fetched 2026-09-23 (0 days ago) · context `sha256:d6d341f7aa4f`
+
+Component-level context from the service catalog: it describes the whole component, not a file.
+
+| Edge | Direction | Attributes |
+|---|---|---|
+| `dependencyOf component:default/mobile-bff` | inbound | — |
+| `dependencyOf component:default/web-frontend` | inbound | tier: 2 |
+| `dependsOn component:default/payments-api` | outbound | tier: 1 |
+| `dependsOn component:default/releases-api` | outbound | tier: 1 |
 
 ## Pattern coverage
 
@@ -53,7 +67,8 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 | Trigger | The releases API returns 5xx or times out for more than two seconds while several callers are active |
 | Amplifier | withRetry retries 3 times inside a loop that retries 5 times; attempts multiply to 15 rather than adding |
 | Sustaining effect | Every client waits exactly SLEEP_MS and returns together, so the upstream is re-saturated the moment it starts recovering — the herd re-forms on its own schedule |
-| Blast radius | Every feature that resolves a release, including user-facing lookups |
+| Blast radius | Every feature that resolves a release, including user-facing lookups; the catalog lists web-frontend as depending on this component |
+| Dependents / dependencies | `component:default/web-frontend` (inbound; tier: 2) |
 | Missing patterns | `S02`, `S10` |
 
 **Evidence**
@@ -61,6 +76,7 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 - _code_ `src/client/releases.ts:16` — setTimeout(resolve, SLEEP_MS)
 - _commit_ `cab143e2bb7f28e6e32db82f10846070ff48fff0` — most recent change to this file
 - _detector_ `S02@src/client/releases.ts:16` — lead confirmed against the code
+- _catalog_ `dependencyOf component:default/web-frontend` — listed in the service catalog as depending on this component
 
 **Verify** — Stub the releases endpoint to fail for 3s and call fetchRelease from 10 clients at once; count upstream requests (expect 150) and assert the inter-arrival times are not identical  
 **Why this confidence** — Both retry layers are visible in the code, and five separate 'fix timeout' commits on this file in the window show the cause was never addressed  

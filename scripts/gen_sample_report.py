@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -56,7 +57,9 @@ CANNED: dict[str, list[dict]] = {
                              "moment it starts recovering — the herd re-forms "
                              "on its own schedule",
         "blast_radius": "Every feature that resolves a release, including "
-                        "user-facing lookups",
+                        "user-facing lookups; the catalog lists web-frontend "
+                        "as depending on this component",
+        "catalog": ["dependencyOf component:default/web-frontend"],
         "confidence": "high",
         "confidence_rationale": "Both retry layers are visible in the code, and "
                                 "five separate 'fix timeout' commits on this file "
@@ -168,23 +171,28 @@ def _line_of(repo: Path, rel: str, anchor: str) -> int:
     return 1
 
 
-def _run(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
-    proc = subprocess.run(args, capture_output=True, text=True, cwd=str(cwd))
+def _run(args: list[str], cwd: Path, env: dict | None = None) -> subprocess.CompletedProcess:
+    proc = subprocess.run(args, capture_output=True, text=True, cwd=str(cwd), env=env)
     if proc.returncode != 0:
         raise SystemExit(f"{' '.join(args[1:3])} failed:\n{proc.stdout}\n{proc.stderr}")
     return proc
 
 
 def generate() -> str:
-    from build_fixture import build
+    from build_fixture import add_service_context, build
 
     root = c.plugin_root()
     scripts = root / "scripts"
     with tempfile.TemporaryDirectory() as tmp:
         repo = build(Path(tmp) / "fixture", base_date=BASE_DATE)
+        add_service_context(repo, python=sys.executable,
+                            stub=root / "tests" / "fixtures" / "fake_catalog.py")
+        env = {k: v for k, v in os.environ.items() if not k.startswith("FAKE_CATALOG_")}
+        env.update(THUNDERSTRUCK_TRUST_CONTEXT="1", XDG_CONFIG_HOME=str(Path(tmp) / "xdg"))
         _run([sys.executable, str(scripts / "signals.py"), "--repo", str(repo),
-              "--top", "9", "--since", SINCE], repo)
-        _run([sys.executable, str(scripts / "bundle.py"), "--repo", str(repo)], repo)
+              "--top", "9", "--since", SINCE], repo, env)
+        _run([sys.executable, str(scripts / "context.py"), "--repo", str(repo)], repo, env)
+        _run([sys.executable, str(scripts / "bundle.py"), "--repo", str(repo)], repo, env)
 
         data = json.loads((repo / ".thunderstruck" / "hotspots.json").read_text())
         by_file = {h["file"]: h for h in data["hotspots"]}
@@ -207,7 +215,12 @@ def generate() -> str:
                 if hit:
                     evidence.append({"type": "detector", "ref": hit["ref"],
                                      "note": "lead confirmed against the code"})
-                item = {k: v for k, v in spec.items() if k not in ("symbol", "anchor")}
+                for ref in spec.get("catalog", []):
+                    evidence.append({"type": "catalog", "ref": ref,
+                                     "note": "listed in the service catalog as "
+                                             "depending on this component"})
+                item = {k: v for k, v in spec.items()
+                        if k not in ("symbol", "anchor", "catalog")}
                 item["location"] = {"file": hs["file"], "symbol": spec["symbol"],
                                     "lines": f"{line}-{line + 12}"}
                 item["evidence"] = evidence

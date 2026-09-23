@@ -130,6 +130,14 @@ def test_manifest_does_not_redeclare_other_autodiscovered_dirs():
                 f"rely on auto-discovery instead")
 
 
+def test_sample_report_shows_service_context():
+    sample = (ROOT / "examples" / "sample-report.md").read_text()
+    assert "## Service context" in sample
+    assert "_catalog_ `dependencyOf component:default/web-frontend`" in sample
+    assert "| Dependents / dependencies |" in sample
+    assert "ignore previous instructions" not in sample
+
+
 def test_service_context_is_wired_into_the_prompts():
     config = (ROOT / "skills" / "thunderstruck-context-config" / "SKILL.md").read_text()
     assert config.startswith("---\nname: thunderstruck-context-config\n")
