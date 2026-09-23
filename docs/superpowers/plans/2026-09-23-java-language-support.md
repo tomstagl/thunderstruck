@@ -33,7 +33,7 @@ A first draft of this plan was reviewed against the spec, the ticket and the rea
 - **Match compound identifiers** (CLAUDE.md). Write `(?i)(fallback|…)`, not `\b(fallback)\b`, so that `withFallback` matches. Never put `\b` in front of `@`.
 - Module handlers must never raise. A language key is added to a handler's per-language dict (`SLEEP_RES`, `RETRY_LAYERS`) in the same task that gives a pattern its first `java:` catalog entry using that handler, never earlier.
 - AC-16: existing TS/Python detectors, samples and tests do not change behaviour. Shared regexes (`VALIDATION`, `EXTERNAL_CALL`, `DECLARATION`, …) are never edited. Java gets its own variant, chosen by `_lang_key`.
-- Regenerate `skills/stability-catalog/references/patterns.md` (`uv run scripts/gen_catalog_docs.py`) and `examples/sample-report.md` (`uv run scripts/gen_sample_report.py`) once, at the end. CI's `--check` mode fails the build if they are stale. `tests/test_docs_in_sync.py` may fail on intermediate commits for this reason. That failure is expected and is the only one allowed before Task 12.
+- Regenerate `skills/stability-catalog/references/patterns.md` (`uv run scripts/gen_catalog_docs.py`) and `examples/sample-report.md` (`uv run scripts/gen_sample_report.py`) once, at the end. CI's `--check` mode fails the build if they are stale. Three tests in `tests/test_docs_in_sync.py` may fail on intermediate commits for this reason: `test_patterns_reference_is_regenerated`, `test_sample_report_covers_every_scanned_pattern` and `test_catalog_tiers_match_the_documented_split`. Task 12 fixes all three. They are the only failures allowed before Task 12.
 - Full suite: `uv run --with pytest --with pyyaml --with lizard pytest tests/ -q`.
 - Commit messages are imperative sentences in the repo's style and end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 
@@ -2886,7 +2886,8 @@ Satisfies: AC-15 (generated docs in sync, full suite green, plugin validates and
 **Files:**
 - Modify: `skills/stability-catalog/references/patterns.md` (generated)
 - Modify: `examples/sample-report.md` (generated)
-- Modify: `README.md`: the supported-languages sentence
+- Modify: `README.md`: the supported-languages sentence and **The catalog** section
+- Modify: `tests/test_docs_in_sync.py`: `test_catalog_tiers_match_the_documented_split`
 - Modify: `CHANGELOG.md`
 - Modify: `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `pyproject.toml` (version bump: `test_versions_agree` requires these three and the `CHANGELOG.md` heading to match)
 
@@ -2917,7 +2918,18 @@ Expected: the first command lists no TS/Python sample changes, the second prints
 
 - [ ] **Step 4: Update README, bump the version, update the changelog**
 
-In `README.md`, change "Detectors ship for TypeScript, JavaScript and Python." to "Detectors ship for TypeScript, JavaScript, Python and Java."
+In `README.md`, change "Detectors ship for TypeScript, JavaScript and Python." to "Detectors ship for TypeScript, JavaScript, Python and Java." In **The catalog** section, change "19 stability patterns" to "22 stability patterns", and add a paragraph after the Tier B one:
+
+```markdown
+Tier A, JVM-specific: no blocking calls on event-loop threads · locks and
+waits with a bound · bounded query fan-out (no N+1 lazy loading).
+```
+
+`tests/test_docs_in_sync.py::test_catalog_tiers_match_the_documented_split` pins the tier split the README documents. It hardcodes Tier A as S01–S10, so it has failed since Task 3 added S27. Update its Tier A expectation to match the documented split, leaving Tier B untouched:
+
+```python
+    assert tier_a == [f"S{n:02d}" for n in (*range(1, 11), 27, 28, 29)], tier_a
+```
 
 Bump `0.2.0` → `0.3.0` in `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` and `pyproject.toml`. Add a `## 0.3.0` heading at the top of `CHANGELOG.md`, following the `0.2.0` entry's style, with an **Added** section covering:
 - Java as a scanned language, with detectors for S01–S19.
