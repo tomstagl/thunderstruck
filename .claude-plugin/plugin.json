@@ -1,7 +1,7 @@
 {
   "name": "thunderstruck",
   "displayName": "thunderstruck",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Resilience forensics for your codebase. Ranks hotspots, then explains how each one fails in production \u2014 failure mode, trigger, amplifier, sustaining effect \u2014 with evidence that resolves to real file:line and commit SHAs.",
   "author": {
     "name": "Tom Stagl",

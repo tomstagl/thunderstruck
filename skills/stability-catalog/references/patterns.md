@@ -23,6 +23,14 @@ Scanned and reasoned about by default, at full weight.
 - httpx call with no explicit timeout= (httpx does default to 5s)
 - urlopen() with no timeout=
 - raw socket with no settimeout()
+- java.net.http.HttpClient built with no connectTimeout(), and no request in the file sets .timeout() (which also bounds the connect)
+- HttpRequest with no .timeout() — HttpClient has no default request timeout, so send() can wait forever
+- OkHttpClient with no callTimeout — the per-operation defaults do not bound a slow-drip response
+- DriverManager.getConnection with no login timeout — some drivers wait forever for an unreachable host
+- Future.get()/join() with no timeout — blocks forever if the future never completes
+- RestTemplate with no connect/read timeout — its default request factory waits forever
+- WebClient built with no responseTimeout(), configured connector or per-call timeout() anywhere in the file
+- JMS receive() with no timeout — blocks the thread until a message arrives, forever if none does
 
 **References.** Nygard, Release It! (2nd ed.), ch. 5 — Timeouts; Amazon Builders' Library — Timeouts, retries and backoff with jitter
 
@@ -35,6 +43,7 @@ Scanned and reasoned about by default, at full weight.
 **What the detectors look for.**
 
 - retry backoff missing a cap, jitter, or growth
+- @Retryable with no randomised backoff — Spring Retry defaults to a fixed 1s wait, so every client retries in lockstep
 
 **References.** Brooker, Exponential Backoff And Jitter (AWS Architecture Blog); Nygard, Release It! (2nd ed.), ch. 5 — Retries
 
@@ -61,6 +70,8 @@ Scanned and reasoned about by default, at full weight.
 
 - retry construct with no visible transient/permanent discrimination
 - catch-all except followed by a retry — retries permanent errors too
+- catch (Exception e) followed by a retry — retries permanent errors too
+- @Retryable with no exception filter — retries every exception, permanent ones included
 
 **References.** Amazon Builders' Library — Timeouts, retries and backoff with jitter
 
@@ -74,6 +85,7 @@ Scanned and reasoned about by default, at full weight.
 
 - HTTP calls made in a loop or fan-out with no local rate limiter or concurrency gate in this file
 - rate limiting mentioned but server rate-limit headers are never read
+- outbound calls made in a loop or fan-out with no local rate limiter or concurrency gate in this file
 
 **References.** Google SRE Book, ch. 21 — Handling Overload; Nygard, Release It! (2nd ed.), ch. 5 — Governor
 
@@ -86,6 +98,7 @@ Scanned and reasoned about by default, at full weight.
 **What the detectors look for.**
 
 - one queue/limiter serves all callers; no priority or criticality field
+- one executor serves every caller; no priority or criticality separation
 
 **References.** Google SRE Book, ch. 21 — Criticality; Nygard, Release It! (2nd ed.), ch. 5 — Shed Load
 
@@ -99,6 +112,8 @@ Scanned and reasoned about by default, at full weight.
 
 - paged/batched loop with no persisted cursor — a crash restarts from the beginning
 - inserts with no upsert / ON CONFLICT — a replayed job duplicates rows
+- KafkaConsumer.poll() loop with no manual offset commit — auto-commit can ack a record before it is processed
+- RabbitMQ basicConsume with autoAck=true — a crash mid-message loses it
 
 **References.** Nygard, Release It! (2nd ed.), ch. 5 — Handshaking / Steady State; Google SRE Book, ch. 22 — Addressing Cascading Failures
 
@@ -115,6 +130,8 @@ Scanned and reasoned about by default, at full weight.
 - SELECT with no LIMIT
 - asyncio.gather over an unbounded collection — concurrency equals input size
 - full result-set fetch with no limit
+- Spring Data repository with collection finders and no Pageable/Slice/Top-N form — every call returns the whole match set
+- Kafka poll loop with no max.poll.records — a slow batch overruns max.poll.interval.ms and triggers a rebalance storm
 
 **References.** Nygard, Release It! (2nd ed.), ch. 4 — Unbounded Result Sets
 
@@ -127,6 +144,8 @@ Scanned and reasoned about by default, at full weight.
 **What the detectors look for.**
 
 - cache-aside read with no in-flight deduplication
+- cache-aside read with no in-flight deduplication (no computeIfAbsent, LoadingCache or loader-form get)
+- @Cacheable without sync = true — concurrent misses all call through to the source
 
 **References.** Bronson et al., Metastable Failures in Distributed Systems (HotOS '21); Nygard, Release It! (2nd ed.), ch. 5 — Caching
 
@@ -139,8 +158,47 @@ Scanned and reasoned about by default, at full weight.
 **What the detectors look for.**
 
 - more than one retry layer in the same call path, with no shared budget
+- more than one retry mechanism in the same call path, with no shared budget
 
 **References.** Google SRE Book, ch. 22 — Addressing Cascading Failures; Amazon Builders' Library — Timeouts, retries and backoff with jitter
+
+### S27 — No blocking calls on non-blocking/event-loop threads
+
+**Failure if absent.** A blocking call inside a reactive pipeline or an event-loop handler occupies a thread meant to service many concurrent requests. One slow call starves the whole event loop instead of one request.
+
+**Role in a metastable failure.** Usually the *amplifier*.
+
+**What the detectors look for.**
+
+- blocking call inside a Reactor/WebFlux/Netty/Akka-Streams context with no scheduler offload — starves the event loop
+
+**References.** Project Reactor reference docs — Schedulers and blocking calls; Nygard, Release It! (2nd ed.), ch. 4 — Blocked Threads
+
+### S28 — Bounded, timed lock/wait acquisition
+
+**Failure if absent.** A lock held across a slow call, or a wait with no bound, lets one stalled holder block every other thread indefinitely — a convoy that compounds under load instead of shedding it.
+
+**Role in a metastable failure.** Usually the *sustaining*.
+
+**What the detectors look for.**
+
+- synchronized section makes a blocking call before it closes — a stalled call holds the monitor and every other thread queues behind it
+- Lock.lock() with no timed tryLock, held across a blocking call before unlock()
+- Condition.await()/Object.wait() with no timeout — waits forever if the signal never comes
+
+**References.** Nygard, Release It! (2nd ed.), ch. 4 — Blocked Threads; java.util.concurrent.locks.Lock javadoc — tryLock(long, TimeUnit)
+
+### S29 — Bounded query fan-out (no N+1 lazy-loading amplification)
+
+**Failure if absent.** Iterating a result set and touching a lazy association per row turns one query into N+1. Under load this is a fan-out amplifier — the same mechanism as an unbounded result set, but produced by ORM lazy loading rather than a missing limit.
+
+**Role in a metastable failure.** Usually the *amplifier*.
+
+**What the detectors look for.**
+
+- loop navigates an association per row with no eager fetch hint in the file
+
+**References.** Hibernate ORM user guide — Fetching; Nygard, Release It! (2nd ed.), ch. 4 — Unbounded Result Sets
 
 ## Tier B
 
@@ -155,6 +213,7 @@ Scanned and reasoned about by default, at lower weight.
 **What the detectors look for.**
 
 - outbound calls with no deadline or cancellation passed through
+- gRPC blocking stub call with no deadline
 
 **References.** Google SRE Book, ch. 22 — Deadlines
 
@@ -167,6 +226,7 @@ Scanned and reasoned about by default, at lower weight.
 **What the detectors look for.**
 
 - retries with no circuit breaker or retry token bucket
+- retries with no circuit breaker
 
 **References.** Nygard, Release It! (2nd ed.), ch. 5 — Circuit Breaker
 
@@ -179,6 +239,8 @@ Scanned and reasoned about by default, at lower weight.
 **What the detectors look for.**
 
 - one shared pool with no isolation between workloads
+- one executor serves several submission sites with no second pool — every workload competes for the same threads
+- actor makes blocking calls on the default dispatcher — it starves every other actor sharing it
 
 **References.** Nygard, Release It! (2nd ed.), ch. 5 — Bulkheads
 
@@ -192,6 +254,9 @@ Scanned and reasoned about by default, at lower weight.
 
 - in-memory queue with no capacity bound or rejection path
 - Queue() with no maxsize — unbounded by default
+- LinkedBlockingQueue() with no capacity — unbounded by default, absorbs overload instead of shedding it
+- Executors.newFixedThreadPool/newSingleThreadExecutor queue on an unbounded LinkedBlockingQueue
+- RabbitMQ consumer with no basicQos prefetch — the broker pushes the whole queue into this process
 
 **References.** Nygard, Release It! (2nd ed.), ch. 4 — Blocked Threads; Google SRE Book, ch. 21 — Load Shedding
 
@@ -218,6 +283,7 @@ Scanned and reasoned about by default, at lower weight.
 - setInterval with no jitter or offset — every instance fires in lockstep
 - cron schedule pinned to a fixed minute with no splay
 - periodic loop with a fixed sleep and no jitter
+- @Scheduled cron with no jitter — cron fires on the wall clock, so every instance fires in lockstep
 
 **References.** Google SRE Book, ch. 24 — Distributed Periodic Scheduling; Brooker, Exponential Backoff And Jitter
 

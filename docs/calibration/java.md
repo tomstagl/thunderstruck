@@ -1099,6 +1099,9 @@ and had no instance in the corpus. Each became a required-silent sample.
     parameter submitted within 600 characters and before the method's first
     `}`. A wrapper that checks its argument in an `if` block first, or takes
     a task of its own interface type, is missed.
+  - A file whose only pool is built via a static-imported
+    `newFixedThreadPool(...)` is suppressed by the second-pool rule, which
+    matches the import line as if it were a second pool construction.
 - **S18 recognises a fixed vocabulary.**
   - A call counts only as `send`, `sendAsync`, `exchange`, `retrieve`,
     `get/postForObject/Entity`, `executeQuery`, `executeUpdate`, `query`,
@@ -1118,6 +1121,9 @@ and had no instance in the corpus. Each became a required-silent sample.
   - The member boundary inherits `METHOD_JAVA`'s limitations (Batch 4): a call
     statement whose arguments continue onto the next line starts a spurious
     member, which can only split a method (a miss).
+  - The response-derived variable set is not cleared when a name is
+    reassigned to an unrelated value, so a later genuine check on the reused
+    name is missed.
 - **S01's JMS detector looks 50 lines back for the consumer.** A consumer
   created further up, or held in a field declared further up, is missed; so
   is one passed in as a parameter of a type not named on a line in reach. A
