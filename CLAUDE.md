@@ -187,3 +187,26 @@ Missing `lizard` → ranks on churn alone and says so in `warnings`, which the
 report prints. Hotspots whose analysis failed appear under **Incomplete** with
 the reason. A partial report that states what is missing beats a retry loop or
 a quietly truncated one.
+
+## Tickets, specs and plans
+
+Every feature has three artefacts. Each answers one question, and nothing is
+written in two of them.
+
+| Artefact | Lives in | Answers | Contains | Never contains |
+|---|---|---|---|---|
+| **Ticket (PRD)** | GitHub issue | Why, what, for whom, when is it done | Problem, goal, users and stories, scope in/out, numbered acceptance criteria (`AC-n`), success measures, open product questions, links to spec and plan, a task checklist mirroring the plan | Design, file names, code |
+| **Spec** | `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` | How it works | Architecture, contracts and schemas, algorithms, security, degradation, test strategy, decisions with their rationale, open design questions | Requirements restated, step-by-step tasks |
+| **Plan** | `docs/superpowers/plans/YYYY-MM-DD-<topic>.md` | In what order to build it | Tasks with exact files, code, tests, commands and commits; each task names the `AC-n` it satisfies | New design decisions — change the spec first |
+
+- Acceptance criteria are numbered once, in the ticket. The spec and plan
+  refer to them by number and never copy them.
+- A requirement changes in the ticket first. A design change goes in the
+  spec first. The plan follows both.
+- The ticket's checklist is ticked as tasks merge. The plan's checkboxes
+  track work in progress on a branch.
+- A ticket is titled `DRAFT: …` until it has a PRD. Drop the prefix once the
+  PRD is agreed.
+- The repo and its tickets are public. Keep organisation-specific names,
+  internal hosts and credentials out of all three artefacts. Examples use
+  generic names such as `component:default/checkout` and `catalogctl`.
