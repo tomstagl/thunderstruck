@@ -16,7 +16,7 @@ public class TokenStore {
 
     public void putName(String key, String name) {
         if (nameCache.size() >= MAX_ENTRIES) {
-            nameCache.keySet().iterator().next();
+            nameCache.remove(nameCache.keySet().iterator().next());
         }
         nameCache.put(key, name);
     }

@@ -158,13 +158,11 @@ patterns:
           confidence: low
           note: "RestTemplate with no connect/read timeout — its default request factory waits forever"
         - id: S01-java-webclient-no-timeout
-          kind: regex
-          pattern: '\bWebClient\s*\.\s*(builder|create)\s*\('
-          absent_within: '\bresponseTimeout\s*\(\s*[^\s)]|\.\s*timeout\s*\(\s*[^\s)]|CONNECT_TIMEOUT_MILLIS|ReadTimeoutHandler|\bclientConnector\s*\(\s*(?!new\b)[^\s)]'
-          window: 10
-          window_before: 8
+          kind: file_absent
+          anchor: '\bWebClient\s*\.\s*(builder|create)\s*\('
+          absent: '\.\s*timeout\s*\(\s*[^\s)]|\bresponseTimeout\s*\(\s*[^\s)]|ReadTimeoutHandler|CONNECT_TIMEOUT_MILLIS|\bclientConnector\s*\(\s*(?!new\s+[\w.]+\s*\(\s*(\)|HttpClient\s*\.\s*create\s*\(\s*\)\s*\)))[^\s)]'
           confidence: low
-          note: "WebClient with no responseTimeout() or per-call timeout()"
+          note: "WebClient built with no responseTimeout(), configured connector or per-call timeout() anywhere in the file"
 
   - id: S02
     name: Capped exponential backoff with full jitter
@@ -501,7 +499,7 @@ patterns:
         - id: S09-java-cache-aside-no-singleflight
           kind: file_absent
           anchor: '(?i)\b\w*(cache|caches|cachemap|cached\w*)\s*\.\s*(get|getIfPresent|containsKey)\s*\(\s*[^\s)]'
-          require: '(?i)\b\w*(cache|caches|cachemap|cached\w*)\s*\.\s*(put|putIfAbsent)\s*\('
+          require: '(?s)\A(?=.*?(?i:\b\w*(cache|caches|cachemap|cached\w*)\s*\.\s*(put|putIfAbsent)\s*\())(?=.*?(^\s*(private|protected|public|static|final)\b[^;=(){}]*=\s*new\s+(Concurrent)?HashMap\b|\b(Caffeine|CacheBuilder)\s*\.\s*newBuilder\s*\())'
           absent: '(?i)(single.?flight|coalesc|dedup|computeIfAbsent|LoadingCache|cache\w*\s*\.\s*get\s*\([^,()]+,)|\bsynchronized\b|\.\s*lock\s*\(\s*\)'
           confidence: low
           note: "cache-aside read with no in-flight deduplication (no computeIfAbsent, LoadingCache or loader-form get)"
@@ -738,7 +736,7 @@ patterns:
           kind: regex
           pattern: '@\s*Scheduled\s*\([^)]*\bcron\s*='
           absent_within: '(?i)(jitter|random|splay|stagger)|@\s*SchedulerLock\b'
-          window: 3
+          window: 10
           window_before: 3
           confidence: low
           note: "@Scheduled cron with no jitter — cron fires on the wall clock, so every instance fires in lockstep"
@@ -772,7 +770,7 @@ patterns:
         - id: S17-java-unbounded-cache
           kind: file_absent
           anchor: '(?i)\b\w*(cache|caches|cachemap|cached\w*|memo(?!ry)\w*)\s*=\s*new\s+(Concurrent)?HashMap\b|\b\w*(cache|caches|cachemap|cached\w*)\s*\.\s*(put|putIfAbsent)\s*\(|Caffeine\s*\.\s*newBuilder\s*\('
-          require: '\bnew\s+(Concurrent)?HashMap\s*<|\bCaffeine\s*\.\s*newBuilder\s*\('
+          require: '^\s*(private|protected|public|static|final)\b[^;=(){}]*=\s*new\s+(Concurrent)?HashMap\b|\b(Caffeine|CacheBuilder)\s*\.\s*newBuilder\s*\('
           absent: '(?i)(ttl|expire|evict|maximumSize|maximumWeight|removeEldestEntry|\.clear\s*\(|removeIf\s*\(|\.\s*size\s*\(\s*\)\s*>|softValues|weakKeys|weakValues)|<\s*Class\s*<|\bCacheManager\b|\bgetCache\s*\('
           confidence: low
           note: "in-memory cache with no TTL, eviction, or size bound"

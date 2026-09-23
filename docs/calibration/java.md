@@ -172,7 +172,7 @@ detector was then tightened until the sample passed. None of these fixes
 came from a calibration hit, so none is counted in the table above.
 
 - `S01-java-resttemplate-no-timeout`: `setRequestFactory(<configured factory>)` now counts as configured, but `setRequestFactory(new …())` does not. A timeout setter only counts when it has an argument, so a zero-arg getter like `props.connectTimeout()` no longer silences the detector → `S01/java/negative_resttemplate_request_factory.java`
-- `S01-java-webclient-no-timeout`: `window_before: 8` is added so that a Reactor `HttpClient` configured just above the builder counts. `.clientConnector(<variable or injected connector>)` also counts as configured, but `.clientConnector(new …(…))` inline does not. `timeout(` and `responseTimeout(` must have an argument → `S01/java/negative_webclient_configured_connector.java`
+- `S01-java-webclient-no-timeout`: `window_before: 8` is added so that a Reactor `HttpClient` configured just above the builder counts. `.clientConnector(<variable or injected connector>)` also counts as configured, but `.clientConnector(new …(…))` inline does not. `timeout(` and `responseTimeout(` must have an argument → `S01/java/negative_webclient_configured_connector.java` (Fix round 1 replaced this window form with a file-wide check; see below.)
 - `S09-java-cache-aside-no-singleflight`:
   - The receiver must be *named* a cache: a name ending in `cache`, `caches` or `cachemap`, or starting with `cached`. A name like `cacheConfigurations` does not count.
   - `get(` needs an argument, so `ThreadLocal.get()` no longer counts.
@@ -188,6 +188,17 @@ came from a calibration hit, so none is counted in the table above.
   - Several constructs now count as a bound or as someone else's bound: `removeIf(`, a `size() >` check, `softValues`/`weakKeys`/`weakValues`, `Class`-keyed maps (bounded by the number of classes), and a Spring `CacheManager`/`getCache(` (the provider's configuration bounds it).
 
   → `S17/java/negative_explicit_eviction.java`, `negative_soft_values.java`, `negative_class_keyed.java`, `negative_cache_config_map.java`, `negative_in_memory_repository.java` and `negative_spring_cache_manager.java`
+
+### Fix round 1 (review probes)
+
+The Task 7 review ran fresh probes of common correct Spring code, and four of
+them fired. Each shape now has a required-silent sample, and a re-sweep of all
+nine repositories was byte-identical (9 hits).
+
+- `S01-java-webclient-no-timeout` is now `file_absent`, with the same builder/create anchor. The window form missed a timeout that was set far from the builder: `.timeout(` 14 lines down a call chain, or `responseTimeout` in a separate `HttpClient` bean. Any argument-bearing `.timeout(`/`responseTimeout(`, `ReadTimeoutHandler` or `CONNECT_TIMEOUT_MILLIS` anywhere in the file suppresses the hit. So does a `clientConnector(…)` that is not a default connector (`new X()` or `new X(HttpClient.create())`), so `new ReactorClientHttpConnector(httpClient)` with an injected client counts as configured → `S01/java/negative_webclient_injected_httpclient.java` and `negative_webclient_per_call_timeout.java`
+- `S09-java-cache-aside-no-singleflight` and `S17-java-unbounded-cache` now also `require` a field-declared cache: a line that starts with a modifier and assigns `new (Concurrent)HashMap` within one declaration (`[^;=(){}]*`, so the match cannot run from a method signature into its body), or a Caffeine/Guava `newBuilder(`. A map that is local to one method call dies with that call, so it can neither stampede a shared source nor grow without bound → `S09/java/negative_local_memo.java` and `S17/java/negative_local_memo.java`
+- `S16-java-scheduled-no-jitter`: the window is now 10 lines, up from 3, so a random sleep at the top of the job body counts as jitter → `S16/java/negative_body_jitter.java`
+- `S17/java/negative_explicit_eviction.java` now actually evicts (`nameCache.remove(…)` under the size check), and it still passes.
 
 ### Hits
 
@@ -223,4 +234,7 @@ came from a calibration hit, so none is counted in the table above.
 - `S09-java-cacheable-no-sync` reads 8 lines from the annotation, so a `sync = true` on the *next* method's `@Cacheable` can silence it. That is a miss, not a false positive.
 - `S09-java-cache-aside-no-singleflight` is silenced by any `synchronized` or `lock()` in the file, even one that does not guard the load. That is a miss.
 - `S17-java-unbounded-cache`: the name rule misses caches named, for example, `lookup` or `byId`. The `CacheManager` suppression silences a file that has both a Spring-managed cache and an unbounded hand-rolled one. Both are misses.
+- `S01-java-webclient-no-timeout` is file-scoped. One unbounded WebClient in a file that also builds a bounded one, or calls `.timeout(` anywhere, is missed.
+- `S09-java-cache-aside-no-singleflight` / `S17-java-unbounded-cache`: enum-keyed cache maps (`Map<Status, X>`) fire even though the enum's cardinality bounds them. The field gate misses a field whose annotation shares its line (`@Getter private final Map… = new HashMap<>()`), and it still counts a method-local `final Map… = new HashMap<>()` as a field.
+- `S16-java-scheduled-no-jitter` reads 10 lines, so jitter vocabulary in the next method can silence it. That is a miss.
 - `S01-java-webclient-no-timeout`: a builder bean whose consumers apply `.timeout()` in other files, or wrap the call in a Resilience4j `TimeLimiter`, still fires, because file-local regex cannot see the consumer. None of this batch's hits was that shape (the gateway's owner call is not time-limited).
