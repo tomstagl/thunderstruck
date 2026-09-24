@@ -94,12 +94,14 @@ def collect(repo: Path) -> dict[str, Any]:
     if not isinstance(context_doc, dict):
         context_doc = {}
     raw_warnings = context_doc.get("warnings")
-    link_meta, link_warnings = link_refs(repo, hotspots["repo"]["head"], findings)
+    link_meta, link_warnings, hotspot_links = link_refs(
+        repo, hotspots["repo"]["head"], findings, hotspots["hotspots"], clean + failed)
     return {"hotspots": hotspots, "findings": findings,
             "failed": failed, "clean": clean, "validation": validation,
             "context": c.load_service_context(repo),
             "context_warnings": _context_warnings(raw_warnings),
-            "links": link_meta, "link_warnings": link_warnings}
+            "links": link_meta, "link_warnings": link_warnings,
+            "hotspot_links": hotspot_links}
 
 
 def _context_warnings(raw: Any) -> list[str]:
@@ -118,21 +120,29 @@ def _context_warnings(raw: Any) -> list[str]:
 # --------------------------------------------------------------------------
 
 
-def link_refs(repo: Path, head: str, findings: list[dict]) -> tuple[dict | None, list[str]]:
-    """Set a `url` on every finding location and evidence item, in place.
+def link_refs(repo: Path, head: str, findings: list[dict], hotspots: list[dict] | None = None,
+              listed: list[dict] | None = None) -> tuple[dict | None, list[str], dict]:
+    """Set a `url` on every finding location and evidence item, and on every
+    listed (clean or incomplete) entry, in place; return the hotspot links.
 
-    URLs come only from links.py, over refs validate.py resolved; a `url` the
-    investigator wrote is overwritten. Linking never fails the report.
+    URLs come only from links.py, over refs validate.py resolved or files
+    signals.py ranked; a `url` the investigator wrote is overwritten. Linking
+    never fails the report.
     """
-    if not findings:
-        return None, []
+    hotspots, listed = hotspots or [], listed or []
+    if not (findings or hotspots or listed):
+        return None, [], {}
+
+    def unlinked(warnings: list[str]) -> tuple[None, list[str], dict]:
+        _set_urls(findings, None, repo)
+        return None, warnings, _set_file_urls(hotspots, listed, None)
+
     try:
         try:
             profile = c.load_profile(repo)
         except (c.ThunderstruckError, ValueError):  # ValueError covers non-UTF-8 bytes
-            _set_urls(findings, None, repo)
-            return None, [f"{links.NOT_LINKED}.thunderstruck.toml could not be read"]
-        paths: set[str] = set()
+            return unlinked([f"{links.NOT_LINKED}.thunderstruck.toml could not be read"])
+        paths: set[str] = {str(e["file"]) for e in [*hotspots, *listed] if e.get("file")}
         commits: set[str] = set()
         for f in findings:
             loc = f.get("location")
@@ -148,13 +158,31 @@ def link_refs(repo: Path, head: str, findings: list[dict]) -> tuple[dict | None,
                     commits.add(ref.split()[0])
         result = links.link_context(repo, profile, head, paths, commits)
         _set_urls(findings, result, repo)
+        hotspot_links = _set_file_urls(hotspots, listed, result.ctx)
         ctx = result.ctx
         meta = ({"provider": ctx.provider, "base_url": ctx.base, "sha": ctx.sha,
                  "remote": ctx.remote} if ctx else None)
-        return meta, result.warnings
+        return meta, result.warnings, hotspot_links
     except Exception as exc:  # noqa: BLE001 — a presentation feature must not sink the report
-        _set_urls(findings, None, repo)
-        return None, [f"{links.NOT_LINKED}internal error ({type(exc).__name__})"]
+        return unlinked([f"{links.NOT_LINKED}internal error ({type(exc).__name__})"])
+
+
+def _file_url(ctx: "links.LinkContext | None", file) -> str | None:
+    if not ctx or not file or c.path_problem(c.ref_path(str(file))):
+        return None
+    return ctx.code(str(file))
+
+
+def _set_file_urls(hotspots: list[dict], listed: list[dict],
+                   ctx: "links.LinkContext | None") -> dict[str, dict]:
+    """A whole-file `url` on each listed entry; {hotspot id: url, history_url}."""
+    for entry in listed:
+        entry["url"] = _file_url(ctx, entry.get("file"))
+    out: dict[str, dict] = {}
+    for h in hotspots:
+        url = _file_url(ctx, h.get("file"))
+        out[h["id"]] = {"url": url, "history_url": ctx.history(str(h["file"])) if url else None}
+    return out
 
 
 def _evidence(f: dict) -> list[dict]:
@@ -358,7 +386,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
         L += ["## Hotspots investigated with no finding", ""]
         for entry in data["clean"]:
             note = f" — {md.text(entry['notes'])}" if entry.get("notes") else ""
-            L.append(f"- **{entry['hotspot_id']}** {md.code(entry['file'])}{note}")
+            L.append(f"- **{entry['hotspot_id']}** {_linked(entry['file'], entry.get('url'))}{note}")
         L.append("")
 
     if data["failed"]:
@@ -366,7 +394,8 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
               "These hotspots were ranked but produced no usable analysis. The "
               "report is partial.", ""]
         for entry in data["failed"]:
-            L.append(f"- **{entry['hotspot_id']}** {md.code(entry['file'])} — {md.text(entry['reason'])}")
+            L.append(f"- **{entry['hotspot_id']}** {_linked(entry['file'], entry.get('url'))} "
+                     f"— {md.text(entry['reason'])}")
             for err in entry.get("errors", [])[:3]:
                 L.append(f"  - {md.text(err)}")
         L.append("")
@@ -377,7 +406,10 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
     for h in hs["hotspots"]:
         cx = h.get("complexity") or {}
         pats = ", ".join(md.text(p, cell=True) for p in h["stability"]["patterns"]) or "—"
-        L.append(f"| {h['id']} | {md.code(h['file'], cell=True)} | {h['scores']['score']} | "
+        file_cell = _linked(h["file"], _hotspot_link(data, h["id"], "url"), cell=True)
+        if (history := _hotspot_link(data, h["id"], "history_url")):
+            file_cell += f" · [history]({history})"
+        L.append(f"| {h['id']} | {file_cell} | {h['scores']['score']} | "
                  f"{h['churn']['commits']} | {h['churn']['fix_commits']} | "
                  f"{cx.get('ccn_max', '—')} | {pats} |")
     L += ["",
@@ -389,6 +421,10 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
 # --------------------------------------------------------------------------
 # json outputs
 # --------------------------------------------------------------------------
+
+
+def _hotspot_link(data: dict, hid: str, key: str) -> str | None:
+    return ((data.get("hotspot_links") or {}).get(hid) or {}).get(key)
 
 
 def render_json(data: dict) -> dict:
@@ -418,6 +454,8 @@ def render_json(data: dict) -> dict:
         "clean": data["clean"],
         "incomplete": data["failed"],
         "hotspots": [{"id": h["id"], "file": h["file"],
+                      "url": _hotspot_link(data, h["id"], "url"),
+                      "history_url": _hotspot_link(data, h["id"], "history_url"),
                       "score": h["scores"]["score"],
                       "churn": h["churn"], "complexity": h.get("complexity"),
                       "patterns": h["stability"]["patterns"]}

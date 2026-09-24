@@ -56,6 +56,16 @@ N file(s) differ from the scanned commit abc1234 or are not in it, and are not l
 
 This is the same shape as the unpushed-commits warning, which already caps at five.
 
+The names are shown as they are, not quoted. A file name containing `, ` or ` … and 9 more` could make the list misleading. It can't make a link: the warning still goes through `md.text`. That risk is accepted.
+
+### 2.3 Chunked git calls
+
+`_stale_paths` now receives every hotspot path as well as the cited ones, and `--top` has no upper limit. A single `ls-tree`, `diff` or `ls-files` call could exceed the command-line limit (about 32K characters on Windows). The resulting `OSError` would unlink every reference, findings included. `_stale_paths` therefore splits the paths into chunks of `PATHS_PER_CALL = 100` and merges the results.
+
+### 2.4 Template characters
+
+A custom template's literal text now reaches a table cell, where a `|` splits the row and a space or `)` ends the link. `template_error` rejects any template character outside `A-Z a-z 0-9 . _ ~ % / + { } # : ? = & ; , @ -`. The documented Data Center example passes this check.
+
 ## 3. `report.py`
 
 ### 3.1 `link_refs`
@@ -107,6 +117,7 @@ A path that fails `c.path_problem` gets no link. A hotspot path is trusted input
 | `enabled = false` | Plain names, no warning |
 | Custom templates | Code links, no history links, no warning |
 | Hotspot file edited, staged, committed after the scan, untracked, assume-unchanged, a symlink or a submodule at the scanned commit | That file is plain in every section, and the summarised warning names it |
+| Report without findings on an unpushed branch | Now linked, with #22's "resolve once pushed" warning. Before, such a report had no links and so no warning. |
 
 ## 5. Test strategy
 
@@ -115,7 +126,7 @@ A path that fails `c.path_problem` gets no link. A hotspot path is trusted input
 - **Hotspots, AC-1, AC-2:** every table row links `blob/<sha>/<file>` and `commits/<sha>/<file>`.
 - **No findings, AC-6:** every hotspot comes back clean. The clean list and the table are linked, and `report.json` carries the URLs.
 - **Incomplete, AC-6:** no investigator output. The incomplete list is linked.
-- **Stale hotspot, AC-3:** parametrised over edited, staged, committed after the scan, and untracked (`git rm --cached`). A symlink case points a hotspot at a symlink committed at the scanned commit. Each case checks that the entry is plain in the table and in its list, and has no history link.
+- **Stale hotspot, AC-3:** parametrised over edited, staged, committed after the scan, untracked (`git rm --cached`), and assume-unchanged. A symlink case points a hotspot at a symlink committed at the scanned commit. Each case checks that the entry is plain in the table and in its list, and has no history link.
 - **Warning cap, AC-3:** seven stale hotspots give a count of 7, five names, and "… and 2 more". There is also a unit test on the sentence.
 - **No remote / disabled, AC-4:** in a report without findings: exactly one warning with no remote, none when disabled, and the sections are byte-identical to the plain rendering.
 - **Custom templates, AC-2:** code links present, no `history`.
@@ -126,7 +137,19 @@ A path that fails `c.path_problem` gets no link. A hotspot path is trusted input
 
 `tests/test_sample_report.py`, AC-7 and the success measure: in `examples/sample-report.md`, every ranked hotspot row has a code link and a history link, and every clean-list entry has a code link.
 
-## 6. Decisions
+## 6. Design review (2026-09-24)
+
+No blockers. Changes made:
+- chunked git calls (§2.3);
+- restricted template characters (§2.4);
+- the inertness test builds real links for hostile names, since hostile names set after `collect()` would never be linked;
+- URLs are `None` on every failure path;
+- more stale cases at the report level (assume-unchanged);
+- a `path_problem` test;
+- the unpushed-branch note (§4);
+- the accepted naming risk (§2.2).
+
+## 7. Decisions
 
 | Decision | Rationale |
 |---|---|
@@ -135,6 +158,6 @@ A path that fails `c.path_problem` gets no link. A hotspot path is trusted input
 | URL maps kept in `data`, not written into `hotspots.json` | `hotspots.json` is signal output and feeds bundles. Report-time presentation must not reach it. |
 | No history for custom templates | That would need a new template key and config validation. The ticket keeps it out of scope. |
 
-## 7. Open design questions
+## 8. Open design questions
 
 - Bitbucket's history page is a client-side app. The route answers 200 and unknown routes answer 404, but its rendered content was not checked. If users report a blank page, drop the Bitbucket history template: that is a one-line change.

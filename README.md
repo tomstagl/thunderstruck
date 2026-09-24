@@ -227,7 +227,10 @@ like any other code; do not set it on a workstation.
 ### Source links
 
 Every file:line, detector and commit ref in `report.md` links to the code
-at the scanned commit — one click to the cited lines. A remote on github.com,
+at the scanned commit — one click to the cited lines. Every ranked hotspot,
+clean and incomplete file links to the whole file, and each ranked hotspot
+also links to its change history up to the scanned commit, the churn that
+earned its rank. This holds in a report with no findings too. A remote on github.com,
 gitlab.com or bitbucket.org needs no setup. Anything else needs a `[links]`
 table:
 
@@ -238,14 +241,14 @@ base_url = "https://git.example.com/acme/checkout"   # when the remote is an SSH
 # enabled = false                                    # plain refs, no warning
 ```
 
-A link never opens other lines than the ones cited. A cited file that differs
+A link never opens other lines than the ones cited. A file that differs
 from the scanned commit — edited, staged, committed since, untracked — is left
-unlinked and named under *Run warnings*, as is any reason links could not be
-built at all. A commit that is not yet on the remote is still linked, with a
+unlinked and named under *Run warnings* (the first five, then a count), as is
+any reason links could not be built at all. A commit that is not yet on the remote is still linked, with a
 warning that its links resolve once pushed. `report.json` carries the same
 URLs. See
 [`examples/thunderstruck.toml.example`](examples/thunderstruck.toml.example)
-for templates covering other hosts.
+for templates covering other hosts; custom templates get no history link.
 
 ## Privacy
 

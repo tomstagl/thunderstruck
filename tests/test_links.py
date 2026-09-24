@@ -215,6 +215,9 @@ def test_template_without_fragment_has_no_whole_file_link_when_lines_are_in_the_
     ("{base}/{sha.__class__}", "{sha.__class__}"),
     ("{base}/{branch}", "{branch}"),
     ("{base}/{path", "an unbalanced brace"),
+    ("{base}/browse/{path}?at={sha}&x=1;y#{start}-{end}", None),
+    *[(f"{{base}}/{{path}}{ch}{{sha}}", "a character that cannot appear in a link")
+      for ch in ["|", " ", ")", "(", "<", ">", "`", "[", "]", "\\", '"', "\n"]],
 ])
 def test_template_error(template, error):
     assert L.template_error(template) == error
@@ -425,6 +428,18 @@ def test_many_stale_files_are_summarised(tmp_path):
     assert res.warnings == [f"7 file(s) differ from the scanned commit {sha[:7]} or are not "
                             "in it, and are not linked: src/n0.ts, src/n1.ts, src/n2.ts, "
                             "src/n3.ts, src/n4.ts … and 2 more"]
+
+
+def test_many_paths_are_checked_in_chunks(tmp_path, monkeypatch):
+    repo, sha = _repo(tmp_path)
+    paths = [f"src/p{i:03d}.ts" for i in range(250)] + ["src/a.ts"]
+    calls = []
+    real = L._git
+    monkeypatch.setattr(L, "_git", lambda r, *a, **k: calls.append(a) or real(r, *a, **k))
+    res = L.link_context(repo, {}, sha, paths, [])
+    assert res.ctx.code("src/a.ts") and res.ctx.code("src/p000.ts") is None
+    assert res.warnings[0].startswith("250 file(s)")
+    assert max(len(a) for a in calls) < L.PATHS_PER_CALL + 10
 
 
 def test_bracketed_paths_are_literal(tmp_path):

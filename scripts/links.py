@@ -57,6 +57,8 @@ _URL_SCHEMES = frozenset({"http", "https", "ssh", "git", "git+ssh", "ssh+git"})
 # or be read as a template placeholder.
 _SAFE_HOST = re.compile(r"^[A-Za-z0-9.-]+(?::\d+)?$")
 _SAFE_PATH = re.compile(r"^[A-Za-z0-9._~%/+-]+$")
+# A template's literal text lands in link targets, some inside table cells.
+_SAFE_TEMPLATE = re.compile(r"^[A-Za-z0-9._~%/+{}#:?=&;,@-]+$")
 _LINES = re.compile(r"^\s*(\d+)(?:\s*-\s*(\d+))?\s*$")
 
 
@@ -154,6 +156,8 @@ def template_error(template: str, allowed=PLACEHOLDERS, required=()) -> str | No
     rest = _PLACEHOLDER.sub("", template)
     if "{" in rest or "}" in rest:
         return "an unbalanced brace"
+    if not _SAFE_TEMPLATE.match(template):
+        return "a character that cannot appear in a link"
     for name in required:
         if name not in names:
             return "no {" + name + "}"
@@ -245,6 +249,7 @@ NOT_LINKED = "references are not linked: "
 CONFIG_KEYS = frozenset({"enabled", "remote", "provider", "base_url",
                          "code_template", "commit_template"})
 GIT_TIMEOUT = 30
+PATHS_PER_CALL = 100
 _HEX = re.compile(r"[0-9a-fA-F]{4,40}")
 _FULL_SHA = re.compile(r"[0-9a-f]{40}")
 
@@ -411,7 +416,18 @@ def _resolve(repo, cfg: LinkConfig, sha: str, cited_paths, cited_commits) -> Lin
 
 
 def _stale_paths(repo, sha: str, paths: list[str]) -> set[str]:
-    """Cited paths whose content at `sha` is not what validate.py read."""
+    """Cited paths whose content at `sha` is not what validate.py read.
+
+    Paths go to git in chunks: a large --top must not overflow a command line
+    (about 32K characters on Windows) and take every link down with it.
+    """
+    stale: set[str] = set()
+    for i in range(0, len(paths), PATHS_PER_CALL):
+        stale |= _stale_chunk(repo, sha, paths[i:i + PATHS_PER_CALL])
+    return stale
+
+
+def _stale_chunk(repo, sha: str, paths: list[str]) -> set[str]:
     if not paths:
         return set()
     listed = _git(repo, "--literal-pathspecs", "ls-tree", "-z", "--full-tree", sha, "--", *paths)
