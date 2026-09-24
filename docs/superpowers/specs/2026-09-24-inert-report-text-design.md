@@ -21,7 +21,7 @@ A new stdlib-only module, `scripts/mdtext.py`, provides two functions. `report.p
 Both functions first make the value visible and flat:
 
 - line breaks (`str.splitlines` semantics) become spaces;
-- C0 controls, DEL and bidi overrides or isolates (U+200E/F, U+202A–E, U+2066–9) become the visible text `\uXXXX`. Otherwise a field could hide characters, or reverse what the reader sees.
+- C0 and C1 controls, DEL, and bidi marks, overrides and isolates (U+061C, U+200E/F, U+202A–E, U+2066–9) become the visible text `\uXXXX`. The source writes these as escapes, never as raw characters. Otherwise a field could hide characters, or reverse what the reader sees.
 
 ### `code(value, cell=False)`: a verbatim code span
 
@@ -34,9 +34,9 @@ Both functions first make the value visible and flat:
 
 1. **Flatten and trim**, as above. Runs of spaces and tabs collapse to one space. An empty or whitespace-only result renders as `—`.
 2. **Whole words that could hold a link become code spans.** The text is split on whitespace. A token containing any of the following is rendered whole as `code(token, cell)`:
-   - `://`, `www.`, `mailto:`, `xmpp:` or `@`;
+   - `://`, a protocol-relative `//` (linkify-it links `//localhost:8080/x`), `www.`, `mailto:`, `xmpp:` or `@`;
    - a dot followed by two letters (Unicode letters, so `.рф` counts);
-   - an emoji shortcode `:name:`, where the name contains a letter (so `10:30:45` stays text).
+   - an emoji shortcode `:name:`, where the name contains a letter (so `10:30:45` stays text), or one of GitHub's letterless codes `:+1:`, `:-1:`, `:100:`, `:1234:`.
 
    The match is case-insensitive.
 
@@ -85,7 +85,7 @@ The fallback for a missing `sustaining_effect` is the tool's own emphasis (`_non
 
 `report._code` and `report._linked` move to `mdtext.code` and `mdtext.linked`, so there is a single implementation. `report.json` and the guardrail are unchanged (ticket scope).
 
-`context.json` is a file on disk, not trusted structure: `collect()` keeps only string warnings from it, at most 20.
+`context.json` is a file on disk, not trusted structure. `collect()` keeps only string warnings from it, at most 20, and adds a visible "N more context warning(s) not shown" line when it drops any. An evidence item without a note renders without a dangling `—`.
 
 ## 4. Test strategy
 
@@ -107,6 +107,11 @@ The fallback for a missing `sustaining_effect` is the tool's own emphasis (`_non
   - Hostile text in every model field and note is validated and reported.
   - A second case edits `collect()` output with a hostile hotspot file name, branch, repo name, scan window and warnings. It adds validator errors that start with block markers, and hostile confidence, pattern IDs, key, evidence type and service-context values.
   - Every `<a href>` must start with the fixture's link base. There must be no `<img>` and no elements beyond the report's own. Tables keep their rows, and there is exactly one `<h1>`.
+- **Code review:**
+  - protocol-relative `//` URLs were still linked by linkify-it, including metadata IPs such as `//169.254.169.254/…`;
+  - letterless GitHub emoji, and raw bidi characters in the module's own source;
+  - the end-to-end href check now uses both renderers, and the fuzz covers every position (nested item, heading, bold, emphasis, `<sub>`);
+  - the renderer versions are pinned in CI and in the documented commands.
 - **Gating:** one helper, `_require_renderers()`. It skips when any renderer package is missing, and calls `pytest.fail` instead when `THUNDERSTRUCK_REQUIRE_RENDERER` is set, which CI does. CI and CLAUDE.md install `markdown-it-py`, `linkify-it-py` and `cmarkgfm`.
 - **Sample report (AC-5):** regenerated. FR-003's quoted injection text renders inertly.
 

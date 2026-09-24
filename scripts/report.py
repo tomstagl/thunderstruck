@@ -98,10 +98,19 @@ def collect(repo: Path) -> dict[str, Any]:
     return {"hotspots": hotspots, "findings": findings,
             "failed": failed, "clean": clean, "validation": validation,
             "context": c.load_service_context(repo),
-            # context.json is a file on disk, not trusted structure: strings only, capped
-            "context_warnings": ([str(w) for w in raw_warnings if isinstance(w, str)][:MAX_CONTEXT_WARNINGS]
-                                 if isinstance(raw_warnings, list) else []),
+            "context_warnings": _context_warnings(raw_warnings),
             "links": link_meta, "link_warnings": link_warnings}
+
+
+def _context_warnings(raw: Any) -> list[str]:
+    """context.json is a file on disk, not trusted structure: strings only,
+    capped, and the cap says what it left out."""
+    kept = [w for w in raw if isinstance(w, str)] if isinstance(raw, list) else []
+    if len(kept) > MAX_CONTEXT_WARNINGS:
+        hidden = len(kept) - MAX_CONTEXT_WARNINGS
+        kept = kept[:MAX_CONTEXT_WARNINGS] + [f"{hidden} more context warning(s) not shown; "
+                                              f"see {c.CONTEXT_FILENAME}"]
+    return kept
 
 
 # --------------------------------------------------------------------------
@@ -332,7 +341,8 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
                   "",
                   "**Evidence**", ""]
             for ev in f.get("evidence") or []:
-                L.append(f"- _{md.text(ev.get('type'))}_ {_evidence_ref(ev)} — {md.text(ev.get('note', ''))}")
+                note = f" — {md.text(ev['note'])}" if ev.get("note") else ""
+                L.append(f"- _{md.text(ev.get('type'))}_ {_evidence_ref(ev)}{note}")
             L += ["",
                   f"**Verify** — {md.text(f.get('how_to_verify', '—'))}  ",
                   f"**Why this confidence** — {md.text(f.get('confidence_rationale', '—'))}  "]

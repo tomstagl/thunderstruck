@@ -15,9 +15,9 @@ from typing import Any
 
 _WHITESPACE_RUN = re.compile(r"[ \t]+")
 _BACKTICKS = re.compile(r"`+")
-# C0 controls, DEL, and bidi overrides/isolates: shown as visible \\uXXXX, so a
+# C0/C1 controls, DEL, and bidi marks/overrides/isolates: shown as visible \\uXXXX, so a
 # field can't hide characters or reverse what the reader sees.
-_INVISIBLE = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f‎‏‪-‮⁦-⁩]")
+_INVISIBLE = re.compile("[\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f-\\x9f\\u061c\\u200e\\u200f\\u202a-\\u202e\\u2066-\\u2069]")
 
 # A renderer turns substrings into links whatever the escaping: autolinks run
 # on text nodes after parsing (GFM: http(s)://, www., e-mail; linkify-it, as in
@@ -27,9 +27,10 @@ _INVISIBLE = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f‎‏‪-‮⁦-⁩]")
 # code span, which nothing linkifies. GitHub's emoji shortcodes likewise.
 _TOKEN = re.compile(r"\S+")
 _LINKISH = re.compile(
-    r"://|www\.|mailto:|xmpp:|@"               # scheme, www., e-mail
+    r"://|//|www\.|mailto:|xmpp:|@"            # scheme, protocol-relative, www., e-mail
     r"|\.[^\W\d_]{2}"                           # a dot then two letters: a domain-like word
-    r"|:[a-z0-9_+-]*[a-z][a-z0-9_+-]*:",         # emoji shortcode (needs a letter: not 10:30:45)
+    r"|:[a-z0-9_+-]*[a-z][a-z0-9_+-]*:"          # emoji shortcode (needs a letter: not 10:30:45)
+    r"|:[+-]1:|:100:|:1234:",                    # ...and GitHub's letterless ones
     re.IGNORECASE)
 
 # ASCII punctuation CommonMark/GFM/GitHub give meaning to inline; each may be

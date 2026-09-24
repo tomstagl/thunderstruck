@@ -45,9 +45,15 @@ def _hrefs(markdown: str) -> list[str]:
         def handle_starttag(self, tag, attrs):
             if tag == "a":
                 self.hrefs.append(dict(attrs).get("href", ""))
-    parser = Hrefs()
-    parser.feed(test_mdtext._renderer().render(markdown))
-    return parser.hrefs
+    import cmarkgfm
+    from cmarkgfm.cmark import Options
+    hrefs: list[str] = []
+    for html in (test_mdtext._renderer().render(markdown),
+                 cmarkgfm.github_flavored_markdown_to_html(markdown, options=Options.CMARK_OPT_UNSAFE)):
+        parser = Hrefs()
+        parser.feed(html)
+        hrefs += parser.hrefs
+    return hrefs
 
 
 def test_hostile_model_text_stays_inert(linked_copy, plugin_root):
@@ -102,3 +108,27 @@ def test_hostile_repository_names_stay_inert(scanned_copy, plugin_root):
         rows = renderer(ranked).tags.count("tr")
         assert rows == len(hs["hotspots"]) + 1, "a hostile file name must not split the row"
     assert render(markdown).tags.count("h1") == 1, "a warning must not become a heading"
+
+
+
+def test_context_warnings_are_strings_and_capped_visibly():
+    many = [f"w{n}" for n in range(25)]
+    kept = report._context_warnings([*many, {"not": "a string"}, 7])
+    assert kept[:20] == many[:20]
+    assert kept[20] == "5 more context warning(s) not shown; see context.json"
+    assert len(kept) == 21
+    assert report._context_warnings("not a list") == []
+    assert report._context_warnings(["a", None, "b"]) == ["a", "b"]
+
+
+def test_evidence_without_a_note_has_no_dangling_dash(linked_copy, plugin_root):
+    hid, doc = _valid_finding(linked_copy, _hotspots(linked_copy))
+    for ev in doc["findings"][0]["evidence"]:
+        ev.pop("note", None)
+    _write_finding(linked_copy, hid, doc)
+    assert _validate(linked_copy, plugin_root).returncode == 0
+    subprocess.run([sys.executable, str(plugin_root / "scripts" / "report.py"),
+                    "--repo", str(linked_copy)], check=True, capture_output=True)
+    markdown = (linked_copy / ".thunderstruck" / "report.md").read_text()
+    evidence = [line for line in markdown.splitlines() if line.startswith("- _")]
+    assert evidence and not any(line.rstrip().endswith("—") for line in evidence), evidence

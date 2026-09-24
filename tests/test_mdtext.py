@@ -202,7 +202,8 @@ def test_github_only_syntax_is_neutralised():
 
 @pytest.mark.parametrize("payload", ["HTTP://E.CO/x.png", "Http://evil.com", "WWW.E.CO",
                                      "_@.h", "a@.b", "a@b.co:smile:", "':smile:www.e.co``",
-                                     "x:https://evil.com/p.png"])
+                                     "x:https://evil.com/p.png", "see //localhost:8080/x",
+                                     "//127.0.0.1/a", "(//169.254.169.254/latest)", "}//10.0.0.1:80"])
 @pytest.mark.parametrize("renderer", RENDERERS)
 def test_review_payloads_stay_inert(payload, renderer):
     """Found in the design review: case, fence merging, GFM's broad e-mails,
@@ -216,6 +217,16 @@ def test_times_are_not_emoji():
     assert mdtext.text("at 10:30:45") == "at 10:30:45"
 
 
+@pytest.mark.parametrize("code", [":+1:", ":-1:", ":100:", ":1234:"])
+def test_letterless_github_emoji_are_code(code):
+    assert mdtext.text(f"ok {code}") == f"ok `{code}`"
+
+
+@pytest.mark.parametrize("char", ["\u061c", "\x9b", "\u202e", "\u2066"])
+def test_bidi_marks_and_c1_controls_are_visible(char):
+    assert mdtext.text(f"a{char}b") == f"a\\\\u{ord(char):04x}b"
+
+
 @pytest.mark.parametrize("renderer", RENDERERS)
 def test_fuzzed_text_stays_inert(renderer):
     """A seeded property test: random mixes of Markdown-significant fragments."""
@@ -223,14 +234,27 @@ def test_fuzzed_text_stays_inert(renderer):
     rng = random.Random(28)
     parts = ["[", "]", "(", ")", "!", "<", ">", "`", "``", "*", "_", "~", "|", "&", "#", "$",
              ":", "@", ".", "/", "\\", "-", "+", "=", "1.", " ", "\n", "\t", "a", "b", "co",
-             "http://", "HTTPS://", "www.", "mailto:", "x.io", "smile", "e.co", "&copy;", "<img>"]
+             "http://", "HTTPS://", "www.", "mailto:", "x.io", "smile", "e.co", "&copy;", "<img>",
+             "//", "localhost", "127.0.0.1", ":1234:", "</sub>", "<!--", "]:", "**", "__"]
     for _ in range(400):
         payload = "".join(rng.choice(parts) for _ in range(rng.randint(1, 14)))
-        for markdown in (mdtext.text(payload), f"- {mdtext.text(payload)}",
-                         "| a |\n|---|\n| " + mdtext.text(payload, cell=True) + " |"):
+        # every position report.py puts untrusted text in
+        positions = {
+            "paragraph": (mdtext.text(payload), set()),
+            "list item": (f"- {mdtext.text(payload)}", set()),
+            "nested item": (f"- a\n  - {mdtext.text(payload)}", set()),
+            "cell": ("| a |\n|---|\n| " + mdtext.text(payload, cell=True) + " |", set()),
+            "heading": (f"### FR-001 · {mdtext.text(payload, heading=True)}", {"h3"}),
+            "bold": (f"**{mdtext.text(payload)}** · x", {"strong"}),
+            "emphasis": (f"- _{mdtext.text(payload)}_ x", {"em"}),
+            "sub": (f"<sub>key {mdtext.code(payload)}</sub>", {"sub"}),
+        }
+        for position, (markdown, own) in positions.items():
             html = renderer(markdown)
-            bad = {"a", "img", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "pre", "blockquote",
-                   "ol", "strong", "em", "del", "script", "b"} & set(html.tags)
-            assert not bad, (payload, markdown, html.tags)
-            if not markdown.startswith("|"):
+            bad = ({"a", "img", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "pre", "blockquote",
+                    "ol", "strong", "em", "del", "script", "b"} - own) & set(html.tags)
+            assert not bad, (position, payload, markdown, html.tags)
+            for tag in own:
+                assert html.tags.count(tag) == 1, (position, payload, markdown, html.tags)
+            if position in ("paragraph", "list item"):
                 assert _flat("".join(html.text)) in (_flat(payload), "—"), (payload, markdown)

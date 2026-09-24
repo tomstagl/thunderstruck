@@ -21,7 +21,7 @@ Everything runs through `uv`. The scripts carry PEP 723 inline metadata, so
 # Full test suite. markdown-it-py/linkify-it-py (VS Code-like) and cmarkgfm (GitHub's
 # engine) render report.md in the inert-text tests (#28); without them those tests
 # skip locally, and CI requires them.
-uv run --with pytest --with pyyaml --with lizard --with markdown-it-py --with linkify-it-py --with cmarkgfm pytest tests/ -q
+uv run --with pytest --with pyyaml --with lizard --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/ -q
 
 # One test
 uv run --with pytest --with pyyaml --with lizard pytest \
