@@ -22,6 +22,7 @@ validate.py exactly like a real investigator's would.
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import os
 import re
@@ -300,6 +301,26 @@ def generate() -> str:
     return header + report
 
 
+REGENERATE = "uv run scripts/gen_sample_report.py"
+DIFF_LINES = 80
+
+
+def check(dest: Path, body: str) -> tuple[bool, str]:
+    """Compare the committed sample with a fresh generation."""
+    if not dest.is_file():
+        return False, f"{dest.name} does not exist — regenerate with: {REGENERATE}"
+    current = dest.read_text(encoding="utf-8")
+    if current == body:
+        return True, f"{dest.name} is up to date"
+    diff = list(difflib.unified_diff(current.splitlines(), body.splitlines(),
+                                     f"{dest.name} (committed)", f"{dest.name} (generated)",
+                                     lineterm=""))
+    shown = diff[:DIFF_LINES]
+    if len(diff) > DIFF_LINES:
+        shown.append(f"… {len(diff) - DIFF_LINES} more diff line(s)")
+    return False, "\n".join([f"{dest.name} is stale:", *shown, f"regenerate with: {REGENERATE}"])
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="gen_sample_report.py")
     ap.add_argument("--check", action="store_true")
@@ -308,11 +329,9 @@ def main(argv: list[str] | None = None) -> int:
     dest = c.plugin_root() / "examples" / "sample-report.md"
     body = generate()
     if args.check:
-        if not dest.is_file():
-            print(f"{dest} does not exist", file=sys.stderr)
-            return 1
-        print(f"{dest.name} regenerated cleanly")
-        return 0
+        ok, message = check(dest, body)
+        print(message, file=sys.stdout if ok else sys.stderr)
+        return 0 if ok else 1
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(body, encoding="utf-8")
     print(f"wrote {dest} ({len(body.splitlines())} lines)")

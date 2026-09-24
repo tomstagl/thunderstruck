@@ -45,6 +45,9 @@ jobs:
       - name: Generated docs are in sync
         run: uv run --python ${{ matrix.python }} scripts/gen_catalog_docs.py --check
 
+      - name: Sample report is in sync
+        run: uv run --python ${{ matrix.python }} scripts/gen_sample_report.py --check
+
   dogfood:
     name: scan this repo with itself
     runs-on: ubuntu-latest

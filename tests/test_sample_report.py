@@ -94,3 +94,34 @@ def test_real_report_never_prints_the_label(scanned_copy, plugin_root):
     assert gen.DATE_LABEL not in report
     scanned = _hotspots(scanned_copy)["generated_at"][:10]
     assert f"Scanned {scanned} · " in report, "a real scan prints its real date, unlabelled"
+
+
+# -------------------------------------------------------------- check mode --
+
+
+def test_check_passes_on_an_identical_sample(tmp_path):
+    dest = tmp_path / "sample-report.md"
+    dest.write_text("same\n")
+    assert gen.check(dest, "same\n") == (True, "sample-report.md is up to date")
+
+
+def test_check_shows_the_diff_and_how_to_regenerate(tmp_path):
+    dest = tmp_path / "sample-report.md"
+    dest.write_text("a\nold\n")
+    ok, message = gen.check(dest, "a\nnew\n")
+    assert not ok
+    assert "-old" in message and "+new" in message
+    assert message.endswith(f"regenerate with: {gen.REGENERATE}")
+
+
+def test_check_fails_on_a_missing_sample(tmp_path):
+    ok, message = gen.check(tmp_path / "sample-report.md", "x\n")
+    assert not ok and "does not exist" in message and gen.REGENERATE in message
+
+
+def test_check_truncates_long_diffs(tmp_path):
+    dest = tmp_path / "sample-report.md"
+    dest.write_text("".join(f"old {n}\n" for n in range(200)))
+    ok, message = gen.check(dest, "".join(f"new {n}\n" for n in range(200)))
+    assert not ok and "more diff line(s)" in message
+    assert len(message.splitlines()) <= gen.DIFF_LINES + 3
