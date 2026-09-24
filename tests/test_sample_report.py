@@ -50,3 +50,47 @@ def test_fixture_ignores_user_git_config(tmp_path, monkeypatch):
 
     assert len(hostile_head) == 40, "the fixture must stay sha1"
     assert hostile_head == clean_head
+
+
+# ------------------------------------------------------------- pinned dates --
+
+import pytest  # noqa: E402
+
+import gen_sample_report as gen  # noqa: E402
+
+REPORT = ("# thunderstruck — fixture\n\n"
+          "**fixture** · `main` @ `446de9b`  \n"
+          "Scanned 2026-09-24 · window `2020-01-01` (since 2020-01-01, 18 commits)  \n\n"
+          "`component:default/fixture-app` · 4 edge(s), 1 hop · fetched 2026-09-23 (1 days ago) · x\n")
+
+
+def test_pin_dates_rewrites_and_labels():
+    out = gen.pin_dates(REPORT, "2025-07-29")
+    assert "Scanned 2025-07-29 (dates fixed for this sample) · window" in out
+    assert "fetched 2025-07-29 (0 days ago)" in out
+    assert "2026-" not in out
+
+
+@pytest.mark.parametrize("broken", [
+    REPORT.replace("Scanned 2026-09-24", "Ran 2026-09-24"),
+    REPORT.replace("fetched 2026-09-23 (1 days ago)", "fetched on 2026-09-23"),
+    REPORT + "Scanned 2026-09-25 · again\n",
+])
+def test_pin_dates_requires_exactly_one_match(broken):
+    with pytest.raises(SystemExit, match="matched"):
+        gen.pin_dates(broken, "2025-07-29")
+
+
+def test_real_report_never_prints_the_label(scanned_copy, plugin_root):
+    """AC-5: fixed dates exist only in the generator, never in a real scan."""
+    import sys
+    from test_pipeline import _hotspots, _valid_finding, _validate, _write_finding
+    hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
+    _write_finding(scanned_copy, hid, doc)
+    assert _validate(scanned_copy, plugin_root).returncode == 0
+    subprocess.run([sys.executable, str(plugin_root / "scripts" / "report.py"),
+                    "--repo", str(scanned_copy)], check=True, capture_output=True)
+    report = (scanned_copy / ".thunderstruck" / "report.md").read_text()
+    assert gen.DATE_LABEL not in report
+    scanned = _hotspots(scanned_copy)["generated_at"][:10]
+    assert f"Scanned {scanned} · " in report, "a real scan prints its real date, unlabelled"
