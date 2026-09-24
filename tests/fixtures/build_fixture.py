@@ -287,6 +287,21 @@ def add_service_context(repo: Path, python: str, stub: Path) -> None:
     profile.write_text(existing + "\n".join(lines), encoding="utf-8")
 
 
+def isolated_git_env(base: dict | None = None) -> dict:
+    """The environment every fixture git call runs in.
+
+    No user or system git configuration, and no GIT_* variable from the
+    caller: commit signing, global hooks, init templates, injected config
+    (GIT_CONFIG_PARAMETERS / GIT_CONFIG_COUNT) and a non-default hash would
+    each change the fixture's SHAs, or stop the build.
+    """
+    env = {k: v for k, v in (os.environ if base is None else base).items()
+           if not k.startswith("GIT_")}
+    env["GIT_CONFIG_GLOBAL"] = os.devnull
+    env["GIT_CONFIG_NOSYSTEM"] = "1"
+    return env
+
+
 def add_remote(repo: Path, url: str, name: str = "origin", tracking: bool = True) -> None:
     """Give the fixture a remote for report links. With `tracking`, HEAD is
     also on a remote-tracking branch, as if it had been pushed. No commit is
@@ -298,7 +313,7 @@ def add_remote(repo: Path, url: str, name: str = "origin", tracking: bool = True
 
 def run(repo: Path, *args: str, env: dict | None = None) -> None:
     subprocess.run(["git", "-C", str(repo), *args], check=True,
-                   capture_output=True, text=True, env=env)
+                   capture_output=True, text=True, env=env or isolated_git_env())
 
 
 def build(dest: Path, base_date: datetime | None = None) -> Path:
@@ -315,7 +330,8 @@ def build(dest: Path, base_date: datetime | None = None) -> Path:
         shutil.rmtree(dest)
     dest.mkdir(parents=True)
 
-    run(dest, "init", "-q", "-b", "main")
+    # an empty template: no sample hooks; an explicit hash: no surprise default
+    run(dest, "init", "-q", "--template=", "--object-format=sha1", "-b", "main")
     run(dest, "config", "user.name", "Fixture Author")
     run(dest, "config", "user.email", "fixture@example.com")
 
@@ -328,7 +344,7 @@ def build(dest: Path, base_date: datetime | None = None) -> Path:
     (dest / "README.md").write_text("# fixture repo\n\nPlanted fractures for thunderstruck tests.\n")
 
     start = base_date or (datetime.now(timezone.utc) - timedelta(days=300))
-    base_env = dict(os.environ)
+    base_env = isolated_git_env()
 
     for n, (subject, paths) in enumerate(HISTORY):
         when = (start + timedelta(days=n * 12)).isoformat()
