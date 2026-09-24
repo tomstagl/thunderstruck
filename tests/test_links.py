@@ -44,7 +44,9 @@ def test_parse_remote(url, host, base):
     "", "   ", "/srv/git/checkout.git", "file:///srv/git/checkout.git", "../checkout",
     "./checkout", "C:\\repos\\checkout", "https://github.com/", "https://github.com",
     "https://github.com:bad/x", "ftp://github.com/acme/x", "https://github.com/acme/{sha}",
-    "https://github.com/acme/x y", "git@github.com:acme/x#frag"])
+    "https://github.com/acme/x y", "git@github.com:acme/x#frag",
+    "git@git.example.com:acme/x)y`<z>.git", "https://github.com/acme/x](y)",
+    "https://[::1]:8443/acme/x.git"])
 def test_unlinkable_remotes(url):
     assert L.parse_remote(url) is None
 
@@ -65,7 +67,10 @@ def test_provider_is_detected_from_exact_hosts_only(host, provider):
 @pytest.mark.parametrize("value, ok", [
     ("https://git.example.com/acme/x", True), ("http://git.example.com/x", True),
     ("javascript:alert(1)", False), ("https:///x", False), ("git.example.com/x", False),
-    ("https://git.example.com/{x}", False), ("https://git.example.com/a b", False)])
+    ("https://git.example.com/{x}", False), ("https://git.example.com/a b", False),
+    ("https://bob:TOKEN@git.example.com/acme/x", False), ("https://git.example.com/a)b", False),
+    ("https://git.example.com/a?x=1", False), ("https://git.example.com:bad/a", False),
+    ("https://git.example.com:8443/acme/x", True)])
 def test_valid_base_url(value, ok):
     assert L.valid_base_url(value) is ok
 
@@ -180,7 +185,7 @@ def test_template_without_fragment_has_no_whole_file_link_when_lines_are_in_the_
     ("{base}/{path}#{start}", None),
     ("{base}/{sha.__class__}", "{sha.__class__}"),
     ("{base}/{branch}", "{branch}"),
-    ("{base}/{path", "unbalanced brace"),
+    ("{base}/{path", "an unbalanced brace"),
 ])
 def test_template_error(template, error):
     assert L.template_error(template) == error
@@ -199,6 +204,11 @@ def test_template_error(template, error):
     ({"base_url": "https://git.example.com/{x}"}, "base_url"),
     ({"code_template": "{base}/{sha.__class__}", "commit_template": "{base}"}, "{sha.__class__}"),
     ({"code_template": "{base}/{path}"}, "set together"),
+    ({"code_template": "{base}/static/page", "commit_template": "{base}/{sha}"}, "no {sha}"),
+    ({"code_template": "{base}/{sha}", "commit_template": "{base}/{sha}"}, "no {path}"),
+    ({"code_template": "{base}/{sha}/{path}", "commit_template": "{base}/c/{sha}#{path}"},
+     "commit_template has {path}"),
+    ({"code_template": "{base}/{sha}/{path}", "commit_template": "{base}/c"}, "no {sha}"),
     ({"commit_template": "{base}/{sha}"}, "set together"),
 ])
 def test_invalid_config_disables_links_with_one_warning(links, fragment):
@@ -318,7 +328,8 @@ def test_token_in_remote_never_reaches_a_url_or_warning(tmp_path):
 
 
 @pytest.mark.parametrize("change", [
-    "modified", "staged", "committed_after_scan", "untracked", "ignored", "symlink", "deleted"])
+    "modified", "staged", "committed_after_scan", "untracked", "ignored", "symlink", "deleted",
+    "assume_unchanged", "skip_worktree", "symlinked_dir", "submodule"])
 def test_files_that_differ_from_the_scanned_commit_are_not_linked(tmp_path, change):
     repo, sha = _repo(tmp_path)
     target = "src/a.ts"
@@ -347,6 +358,28 @@ def test_files_that_differ_from_the_scanned_commit_are_not_linked(tmp_path, chan
         target = "src/link.ts"
     elif change == "deleted":
         (repo / target).unlink()
+    elif change in ("assume_unchanged", "skip_worktree"):
+        _git(repo, "update-index", f"--{change.replace('_', '-')}", target)
+        (repo / target).write_text("changed\n")
+    elif change == "symlinked_dir":
+        (repo / "lnk").symlink_to("src")
+        _git(repo, "add", "lnk")
+        _git(repo, "commit", "-qm", "dir link")
+        _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+        sha = _git(repo, "rev-parse", "HEAD")
+        target = "lnk/a.ts"
+    elif change == "submodule":
+        sub = tmp_path / "sub"
+        sub.mkdir()
+        _git(sub, "init", "-q")
+        (sub / "f.c").write_text("int x;\n")
+        _git(sub, "add", ".")
+        _git(sub, "commit", "-qm", "sub")
+        _git(repo, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(sub), "vendor")
+        _git(repo, "commit", "-qm", "add submodule")
+        _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+        sha = _git(repo, "rev-parse", "HEAD")
+        target = "vendor/f.c"
     res = L.link_context(repo, {}, sha, [target, "./src/b.ts"], [])
     assert res.ctx.code(target, 1) is None
     assert res.ctx.code("src/b.ts", 1), "an unchanged file stays linked"
@@ -397,3 +430,33 @@ def test_unknown_scanned_commit_is_reported(tmp_path):
     repo, _ = _repo(tmp_path)
     res = L.link_context(repo, {}, "HEAD", [], [])
     assert res.ctx is None and "scanned commit" in res.warnings[0]
+
+
+def test_paths_leaving_the_repo_are_unlinked_without_touching_git(tmp_path):
+    repo, sha = _repo(tmp_path)
+    res = L.link_context(repo, {}, sha, ["src/../../outside.txt", "src/a.ts"], [])
+    assert res.ctx is not None, res.warnings
+    assert res.ctx.code("src/../../outside.txt", 1) is None
+    assert res.ctx.code("src/a.ts", 1)
+    assert str(tmp_path) not in " ".join(res.warnings)
+
+
+def test_git_failures_name_no_local_path(tmp_path, monkeypatch):
+    repo, sha = _repo(tmp_path)
+
+    def boom(repo_root, *args, **kw):
+        raise L.c.ThunderstruckError(f"git {' '.join(args)} failed: fatal: {repo_root} is broken")
+    monkeypatch.setattr(L.c, "git", boom)
+    res = L.link_context(repo, {}, sha, ["src/a.ts"], [])
+    assert res.ctx is None
+    assert res.warnings == [f"{L.NOT_LINKED}a git command failed in this repository"]
+
+
+def test_git_timeout_is_named(tmp_path, monkeypatch):
+    repo, sha = _repo(tmp_path)
+
+    def slow(repo_root, *args, **kw):
+        raise subprocess.TimeoutExpired(["git", "-C", str(repo_root), *args], 30)
+    monkeypatch.setattr(L.c, "git", slow)
+    res = L.link_context(repo, {}, sha, [], [])
+    assert res.warnings == [f"{L.NOT_LINKED}git remote did not answer within 30s"]

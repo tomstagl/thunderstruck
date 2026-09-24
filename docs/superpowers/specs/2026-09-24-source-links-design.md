@@ -42,11 +42,13 @@ commit_template = "{base}/commits/{sha}"
 
 Validation (`config_from_profile`). Any failure disables linking and produces exactly one warning, which names the key:
 
+- `[links]` contains a key that is not listed above. A typo such as `provder` must not be silently ignored.
 - `enabled` is not a bool, or `remote`, `provider`, `base_url` or a template is not a string.
 - `provider` is not one of the three.
-- `base_url` has a scheme other than `http`/`https`, has no host, or contains `{`, `}` or whitespace.
+- `base_url` is not a plain `http`/`https` URL. It must have a host, and must not contain credentials, a query or a fragment. The host must match `[A-Za-z0-9.-]+(:port)?` and the path `[A-Za-z0-9._~%/+-]`. The value goes verbatim into Markdown link targets, so nothing in it may close a link.
 - Only one of the two templates is set.
-- A template uses a placeholder other than `{base} {sha} {path} {start} {end}`.
+- `code_template` uses a placeholder other than `{base} {sha} {path} {start} {end}`, or lacks `{sha}` or `{path}`. Every link must be pinned to the scanned commit and to the cited file.
+- `commit_template` uses anything but `{base}` and `{sha}`, or lacks `{sha}`.
 
 A profile that fails to load (bad TOML) produces the warning *"references are not linked: .thunderstruck.toml could not be read"*. The report is still rendered.
 
@@ -72,7 +74,7 @@ Rules:
 - **Userinfo is always dropped**, whether user, password or token. CI remotes routinely carry `x-access-token:…@`.
 - The ssh port is dropped, because it is not the web port. An https or http port is kept.
 - A trailing `.git` and any trailing `/` are stripped. GitLab subgroups are kept.
-- A base containing `{`, `}` or whitespace is rejected, so it can never feed template substitution.
+- A parsed base is held to the same character sets as `base_url` (§2). A remote with `)`, a backtick, braces or an IPv6 literal host is treated as having no web address, and the warning asks for `base_url`.
 - An SSH host alias from `~/.ssh/config` (`git@github-work:acme/x`) parses to host `github-work`. That is not an exact host, so the warning asks for `provider` and `base_url`.
 
 ## 4. Building URLs
@@ -102,7 +104,11 @@ The SHA is always the full `repo.head` from `hotspots.json`, the commit that was
 
 **`location.lines`.** An int, or a string matching `^\s*(\d+)(?:\s*-\s*(\d+))?\s*$`, with `1 ≤ start ≤ end ≤` the number of lines in the file on disk. The file is unchanged since the scanned commit (§6), so that count is the count at the scanned commit. Anything else, such as `"L16"`, an en dash, a list, or a range past the end of the file, gives a whole-file link. The displayed text stays exactly as the model wrote it.
 
-A ref that fails to parse is shown exactly as today, unlinked. The hotspot table, the clean and incomplete lists, `index.json` and the guardrail are out of scope (see the ticket).
+A `code` ref with a reversed range (`a.ts:28-16`, which `validate.py` accepts) is anchored as `16-28`.
+
+**Markdown safety.** Every displayed ref, and a commit subject, is written as a CommonMark code span. The fence is one backtick longer than the longest backtick run in the text, padded when the text starts or ends with a backtick, and newlines are replaced by spaces. A model-written `lines` value or a file name therefore cannot close the span and inject a link of its own.
+
+A ref that fails to parse is shown as today, unlinked. The hotspot table, the clean and incomplete lists, `index.json` and the guardrail are out of scope (see the ticket).
 
 ## 6. Links must never show other lines
 
@@ -117,9 +123,13 @@ A ref that fails to parse is shown exactly as today, unlinked. The hotspot table
 
 **Push state.** Links pinned to a commit the host does not have will 404 until it is pushed. For the scanned SHA and every cited commit, `git branch -r --contains <sha> --format=%(refname)` must list a ref under `refs/remotes/<remote>/`. This check is offline: it reads remote-tracking refs and never contacts the host. Commits that fail the check are still linked, because the links start working once the commits are pushed. The warning is *"3 linked commit(s) are on no branch of origin known locally (abc1234, …; normal in a detached or shallow CI checkout); their links resolve once pushed"*. The check is skipped when the base came from `base_url` with no remote, because there is nothing to check against.
 
+**Paths that leave the repo.** A cited path that is absolute, or has a `..` segment after normalisation, is left unlinked and never reaches git. `validate.py` normalises only leading `./`, so `src/../../x` can pass validation.
+
+**Index flags.** `git diff` trusts the index. A cited file flagged assume-unchanged or skip-worktree (`git ls-files -v` tag lowercase or `S`) is treated as changed.
+
 **Commit ids.** Cited commit tokens are expanded with `git rev-parse --verify <token>^{commit}` inside `link_context`, which returns a token→full-SHA map. A token that does not expand is left unlinked.
 
-**Failure handling.** Every git call uses a 30-second timeout. `ThunderstruckError`, `subprocess.TimeoutExpired` and `OSError` all end in *"references are not linked: <reason>"* with no links at all. `report.py` also wraps the whole linking step, so an unexpected exception degrades to that warning and never fails the report.
+**Failure handling.** Every git call uses a 30-second timeout. A timeout ends in *"references are not linked: git <subcommand> did not answer within 30s"*. Any other git failure (`ThunderstruckError`, `OSError`) ends in the fixed *"references are not linked: a git command failed in this repository"*, with no links at all. git's own message is never copied into the report, because it can carry local absolute paths and whole command lines, and the report is meant to be shared. `report.py` also wraps the whole linking step, so an unexpected exception degrades to that warning and never fails the report.
 
 ## 7. Output contracts
 
@@ -143,7 +153,8 @@ A ref that fails to parse is shown exactly as today, unlinked. The hotspot table
 ## 8. Security
 
 - No credentials in output (§3). A test runs with a token-bearing remote and checks that `report.md` and `report.json` contain neither the token nor the username.
-- Only `http`/`https` URLs are emitted, whether they come from the remote or from `base_url`.
+- Only `http`/`https` URLs are emitted, whether they come from the remote or from `base_url`. `base_url` may not carry credentials, and both kinds of base are limited to a strict character set (§2, §3).
+- Displayed text is fenced so it cannot become a link (§5). git error output never reaches the report (§6).
 - Templates are substituted in a single pass. A base containing braces is rejected, and unknown placeholders are rejected (§2, §4).
 - Path encoding (§4) prevents Markdown and link injection through file names. Finding prose is not touched by this feature.
 - No network access.

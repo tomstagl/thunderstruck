@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -109,7 +110,7 @@ def link_refs(repo: Path, head: str, findings: list[dict]) -> tuple[dict | None,
     try:
         try:
             profile = c.load_profile(repo)
-        except c.ThunderstruckError:
+        except (c.ThunderstruckError, ValueError):  # ValueError covers non-UTF-8 bytes
             _set_urls(findings, None, repo)
             return None, [f"{links.NOT_LINKED}.thunderstruck.toml could not be read"]
         paths: set[str] = set()
@@ -162,7 +163,9 @@ def _location_url(ctx: "links.LinkContext", loc: dict, repo: Path) -> str | None
 def _evidence_url(ctx: "links.LinkContext", result: "links.LinkResult", ev: dict) -> str | None:
     ref, etype = str(ev.get("ref") or "").strip(), ev.get("type")
     if etype == "code" and (m := CODE_REF.match(ref)):
-        return ctx.code(m["path"], int(m["start"]), int(m["end"]) if m["end"] else None)
+        start, end = int(m["start"]), int(m["end"] or m["start"])
+        # validate.py accepts a reversed range; the anchor must not be
+        return ctx.code(m["path"], min(start, end), max(start, end))
     if etype == "detector" and (m := DETECTOR_REF.match(ref)):
         return ctx.code(m["path"], int(m["line"]))
     if etype == "commit" and ref:
@@ -171,8 +174,20 @@ def _evidence_url(ctx: "links.LinkContext", result: "links.LinkResult", ev: dict
     return None
 
 
+def _code(text: str) -> str:
+    """A CommonMark code span that holds `text` whatever it contains.
+
+    The fence is one backtick longer than the longest run inside, so a model-
+    written range or a file name cannot close the span and inject a link.
+    """
+    text = " ".join(str(text).splitlines())
+    fence = "`" * (max((len(r) for r in re.findall(r"`+", text)), default=0) + 1)
+    pad = " " if text[:1] == "`" or text[-1:] == "`" else ""
+    return f"{fence}{pad}{text}{pad}{fence}"
+
+
 def _linked(text: str, url: str | None) -> str:
-    return f"[`{text}`]({url})" if url else f"`{text}`"
+    return f"[{_code(text)}]({url})" if url else _code(text)
 
 
 def _evidence_ref(ev: dict) -> str:
@@ -180,7 +195,7 @@ def _evidence_ref(ev: dict) -> str:
     url = ev.get("url")
     if ev.get("type") == "commit" and url and ref:
         sha, *rest = ref.split(None, 1)
-        return _linked(sha[:7], url) + (f" `{rest[0]}`" if rest else "")
+        return _linked(sha[:7], url) + (f" {_code(rest[0])}" if rest else "")
     return _linked(str(ev.get("ref")), url)
 
 

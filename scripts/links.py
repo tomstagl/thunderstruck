@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+import subprocess
 from urllib.parse import quote, urlsplit
 
 import _common as c
@@ -44,7 +45,11 @@ PLACEHOLDERS = frozenset({"base", "sha", "path", "start", "end"})
 _PLACEHOLDER = re.compile(r"\{([^{}]*)\}")
 _SCP = re.compile(r"^(?:[^@/\s]+@)?(?P<host>[A-Za-z0-9.-]{2,}):(?P<path>[^/\\].*)$")
 _URL_SCHEMES = frozenset({"http", "https", "ssh", "git", "git+ssh", "ssh+git"})
-_UNSAFE_IN_BASE = re.compile(r"[{}#?\s]")
+# A web base goes verbatim into Markdown link targets, so it is held to a
+# strict set: nothing that could close the link, start a fragment or query,
+# or be read as a template placeholder.
+_SAFE_HOST = re.compile(r"^[A-Za-z0-9.-]+(?::\d+)?$")
+_SAFE_PATH = re.compile(r"^[A-Za-z0-9._~%/+-]+$")
 _LINES = re.compile(r"^\s*(\d+)(?:\s*-\s*(\d+))?\s*$")
 
 
@@ -80,7 +85,7 @@ def parse_remote(url: str) -> Remote | None:
     path = path.strip("/")
     if path.endswith(".git"):
         path = path[:-4].rstrip("/")
-    if not path or _UNSAFE_IN_BASE.search(path) or _UNSAFE_IN_BASE.search(netloc):
+    if not path or not _SAFE_PATH.match(path) or not _SAFE_HOST.match(netloc):
         return None
     return Remote(host=host, base=f"{web}://{netloc}/{path}")
 
@@ -91,12 +96,18 @@ def detect_provider(host: str) -> str | None:
 
 
 def valid_base_url(value: str) -> bool:
+    """An http(s) web base with no credentials and nothing that breaks a link."""
     try:
         parts = urlsplit(value)
+        parts.port
     except ValueError:
         return False
-    return (parts.scheme in {"http", "https"} and bool(parts.hostname)
-            and not _UNSAFE_IN_BASE.search(value))
+    if parts.scheme not in {"http", "https"} or not parts.hostname:
+        return False
+    if parts.username or parts.password or parts.query or parts.fragment:
+        return False
+    path = parts.path.strip("/")
+    return bool(_SAFE_HOST.match(parts.netloc)) and (not path or bool(_SAFE_PATH.match(path)))
 
 
 def encode_path(path: str) -> str:
@@ -126,13 +137,18 @@ def parse_lines(value, total: int | None) -> tuple[int, int] | None:
     return None
 
 
-def template_error(template: str) -> str | None:
-    """None when every placeholder is allowed, else the first offending one."""
-    for name in _PLACEHOLDER.findall(template):
-        if name not in PLACEHOLDERS:
+def template_error(template: str, allowed=PLACEHOLDERS, required=()) -> str | None:
+    """None when the template is usable, else what is wrong with it."""
+    names = _PLACEHOLDER.findall(template)
+    for name in names:
+        if name not in allowed:
             return "{" + name + "}"
-    if "{" in _PLACEHOLDER.sub("", template) or "}" in _PLACEHOLDER.sub("", template):
-        return "unbalanced brace"
+    rest = _PLACEHOLDER.sub("", template)
+    if "{" in rest or "}" in rest:
+        return "an unbalanced brace"
+    for name in required:
+        if name not in names:
+            return "no {" + name + "}"
     return None
 
 
@@ -207,7 +223,6 @@ CONFIG_KEYS = frozenset({"enabled", "remote", "provider", "base_url",
 GIT_TIMEOUT = 30
 _HEX = re.compile(r"[0-9a-fA-F]{4,40}")
 _FULL_SHA = re.compile(r"[0-9a-f]{40}")
-_USERINFO = re.compile(r"(://)[^/@\s]+@")
 
 
 @dataclass(frozen=True)
@@ -253,14 +268,17 @@ def config_from_profile(profile) -> tuple[LinkConfig | None, list[str]]:
         return bad(f"provider must be one of {', '.join(sorted(TEMPLATES))}")
     base_url = section.get("base_url")
     if base_url is not None and not valid_base_url(base_url):
-        return bad("base_url must be an http(s) URL without braces, '#', '?' or spaces")
+        return bad("base_url must be a plain http(s) URL, with no credentials, query "
+                   "or fragment")
     code_t, commit_t = section.get("code_template"), section.get("commit_template")
     if (code_t is None) != (commit_t is None):
         return bad("code_template and commit_template must be set together")
-    for key, tpl in (("code_template", code_t), ("commit_template", commit_t)):
-        if tpl is not None and (err := template_error(tpl)):
-            return bad(f"{key} uses {err}; allowed: "
-                       + " ".join("{" + p + "}" for p in sorted(PLACEHOLDERS)))
+    rules = (("code_template", code_t, PLACEHOLDERS, ("sha", "path")),
+             ("commit_template", commit_t, frozenset({"base", "sha"}), ("sha",)))
+    for key, tpl, allowed, required in rules:
+        if tpl is not None and (err := template_error(tpl, allowed, required)):
+            return bad(f"{key} has {err}; allowed: "
+                       + " ".join("{" + p + "}" for p in sorted(allowed)))
     return LinkConfig(remote=section.get("remote"), provider=provider,
                       base_url=base_url.rstrip("/") if base_url else None,
                       code_template=code_t, commit_template=commit_t), []
@@ -278,11 +296,19 @@ def link_context(repo, profile, scanned_sha: str, cited_paths, cited_commits) ->
         return LinkResult(None, {}, [f"{NOT_LINKED}the scanned commit is unknown"])
     try:
         return _resolve(repo, cfg, scanned_sha, cited_paths, cited_commits)
-    except (c.ThunderstruckError, OSError) as exc:
-        reason = _USERINFO.sub(r"\1", str(exc).splitlines()[0] if str(exc) else type(exc).__name__)
-        return LinkResult(None, {}, [f"{NOT_LINKED}{reason}"])
-    except Exception as exc:  # subprocess.TimeoutExpired and anything unforeseen
-        return LinkResult(None, {}, [f"{NOT_LINKED}git did not answer ({type(exc).__name__})"])
+    except subprocess.TimeoutExpired as exc:
+        return LinkResult(None, {}, [f"{NOT_LINKED}git {_verb(exc.cmd)} did not answer "
+                                     f"within {GIT_TIMEOUT}s"])
+    except (c.ThunderstruckError, OSError):
+        # git's own message can carry local paths and full command lines; the
+        # report is shareable, so it gets a fixed reason instead
+        return LinkResult(None, {}, [f"{NOT_LINKED}a git command failed in this repository"])
+
+
+def _verb(cmd) -> str:
+    """The subcommand of a `git -C <repo> ...` argv, for a warning with no path."""
+    args = list(cmd or [])[3:]
+    return next((a for a in args if isinstance(a, str) and not a.startswith("-")), "command")
 
 
 def _git(repo, *args: str, check: bool = True) -> str:
@@ -329,7 +355,8 @@ def _resolve(repo, cfg: LinkConfig, sha: str, cited_paths, cited_commits) -> Lin
                         f"if {host} is an SSH alias) in [links] in .thunderstruck.toml")
 
     paths = sorted({p for p in (c.ref_path(x) for x in cited_paths) if p})
-    unlinked = _stale_paths(repo, sha, paths)
+    escaping = {p for p in paths if _escapes(p)}
+    unlinked = escaping | _stale_paths(repo, sha, [p for p in paths if p not in escaping])
     if unlinked:
         warnings.append(f"{len(unlinked)} cited file(s) differ from the scanned commit "
                         f"{sha[:7]} or are not in it, and are not linked: "
@@ -372,7 +399,19 @@ def _stale_paths(repo, sha: str, paths: list[str]) -> set[str]:
             regular.add(path)
     changed = set(filter(None, _git(repo, "--literal-pathspecs", "diff", "--name-only",
                                      "-z", sha, "--", *paths).split("\0")))
+    # diff trusts the index; a file flagged assume-unchanged (lowercase tag) or
+    # skip-worktree (S) can differ on disk without diff noticing
+    for entry in _git(repo, "--literal-pathspecs", "ls-files", "-v", "-z", "--",
+                      *paths).split("\0"):
+        tag, _, path = entry.partition(" ")
+        if path and (tag.islower() or tag == "S"):
+            changed.add(path)
     return {p for p in paths if p not in regular or p in changed}
+
+
+def _escapes(path: str) -> bool:
+    """True for a path that is absolute or climbs out with '..'."""
+    return path.startswith("/") or ".." in path.split("/")
 
 
 def _on_remote(repo, remote: str, sha: str) -> bool:
