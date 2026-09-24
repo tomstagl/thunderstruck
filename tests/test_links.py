@@ -81,7 +81,7 @@ def test_valid_base_url(value, ok):
 @pytest.mark.parametrize("path, encoded", [
     ("src/x.ts", "src/x.ts"),
     ("./src/x.ts", "src/x.ts"),
-    ("../src/x.ts", "src/x.ts"),          # same rule as validate.py
+    ("../src/x.ts", "../src/x.ts"),       # kept as written: path_problem rejects it
     ("src/my file.ts", "src/my%20file.ts"),
     ("src/a#b?.ts", "src/a%23b%3F.ts"),
     ("src/100%.ts", "src/100%25.ts"),

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -79,6 +80,8 @@ class Validator:
         self._pinned: str | None = None
         self._line_cache: dict[str, int | None] = {}
         self._sha_cache: dict[str, bool] = {}
+        self._index: dict[str, str] | None = None
+        self._resolved: dict[str, tuple[str, int | None, str | None]] = {}
 
     # ---------------------------------------------------------------- refs
 
@@ -86,6 +89,47 @@ class Validator:
         if rel not in self._line_cache:
             self._line_cache[rel] = _count_lines(self.repo / rel)
         return self._line_cache[rel]
+
+    def _tracked(self) -> dict[str, str]:
+        """{path: mode} for every entry in the git index, loaded once."""
+        if self._index is None:
+            index: dict[str, str] = {}
+            for entry in c.git(self.repo, "ls-files", "-s", "-z").split("\0"):
+                meta, _, path = entry.partition("\t")
+                if path:
+                    index.setdefault(path, meta.split(" ", 1)[0])
+            self._index = index
+        return self._index
+
+    def _resolve(self, raw: Any) -> tuple[str, int | None, str | None]:
+        """(canonical path, line count, error) for a cited path.
+
+        "Inside the repository" means in the git index. Every check runs before
+        the file is opened, so a path outside the repository is never read.
+        """
+        key = str(raw)
+        if key in self._resolved:
+            return self._resolved[key]
+        rel = c.ref_path(raw)
+        total: int | None = None
+        error: str | None = None
+        mode = None
+        if (why := c.path_problem(rel)):
+            error = (f"{why}. Cite the path relative to the repository root, exactly "
+                     f"as the bundle shows it")
+        elif (mode := self._tracked().get(rel)) is None:
+            error = ("is not tracked by git; untracked and ignored files can't be cited"
+                     if os.path.lexists(self.repo / rel) else "no such file in the repository")
+        elif mode == "120000":
+            error = "is a symbolic link; cite the file it points to"
+        elif mode == "160000":
+            error = "is a submodule, not a file"
+        elif not (self.repo / rel).resolve().is_relative_to(self.repo.resolve()):
+            error = "resolves outside the repository"
+        elif (total := self._lines_in(rel)) is None:
+            error = "is tracked but missing from the working tree"
+        self._resolved[key] = (rel, total, error)
+        return self._resolved[key]
 
     def _sha_ok(self, sha: str) -> bool:
         if sha not in self._sha_cache:
@@ -110,10 +154,9 @@ class Validator:
             if not m:
                 errors.append(f"{where}.ref {ref!r} is not path:line or path:start-end")
                 return etype
-            rel = c.ref_path(m.group("path"))
-            total = self._lines_in(rel)
-            if total is None:
-                errors.append(f"{where}.ref {ref!r} — no such file in the repository")
+            rel, total, problem = self._resolve(m.group("path"))
+            if problem:
+                errors.append(f"{where}.ref {ref!r} — {m.group('path')!r} {problem}")
             else:
                 last = int(m.group("end") or m.group("start"))
                 if int(m.group("start")) < 1 or last > total:
@@ -168,8 +211,10 @@ class Validator:
         loc = f.get("location")
         if not isinstance(loc, dict) or not loc.get("file"):
             errors.append(f"{where}.location.file is missing")
-        elif self._lines_in(c.ref_path(loc["file"])) is None:
-            errors.append(f"{where}.location.file {loc['file']!r} — no such file")
+        else:
+            _, _, problem = self._resolve(loc["file"])
+            if problem:
+                errors.append(f"{where}.location.file {loc['file']!r} {problem}")
 
         pats = f.get("missing_patterns")
         if not isinstance(pats, list) or not pats:

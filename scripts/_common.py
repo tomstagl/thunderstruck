@@ -364,11 +364,32 @@ class Filters:
 
 
 def ref_path(path: Any) -> str:
-    """A cited path as the validator resolves it, relative to the repo root.
+    """A cited path in canonical form: leading `./` segments removed, nothing else.
 
-    Shared so that report links point at exactly the file validate.py checked.
+    Shared so that the validator, the report and its links agree on one path.
+    `.github/x.yml` stays itself; `../x` and `/x` stay as written, so that
+    path_problem rejects them instead of this function rewriting them.
     """
-    return str(path).lstrip("./")
+    rel = str(path)
+    while rel.startswith("./"):
+        rel = rel[2:]
+    return rel
+
+
+_DRIVE = re.compile(r"^[A-Za-z]:")
+
+
+def path_problem(rel: str) -> str | None:
+    """Why a canonical cited path can't name a file in the repository, or None."""
+    if not rel:
+        return "is empty"
+    if rel.startswith("/") or _DRIVE.match(rel):
+        return "is absolute"
+    if "\\" in rel:
+        return "contains a backslash"
+    if ".." in rel.split("/"):
+        return "climbs out of the repository with '..'"
+    return None
 
 
 def read_text(path: Path) -> str | None:
