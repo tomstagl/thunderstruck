@@ -34,6 +34,7 @@ import mdtext as md  # noqa: E402
 from validate import CODE_REF, DETECTOR_REF, _count_lines  # noqa: E402
 
 CONFIDENCE_RANK = {"high": 0, "medium": 1, "low": 2}
+MAX_CONTEXT_WARNINGS = 20
 BADGE = {"high": "high", "medium": "medium", "low": "low"}
 
 
@@ -97,7 +98,9 @@ def collect(repo: Path) -> dict[str, Any]:
     return {"hotspots": hotspots, "findings": findings,
             "failed": failed, "clean": clean, "validation": validation,
             "context": c.load_service_context(repo),
-            "context_warnings": [str(w) for w in raw_warnings] if isinstance(raw_warnings, list) else [],
+            # context.json is a file on disk, not trusted structure: strings only, capped
+            "context_warnings": ([str(w) for w in raw_warnings if isinstance(w, str)][:MAX_CONTEXT_WARNINGS]
+                                 if isinstance(raw_warnings, list) else []),
             "links": link_meta, "link_warnings": link_warnings}
 
 
@@ -228,7 +231,7 @@ def render_service_context(ctx: dict | None, now: datetime) -> list[str]:
     age = _age_days(fetched, now)
     L = ["## Service context", "",
          f"{md.code(ctx['entity_ref'])} · {len(ctx['edges'])} edge(s), 1 hop · fetched "
-         f"{fetched[:10]}" + (f" ({age} days ago)" if age is not None else "")
+         f"{md.text(fetched[:10])}" + (f" ({age} days ago)" if age is not None else "")
          + f" · context {md.code(str(ctx.get('context_hash'))[:19])}", "",
          "Component-level context from the service catalog: it describes the whole "
          "component, not a file.", "",
@@ -250,7 +253,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
     counts: dict[str, int] = {}
     for f in findings:
         counts[f.get("confidence", "?")] = counts.get(f.get("confidence", "?"), 0) + 1
-    breakdown = ", ".join(f"{n} {k}" for k, n in
+    breakdown = ", ".join(f"{n} {md.text(k)}" for k, n in
                           sorted(counts.items(), key=lambda kv: CONFIDENCE_RANK.get(kv[0], 9)))
     files_affected = len({f["location"]["file"] for f in findings if f.get("location")})
 
@@ -295,7 +298,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
     for pid, cov in sorted(hs["pattern_coverage"].items()):
         if not cov.get("scanned"):
             continue
-        L.append(f"| {md.code(pid, cell=True)} | {md.text(cov['name'], cell=True)} | {cov['tier']} | "
+        L.append(f"| {md.code(pid, cell=True)} | {md.text(cov['name'], cell=True)} | {md.text(cov['tier'], cell=True)} | "
                  f"{lead_files.get(pid, 0)} | {per_pattern.get(pid, 0)} |")
     other = per_pattern.get("OTHER", 0)
     if other:

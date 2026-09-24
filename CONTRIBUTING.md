@@ -9,7 +9,7 @@ catalog work, not orchestration work**. If you find yourself editing
 ```bash
 git clone https://github.com/tomstagl/thunderstruck
 cd thunderstruck
-uv run --with pytest --with pyyaml --with lizard pytest tests/ -v
+uv run --with pytest --with pyyaml --with lizard --with markdown-it-py --with linkify-it-py --with cmarkgfm pytest tests/ -v
 ```
 
 ## Adding a stability pattern

@@ -4,6 +4,16 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.1
+
+### Security
+
+- Text a model or a scanned repository wrote can no longer render as a link, an image, HTML or report structure in `report.md` (#28). That covers finding fields, evidence notes, clean notes, validator errors, warnings, file names, symbols, and the repository and branch names.
+  - Any word in that text that could hold a link (URLs, e-mail addresses, `@`, domain-like words such as `api.example.com` or `deploy.py`) or an emoji shortcode is shown as code, not clickable. A quoted endpoint stays visible and copyable.
+  - Control and bidirectional-override characters are shown as `\uXXXX`, so a field can't hide text or reverse what the reader sees.
+  - The only links left in the report are the tool's own evidence links.
+- The test suite renders the report with GitHub's engine (`cmarkgfm`) and with a VS Code-like renderer (`markdown-it-py` with `linkify-it-py`), including a seeded fuzz test. CI requires those tests; locally they skip when the packages are missing.
+
 ## 0.5.0
 
 ### Changed

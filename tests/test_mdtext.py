@@ -12,12 +12,28 @@ import pytest
 import mdtext
 
 
+RENDERER_MODULES = ("markdown_it", "linkify_it", "cmarkgfm")
+
+
+def _require_renderers() -> None:
+    """Skip locally when the renderers are missing; fail in CI, which sets
+    THUNDERSTRUCK_REQUIRE_RENDERER so these tests can never silently skip."""
+    import importlib
+    missing = []
+    for name in RENDERER_MODULES:
+        try:
+            importlib.import_module(name)
+        except ImportError:
+            missing.append(name)
+    if missing and os.environ.get("THUNDERSTRUCK_REQUIRE_RENDERER"):
+        pytest.fail(f"renderer packages missing: {missing}")
+    if missing:
+        pytest.skip(f"renderer packages missing: {missing}")
+
+
 def _renderer():
-    if os.environ.get("THUNDERSTRUCK_REQUIRE_RENDERER"):
-        from markdown_it import MarkdownIt  # CI: a missing renderer is a failure
-    else:
-        MarkdownIt = pytest.importorskip("markdown_it").MarkdownIt
-        pytest.importorskip("linkify_it")
+    _require_renderers()
+    from markdown_it import MarkdownIt
     return MarkdownIt("gfm-like")
 
 
@@ -37,10 +53,27 @@ class _Html(HTMLParser):
         self.text.append(data)
 
 
-def render(markdown: str) -> _Html:
+def _parse(html: str) -> _Html:
     parsed = _Html()
-    parsed.feed(_renderer().render(markdown))
+    parsed.feed(html)
     return parsed
+
+
+def render(markdown: str) -> _Html:
+    """markdown-it with linkify: stricter than GitHub (links bare domains, as
+    VS Code's preview does)."""
+    return _parse(_renderer().render(markdown))
+
+
+def render_gh(markdown: str) -> _Html:
+    """cmark-gfm, GitHub's own engine, with its autolink and table extensions."""
+    _require_renderers()
+    import cmarkgfm
+    from cmarkgfm.cmark import Options
+    return _parse(cmarkgfm.github_flavored_markdown_to_html(markdown, options=Options.CMARK_OPT_UNSAFE))
+
+
+RENDERERS = [render, render_gh]
 
 
 HOSTILE = [
@@ -65,38 +98,51 @@ HOSTILE = [
 
 
 def _flat(s: str) -> str:
-    return " ".join(s.split())
+    """What a reader sees: controls made visible, whitespace collapsed and trimmed."""
+    return " ".join(mdtext._visible(" ".join(s.splitlines())).split())
 
 
+@pytest.mark.parametrize("renderer", RENDERERS)
 @pytest.mark.parametrize("payload", HOSTILE)
-def test_hostile_prose_renders_as_its_own_characters(payload):
-    html = render(mdtext.text(payload))
+def test_hostile_prose_renders_as_its_own_characters(payload, renderer):
+    html = renderer(mdtext.text(payload))
     assert set(html.tags) <= {"p", "code"}, html.tags
     assert _flat("".join(html.text)) == _flat(payload)
 
 
+@pytest.mark.parametrize("renderer", RENDERERS)
+@pytest.mark.parametrize("payload", HOSTILE + ["# not a heading", "--- not a rule", "+ nor a list",
+                                               "1. nor this", "2) nor this", "> nor a quote",
+                                               "    not code", "= setext"])
+def test_hostile_text_is_safe_as_list_item_content(payload, renderer):
+    html = renderer(f"- {mdtext.text(payload)}\n- next")
+    assert html.tags.count("li") == 2 and set(html.tags) <= {"ul", "li", "code", "p"}, html.tags
+
+
+@pytest.mark.parametrize("renderer", RENDERERS)
 @pytest.mark.parametrize("payload", HOSTILE)
-def test_hostile_text_keeps_a_table_row_intact(payload):
+def test_hostile_text_keeps_a_table_row_intact(payload, renderer):
     row = f"| {mdtext.text(payload, cell=True)} | {mdtext.code(payload, cell=True)} |"
-    html = render("| a | b |\n|---|---|\n" + row)
+    html = renderer("| a | b |\n|---|---|\n" + row)
     assert html.tags.count("tr") == 2 and html.tags.count("td") == 2, html.tags
     assert set(html.tags) <= {"table", "thead", "tbody", "tr", "th", "td", "code"}, html.tags
     assert "a" not in html.tags and "img" not in html.tags
 
 
+@pytest.mark.parametrize("renderer", RENDERERS)
 @pytest.mark.parametrize("payload", HOSTILE)
-def test_hostile_heading_stays_one_heading(payload):
-    html = render(f"### FR-001 · {mdtext.text(payload, heading=True)}\n\nnext")
+def test_hostile_heading_stays_one_heading(payload, renderer):
+    html = renderer(f"### FR-001 · {mdtext.text(payload, heading=True)}\n\nnext")
     assert html.tags.count("h3") == 1 and html.tags.count("p") == 1, html.tags
     assert _flat("".join(html.text)).startswith("FR-001 · " + _flat(payload))
 
 
-@pytest.mark.parametrize("payload", HOSTILE)
-def test_code_spans_show_anything_verbatim(payload):
-    html = render(mdtext.code(payload))
+@pytest.mark.parametrize("renderer", RENDERERS)
+@pytest.mark.parametrize("payload", HOSTILE + [" a ", "`", " ` "])
+def test_code_spans_show_anything_verbatim(payload, renderer):
+    html = renderer(mdtext.code(payload))
     assert html.tags == ["p", "code"], html.tags
-    assert "".join(html.text).strip() == " ".join(payload.replace("\r\n", "\n").split("\n")).strip() \
-        or _flat("".join(html.text)) == _flat(payload)
+    assert "".join(html.text).rstrip("\n") == mdtext._visible(" ".join(payload.splitlines()))
 
 
 def test_linked_is_the_only_way_to_make_a_link():
@@ -110,8 +156,15 @@ def test_linked_is_the_only_way_to_make_a_link():
     ("a_b*c", "a\\_b\\*c"),
     ("x # y", "x # y"),
     (None, "—"),
+    ("", "—"),
+    ("   ", "—"),
     (42, "42"),
     ("two\n\nlines\tand tab", "two lines and tab"),
+    ("- item", "\\- item"),
+    ("12. step", "12\\. step"),
+    ("# title", "\\# title"),
+    ("rtl\u202eevil", "rtl\\\\u202eevil"),   # shown as the text \u202e
+    ("nul\x00", "nul\\\\u0000"),
 ])
 def test_text_escapes_only_what_it_must(value, expected):
     assert mdtext.text(value) == expected
@@ -125,7 +178,9 @@ def test_heading_mode_escapes_hashes():
     ("a`b", "``a`b``"),
     ("`a", "`` `a ``"),
     ("x\ny", "`x y`"),
-    (None, "`—`"),
+    (None, "—"),
+    ("", "—"),
+    (" a ", "`  a  `"),
 ])
 def test_code_fences(value, expected):
     assert mdtext.code(value) == expected
@@ -142,3 +197,40 @@ def test_github_only_syntax_is_neutralised():
     assert "\\$x^2\\$" in mdtext.text("math $x^2$")
     assert "\\$\\$y\\$\\$" in mdtext.text("$$y$$")
     assert mdtext.text(":smile: done") == "`:smile:` done"
+
+
+
+@pytest.mark.parametrize("payload", ["HTTP://E.CO/x.png", "Http://evil.com", "WWW.E.CO",
+                                     "_@.h", "a@.b", "a@b.co:smile:", "':smile:www.e.co``",
+                                     "x:https://evil.com/p.png"])
+@pytest.mark.parametrize("renderer", RENDERERS)
+def test_review_payloads_stay_inert(payload, renderer):
+    """Found in the design review: case, fence merging, GFM's broad e-mails,
+    and an emoji pattern swallowing a URL scheme."""
+    html = renderer(mdtext.text(payload))
+    assert "a" not in html.tags and "img" not in html.tags, (mdtext.text(payload), html.tags)
+    assert _flat("".join(html.text)) == _flat(payload)
+
+
+def test_times_are_not_emoji():
+    assert mdtext.text("at 10:30:45") == "at 10:30:45"
+
+
+@pytest.mark.parametrize("renderer", RENDERERS)
+def test_fuzzed_text_stays_inert(renderer):
+    """A seeded property test: random mixes of Markdown-significant fragments."""
+    import random
+    rng = random.Random(28)
+    parts = ["[", "]", "(", ")", "!", "<", ">", "`", "``", "*", "_", "~", "|", "&", "#", "$",
+             ":", "@", ".", "/", "\\", "-", "+", "=", "1.", " ", "\n", "\t", "a", "b", "co",
+             "http://", "HTTPS://", "www.", "mailto:", "x.io", "smile", "e.co", "&copy;", "<img>"]
+    for _ in range(400):
+        payload = "".join(rng.choice(parts) for _ in range(rng.randint(1, 14)))
+        for markdown in (mdtext.text(payload), f"- {mdtext.text(payload)}",
+                         "| a |\n|---|\n| " + mdtext.text(payload, cell=True) + " |"):
+            html = renderer(markdown)
+            bad = {"a", "img", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "pre", "blockquote",
+                   "ol", "strong", "em", "del", "script", "b"} & set(html.tags)
+            assert not bad, (payload, markdown, html.tags)
+            if not markdown.startswith("|"):
+                assert _flat("".join(html.text)) in (_flat(payload), "—"), (payload, markdown)

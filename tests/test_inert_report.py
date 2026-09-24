@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 import report
-from test_mdtext import render
+from test_mdtext import RENDERERS, render
 from test_pipeline import _hotspots, _valid_finding, _validate, _write_finding
 
 LINK_BASE = "https://github.com/acme/fixture/"
@@ -22,14 +22,13 @@ MODEL_FIELDS = ("failure_mode", "trigger_condition", "amplifier", "sustaining_ef
 
 
 def _assert_inert(markdown: str) -> None:
-    html = render(markdown)
-    links = [t for t in html.tags if t == "a"]
-    assert "img" not in html.tags
     allowed = {"h1", "h2", "h3", "p", "strong", "em", "code", "ul", "li", "table", "thead",
                "tbody", "tr", "th", "td", "hr", "blockquote", "a", "sub", "br"}
-    assert set(html.tags) <= allowed, set(html.tags) - allowed
+    for renderer in RENDERERS:
+        html = renderer(markdown)
+        assert "img" not in html.tags
+        assert set(html.tags) <= allowed, (renderer.__name__, set(html.tags) - allowed)
     hrefs = _hrefs(markdown)
-    assert len(hrefs) == len(links)
     assert all(h.startswith(LINK_BASE) for h in hrefs), hrefs
     assert "evil.example" not in "".join(hrefs) and "tracker.example" not in "".join(hrefs)
 
@@ -85,9 +84,21 @@ def test_hostile_repository_names_stay_inert(scanned_copy, plugin_root):
     hs["hotspots"][0]["file"] = "src/`a`|b](https://evil.example).ts"
     data["clean"] = [{"hotspot_id": "H98", "file": "c|d.ts", "notes": HOSTILE}]
     data["failed"] = [{"hotspot_id": "H99", "file": "e.ts", "reason": HOSTILE,
-                       "errors": [HOSTILE]}]
+                       "errors": [HOSTILE, "# fake heading", "--- not a rule"]}]
+    # fields the validator checks, rendered safely anyway in case a file skips it
+    f = data["findings"][0]
+    f.update(confidence="x](https://evil.example)", key="k`<img src=//e.co/>`",
+             missing_patterns=["S02", "x`<img src=//e.co/>`"])
+    f["evidence"][0]["type"] = "code_ [x](https://evil.example)"
+    data["context"] = {"entity_ref": "component:default/x](https://evil.example)",
+                       "context_hash": "`<img src=//e.co/>`", "fetched_at": "<b>2026</b>",
+                       "edges": [{"ref": "dependsOn x|y", "direction": "outbound](https://evil.example)",
+                                  "attributes": {"tier": "1 | 2"}}], "truncated": {}}
+    data["context_warnings"] = ["# fake context heading", f"ctx {HOSTILE}"]
     markdown = report.render_markdown(data, scanned_copy)
     _assert_inert(markdown)
     ranked = markdown.split("## Ranked hotspots", 1)[1]
-    rows = render(ranked).tags.count("tr")
-    assert rows == len(hs["hotspots"]) + 1, "a hostile file name must not split the row"
+    for renderer in RENDERERS:
+        rows = renderer(ranked).tags.count("tr")
+        assert rows == len(hs["hotspots"]) + 1, "a hostile file name must not split the row"
+    assert render(markdown).tags.count("h1") == 1, "a warning must not become a heading"

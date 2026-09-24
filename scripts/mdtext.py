@@ -13,40 +13,57 @@ from __future__ import annotations
 import re
 from typing import Any
 
-_LINE_BREAKS = re.compile(r"[\r\n\t\v\f  ]+")
+_WHITESPACE_RUN = re.compile(r"[ \t]+")
 _BACKTICKS = re.compile(r"`+")
+# C0 controls, DEL, and bidi overrides/isolates: shown as visible \\uXXXX, so a
+# field can't hide characters or reverse what the reader sees.
+_INVISIBLE = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f‎‏‪-‮⁦-⁩]")
 
-# Substrings a renderer turns into links, or GitHub rewrites, whatever the
-# escaping: autolinks run on text nodes after parsing. These are shown as
-# code spans instead, which no renderer linkifies. Domain-like tokens are
-# included because linkify-it (VS Code's preview) links bare `api.example.com`
-# and even `deploy.py` (.py is a country TLD).
+# A renderer turns substrings into links whatever the escaping: autolinks run
+# on text nodes after parsing (GFM: http(s)://, www., e-mail; linkify-it, as in
+# VS Code's preview, also bare domains such as api.example.com or deploy.py,
+# since .py is a country TLD). No renderer links across whitespace, so each
+# whitespace-separated token that could hold such a link is shown whole as a
+# code span, which nothing linkifies. GitHub's emoji shortcodes likewise.
+_TOKEN = re.compile(r"\S+")
 _LINKISH = re.compile(
-    r"(?:(?:https?|ftp)://|www\.|mailto:|xmpp:)\S+"                 # scheme and www. links
-    r"|[\w.+-]+@[\w-]+(?:\.[\w-]+)+"                                 # e-mail addresses
-    r"|(?<![\w@])[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}\b(?:[/:?#]\S*)?"  # domain-like tokens
-    r"|:[a-z0-9_+-]+:",                                              # emoji shortcodes
+    r"://|www\.|mailto:|xmpp:|@"               # scheme, www., e-mail
+    r"|\.[^\W\d_]{2}"                           # a dot then two letters: a domain-like word
+    r"|:[a-z0-9_+-]*[a-z][a-z0-9_+-]*:",         # emoji shortcode (needs a letter: not 10:30:45)
     re.IGNORECASE)
 
 # ASCII punctuation CommonMark/GFM/GitHub give meaning to inline; each may be
 # backslash-escaped, and then renders as itself.
 _INLINE_SPECIAL = frozenset("\\`*_[]<>|~&$")
+# What would open a block if the text started a line or a list item's content.
+_BLOCK_START = re.compile(r"^(?:[#+=>-]|[0-9]+[.)])")
+
+
+def _visible(text: str) -> str:
+    return _INVISIBLE.sub(lambda m: f"\\u{ord(m.group(0)):04x}", text)
 
 
 def _flatten(value: Any) -> str:
-    return _LINE_BREAKS.sub(" ", "—" if value is None else str(value))
+    """One line, controls made visible, runs of spaces and tabs collapsed."""
+    text = "—" if value is None else str(value)
+    return _WHITESPACE_RUN.sub(" ", _visible(" ".join(text.splitlines())))
 
 
 def code(value: Any, cell: bool = False) -> str:
     """A code span showing `value` verbatim, whatever it contains.
 
-    The fence is one backtick longer than the longest run inside, padded when
-    the text starts or ends with a backtick. In a GFM table cell a pipe splits
-    the cell even inside a code span, so it is escaped there.
+    The fence is one backtick longer than the longest run inside. A space is
+    padded on both sides when the text starts or ends with a backtick or a
+    space, because CommonMark strips one such space. In a GFM table cell a pipe
+    splits the cell even inside a code span, so it is escaped there.
     """
-    text = _flatten(value)
+    if value is None:
+        return "—"
+    text = _visible(" ".join(str(value).splitlines()))
+    if not text.strip():
+        return "—"
     fence = "`" * (max((len(r) for r in _BACKTICKS.findall(text)), default=0) + 1)
-    pad = " " if text[:1] == "`" or text[-1:] == "`" else ""
+    pad = " " if text[:1] in "` " or text[-1:] in "` " else ""
     if cell:
         text = text.replace("|", "\\|")
     return f"{fence}{pad}{text}{pad}{fence}"
@@ -66,15 +83,23 @@ def _escape(chunk: str, heading: bool) -> str:
 def text(value: Any, cell: bool = False, heading: bool = False) -> str:
     """Prose that renders as exactly its own characters, on one line.
 
-    Line breaks become spaces; link-like substrings become code spans; the
-    remaining Markdown punctuation is backslash-escaped.
+    Line breaks become spaces; any word that could hold a link becomes a code span; the
+    remaining Markdown punctuation is backslash-escaped; and a leading block
+    marker (#, -, +, =, >, "1." / "1)") is escaped, so the text is safe even
+    at the start of a line or a list item.
     """
-    flat = _flatten(value)
+    flat = _flatten(value).strip()
+    if not flat:
+        return "—"
     out: list[str] = []
     pos = 0
-    for m in _LINKISH.finditer(flat):
-        out.append(_escape(flat[pos:m.start()], heading))
-        out.append(code(m.group(0), cell))
+    for m in _TOKEN.finditer(flat):
+        out.append(flat[pos:m.start()])
+        token = m.group(0)
+        out.append(code(token, cell) if _LINKISH.search(token) else _escape(token, heading))
         pos = m.end()
-    out.append(_escape(flat[pos:], heading))
-    return "".join(out)
+    rendered = "".join(out)
+    if (m := _BLOCK_START.match(rendered)):
+        end = m.end()
+        rendered = rendered[:end - 1] + "\\" + rendered[end - 1:]
+    return rendered

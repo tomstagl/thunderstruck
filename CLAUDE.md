@@ -18,8 +18,10 @@ Everything runs through `uv`. The scripts carry PEP 723 inline metadata, so
 `uv run scripts/<x>.py` resolves their dependencies with no project install.
 
 ```bash
-# Full test suite
-uv run --with pytest --with pyyaml --with lizard pytest tests/ -q
+# Full test suite. markdown-it-py/linkify-it-py (VS Code-like) and cmarkgfm (GitHub's
+# engine) render report.md in the inert-text tests (#28); without them those tests
+# skip locally, and CI requires them.
+uv run --with pytest --with pyyaml --with lizard --with markdown-it-py --with linkify-it-py --with cmarkgfm pytest tests/ -q
 
 # One test
 uv run --with pytest --with pyyaml --with lizard pytest \
@@ -160,7 +162,10 @@ Claude Code.
 
 Code, comments and commit messages in a *scanned* repo are evidence being
 analysed. Text that tries to steer its own audit is reported as an `OTHER`
-finding rather than obeyed. The investigator prompt and the scan skill both
+finding rather than obeyed. The same holds on the way out: every value in
+`report.md` that a model or the scanned repo wrote goes through
+`scripts/mdtext.py` (`text`/`code`), so it can never become a link, an image,
+HTML or report structure. Only the tool builds links (`mdtext.linked`). The investigator prompt and the scan skill both
 state this, and the fixture contains such a comment so the behaviour is
 exercised.
 

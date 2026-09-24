@@ -18,40 +18,49 @@ Only #22's evidence and location refs go through a safe code span (`report._code
 
 A new stdlib-only module, `scripts/mdtext.py`, provides two functions. `report.py` uses them for **every** interpolated value it does not generate itself.
 
-### `code(text, cell=False)`: a verbatim code span
+Both functions first make the value visible and flat:
 
-- **Fence:** one backtick longer than the longest run inside the text. If the text starts or ends with a backtick, it is padded with a space (#22's rule, moved here).
-- **Newlines:** `\r\n`, `\r` and `\n` are replaced by a space, so a code span cannot end a block.
-- **Tables:** with `cell=True`, `|` becomes `\|`. GFM splits table cells on `|` even inside code spans, and renders `\|` there as `|`.
+- line breaks (`str.splitlines` semantics) become spaces;
+- C0 controls, DEL and bidi overrides or isolates (U+200E/F, U+202A–E, U+2066–9) become the visible text `\uXXXX`. Otherwise a field could hide characters, or reverse what the reader sees.
 
-Used for paths, symbols, branch names, refs and catalog values.
+### `code(value, cell=False)`: a verbatim code span
+
+- **Fence:** one backtick longer than the longest run inside.
+- **Padding:** a space is added on both sides when the text starts or ends with a backtick **or a space**, because CommonMark strips one such space.
+- **Empty values:** `None`, an empty string or only whitespace renders as `—`, never as an empty span.
+- **Tables:** with `cell=True`, `|` becomes `\|`. GFM splits cells on `|` even inside code spans, and renders `\|` there as `|`.
 
 ### `text(value, cell=False, heading=False)`: prose that stays prose
 
-1. Normalise whitespace. `None` becomes `—`; any other value is converted with `str()`. Every run of line breaks and tabs becomes a single space, so no block structure can start inside a field (AC-2).
-2. **Split out "linkish" substrings** and render each as `code(…, cell)`. These are the substrings a GFM renderer would autolink, or that GitHub post-processes, whatever the escaping:
-   - `(?:https?|ftp)://\S+`, `www\.\S+`, `mailto:\S+`, `xmpp:\S+`
-   - e-mail addresses: `[\w.+-]+@[\w-]+(?:\.[\w-]+)+`
-   - emoji shortcodes: `:[a-z0-9_+-]+:`
+1. **Flatten and trim**, as above. Runs of spaces and tabs collapse to one space. An empty or whitespace-only result renders as `—`.
+2. **Whole words that could hold a link become code spans.** The text is split on whitespace. A token containing any of the following is rendered whole as `code(token, cell)`:
+   - `://`, `www.`, `mailto:`, `xmpp:` or `@`;
+   - a dot followed by two letters (Unicode letters, so `.рф` counts);
+   - an emoji shortcode `:name:`, where the name contains a letter (so `10:30:45` stays text).
 
-   A code span shows the characters exactly, is copyable, and is never linkified (decision in #28: URLs appear as text).
+   The match is case-insensitive.
+
+   **Why whole tokens, not substrings.** Neither GFM nor linkify-it links across whitespace, so a token-level rule is a superset of both by construction:
+   - linkify-it (VS Code's preview) links bare domains, including `a+.co` and even `deploy.py`, since `.py` is a country TLD;
+   - GitHub links e-mail forms as loose as `_@.h`.
+
+   The design review's substring regexes kept missing cases like these. It also removes the fence-merging problem, where two adjacent spans pair up wrongly and leave a URL outside a span. The cost: a few harmless words such as `Node.js` render as code.
 3. **Backslash-escape** the rest. CommonMark allows escaping any ASCII punctuation. The escaped set is `\ ` * _ [ ] < > | ~ & $`, plus `#` when `heading=True`. The reasons:
    - `[` `]`: links and images (with `[` escaped, a leading `!` is inert);
-   - `<` `>`: raw HTML and angle autolinks;
+   - `<` `>`: raw HTML;
    - `` ` ``: code spans;
    - `*` `_` `~`: emphasis and strikethrough;
    - `|`: table cells;
-   - `&`: entities (so `&copy;` stays those six characters);
+   - `&`: entities;
    - `$`: GitHub math;
    - `#`: an ATX heading's closing sequence;
    - `\`: the escape itself.
+4. **Escape a leading block marker.** A leading `#`, `-`, `+`, `=`, `>`, or `1.` / `1)` gets a backslash. `text()` is safe at the start of a line and as a list item's content, where the report puts warnings and validator errors. Leading spaces are already trimmed, so four-space indented code can't start either.
 
-   Everything else passes through, so ordinary prose stays readable in the raw file.
-
-The output is a single line whose rendering shows exactly the input characters (AC-3), except that line breaks and tabs become spaces.
+The output is one line whose rendering shows the input characters (AC-3), with whitespace collapsed and invisible characters made visible.
 
 **Not handled, by design:**
-- `@name` and `#123` are linkified by GitHub in issues and comments, but not in rendered repository files.
+- `#123` is linkified by GitHub in issues and comments, but not in rendered repository files. `@name` is now code anyway.
 - Tool-generated links and code spans, such as #22's evidence links and our own `<sub>` key line, are built by `report.py` and don't pass through `text()` (AC-4).
 
 ## 3. Where each primitive is applied
@@ -69,32 +78,37 @@ The output is a single line whose rendering shows exactly the input characters (
 | Verify, Why this confidence, Prediction | `text(…)` |
 | clean list: file, notes | `code(file)`, `text(notes)` |
 | incomplete list: file, reason, errors | `code(file)`, `text(reason)`, `text(err)` |
-| hotspot table: file | `code(file, cell=True)` |
+| hotspot table: file, lead IDs | `code(file, cell=True)`, `text(id, cell=True)` |
+| confidence breakdown, missing-pattern IDs, evidence type, stable key, scan window, fetch date, catalog hash, pattern tier | `text` / `code`. These are validated or generated, but rendering them safely costs nothing, and a findings file can reach the report with a self-asserted stamp (#32). |
 
 The fallback for a missing `sustaining_effect` is the tool's own emphasis (`_none — …_`) and stays as it is.
 
 `report._code` and `report._linked` move to `mdtext.code` and `mdtext.linked`, so there is a single implementation. `report.json` and the guardrail are unchanged (ticket scope).
 
+`context.json` is a file on disk, not trusted structure: `collect()` keeps only string warnings from it, at most 20.
+
 ## 4. Test strategy
 
-- **`tests/test_mdtext.py`** (unit tests):
-  - `code`: fence length, padding, newlines, and `|` in cells.
-  - `text`: every character in the escaped set, heading `#`, and whitespace collapse.
-  - Linkish splitting: URL, `www.`, e-mail, `mailto:`, emoji.
-  - `None`.
-- **Renderer tests** (`markdown-it-py` in its `gfm-like` preset with `linkify-it-py`, a GFM-like renderer with tables and autolinks):
-  - Every hostile payload is rendered, both in prose and in a table cell.
-  - The HTML must contain no `<a>`, `<img>` or raw-HTML element.
-  - The plain text of the output must equal the input, with whitespace collapsed.
-  - A table stays one row with the expected number of cells.
-- **End to end** (`tests/test_inert_report.py`):
-  - The fixture finding gets hostile text in every model field and note.
-  - Validate, then report.
-  - Render `report.md`: every `<a href>` must start with the fixture's link base, and there must be no `<img>` and no HTML elements other than our `<sub>`.
-  - The finding's table keeps its row count.
-  - A second case edits `collect()` output with a hostile hotspot file name, branch, repo name and warning, then renders it.
+- **Two renderers.**
+  - **`cmarkgfm`**, the Python binding of cmark-gfm, GitHub's own engine, with its autolink, table and strikethrough extensions and unsafe HTML allowed. This is the authority for GitHub.
+  - **`markdown-it-py` in `gfm-like` with `linkify-it-py`**, which is stricter than GitHub: it links bare domains, as VS Code's preview does.
+
+  Every renderer test runs against both.
+- **`tests/test_mdtext.py`:**
+  - **Units:** fences, padding, empty values, pipes in cells, the escaped set, heading `#`, leading block markers, invisible characters, and times not taken for emoji.
+  - **Renderer tests:** every hostile payload is rendered in prose, as list-item content, in a table cell, in a heading, and as a code span. They check:
+    - no `<a>`, `<img>`, HTML, heading, rule, list or emphasis element;
+    - the reader-visible text equals the input;
+    - the table keeps one row.
+  - **The design review's payloads**, as a regression test.
+  - **A seeded fuzz test:** 400 random mixes of Markdown-significant fragments per renderer, in all four positions.
+  - **Once, before merge,** the same fuzz ran over 30 seeds and 600,000 renders, with no issue left.
+- **`tests/test_inert_report.py`** (end to end):
+  - Hostile text in every model field and note is validated and reported.
+  - A second case edits `collect()` output with a hostile hotspot file name, branch, repo name, scan window and warnings. It adds validator errors that start with block markers, and hostile confidence, pattern IDs, key, evidence type and service-context values.
+  - Every `<a href>` must start with the fixture's link base. There must be no `<img>` and no elements beyond the report's own. Tables keep their rows, and there is exactly one `<h1>`.
+- **Gating:** one helper, `_require_renderers()`. It skips when any renderer package is missing, and calls `pytest.fail` instead when `THUNDERSTRUCK_REQUIRE_RENDERER` is set, which CI does. CI and CLAUDE.md install `markdown-it-py`, `linkify-it-py` and `cmarkgfm`.
 - **Sample report (AC-5):** regenerated. FR-003's quoted injection text renders inertly.
-- **Test dependencies:** the renderer tests `importorskip` `markdown_it`. CI installs `markdown-it-py` and `linkify-it-py` and sets `THUNDERSTRUCK_REQUIRE_RENDERER=1`, which turns that skip into a failure, so CI can never silently skip them. CLAUDE.md's test command gains the two `--with` flags.
 
 ## 5. Decisions
 
@@ -106,6 +120,20 @@ The fallback for a missing `sustaining_effect` is the tool's own emphasis (`_non
 | One module for all Markdown rendering primitives | `report.py` had two ad-hoc styles. One place to test and to extend. |
 | A real renderer in the tests, required in CI | AC-6 asks for rendered output. String checks alone would miss renderer behaviour. |
 
-## 6. Open design questions
+## 6. Design review (2026-09-24)
+
+A review prototyped §2 as first written and rendered it with cmark-gfm and markdown-it. It found:
+
+- **3 blockers:** case-sensitive URL schemes, adjacent spans merging their fences, and GFM's broad e-mail forms.
+- **5 majors:** the emoji pattern swallowing `https:`; a test renderer that didn't match GitHub; text at the start of a list item; missed sites; and test gating.
+- **4 minors:** code-span edge cases, control and bidi characters, whitespace rules, and line-break semantics.
+
+All are fixed above. The token-level rule in §2.2 replaced the substring regexes after fuzzing kept finding linkify edge cases (`e.co_`, `a+.co`, `@+x.io`, `.@=.io`).
+
+Out of scope, and filed separately:
+- #32: a findings file can assert its own `validated_with` stamp and skip validation in `report.py`;
+- #33: the S10 Java detector's speed test runs at its 1.0 s budget on Python 3.13.
+
+## 7. Open design questions
 
 - GitHub also renders Mermaid and math fenced blocks, and footnote syntax `[^1]`. Fences can't start without a newline, and `[` is escaped, so none of these can start from a field. They are listed here in case the renderer changes.
