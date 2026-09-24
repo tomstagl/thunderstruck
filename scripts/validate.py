@@ -31,6 +31,7 @@ import argparse
 import json
 import os
 import re
+import stat
 import sys
 from pathlib import Path
 from typing import Any
@@ -50,10 +51,11 @@ REQUIRED_FIELDS = [
     "confidence", "confidence_rationale", "how_to_verify",
 ]
 
-CODE_REF = re.compile(r"^(?P<path>[^:]+):(?P<start>\d+)(?:-(?P<end>\d+))?$")
+# [0-9] and \Z, not \d and $: "١٦" and a trailing newline are not line numbers
+CODE_REF = re.compile(r"^(?P<path>[^:]+):(?P<start>[0-9]+)(?:-(?P<end>[0-9]+))?\Z")
 DETECTOR_REF = re.compile(r"^(?P<pid>[A-Z]+\d+)@(?P<path>[^:]+):(?P<line>\d+)$")
 SHA_REF = re.compile(r"^[0-9a-fA-F]{4,40}$")
-LINE_RANGE = re.compile(r"^(?P<start>\d+)(?:-(?P<end>\d+))?$")
+LINE_RANGE = re.compile(r"^(?P<start>[0-9]+)(?:-(?P<end>[0-9]+))?\Z")
 RANGE_FORM = 'a line ("42") or a range ("42-118") with start ≤ end'
 
 
@@ -71,6 +73,11 @@ def parse_range(value: Any) -> tuple[int, int] | None:
 
 def range_fits(span: tuple[int, int] | None, total: int) -> bool:
     return span is not None and 1 <= span[0] <= span[1] <= total
+
+
+def range_error(rel: str, total: int) -> str:
+    """The one message for any unusable line range, in a location or a code ref."""
+    return f"that line does not exist: use {RANGE_FORM} inside {rel}, which has {total} lines"
 
 
 def _count_lines(path: Path) -> int | None:
@@ -111,13 +118,13 @@ class Validator:
     def _tracked(self) -> dict[str, str]:
         """{path: mode} for every entry in the git index, loaded once."""
         if self._index is None:
-            index: dict[str, str] = {}
-            for entry in c.git(self.repo, "ls-files", "-s", "-z").split("\0"):
-                meta, _, path = entry.partition("\t")
-                if path:
-                    index.setdefault(path, meta.split(" ", 1)[0])
-            self._index = index
+            self._index = c.tracked_index(self.repo)
         return self._index
+
+    def _spelling_hint(self, rel: str) -> str:
+        lowered = rel.lower()
+        match = next((p for p in self._tracked() if p.lower() == lowered), None)
+        return f" (did you mean {match!r}?)" if match else ""
 
     def _resolve(self, raw: Any) -> tuple[str, int | None, str | None]:
         """(canonical path, line count, error) for a cited path.
@@ -132,20 +139,37 @@ class Validator:
         total: int | None = None
         error: str | None = None
         mode = None
+        path = self.repo / rel
         if (why := c.path_problem(rel)):
             error = (f"{why}. Cite the path relative to the repository root, exactly "
                      f"as the bundle shows it")
         elif (mode := self._tracked().get(rel)) is None:
-            error = ("is not tracked by git; untracked and ignored files can't be cited"
-                     if os.path.lexists(self.repo / rel) else "no such file in the repository")
+            if os.path.isdir(path):
+                error = "is a directory, not a file"
+            elif os.path.lexists(path):
+                error = "is not tracked by git; untracked and ignored files can't be cited"
+            else:
+                error = "no such file in the repository" + self._spelling_hint(rel)
         elif mode == "120000":
             error = "is a symbolic link; cite the file it points to"
         elif mode == "160000":
             error = "is a submodule, not a file"
-        elif not (self.repo / rel).resolve().is_relative_to(self.repo.resolve()):
-            error = "resolves outside the repository"
-        elif (total := self._lines_in(rel)) is None:
-            error = "is tracked but missing from the working tree"
+        elif path.resolve() != self.repo.resolve() / rel:
+            # a tracked path replaced locally by a link, even to a file inside
+            # the repository such as an ignored .env, is not what git tracks
+            error = "passes through a symbolic link in the working tree"
+        else:
+            try:
+                st = os.lstat(path)
+            except OSError:
+                st = None
+            if st is None:
+                error = ("is tracked but missing from the working tree (deleted locally, "
+                         "or outside a sparse checkout)")
+            elif not stat.S_ISREG(st.st_mode):
+                error = "is not a regular file in the working tree"
+            elif (total := self._lines_in(rel)) is None:
+                error = "could not be read"
         self._resolved[key] = (rel, total, error)
         return self._resolved[key]
 
@@ -169,16 +193,15 @@ class Validator:
 
         if etype == "code":
             m = CODE_REF.match(ref)
-            if not m:
+            raw_path = m["path"] if m else ref.rpartition(":")[0]
+            if not m and not raw_path:
                 errors.append(f"{where}.ref {ref!r} is not path:line or path:start-end")
                 return etype
-            rel, total, problem = self._resolve(m.group("path"))
+            rel, total, problem = self._resolve(raw_path)
             if problem:
-                errors.append(f"{where}.ref {ref!r} — {m.group('path')!r} {problem}")
-            elif not range_fits((int(m["start"]), int(m["end"] or m["start"])), total):
-                errors.append(
-                    f"{where}.ref {ref!r} — must be {RANGE_FORM} inside {rel}, "
-                    f"which has {total} lines")
+                errors.append(f"{where}.ref {ref!r} — {raw_path!r} {problem}")
+            elif not m or not range_fits((int(m["start"]), int(m["end"] or m["start"])), total):
+                errors.append(f"{where}.ref {ref!r} — {range_error(rel, total)}")
         elif etype == "commit":
             short = ref.split()[0]
             if not SHA_REF.match(short):
@@ -232,9 +255,8 @@ class Validator:
             if problem:
                 errors.append(f"{where}.location.file {loc['file']!r} {problem}")
             elif loc.get("lines") is not None and not range_fits(parse_range(loc["lines"]), total):
-                errors.append(
-                    f"{where}.location.lines {loc['lines']!r} must be {RANGE_FORM} inside "
-                    f"{rel}, which has {total} lines (leave it out for a whole-file finding)")
+                errors.append(f"{where}.location.lines {loc['lines']!r} — "
+                              f"{range_error(rel, total)} (leave it out for a whole-file finding)")
 
         pats = f.get("missing_patterns")
         if not isinstance(pats, list) or not pats:
@@ -275,16 +297,19 @@ class Validator:
                             where: str, errors: list[str]) -> None:
         """A commit is evidence only if it changed the code the finding is
         about. Without this, any SHA from the bundle buys 'high' confidence."""
-        files: list[str] = []
+        cited: list[str] = []
         loc = f.get("location")
         if isinstance(loc, dict) and loc.get("file"):
-            files.append(c.ref_path(loc["file"]))
+            cited.append(loc["file"])
         for ev in evidence:
             if isinstance(ev, dict) and ev.get("type") == "code":
                 m = CODE_REF.match(str(ev.get("ref") or "").strip())
                 if m:
-                    files.append(c.ref_path(m.group("path")))
-        files = list(dict.fromkeys(files))
+                    cited.append(m.group("path"))
+        # only paths that resolved: an invalid one already has its own error
+        files = list(dict.fromkeys(rel for rel, _, err in map(self._resolve, cited) if not err))
+        if not files:
+            return
         for i, (ev, etype) in enumerate(zip(evidence, types)):
             if etype != "commit":
                 continue

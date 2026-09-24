@@ -77,6 +77,11 @@ def test_tracked_files_are_accepted(repo, path):
     ("lnk.ts", "symbolic link"),
     ("lnkdir/a.ts", "not tracked by git"),  # under a symlinked dir: never in the index
     ("github/scripts/deploy.py", "no such file"),
+    ("src//a.ts", "canonical form"),
+    ("src/./a.ts", "canonical form"),
+    ("src/a.ts/", "canonical form"),
+    ("src", "is a directory"),
+    ("src/A.ts", "did you mean 'src/a.ts'"),
 ])
 def test_paths_outside_the_tracked_tree_are_rejected(repo, path, fragment):
     for doc in (_doc(path, code_ref="src/a.ts:1"), _doc("src/a.ts", code_ref=f"{path}:1")):
@@ -86,15 +91,27 @@ def test_paths_outside_the_tracked_tree_are_rejected(repo, path, fragment):
 
 
 def test_rejected_paths_are_never_opened(repo, tmp_path, monkeypatch):
+    import builtins
+    import io
+    import os
     outside = tmp_path / "outside.txt"
     outside.write_text("secret\n")
     opened: list[str] = []
-    real_open = Path.open
 
-    def spy(self, *args, **kwargs):
+    def spying(real, first_is_self=False):
+        def spy(target, *args, **kwargs):
+            opened.append(str(target))
+            return real(target, *args, **kwargs)
+        return spy
+    real_path_open = Path.open
+
+    def path_spy(self, *args, **kwargs):
         opened.append(str(self))
-        return real_open(self, *args, **kwargs)
-    monkeypatch.setattr(Path, "open", spy)
+        return real_path_open(self, *args, **kwargs)
+    monkeypatch.setattr(Path, "open", path_spy)
+    monkeypatch.setattr(builtins, "open", spying(builtins.open))
+    monkeypatch.setattr(io, "open", spying(io.open))
+    monkeypatch.setattr(os, "open", spying(os.open))
     for path in ("src/../../outside.txt", str(outside), "../outside.txt", "gen/out.ts"):
         _validator(repo).check_document(_doc(path, code_ref=f"{path}:1"))
     assert not [p for p in opened if "outside" in p or "gen" in p], opened
@@ -112,7 +129,7 @@ def test_tracked_dir_replaced_by_a_symlink_to_outside(repo, tmp_path):
     (repo / "lib").rmdir()
     (repo / "lib").symlink_to(elsewhere)
     errors = _validator(repo).check_document(_doc("lib/b.ts"))
-    assert any("resolves outside the repository" in e for e in errors), errors
+    assert any("passes through a symbolic link" in e for e in errors), errors
 
 
 def test_submodule_paths_are_rejected(repo, tmp_path):
@@ -162,3 +179,65 @@ def test_code_ref_ranges_must_ascend_inside_the_file(repo, ref, ok):
     assert (errors == []) is ok, errors
     if not ok:
         assert "start ≤ end" in errors[0] and "20 lines" in errors[0]
+
+
+@pytest.mark.parametrize("ref", ["src/a.ts:١٦", "src/a.ts:L16", "src/a.ts:16–18"])
+def test_code_refs_accept_only_ascii_line_numbers(repo, ref):
+    errors = _validator(repo).check_document(_doc("src/a.ts", code_ref=ref))
+    assert errors and "does not exist" in errors[0] and "20 lines" in errors[0], errors
+
+
+@pytest.mark.parametrize("lines", ["16\n", "١٦"])
+def test_location_ranges_accept_only_ascii_line_numbers(repo, lines):
+    assert _validator(repo).check_document(_doc("src/a.ts", lines))
+
+
+def test_a_tracked_file_replaced_by_a_link_to_an_ignored_file_is_rejected(repo):
+    (repo / ".env").write_text("SECRET=1\n")
+    with (repo / ".gitignore").open("a") as fh:
+        fh.write(".env\n")
+    (repo / "src" / "a.ts").unlink()
+    (repo / "src" / "a.ts").symlink_to("../.env")
+    errors = _validator(repo).check_document(_doc("src/a.ts"))
+    assert any("passes through a symbolic link" in e for e in errors), errors
+
+
+def test_a_tracked_path_replaced_by_a_fifo_does_not_block(repo):
+    import os
+    import signal
+    (repo / "src" / "a.ts").unlink()
+    os.mkfifo(repo / "src" / "a.ts")
+    signal.signal(signal.SIGALRM, lambda *_: pytest.fail("validation blocked on a FIFO"))
+    signal.alarm(5)
+    try:
+        errors = _validator(repo).check_document(_doc("src/a.ts"))
+    finally:
+        signal.alarm(0)
+    assert any("not a regular file" in e for e in errors), errors
+
+
+def test_a_file_deleted_locally_says_so(repo):
+    (repo / "src" / "a.ts").unlink()
+    errors = _validator(repo).check_document(_doc("src/a.ts"))
+    assert any("missing from the working tree" in e for e in errors), errors
+
+
+def test_a_file_outside_a_sparse_checkout_says_so(repo):
+    _git(repo, "update-index", "--skip-worktree", "src/a.ts")
+    (repo / "src" / "a.ts").unlink()
+    errors = _validator(repo).check_document(_doc("src/a.ts"))
+    assert any("sparse checkout" in e for e in errors), errors
+
+
+def test_commit_evidence_matches_bracketed_paths_literally(repo):
+    (repo / "src" / "i.ts").write_text("x\n")
+    (repo / "src" / "[id].ts").write_text("y\n")
+    _git(repo, "add", "src/[id].ts")
+    _git(repo, "commit", "-qm", "route")
+    _git(repo, "add", "src/i.ts")
+    _git(repo, "commit", "-qm", "only i.ts")
+    only_i = _git(repo, "rev-parse", "HEAD").strip()
+    doc = _doc("src/[id].ts")
+    doc["findings"][0]["evidence"].append({"type": "commit", "ref": only_i, "note": "n"})
+    errors = _validator(repo).check_document(doc)
+    assert any("does not touch" in e for e in errors), errors

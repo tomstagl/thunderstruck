@@ -153,8 +153,8 @@ def commit_touches(repo_root: Path, sha: str, paths: list[str]) -> bool:
     if not paths:
         return False
     proc = subprocess.run(
-        ["git", "-C", str(repo_root), "diff-tree", "--no-commit-id", "--name-only",
-         "-r", "--root", sha, "--", *paths],
+        ["git", "-C", str(repo_root), "--literal-pathspecs", "diff-tree", "--no-commit-id",
+         "--name-only", "-r", "--root", sha, "--", *paths],
         capture_output=True, text=True, timeout=30,
     )
     return proc.returncode == 0 and bool(proc.stdout.strip())
@@ -387,9 +387,32 @@ def path_problem(rel: str) -> str | None:
         return "is absolute"
     if "\\" in rel:
         return "contains a backslash"
-    if ".." in rel.split("/"):
+    parts = rel.split("/")
+    if ".." in parts:
         return "climbs out of the repository with '..'"
+    if "" in parts or "." in parts:
+        return "is not in canonical form (empty or '.' segment, or a trailing '/')"
     return None
+
+
+def tracked_index(repo_root: Path) -> dict[str, str]:
+    """{path: mode} for every entry in the git index.
+
+    Read as bytes and decoded leniently: a file name that isn't valid in the
+    locale's encoding must not crash validation.
+    """
+    proc = subprocess.run(["git", "-C", str(repo_root), "ls-files", "-s", "-z"],
+                          capture_output=True, timeout=180)
+    if proc.returncode != 0:
+        raise ThunderstruckError(
+            f"git ls-files failed ({proc.returncode}): "
+            f"{proc.stderr.decode('utf-8', 'replace').strip()}")
+    index: dict[str, str] = {}
+    for entry in proc.stdout.decode("utf-8", "surrogateescape").split("\0"):
+        meta, _, path = entry.partition("\t")
+        if path:
+            index.setdefault(path, meta.split(" ", 1)[0])   # unmerged: first stage wins
+    return index
 
 
 def read_text(path: Path) -> str | None:

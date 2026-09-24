@@ -156,6 +156,8 @@ def _location_url(ctx: "links.LinkContext", loc: dict, repo: Path) -> str | None
     if not loc.get("file"):
         return None
     rel = c.ref_path(loc["file"])
+    if c.path_problem(rel):
+        return None  # never count lines of a path that could leave the repository
     span = links.parse_lines(loc.get("lines"), _count_lines(repo / rel))
     return ctx.code(rel, *span) if span else ctx.code(rel)
 
@@ -164,7 +166,7 @@ def _evidence_url(ctx: "links.LinkContext", result: "links.LinkResult", ev: dict
     ref, etype = str(ev.get("ref") or "").strip(), ev.get("type")
     if etype == "code" and (m := CODE_REF.match(ref)):
         start, end = int(m["start"]), int(m["end"] or m["start"])
-        # validate.py accepts a reversed range; the anchor must not be
+        # validate.py rejects a reversed range; this guards a tampered file
         return ctx.code(m["path"], min(start, end), max(start, end))
     if etype == "detector" and (m := DETECTOR_REF.match(ref)):
         return ctx.code(m["path"], int(m["line"]))
