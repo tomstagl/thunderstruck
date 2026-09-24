@@ -199,23 +199,23 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 
 ## Hotspots investigated with no finding
 
-- **H04** `src/client/artists.ts` — no credible production failure mode found
-- **H05** `src/sync/queue.ts` — no credible production failure mode found
-- **H06** `src/client/retry-wrapper.ts` — no credible production failure mode found
-- **H08** `src/client/limiter.ts` — no credible production failure mode found
+- **H04** [`src/client/artists.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/artists.ts) — no credible production failure mode found
+- **H05** [`src/sync/queue.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/sync/queue.ts) — no credible production failure mode found
+- **H06** [`src/client/retry-wrapper.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/retry-wrapper.ts) — no credible production failure mode found
+- **H08** [`src/client/limiter.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/limiter.ts) — no credible production failure mode found
 
 ## Ranked hotspots
 
 | # | File | Score | Commits | Fixes | Max CCN | Leads |
 |---|---|---|---|---|---|---|
-| H01 | `src/client/releases.ts` | 1.86 | 6 | 5 | 4 | S01, S02, S05, S10, S11, S15, S19 |
-| H02 | `src/sync/collection.ts` | 0.7111 | 4 | 3 | 4 | S06, S07 |
-| H03 | `src/sync/scheduler.ts` | 0.3421 | 3 | 1 | 3 | S06, S08 |
-| H04 | `src/client/artists.ts` | 0.0663 | 1 | 0 | 6 | S06, S15 |
-| H05 | `src/sync/queue.ts` | 0.031 | 4 | 3 | 1 | — |
-| H06 | `src/client/retry-wrapper.ts` | 0.0273 | 2 | 1 | 1 | S02, S04, S12 |
-| H07 | `src/client/api.ts` | 0.0249 | 1 | 0 | 2 | S03, S15 |
-| H08 | `src/client/limiter.ts` | 0.015 | 1 | 1 | 2 | S06 |
-| H09 | `src/util/format.ts` | 0.012 | 2 | 0 | 1 | — |
+| H01 | [`src/client/releases.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/releases.ts) · [history](https://github.example.com/acme/fixture/commits/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/releases.ts) | 1.86 | 6 | 5 | 4 | S01, S02, S05, S10, S11, S15, S19 |
+| H02 | [`src/sync/collection.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/sync/collection.ts) · [history](https://github.example.com/acme/fixture/commits/446de9bccb6e39809a99850dffec58ff0bf49b15/src/sync/collection.ts) | 0.7111 | 4 | 3 | 4 | S06, S07 |
+| H03 | [`src/sync/scheduler.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/sync/scheduler.ts) · [history](https://github.example.com/acme/fixture/commits/446de9bccb6e39809a99850dffec58ff0bf49b15/src/sync/scheduler.ts) | 0.3421 | 3 | 1 | 3 | S06, S08 |
+| H04 | [`src/client/artists.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/artists.ts) · [history](https://github.example.com/acme/fixture/commits/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/artists.ts) | 0.0663 | 1 | 0 | 6 | S06, S15 |
+| H05 | [`src/sync/queue.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/sync/queue.ts) · [history](https://github.example.com/acme/fixture/commits/446de9bccb6e39809a99850dffec58ff0bf49b15/src/sync/queue.ts) | 0.031 | 4 | 3 | 1 | — |
+| H06 | [`src/client/retry-wrapper.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/retry-wrapper.ts) · [history](https://github.example.com/acme/fixture/commits/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/retry-wrapper.ts) | 0.0273 | 2 | 1 | 1 | S02, S04, S12 |
+| H07 | [`src/client/api.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/api.ts) · [history](https://github.example.com/acme/fixture/commits/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/api.ts) | 0.0249 | 1 | 0 | 2 | S03, S15 |
+| H08 | [`src/client/limiter.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/limiter.ts) · [history](https://github.example.com/acme/fixture/commits/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/limiter.ts) | 0.015 | 1 | 1 | 2 | S06 |
+| H09 | [`src/util/format.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/util/format.ts) · [history](https://github.example.com/acme/fixture/commits/446de9bccb6e39809a99850dffec58ff0bf49b15/src/util/format.ts) | 0.012 | 2 | 0 | 1 | — |
 
 <sub>thunderstruck · catalog `thunderstruck.hotspots/v1` · report `thunderstruck.report/v1`</sub>

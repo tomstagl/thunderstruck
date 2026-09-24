@@ -132,3 +132,31 @@ def test_evidence_without_a_note_has_no_dangling_dash(linked_copy, plugin_root):
     markdown = (linked_copy / ".thunderstruck" / "report.md").read_text()
     evidence = [line for line in markdown.splitlines() if line.startswith("- _")]
     assert evidence and not any(line.rstrip().endswith("—") for line in evidence), evidence
+
+
+def test_hostile_linked_file_names_stay_inert(scanned_copy, plugin_root):
+    """A file name next to a link is still inert, and never escapes its row."""
+    import links
+    data = report.collect(scanned_copy)
+    hs = data["hotspots"]
+    hostile = ["src/`a`|b](https:atk.test).ts", "src/x) [y](javascript:alert(1)) z.ts",
+               "src/<img src=x>.ts", "src/www.atk.test :smile:.ts"]
+    for h, name in zip(hs["hotspots"], hostile):
+        h["file"] = name
+    ctx = links.LinkContext.for_provider("github", base=LINK_BASE.rstrip("/"), sha="a" * 40)
+    data["clean"] = [{"hotspot_id": "H98", "file": hostile[0], "notes": "n"}]
+    data["failed"] = [{"hotspot_id": "H99", "file": hostile[1], "reason": "r"}]
+    data["hotspot_links"] = report._set_file_urls(hs["hotspots"], data["clean"] + data["failed"],
+                                                  ctx)
+    assert all(v["url"] and v["history_url"] for v in data["hotspot_links"].values())
+    markdown = report.render_markdown(data, scanned_copy)
+    _assert_inert(markdown)
+    ranked = markdown.split("## Ranked hotspots", 1)[1]
+    for renderer in RENDERERS:
+        html = renderer(ranked)
+        assert html.tags.count("tr") == len(hs["hotspots"]) + 1
+        assert html.tags.count("a") == 2 * len(hs["hotspots"])
+    for section in ("## Hotspots investigated with no finding", "## Incomplete"):
+        body = markdown.split(section, 1)[1].split("\n## ", 1)[0]
+        for renderer in RENDERERS:
+            assert renderer(body).tags.count("a") == 1, (section, renderer.__name__)

@@ -36,6 +36,13 @@ TEMPLATES = {
                   "{base}/src/{sha}/{path}",
                   "{base}/commits/{sha}"),
 }
+# provider -> a file's change history up to a commit; custom templates have none
+HISTORY = {
+    "github": "{base}/commits/{sha}/{path}",
+    "gitlab": "{base}/-/commits/{sha}/{path}",
+    "bitbucket": "{base}/history-node/{sha}/{path}",
+}
+MAX_NAMED = 5
 # GitHub and GitLab render these and ignore line anchors unless ?plain=1.
 PLAIN_PROVIDERS = frozenset({"github", "gitlab"})
 PLAIN_EXTS = frozenset({".md", ".markdown", ".mdown", ".mkd", ".rst", ".adoc",
@@ -50,6 +57,9 @@ _URL_SCHEMES = frozenset({"http", "https", "ssh", "git", "git+ssh", "ssh+git"})
 # or be read as a template placeholder.
 _SAFE_HOST = re.compile(r"^[A-Za-z0-9.-]+(?::\d+)?$")
 _SAFE_PATH = re.compile(r"^[A-Za-z0-9._~%/+-]+$")
+# A template's literal text lands in link targets, some inside table cells:
+# whitespace, controls and these would end the link or split the row.
+_LINK_BREAKERS = frozenset("|()<>[]`\\\"")
 _LINES = re.compile(r"^\s*(\d+)(?:\s*-\s*(\d+))?\s*$")
 
 
@@ -147,6 +157,9 @@ def template_error(template: str, allowed=PLACEHOLDERS, required=()) -> str | No
     rest = _PLACEHOLDER.sub("", template)
     if "{" in rest or "}" in rest:
         return "an unbalanced brace"
+    for ch in template:
+        if ch in _LINK_BREAKERS or ch.isspace() or not ch.isprintable():
+            return f"the character {ch!r}, which cannot appear in a link"
     for name in required:
         if name not in names:
             return "no {" + name + "}"
@@ -175,12 +188,13 @@ class LinkContext:
     provider: str | None = None
     remote: str | None = None
     unlinked: frozenset[str] = field(default_factory=frozenset)
+    history_tpl: str | None = None
 
     @classmethod
     def for_provider(cls, provider: str, *, base: str, sha: str, **kw) -> "LinkContext":
         rng, line, whole, commit = TEMPLATES[provider]
         return cls(base=base, sha=sha, code_range=rng, code_line=line, code_file=whole,
-                   commit_tpl=commit, provider=provider, **kw)
+                   commit_tpl=commit, provider=provider, history_tpl=HISTORY[provider], **kw)
 
     @classmethod
     def for_templates(cls, code: str, commit: str, *, base: str, sha: str, **kw) -> "LinkContext":
@@ -205,8 +219,23 @@ class LinkContext:
             url = f"{head}?plain=1{sep}{frag}"
         return url
 
+    def history(self, path: str) -> str | None:
+        """The file's change history up to the scanned commit, or None."""
+        rel = c.ref_path(path)
+        if not self.history_tpl or not rel or rel in self.unlinked:
+            return None
+        return _fill(self.history_tpl, {"base": self.base, "sha": self.sha,
+                                        "path": encode_path(rel)})
+
     def commit(self, full_sha: str) -> str:
         return _fill(self.commit_tpl, {"base": self.base, "sha": full_sha})
+
+
+def named(items, limit: int = MAX_NAMED) -> str:
+    """The first `limit` items, then how many more: a warning never floods the report."""
+    items = list(items)
+    shown = ", ".join(items[:limit])
+    return shown + (f" … and {len(items) - limit} more" if len(items) > limit else "")
 
 
 def _ext(path: str) -> str:
@@ -222,6 +251,8 @@ NOT_LINKED = "references are not linked: "
 CONFIG_KEYS = frozenset({"enabled", "remote", "provider", "base_url",
                          "code_template", "commit_template"})
 GIT_TIMEOUT = 30
+PATHS_PER_CALL = 100
+CHARS_PER_CALL = 8000
 _HEX = re.compile(r"[0-9a-fA-F]{4,40}")
 _FULL_SHA = re.compile(r"[0-9a-f]{40}")
 
@@ -278,6 +309,8 @@ def config_from_profile(profile) -> tuple[LinkConfig | None, list[str]]:
              ("commit_template", commit_t, frozenset({"base", "sha"}), ("sha",)))
     for key, tpl, allowed, required in rules:
         if tpl is not None and (err := template_error(tpl, allowed, required)):
+            if err.startswith("the character"):
+                return bad(f"{key} has {err}")
             return bad(f"{key} has {err}; allowed: "
                        + " ".join("{" + p + "}" for p in sorted(allowed)))
     return LinkConfig(remote=section.get("remote"), provider=provider,
@@ -359,9 +392,9 @@ def _resolve(repo, cfg: LinkConfig, sha: str, cited_paths, cited_commits) -> Lin
     escaping = {p for p in paths if _escapes(p)}
     unlinked = escaping | _stale_paths(repo, sha, [p for p in paths if p not in escaping])
     if unlinked:
-        warnings.append(f"{len(unlinked)} cited file(s) differ from the scanned commit "
+        warnings.append(f"{len(unlinked)} file(s) differ from the scanned commit "
                         f"{sha[:7]} or are not in it, and are not linked: "
-                        + ", ".join(sorted(unlinked)))
+                        + named(sorted(unlinked)))
 
     commits: dict[str, str] = {}
     for token in sorted({t for t in cited_commits if _HEX.fullmatch(t or "")}):
@@ -388,7 +421,32 @@ def _resolve(repo, cfg: LinkConfig, sha: str, cited_paths, cited_commits) -> Lin
 
 
 def _stale_paths(repo, sha: str, paths: list[str]) -> set[str]:
-    """Cited paths whose content at `sha` is not what validate.py read."""
+    """Paths (cited or listed) whose content at `sha` is not what is on disk now.
+
+    Paths go to git in chunks, bounded by count and by length: a large --top
+    must not overflow a command line (about 32K characters on Windows) and
+    take every link down with it.
+    """
+    stale: set[str] = set()
+    for chunk in _chunks(paths):
+        stale |= _stale_chunk(repo, sha, chunk)
+    return stale
+
+
+def _chunks(paths: list[str]):
+    chunk: list[str] = []
+    size = 0
+    for p in paths:
+        if chunk and (len(chunk) >= PATHS_PER_CALL or size + len(p) + 1 > CHARS_PER_CALL):
+            yield chunk
+            chunk, size = [], 0
+        chunk.append(p)
+        size += len(p) + 1
+    if chunk:
+        yield chunk
+
+
+def _stale_chunk(repo, sha: str, paths: list[str]) -> set[str]:
     if not paths:
         return set()
     listed = _git(repo, "--literal-pathspecs", "ls-tree", "-z", "--full-tree", sha, "--", *paths)

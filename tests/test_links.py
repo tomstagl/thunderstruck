@@ -159,6 +159,35 @@ def test_unlinked_paths_get_no_url():
     assert ctx.code("src/y.ts", 3)
 
 
+@pytest.mark.parametrize("provider, url", [
+    ("github", f"{GH}/commits/{SHA}/src/%5Bid%5D%20x.md"),
+    ("gitlab", f"{GH}/-/commits/{SHA}/src/%5Bid%5D%20x.md"),
+    ("bitbucket", f"{GH}/history-node/{SHA}/src/%5Bid%5D%20x.md"),
+])
+def test_history_urls(provider, url):
+    """Pinned to the scanned commit, encoded per segment, never ?plain=1."""
+    assert L.LinkContext.for_provider(provider, base=GH, sha=SHA).history("./src/[id] x.md") == url
+
+
+def test_history_is_absent_for_templates_and_unlinked_paths():
+    tpl = L.LinkContext.for_templates("{base}/{path}?at={sha}", "{base}/c/{sha}",
+                                      base=GH, sha=SHA)
+    assert tpl.history("src/x.ts") is None and tpl.code("src/x.ts")
+    ctx = L.LinkContext.for_provider("github", base=GH, sha=SHA,
+                                     unlinked=frozenset({"src/x.ts"}))
+    assert ctx.history("./src/x.ts") is None and ctx.history("") is None
+
+
+@pytest.mark.parametrize("items, text", [
+    ([], ""),
+    (["a"], "a"),
+    (list("abcde"), "a, b, c, d, e"),
+    (list("abcdefg"), "a, b, c, d, e … and 2 more"),
+])
+def test_named_shows_at_most_five(items, text):
+    assert L.named(items) == text
+
+
 BASE_DC = "https://git.example.com/projects/ACME/repos/checkout"
 
 
@@ -186,6 +215,11 @@ def test_template_without_fragment_has_no_whole_file_link_when_lines_are_in_the_
     ("{base}/{sha.__class__}", "{sha.__class__}"),
     ("{base}/{branch}", "{branch}"),
     ("{base}/{path", "an unbalanced brace"),
+    ("{base}/browse/{path}?at={sha}&x=1;y#{start}-{end}", None),
+    ("{base}/browse/{path};{sha}${start}-{end}", None),   # Phabricator
+    ("{base}/{path}?at={sha}&v=!*'~@,", None),
+    *[(f"{{base}}/{{path}}{ch}{{sha}}", f"the character {ch!r}, which cannot appear in a link")
+      for ch in ["|", " ", ")", "(", "<", ">", "`", "[", "]", "\\", '"', "\n", "\t", "\x7f"]],
 ])
 def test_template_error(template, error):
     assert L.template_error(template) == error
@@ -381,10 +415,51 @@ def test_files_that_differ_from_the_scanned_commit_are_not_linked(tmp_path, chan
         sha = _git(repo, "rev-parse", "HEAD")
         target = "vendor/f.c"
     res = L.link_context(repo, {}, sha, [target, "./src/b.ts"], [])
-    assert res.ctx.code(target, 1) is None
+    assert res.ctx.code(target, 1) is None and res.ctx.history(target) is None
     assert res.ctx.code("src/b.ts", 1), "an unchanged file stays linked"
     stale = [w for w in res.warnings if "not linked" in w]
     assert len(stale) == 1 and target in stale[0] and "src/b.ts" not in stale[0]
+
+
+def test_many_stale_files_are_summarised(tmp_path):
+    repo, sha = _repo(tmp_path)
+    paths = [f"src/n{i}.ts" for i in range(7)]
+    for p in paths:
+        (repo / p).write_text("x\n")
+    res = L.link_context(repo, {}, sha, paths, [])
+    assert res.warnings == [f"7 file(s) differ from the scanned commit {sha[:7]} or are not "
+                            "in it, and are not linked: src/n0.ts, src/n1.ts, src/n2.ts, "
+                            "src/n3.ts, src/n4.ts … and 2 more"]
+
+
+def test_many_paths_are_checked_in_chunks(tmp_path, monkeypatch):
+    repo, sha = _repo(tmp_path)
+    paths = [f"src/p{i:03d}.ts" for i in range(250)] + ["src/a.ts"]
+    calls = []
+    real = L._git
+    monkeypatch.setattr(L, "_git", lambda r, *a, **k: calls.append(a) or real(r, *a, **k))
+    res = L.link_context(repo, {}, sha, paths, [])
+    assert res.ctx.code("src/a.ts") and res.ctx.code("src/p000.ts") is None
+    assert res.warnings[0].startswith("250 file(s)")
+    assert max(len(a) for a in calls) < L.PATHS_PER_CALL + 10
+
+
+def test_chunks_are_bounded_by_count_and_length():
+    many = [f"p{i}" for i in range(250)]
+    assert [len(c) for c in L._chunks(many)] == [100, 100, 50]
+    long = ["d/" * 200 + f"f{i}" for i in range(100)]
+    chunks = list(L._chunks(long))
+    assert sum(chunks, []) == long
+    assert all(sum(len(p) + 1 for p in c) <= L.CHARS_PER_CALL for c in chunks)
+    assert list(L._chunks([])) == [] and list(L._chunks(["x" * 9000])) == [["x" * 9000]]
+
+
+def test_bad_template_character_is_named(tmp_path):
+    cfg, warnings = L.config_from_profile({"links": {"code_template": "{base}/{path} {sha}",
+                                                     "commit_template": "{base}/{sha}"}})
+    assert cfg is None and warnings == [
+        "references are not linked: [links] code_template has the character ' ', which "
+        "cannot appear in a link in .thunderstruck.toml"]
 
 
 def test_bracketed_paths_are_literal(tmp_path):

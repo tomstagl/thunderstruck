@@ -10,6 +10,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+import links as links_mod
 import mdtext
 import report
 from build_fixture import add_remote
@@ -201,8 +204,8 @@ def test_index_and_finding_files_are_untouched(linked_copy, plugin_root):
     assert '"url"' not in index
 
 
-def test_a_report_without_findings_says_nothing_about_links(tmp_path):
-    assert report.link_refs(tmp_path, "a" * 40, []) == (None, [])
+def test_a_report_listing_nothing_says_nothing_about_links(tmp_path):
+    assert report.link_refs(tmp_path, "a" * 40, [], [], []) == (None, [], {})
 
 
 # -------------------------------------------------------------- hardening --
@@ -244,3 +247,201 @@ def test_code_spans_survive_backticks():
     assert report._code("a`b") == "``a`b``"
     assert report._code("`a") == "`` `a ``"
     assert report._code("x\ny") == "`x y`"
+
+
+# ------------------------------------------- hotspot, clean, incomplete (#24) --
+
+
+def _report(repo: Path, plugin_root: Path) -> tuple[str, dict]:
+    subprocess.run([sys.executable, str(plugin_root / "scripts" / "report.py"),
+                    "--repo", str(repo)], check=True, capture_output=True)
+    out = repo / ".thunderstruck"
+    return (out / "report.md").read_text(), json.loads((out / "report.json").read_text())
+
+
+def _no_findings(repo: Path) -> None:
+    """The session fixture may carry other tests' findings; start from none."""
+    import shutil
+    out = repo / ".thunderstruck"
+    shutil.rmtree(out / "findings", ignore_errors=True)
+    (out / "validation.json").unlink(missing_ok=True)
+
+
+def _all_clean(repo: Path) -> dict:
+    _no_findings(repo)
+    data = _hotspots(repo)
+    for h in data["hotspots"]:
+        _write_finding(repo, h["id"], {"hotspot_id": h["id"], "file": h["file"],
+                                       "findings": [], "notes": "nothing found"})
+    return data
+
+
+def _row(md: str, hid: str) -> str:
+    return next(line for line in md.splitlines() if line.startswith(f"| {hid} | "))
+
+
+def _item(md: str, hid: str) -> str:
+    return next(line for line in md.splitlines() if line.startswith(f"- **{hid}** "))
+
+
+def _linked_row(head: str, file: str) -> str:
+    return (f"[`{file}`]({BASE}/blob/{head}/{file}) · "
+            f"[history]({BASE}/commits/{head}/{file})")
+
+
+def test_ranked_hotspots_link_code_and_history(linked_copy, plugin_root):
+    md, payload, _ = _render(linked_copy, plugin_root)
+    head = _head(linked_copy)
+    for h in _hotspots(linked_copy)["hotspots"]:
+        assert f"| {h['id']} | {_linked_row(head, h['file'])} | " in _row(md, h["id"])
+    for h in payload["hotspots"]:
+        assert h["url"] == f"{BASE}/blob/{head}/{h['file']}"
+        assert h["history_url"] == f"{BASE}/commits/{head}/{h['file']}"
+
+
+def test_report_without_findings_links_every_listed_file(linked_copy, plugin_root):
+    data = _all_clean(linked_copy)
+    md, payload = _report(linked_copy, plugin_root)
+    head = _head(linked_copy)
+    assert payload["counts"]["findings"] == 0 and payload["links"]["sha"] == head
+    for h in data["hotspots"]:
+        assert _item(md, h["id"]) == (f"- **{h['id']}** [`{h['file']}`]"
+                                      f"({BASE}/blob/{head}/{h['file']}) — nothing found")
+        assert _linked_row(head, h["file"]) in _row(md, h["id"])
+    assert all(e["url"] == f"{BASE}/blob/{head}/{e['file']}" for e in payload["clean"])
+    assert "not linked" not in md
+
+
+def test_incomplete_hotspots_are_linked(linked_copy, plugin_root):
+    _no_findings(linked_copy)
+    md, payload = _report(linked_copy, plugin_root)  # no investigator output at all
+    head = _head(linked_copy)
+    for h in _hotspots(linked_copy)["hotspots"]:
+        assert _item(md, h["id"]).startswith(
+            f"- **{h['id']}** [`{h['file']}`]({BASE}/blob/{head}/{h['file']}) — no investigator")
+    assert payload["incomplete"] and all(
+        e["url"] == f"{BASE}/blob/{head}/{e['file']}" for e in payload["incomplete"])
+
+
+def _git(repo: Path, *args: str) -> str:
+    from build_fixture import isolated_git_env
+    return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True,
+                          text=True, env=isolated_git_env()).stdout.strip()
+
+
+@pytest.mark.parametrize("change", ["edited", "staged", "committed_after_scan", "untracked",
+                                    "assume_unchanged", "symlink"])
+def test_hotspot_that_differs_from_the_scanned_commit_is_plain(linked_copy, plugin_root,
+                                                                 change):
+    _no_findings(linked_copy)
+    data = _hotspots(linked_copy)
+    h = data["hotspots"][0]
+    file = h["file"]
+    path = linked_copy / file
+    if change == "edited":
+        path.write_text(path.read_text() + "\n// edited\n")
+    elif change == "staged":
+        path.write_text(path.read_text() + "\n// staged\n")
+        _git(linked_copy, "add", file)
+    elif change == "committed_after_scan":
+        path.write_text(path.read_text() + "\n// later\n")
+        _git(linked_copy, "commit", "-qam", "later")
+    elif change == "untracked":
+        _git(linked_copy, "rm", "-q", "--cached", file)
+    elif change == "assume_unchanged":
+        _git(linked_copy, "update-index", "--assume-unchanged", file)
+        path.write_text(path.read_text() + "\n// hidden\n")
+    elif change == "symlink":
+        file = "src/link.ts"
+        (linked_copy / file).symlink_to(Path(h["file"]).name)
+        _git(linked_copy, "add", file)
+        _git(linked_copy, "commit", "-qm", "link")
+        _git(linked_copy, "update-ref", "refs/remotes/origin/main", "HEAD")
+        data["repo"]["head"] = _git(linked_copy, "rev-parse", "HEAD")
+        h["file"] = file
+        (linked_copy / ".thunderstruck" / "hotspots.json").write_text(json.dumps(data))
+    md, payload = _report(linked_copy, plugin_root)
+    assert _row(md, h["id"]).startswith(f"| {h['id']} | `{file}` | ")
+    assert _item(md, h["id"]).startswith(f"- **{h['id']}** `{file}` — ")
+    other = data["hotspots"][1]
+    assert f"[`{other['file']}`](" in _row(md, other["id"]), "unchanged files stay linked"
+    stale = [w for w in payload["warnings"] if "differ from the scanned commit" in w]
+    assert len(stale) == 1 and file in stale[0]
+    entry = next(e for e in payload["hotspots"] if e["id"] == h["id"])
+    assert entry["url"] is None and entry["history_url"] is None
+
+
+def test_many_stale_hotspots_are_summarised(linked_copy, plugin_root):
+    hotspots = _hotspots(linked_copy)["hotspots"]
+    assert len(hotspots) >= 7
+    for h in hotspots:
+        with (linked_copy / h["file"]).open("a") as fh:
+            fh.write("\n// edited\n")
+    md, _ = _report(linked_copy, plugin_root)
+    names = sorted(h["file"] for h in hotspots)
+    expected = (f"{len(names)} file(s) differ from the scanned commit "
+                f"{_head(linked_copy)[:7]} or are not in it, and are not linked: "
+                + ", ".join(names[:5]) + f" … and {len(names) - 5} more")
+    assert f"- {mdtext.text(expected)}" in md.splitlines()
+
+
+def _section(md: str, title: str) -> str:
+    return md.split(f"## {title}", 1)[1].split("\n## ", 1)[0]
+
+
+def test_unlinkable_report_without_findings_warns_once_and_renders_as_before(
+        scanned_copy, plugin_root):
+    _all_clean(scanned_copy)
+    md, payload = _report(scanned_copy, plugin_root)
+    assert [w for w in payload["warnings"] if "not linked" in w] == [
+        f"{links_mod.NOT_LINKED}no git remote to link to; set remote or base_url in [links] "
+        "in .thunderstruck.toml"]
+    assert "](http" not in md and md.count("references are not linked") == 1
+    assert all(e["url"] is None for e in payload["clean"])
+    assert all(h["url"] is None and h["history_url"] is None for h in payload["hotspots"])
+
+    (scanned_copy / ".thunderstruck.toml").write_text("[links]\nenabled = false\n")
+    plain, plain_payload = _report(scanned_copy, plugin_root)
+    assert "not linked" not in plain and plain_payload["links"] is None
+    for title in ("Ranked hotspots", "Hotspots investigated with no finding"):
+        assert _section(md, title) == _section(plain, title)
+
+    _no_findings(scanned_copy)
+    (scanned_copy / ".thunderstruck.toml").unlink()
+    _, incomplete = _report(scanned_copy, plugin_root)
+    assert incomplete["incomplete"] and all(e["url"] is None for e in incomplete["incomplete"])
+
+
+def test_custom_templates_link_code_without_history(linked_copy, plugin_root):
+    (linked_copy / ".thunderstruck.toml").write_text(
+        "[links]\nbase_url = 'https://git.example.com/acme/fixture'\n"
+        "code_template = '{base}/browse/{path}?at={sha}#{start}-{end}'\n"
+        "commit_template = '{base}/commits/{sha}'\n")
+    md, payload = _report(linked_copy, plugin_root)
+    head = _head(linked_copy)
+    h = payload["hotspots"][0]
+    assert h["url"] == f"https://git.example.com/acme/fixture/browse/{h['file']}?at={head}"
+    assert h["history_url"] is None
+    assert "[history]" not in md and f"[`{h['file']}`](https://git.example.com/" in _row(md, h["id"])
+
+
+def test_templates_without_a_whole_file_form_say_so(linked_copy, plugin_root):
+    (linked_copy / ".thunderstruck.toml").write_text(
+        "[links]\nbase_url = 'https://git.example.com/acme/fixture'\n"
+        "code_template = '{base}/file?name={path}&ci={sha}&ln={start}-{end}'\n"
+        "commit_template = '{base}/commits/{sha}'\n")
+    _no_findings(linked_copy)
+    md, payload = _report(linked_copy, plugin_root)
+    assert all(e["url"] is None for e in payload["incomplete"])
+    assert [w for w in payload["warnings"] if "no whole-file form" in w] == [
+        "listed files are not linked: code_template puts {start} or {end} before '#', "
+        "so it has no whole-file form"]
+    assert "](http" not in _section(md, "Ranked hotspots")
+
+
+def test_listed_paths_that_could_leave_the_repo_are_never_linked():
+    ctx = links_mod.LinkContext.for_provider("github", base=BASE, sha="a" * 40)
+    listed = [{"file": "..\\secret.ts"}, {"file": "/etc/passwd"}, {"file": "src/ok.ts"}]
+    out = report._set_file_urls([{"id": "H01", "file": "a\\b.ts"}], listed, ctx)
+    assert out == {"H01": {"url": None, "history_url": None}}
+    assert [e["url"] for e in listed] == [None, None, f"{BASE}/blob/{'a' * 40}/src/ok.ts"]
