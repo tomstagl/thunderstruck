@@ -53,6 +53,24 @@ REQUIRED_FIELDS = [
 CODE_REF = re.compile(r"^(?P<path>[^:]+):(?P<start>\d+)(?:-(?P<end>\d+))?$")
 DETECTOR_REF = re.compile(r"^(?P<pid>[A-Z]+\d+)@(?P<path>[^:]+):(?P<line>\d+)$")
 SHA_REF = re.compile(r"^[0-9a-fA-F]{4,40}$")
+LINE_RANGE = re.compile(r"^(?P<start>\d+)(?:-(?P<end>\d+))?$")
+RANGE_FORM = 'a line ("42") or a range ("42-118") with start ≤ end'
+
+
+def parse_range(value: Any) -> tuple[int, int] | None:
+    """(start, end) for an int or a "42" / "42-118" string; None for anything else."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value, value
+    if isinstance(value, str) and (m := LINE_RANGE.match(value)):
+        start = int(m["start"])
+        return start, int(m["end"] or start)
+    return None
+
+
+def range_fits(span: tuple[int, int] | None, total: int) -> bool:
+    return span is not None and 1 <= span[0] <= span[1] <= total
 
 
 def _count_lines(path: Path) -> int | None:
@@ -157,12 +175,10 @@ class Validator:
             rel, total, problem = self._resolve(m.group("path"))
             if problem:
                 errors.append(f"{where}.ref {ref!r} — {m.group('path')!r} {problem}")
-            else:
-                last = int(m.group("end") or m.group("start"))
-                if int(m.group("start")) < 1 or last > total:
-                    errors.append(
-                        f"{where}.ref {ref!r} — {rel} has {total} lines, so that "
-                        f"line does not exist")
+            elif not range_fits((int(m["start"]), int(m["end"] or m["start"])), total):
+                errors.append(
+                    f"{where}.ref {ref!r} — must be {RANGE_FORM} inside {rel}, "
+                    f"which has {total} lines")
         elif etype == "commit":
             short = ref.split()[0]
             if not SHA_REF.match(short):
@@ -212,9 +228,13 @@ class Validator:
         if not isinstance(loc, dict) or not loc.get("file"):
             errors.append(f"{where}.location.file is missing")
         else:
-            _, _, problem = self._resolve(loc["file"])
+            rel, total, problem = self._resolve(loc["file"])
             if problem:
                 errors.append(f"{where}.location.file {loc['file']!r} {problem}")
+            elif loc.get("lines") is not None and not range_fits(parse_range(loc["lines"]), total):
+                errors.append(
+                    f"{where}.location.lines {loc['lines']!r} must be {RANGE_FORM} inside "
+                    f"{rel}, which has {total} lines (leave it out for a whole-file finding)")
 
         pats = f.get("missing_patterns")
         if not isinstance(pats, list) or not pats:

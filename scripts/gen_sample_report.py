@@ -259,8 +259,11 @@ def generate() -> str:
                                              "depending on this component"})
                 item = {k: v for k, v in spec.items()
                         if k not in ("symbol", "anchor", "catalog")}
+                # the symbol's span, clamped to the file: a range past the end
+                # of the file is rejected by the validator (#25)
+                total = len((repo / hs["file"]).read_text(encoding="utf-8").splitlines())
                 item["location"] = {"file": hs["file"], "symbol": spec["symbol"],
-                                    "lines": f"{line}-{line + 12}"}
+                                    "lines": f"{line}-{min(line + 12, total)}"}
                 item["evidence"] = evidence
                 built.append(item)
             doc = {"hotspot_id": hs["id"], "file": hs["file"], "findings": built}

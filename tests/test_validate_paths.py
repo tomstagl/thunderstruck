@@ -132,3 +132,33 @@ def test_uncommitted_edits_validate_against_the_working_tree(repo):
     with (repo / "src" / "a.ts").open("a") as fh:
         fh.write("".join(f"more {n}\n" for n in range(10)))
     assert _validator(repo).check_document(_doc("src/a.ts", code_ref="src/a.ts:30")) == []
+
+
+# ------------------------------------------------------------ line ranges --
+
+
+@pytest.mark.parametrize("lines", [16, "16", "16-20", "1-20", "20", None])
+def test_readable_location_ranges_are_accepted(repo, lines):
+    assert _validator(repo).check_document(_doc("src/a.ts", lines)) == []
+
+
+def test_a_location_without_lines_is_a_whole_file_finding(repo):
+    assert _validator(repo).check_document(_doc("src/a.ts")) == []
+
+
+@pytest.mark.parametrize("lines", ["L16", "16–18", "18-16", "16-21", "21", 0, "0", True,
+                                   " 16", "16 - 18", [16], "16,18", ""])
+def test_unreadable_location_ranges_are_rejected(repo, lines):
+    errors = _validator(repo).check_document(_doc("src/a.ts", lines))
+    assert len(errors) == 1 and "location.lines" in errors[0], errors
+    assert '"42-118"' in errors[0] and "20 lines" in errors[0]
+
+
+@pytest.mark.parametrize("ref, ok", [
+    ("src/a.ts:16", True), ("src/a.ts:16-20", True), ("src/a.ts:16-16", True),
+    ("src/a.ts:18-16", False), ("src/a.ts:0", False), ("src/a.ts:20-21", False)])
+def test_code_ref_ranges_must_ascend_inside_the_file(repo, ref, ok):
+    errors = _validator(repo).check_document(_doc("src/a.ts", code_ref=ref))
+    assert (errors == []) is ok, errors
+    if not ok:
+        assert "start ≤ end" in errors[0] and "20 lines" in errors[0]
