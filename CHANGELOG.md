@@ -4,6 +4,20 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.4.0
+
+### Added
+
+- Source links in the report. Each finding's location and every `code`,
+  `detector` and `commit` ref in `report.md` links to the cited lines, or the
+  commit, at the scanned SHA on GitHub, GitLab or Bitbucket; other hosts are
+  configured with a `[links]` table. `report.json` carries the same URLs and
+  a `links` object (#22).
+- A cited file that differs from the scanned commit is left unlinked and
+  named, so no link opens other lines than the ones cited. Credentials in a
+  remote URL never reach the report, and every reason links could not be
+  built is printed under *Run warnings* (#22).
+
 ## 0.3.1
 
 ### Fixed
