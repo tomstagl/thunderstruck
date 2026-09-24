@@ -159,6 +159,35 @@ def test_unlinked_paths_get_no_url():
     assert ctx.code("src/y.ts", 3)
 
 
+@pytest.mark.parametrize("provider, url", [
+    ("github", f"{GH}/commits/{SHA}/src/%5Bid%5D%20x.md"),
+    ("gitlab", f"{GH}/-/commits/{SHA}/src/%5Bid%5D%20x.md"),
+    ("bitbucket", f"{GH}/history-node/{SHA}/src/%5Bid%5D%20x.md"),
+])
+def test_history_urls(provider, url):
+    """Pinned to the scanned commit, encoded per segment, never ?plain=1."""
+    assert L.LinkContext.for_provider(provider, base=GH, sha=SHA).history("./src/[id] x.md") == url
+
+
+def test_history_is_absent_for_templates_and_unlinked_paths():
+    tpl = L.LinkContext.for_templates("{base}/{path}?at={sha}", "{base}/c/{sha}",
+                                      base=GH, sha=SHA)
+    assert tpl.history("src/x.ts") is None and tpl.code("src/x.ts")
+    ctx = L.LinkContext.for_provider("github", base=GH, sha=SHA,
+                                     unlinked=frozenset({"src/x.ts"}))
+    assert ctx.history("./src/x.ts") is None and ctx.history("") is None
+
+
+@pytest.mark.parametrize("items, text", [
+    ([], ""),
+    (["a"], "a"),
+    (list("abcde"), "a, b, c, d, e"),
+    (list("abcdefg"), "a, b, c, d, e … and 2 more"),
+])
+def test_named_shows_at_most_five(items, text):
+    assert L.named(items) == text
+
+
 BASE_DC = "https://git.example.com/projects/ACME/repos/checkout"
 
 
@@ -381,10 +410,21 @@ def test_files_that_differ_from_the_scanned_commit_are_not_linked(tmp_path, chan
         sha = _git(repo, "rev-parse", "HEAD")
         target = "vendor/f.c"
     res = L.link_context(repo, {}, sha, [target, "./src/b.ts"], [])
-    assert res.ctx.code(target, 1) is None
+    assert res.ctx.code(target, 1) is None and res.ctx.history(target) is None
     assert res.ctx.code("src/b.ts", 1), "an unchanged file stays linked"
     stale = [w for w in res.warnings if "not linked" in w]
     assert len(stale) == 1 and target in stale[0] and "src/b.ts" not in stale[0]
+
+
+def test_many_stale_files_are_summarised(tmp_path):
+    repo, sha = _repo(tmp_path)
+    paths = [f"src/n{i}.ts" for i in range(7)]
+    for p in paths:
+        (repo / p).write_text("x\n")
+    res = L.link_context(repo, {}, sha, paths, [])
+    assert res.warnings == [f"7 file(s) differ from the scanned commit {sha[:7]} or are not "
+                            "in it, and are not linked: src/n0.ts, src/n1.ts, src/n2.ts, "
+                            "src/n3.ts, src/n4.ts … and 2 more"]
 
 
 def test_bracketed_paths_are_literal(tmp_path):

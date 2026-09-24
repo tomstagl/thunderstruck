@@ -36,6 +36,13 @@ TEMPLATES = {
                   "{base}/src/{sha}/{path}",
                   "{base}/commits/{sha}"),
 }
+# provider -> a file's change history up to a commit; custom templates have none
+HISTORY = {
+    "github": "{base}/commits/{sha}/{path}",
+    "gitlab": "{base}/-/commits/{sha}/{path}",
+    "bitbucket": "{base}/history-node/{sha}/{path}",
+}
+MAX_NAMED = 5
 # GitHub and GitLab render these and ignore line anchors unless ?plain=1.
 PLAIN_PROVIDERS = frozenset({"github", "gitlab"})
 PLAIN_EXTS = frozenset({".md", ".markdown", ".mdown", ".mkd", ".rst", ".adoc",
@@ -175,12 +182,13 @@ class LinkContext:
     provider: str | None = None
     remote: str | None = None
     unlinked: frozenset[str] = field(default_factory=frozenset)
+    history_tpl: str | None = None
 
     @classmethod
     def for_provider(cls, provider: str, *, base: str, sha: str, **kw) -> "LinkContext":
         rng, line, whole, commit = TEMPLATES[provider]
         return cls(base=base, sha=sha, code_range=rng, code_line=line, code_file=whole,
-                   commit_tpl=commit, provider=provider, **kw)
+                   commit_tpl=commit, provider=provider, history_tpl=HISTORY[provider], **kw)
 
     @classmethod
     def for_templates(cls, code: str, commit: str, *, base: str, sha: str, **kw) -> "LinkContext":
@@ -205,8 +213,23 @@ class LinkContext:
             url = f"{head}?plain=1{sep}{frag}"
         return url
 
+    def history(self, path: str) -> str | None:
+        """The file's change history up to the scanned commit, or None."""
+        rel = c.ref_path(path)
+        if not self.history_tpl or not rel or rel in self.unlinked:
+            return None
+        return _fill(self.history_tpl, {"base": self.base, "sha": self.sha,
+                                        "path": encode_path(rel)})
+
     def commit(self, full_sha: str) -> str:
         return _fill(self.commit_tpl, {"base": self.base, "sha": full_sha})
+
+
+def named(items, limit: int = MAX_NAMED) -> str:
+    """The first `limit` items, then how many more: a warning never floods the report."""
+    items = list(items)
+    shown = ", ".join(items[:limit])
+    return shown + (f" … and {len(items) - limit} more" if len(items) > limit else "")
 
 
 def _ext(path: str) -> str:
@@ -359,9 +382,9 @@ def _resolve(repo, cfg: LinkConfig, sha: str, cited_paths, cited_commits) -> Lin
     escaping = {p for p in paths if _escapes(p)}
     unlinked = escaping | _stale_paths(repo, sha, [p for p in paths if p not in escaping])
     if unlinked:
-        warnings.append(f"{len(unlinked)} cited file(s) differ from the scanned commit "
+        warnings.append(f"{len(unlinked)} file(s) differ from the scanned commit "
                         f"{sha[:7]} or are not in it, and are not linked: "
-                        + ", ".join(sorted(unlinked)))
+                        + named(sorted(unlinked)))
 
     commits: dict[str, str] = {}
     for token in sorted({t for t in cited_commits if _HEX.fullmatch(t or "")}):
