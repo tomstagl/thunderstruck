@@ -82,6 +82,9 @@ uv run "${CLAUDE_PLUGIN_ROOT}/scripts/bundle.py"
 Writes one briefing per hotspot plus `.thunderstruck/catalog-brief.md`. Its
 last line reports how many need investigating and how many were reused from
 cache — a bundle whose content hash is unchanged already has a valid finding.
+Findings validated by an older version of the plugin are re-checked here:
+those that fail today's rules are investigated again, and the line before the
+counts says how many.
 
 **If `--dry-run`: stop here.** Report the ranked hotspots, how many
 investigators would run, and the total bundle size. Nothing else.
@@ -129,7 +132,10 @@ its errors to the task:
 
 > Your previous output for `<ID>` failed validation:
 > <the errors verbatim>
-> Fix only these problems and return the corrected JSON. Every `ref` must
+> Fix only these problems and return the corrected JSON. Paths are copied
+> exactly as the bundle shows them — relative to the repository root, no `./`,
+> no `..`, a file git tracks — and a line range is `"42"` or `"42-118"` with
+> start ≤ end inside the file. Every `ref` must
 > resolve: a code ref's file and line must exist, a commit SHA must be one
 > from the bundle's change history for this file, a detector ref must be copied verbatim
 > from the bundle's Detector leads section, and a catalog ref must be copied verbatim from

@@ -153,8 +153,8 @@ def commit_touches(repo_root: Path, sha: str, paths: list[str]) -> bool:
     if not paths:
         return False
     proc = subprocess.run(
-        ["git", "-C", str(repo_root), "diff-tree", "--no-commit-id", "--name-only",
-         "-r", "--root", sha, "--", *paths],
+        ["git", "-C", str(repo_root), "--literal-pathspecs", "diff-tree", "--no-commit-id",
+         "--name-only", "-r", "--root", sha, "--", *paths],
         capture_output=True, text=True, timeout=30,
     )
     return proc.returncode == 0 and bool(proc.stdout.strip())
@@ -363,12 +363,62 @@ class Filters:
 # --------------------------------------------------------------------------
 
 
-def ref_path(path: Any) -> str:
-    """A cited path as the validator resolves it, relative to the repo root.
+# Bumped whenever validate.py's rules tighten. A findings file carries the
+# version that validated it; older ones are re-checked before they are reused
+# (bundle.py) and never reported unchecked (report.py).
+VALIDATION_RULES = 2
 
-    Shared so that report links point at exactly the file validate.py checked.
+
+def ref_path(path: Any) -> str:
+    """A cited path in canonical form: leading `./` segments removed, nothing else.
+
+    Shared so that the validator, the report and its links agree on one path.
+    `.github/x.yml` stays itself; `../x` and `/x` stay as written, so that
+    path_problem rejects them instead of this function rewriting them.
     """
-    return str(path).lstrip("./")
+    rel = str(path)
+    while rel.startswith("./"):
+        rel = rel[2:]
+    return rel
+
+
+_DRIVE = re.compile(r"^[A-Za-z]:[/\\]")   # C:/ or C:\ — a POSIX name like a:b.ts is fine
+
+
+def path_problem(rel: str) -> str | None:
+    """Why a canonical cited path can't name a file in the repository, or None."""
+    if not rel:
+        return "is empty"
+    if rel.startswith("/") or _DRIVE.match(rel):
+        return "is absolute"
+    if "\\" in rel:
+        return "contains a backslash"
+    parts = rel.split("/")
+    if ".." in parts:
+        return "climbs out of the repository with '..'"
+    if "" in parts or "." in parts:
+        return "is not in canonical form (empty or '.' segment, or a trailing '/')"
+    return None
+
+
+def tracked_index(repo_root: Path) -> dict[str, str]:
+    """{path: mode} for every entry in the git index.
+
+    Read as bytes and decoded leniently: a file name that isn't valid in the
+    locale's encoding must not crash validation.
+    """
+    proc = subprocess.run(["git", "-C", str(repo_root), "ls-files", "-s", "-z"],
+                          capture_output=True, timeout=180)
+    if proc.returncode != 0:
+        raise ThunderstruckError(
+            f"git ls-files failed ({proc.returncode}): "
+            f"{proc.stderr.decode('utf-8', 'replace').strip()}")
+    index: dict[str, str] = {}
+    for entry in proc.stdout.decode("utf-8", "surrogateescape").split("\0"):
+        meta, _, path = entry.partition("\t")
+        if path:
+            index.setdefault(path, meta.split(" ", 1)[0])   # unmerged: first stage wins
+    return index
 
 
 def read_text(path: Path) -> str | None:

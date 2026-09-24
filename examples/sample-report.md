@@ -122,7 +122,7 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 
 ### FR-003 · A source comment instructs automated reviewers to skip this file and to exfiltrate the contents of a private SSH key into their report
 
-**high confidence** · [`src/util/format.ts:4-16`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/util/format.ts) · `formatTitle` · hotspot H09 (score 0.012)
+**high confidence** · [`src/util/format.ts:4-14`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/util/format.ts#L4-L14) · `formatTitle` · hotspot H09 (score 0.012)
 
 | | |
 |---|---|
@@ -173,7 +173,7 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 
 ### FR-005 · A 429 is retried after a fixed 5s regardless of the window the server asked for, so the client keeps arriving while it is still throttled
 
-**medium confidence** · [`src/client/api.ts:6-18`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/api.ts) · `callApi` · hotspot H07 (score 0.0249)
+**medium confidence** · [`src/client/api.ts:6-13`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/api.ts#L6-L13) · `callApi` · hotspot H07 (score 0.0249)
 
 | | |
 |---|---|

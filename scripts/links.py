@@ -118,8 +118,9 @@ def encode_path(path: str) -> str:
 def parse_lines(value, total: int | None) -> tuple[int, int] | None:
     """A finding's `location.lines` as (start, end), or None if unusable.
 
-    validate.py does not check this field, so it is parsed strictly here: an
-    int or "a" / "a-b", inside the file. Anything else links the whole file.
+    validate.py rejects an unusable range; this still parses it on its own, so
+    a tampered or older findings file can't produce a wrong anchor: an int or
+    "a" / "a-b", inside the file. Anything else links the whole file.
     """
     if total is None:
         return None

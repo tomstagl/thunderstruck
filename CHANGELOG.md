@@ -4,6 +4,18 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.0
+
+### Changed
+
+- **Stricter finding validation** (#25).
+  - A cited path must name a file git tracks, relative to the repository root, and stay inside it. Absolute paths, `..`, untracked, ignored, symlinked and submodule paths are rejected, never rewritten or opened.
+  - Every line range must lie inside its file with start ≤ end, including a finding's `location.lines`.
+  - Paths to dotfiles are no longer misread (`.github/x.py` was read as `github/x.py`).
+  - `./src/a.ts` and `src/a.ts` now share one stable key, one `index.json` entry and one guardrail lookup.
+- **Findings validated by 0.4.0 or earlier are re-checked once** on the next scan. Those that still pass are reused; those that fail today's rules are investigated again, and `bundle.py` says how many. The report shows only findings validated under the current rules; anything else is listed as Incomplete with the reason.
+- The sample report's two overrunning line ranges (`api.ts`, `format.ts`) are clamped to their files and regain their line anchors.
+
 ## 0.4.0
 
 ### Added

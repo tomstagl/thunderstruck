@@ -28,8 +28,11 @@ recorded as analysis_failed. No retry loops.
 from __future__ import annotations
 
 import argparse
+import errno
 import json
+import os
 import re
+import stat
 import sys
 from pathlib import Path
 from typing import Any
@@ -49,9 +52,34 @@ REQUIRED_FIELDS = [
     "confidence", "confidence_rationale", "how_to_verify",
 ]
 
-CODE_REF = re.compile(r"^(?P<path>[^:]+):(?P<start>\d+)(?:-(?P<end>\d+))?$")
+# [0-9] and \Z, not \d and $: "١٦" and a trailing newline are not line numbers
+CODE_REF = re.compile(r"^(?P<path>[^:]+):(?P<start>[0-9]+)(?:-(?P<end>[0-9]+))?\Z")
 DETECTOR_REF = re.compile(r"^(?P<pid>[A-Z]+\d+)@(?P<path>[^:]+):(?P<line>\d+)$")
 SHA_REF = re.compile(r"^[0-9a-fA-F]{4,40}$")
+LINE_RANGE = re.compile(r"^(?P<start>[0-9]+)(?:-(?P<end>[0-9]+))?\Z")
+RANGE_FORM = 'a line ("42") or a range ("42-118") with start ≤ end'
+
+
+def parse_range(value: Any) -> tuple[int, int] | None:
+    """(start, end) for an int or a "42" / "42-118" string; None for anything else."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value, value
+    if isinstance(value, str) and (m := LINE_RANGE.match(value)):
+        start = int(m["start"])
+        return start, int(m["end"] or start)
+    return None
+
+
+def range_fits(span: tuple[int, int] | None, total: int) -> bool:
+    return span is not None and 1 <= span[0] <= span[1] <= total
+
+
+def range_error(rel: str, total: int) -> str:
+    """The one message for any unusable line range, in a location or a code ref."""
+    lines = "line" if total == 1 else "lines"
+    return f"that line does not exist: use {RANGE_FORM} inside {rel}, which has {total} {lines}"
 
 
 def _count_lines(path: Path) -> int | None:
@@ -79,6 +107,8 @@ class Validator:
         self._pinned: str | None = None
         self._line_cache: dict[str, int | None] = {}
         self._sha_cache: dict[str, bool] = {}
+        self._index: dict[str, str] | None = None
+        self._resolved: dict[str, tuple[str, int | None, str | None]] = {}
 
     # ---------------------------------------------------------------- refs
 
@@ -86,6 +116,77 @@ class Validator:
         if rel not in self._line_cache:
             self._line_cache[rel] = _count_lines(self.repo / rel)
         return self._line_cache[rel]
+
+    def _tracked(self) -> dict[str, str]:
+        """{path: mode} for every entry in the git index, loaded once."""
+        if self._index is None:
+            self._index = c.tracked_index(self.repo)
+        return self._index
+
+    def _resolves_to_itself(self, path: Path, rel: str) -> bool:
+        try:
+            return path.resolve() == self.repo.resolve() / rel
+        except (OSError, RuntimeError):  # a symlink loop raises on Python 3.11
+            return False
+
+    def _spelling_hint(self, rel: str) -> str:
+        lowered = rel.lower()
+        match = next((p for p in self._tracked() if p.lower() == lowered), None)
+        return f" (did you mean {match!r}?)" if match else ""
+
+    def _resolve(self, raw: Any) -> tuple[str, int | None, str | None]:
+        """(canonical path, line count, error) for a cited path.
+
+        "Inside the repository" means in the git index. Every check runs before
+        the file is opened, so a path outside the repository is never read.
+        """
+        key = str(raw)
+        if key in self._resolved:
+            return self._resolved[key]
+        rel = c.ref_path(raw)
+        total: int | None = None
+        error: str | None = None
+        mode = None
+        path = self.repo / rel
+        if (why := c.path_problem(rel)):
+            error = (f"{why}. Cite the path relative to the repository root, exactly "
+                     f"as the bundle shows it")
+        elif (mode := self._tracked().get(rel)) is None:
+            hint = self._spelling_hint(rel)
+            if hint:
+                error = "is not tracked under that spelling" + hint
+            elif os.path.isdir(path):
+                error = "is a directory, not a file"
+            elif os.path.lexists(path):
+                error = "is not tracked by git; untracked and ignored files can't be cited"
+            else:
+                error = "no such file in the repository"
+        elif mode == "120000":
+            error = "is a symbolic link; cite the file it points to"
+        elif mode == "160000":
+            error = "is a submodule, not a file"
+        elif not self._resolves_to_itself(path, rel):
+            # a tracked path replaced locally by a link, even to a file inside
+            # the repository such as an ignored .env, is not what git tracks
+            error = "passes through a symbolic link in the working tree"
+        else:
+            try:
+                st = os.lstat(path)
+            except OSError as exc:
+                st = None
+                if exc.errno == errno.ELOOP:   # Python 3.13+ resolves loops without raising
+                    error = "passes through a symbolic link in the working tree"
+            if error:
+                pass
+            elif st is None:
+                error = ("is tracked but missing from the working tree (deleted locally, "
+                         "or outside a sparse checkout)")
+            elif not stat.S_ISREG(st.st_mode):
+                error = "is not a regular file in the working tree"
+            elif (total := self._lines_in(rel)) is None:
+                error = "could not be read"
+        self._resolved[key] = (rel, total, error)
+        return self._resolved[key]
 
     def _sha_ok(self, sha: str) -> bool:
         if sha not in self._sha_cache:
@@ -107,19 +208,15 @@ class Validator:
 
         if etype == "code":
             m = CODE_REF.match(ref)
-            if not m:
+            raw_path = m["path"] if m else ref.rpartition(":")[0]
+            if not m and (not raw_path or re.search(r":[0-9]+\Z", raw_path)):
                 errors.append(f"{where}.ref {ref!r} is not path:line or path:start-end")
                 return etype
-            rel = c.ref_path(m.group("path"))
-            total = self._lines_in(rel)
-            if total is None:
-                errors.append(f"{where}.ref {ref!r} — no such file in the repository")
-            else:
-                last = int(m.group("end") or m.group("start"))
-                if int(m.group("start")) < 1 or last > total:
-                    errors.append(
-                        f"{where}.ref {ref!r} — {rel} has {total} lines, so that "
-                        f"line does not exist")
+            rel, total, problem = self._resolve(raw_path)
+            if problem:
+                errors.append(f"{where}.ref {ref!r} — {raw_path!r} {problem}")
+            elif not m or not range_fits((int(m["start"]), int(m["end"] or m["start"])), total):
+                errors.append(f"{where}.ref {ref!r} — {range_error(rel, total)}")
         elif etype == "commit":
             short = ref.split()[0]
             if not SHA_REF.match(short):
@@ -168,8 +265,13 @@ class Validator:
         loc = f.get("location")
         if not isinstance(loc, dict) or not loc.get("file"):
             errors.append(f"{where}.location.file is missing")
-        elif self._lines_in(c.ref_path(loc["file"])) is None:
-            errors.append(f"{where}.location.file {loc['file']!r} — no such file")
+        else:
+            rel, total, problem = self._resolve(loc["file"])
+            if problem:
+                errors.append(f"{where}.location.file {loc['file']!r} {problem}")
+            elif loc.get("lines") is not None and not range_fits(parse_range(loc["lines"]), total):
+                errors.append(f"{where}.location.lines {loc['lines']!r} — "
+                              f"{range_error(rel, total)} (leave it out for a whole-file finding)")
 
         pats = f.get("missing_patterns")
         if not isinstance(pats, list) or not pats:
@@ -210,16 +312,19 @@ class Validator:
                             where: str, errors: list[str]) -> None:
         """A commit is evidence only if it changed the code the finding is
         about. Without this, any SHA from the bundle buys 'high' confidence."""
-        files: list[str] = []
+        cited: list[str] = []
         loc = f.get("location")
         if isinstance(loc, dict) and loc.get("file"):
-            files.append(c.ref_path(loc["file"]))
+            cited.append(loc["file"])
         for ev in evidence:
             if isinstance(ev, dict) and ev.get("type") == "code":
                 m = CODE_REF.match(str(ev.get("ref") or "").strip())
                 if m:
-                    files.append(c.ref_path(m.group("path")))
-        files = list(dict.fromkeys(files))
+                    cited.append(m.group("path"))
+        # only paths that resolved: an invalid one already has its own error
+        files = list(dict.fromkeys(rel for rel, _, err in map(self._resolve, cited) if not err))
+        if not files:
+            return
         for i, (ev, etype) in enumerate(zip(evidence, types)):
             if etype != "commit":
                 continue
@@ -256,6 +361,20 @@ class Validator:
         for i, f in enumerate(findings):
             self.check_finding(f, i, errors)
         return errors
+
+
+def canonicalise(finding: dict) -> None:
+    """Write the canonical path back into a valid finding, so a file has one
+    identity everywhere: its key, index.json, the guardrail and the report."""
+    loc = finding.get("location")
+    if isinstance(loc, dict) and loc.get("file"):
+        loc["file"] = c.ref_path(loc["file"])
+    for ev in finding.get("evidence") or []:
+        if isinstance(ev, dict) and ev.get("type") == "code":
+            m = CODE_REF.match(str(ev.get("ref") or "").strip())
+            if m:
+                rng = m["start"] + (f"-{m['end']}" if m["end"] else "")
+                ev["ref"] = f"{c.ref_path(m['path'])}:{rng}"
 
 
 def stable_key(file: str, failure_mode: str) -> str:
@@ -325,11 +444,13 @@ def main(argv: list[str] | None = None) -> int:
         n = len(doc.get("findings") or []) if isinstance(doc, dict) else 0
         if not errors and isinstance(doc, dict):
             for f in doc["findings"]:
+                canonicalise(f)
                 f["key"] = stable_key(f.get("location", {}).get("file", ""),
                                       f.get("failure_mode", ""))
                 f["content_hash"] = c.sha256_file(
                     repo / c.ref_path(f.get("location", {}).get("file", "")))
                 f["catalog_evidence"] = catalog_evidence(f, validator.catalog_edges)
+            doc["validated_with"] = c.VALIDATION_RULES
             path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
         results.append({"path": str(path), "hotspot_id": doc.get("hotspot_id", path.stem)
                         if isinstance(doc, dict) else path.stem,

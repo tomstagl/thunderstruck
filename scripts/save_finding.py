@@ -69,12 +69,20 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         doc.setdefault("hotspot_id", args.id)
         doc.setdefault("file", entry["file"])
+        # validate.py owns these; a model echoing them must not pass as validated
+        doc.pop("validated_with", None)
+        findings = doc.get("findings")
+        for f in findings if isinstance(findings, list) else []:
+            if isinstance(f, dict):
+                for owned in ("key", "content_hash", "catalog_evidence"):
+                    f.pop(owned, None)
 
     doc["bundle_hash"] = entry["bundle_hash"]
     doc["schema"] = c.FINDING_SCHEMA_VERSION
     dest = out / "findings" / f"{args.id}.json"
     c.write_json(dest, doc)
-    print(f"{args.id}: {len(doc.get('findings') or [])} finding(s) -> {dest}")
+    n = len(doc["findings"]) if isinstance(doc.get("findings"), list) else 0
+    print(f"{args.id}: {n} finding(s) -> {dest}")
     return 0
 
 

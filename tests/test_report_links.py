@@ -17,7 +17,10 @@ from test_pipeline import _hotspots, _valid_finding, _validate, _write_finding
 BASE = "https://github.com/acme/fixture"
 
 
-def _render(repo: Path, plugin_root: Path, mutate=None) -> tuple[str, dict, dict]:
+def _render(repo: Path, plugin_root: Path, mutate=None, tamper=None) -> tuple[str, dict, dict]:
+    """`mutate` edits the finding before validation. `tamper` edits the saved,
+    already validated file, which is how input the validator would reject can
+    still reach the report and prove its defence in depth."""
     data = _hotspots(repo)
     hid, doc = _valid_finding(repo, data)
     if mutate:
@@ -25,6 +28,12 @@ def _render(repo: Path, plugin_root: Path, mutate=None) -> tuple[str, dict, dict
     _write_finding(repo, hid, doc)
     proc = _validate(repo, plugin_root)
     assert proc.returncode == 0, proc.stdout
+    if tamper:
+        path = repo / ".thunderstruck" / "findings" / f"{hid}.json"
+        saved = json.loads(path.read_text())
+        tamper(saved["findings"][0])
+        tamper(doc["findings"][0])
+        path.write_text(json.dumps(saved))
     proc = subprocess.run([sys.executable, str(plugin_root / "scripts" / "report.py"),
                            "--repo", str(repo)], capture_output=True, text=True)
     assert proc.returncode == 0, proc.stdout + proc.stderr
@@ -76,7 +85,7 @@ def test_commit_ref_keeps_its_subject(linked_copy, plugin_root):
 def test_unreadable_location_lines_link_the_whole_file(linked_copy, plugin_root):
     def odd_lines(f):
         f["location"]["lines"] = "L16"
-    md, payload, finding = _render(linked_copy, plugin_root, odd_lines)
+    md, payload, finding = _render(linked_copy, plugin_root, tamper=odd_lines)
     file = finding["location"]["file"]
     url = f"{BASE}/blob/{_head(linked_copy)}/{file}"
     assert f"[`{file}:L16`]({url})" in md
@@ -203,7 +212,7 @@ def test_model_text_cannot_hijack_a_link(linked_copy, plugin_root):
         f["location"]["lines"] = "16`](https://evil.example/x) `"
         ev = next(e for e in f["evidence"] if e["type"] == "commit")
         ev["ref"] += " x`](https://evil.example/y) `"
-    md, _, _ = _render(linked_copy, plugin_root, inject)
+    md, _, _ = _render(linked_copy, plugin_root, tamper=inject)
     for line in md.splitlines():
         # the attacker's target may appear inside a code span, never as a link target
         assert "](https://evil.example" not in re.sub(r"(`+).*?\1", "", line), line
@@ -213,7 +222,7 @@ def test_reversed_code_range_gets_an_ordered_anchor(linked_copy, plugin_root):
     def reverse(f):
         code = next(e for e in f["evidence"] if e["type"] == "code")
         code["ref"] = code["ref"].rsplit(":", 1)[0] + ":2-1"
-    md, _, _ = _render(linked_copy, plugin_root, reverse)
+    md, _, _ = _render(linked_copy, plugin_root, tamper=reverse)
     assert "#L1-L2)" in _evidence_lines(md, "code")[0]
 
 
@@ -221,6 +230,8 @@ def test_non_utf8_profile_is_reported_as_unreadable(linked_copy, plugin_root):
     (linked_copy / ".thunderstruck.toml").write_bytes(b"[links]\nprovider = '\xff'\n")
     data = _hotspots(linked_copy)
     hid, doc = _valid_finding(linked_copy, data)
+    # the profile can't be read, so validate.py can't run; stand in for it
+    doc["validated_with"] = report.c.VALIDATION_RULES
     _write_finding(linked_copy, hid, doc)
     (linked_copy / ".thunderstruck" / "validation.json").write_text(json.dumps(
         {"results": [{"hotspot_id": hid, "valid": True}]}))
