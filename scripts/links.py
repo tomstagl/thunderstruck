@@ -195,3 +195,186 @@ class LinkContext:
 def _ext(path: str) -> str:
     name = path.rsplit("/", 1)[-1]
     return name[name.rfind("."):].lower() if "." in name else ""
+
+
+# --------------------------------------------------------------------------
+# config and git — every linking git call lives below
+# --------------------------------------------------------------------------
+
+NOT_LINKED = "references are not linked: "
+CONFIG_KEYS = frozenset({"enabled", "remote", "provider", "base_url",
+                         "code_template", "commit_template"})
+GIT_TIMEOUT = 30
+_HEX = re.compile(r"[0-9a-fA-F]{4,40}")
+_FULL_SHA = re.compile(r"[0-9a-f]{40}")
+_USERINFO = re.compile(r"(://)[^/@\s]+@")
+
+
+@dataclass(frozen=True)
+class LinkConfig:
+    remote: str | None = None
+    provider: str | None = None
+    base_url: str | None = None
+    code_template: str | None = None
+    commit_template: str | None = None
+
+
+@dataclass(frozen=True)
+class LinkResult:
+    ctx: LinkContext | None
+    commits: dict[str, str]        # cited commit token -> full SHA
+    warnings: list[str]
+
+
+def config_from_profile(profile) -> tuple[LinkConfig | None, list[str]]:
+    """Validate [links]. Disabled -> (None, []); invalid -> (None, [one warning])."""
+    section = profile.get("links") if isinstance(profile, dict) else None
+    if section is None:
+        return LinkConfig(), []
+
+    def bad(reason: str) -> tuple[None, list[str]]:
+        return None, [f"{NOT_LINKED}[links] {reason} in .thunderstruck.toml"]
+
+    if not isinstance(section, dict):
+        return bad("must be a table")
+    unknown = sorted(set(section) - CONFIG_KEYS)
+    if unknown:
+        return bad(f"has unknown key {unknown[0]!r}")
+    enabled = section.get("enabled", True)
+    if not isinstance(enabled, bool):
+        return bad("enabled must be true or false")
+    if not enabled:
+        return None, []
+    for key in CONFIG_KEYS - {"enabled"}:
+        if key in section and not isinstance(section[key], str):
+            return bad(f"{key} must be a string")
+    provider = section.get("provider")
+    if provider is not None and provider not in TEMPLATES:
+        return bad(f"provider must be one of {', '.join(sorted(TEMPLATES))}")
+    base_url = section.get("base_url")
+    if base_url is not None and not valid_base_url(base_url):
+        return bad("base_url must be an http(s) URL without braces, '#', '?' or spaces")
+    code_t, commit_t = section.get("code_template"), section.get("commit_template")
+    if (code_t is None) != (commit_t is None):
+        return bad("code_template and commit_template must be set together")
+    for key, tpl in (("code_template", code_t), ("commit_template", commit_t)):
+        if tpl is not None and (err := template_error(tpl)):
+            return bad(f"{key} uses {err}; allowed: "
+                       + " ".join("{" + p + "}" for p in sorted(PLACEHOLDERS)))
+    return LinkConfig(remote=section.get("remote"), provider=provider,
+                      base_url=base_url.rstrip("/") if base_url else None,
+                      code_template=code_t, commit_template=commit_t), []
+
+
+def link_context(repo, profile, scanned_sha: str, cited_paths, cited_commits) -> LinkResult:
+    """Everything the report needs to link refs, or None plus the reason.
+
+    Never raises for a git problem: the report must render either way.
+    """
+    cfg, warnings = config_from_profile(profile)
+    if cfg is None:
+        return LinkResult(None, {}, warnings)
+    if not _FULL_SHA.fullmatch(scanned_sha or ""):
+        return LinkResult(None, {}, [f"{NOT_LINKED}the scanned commit is unknown"])
+    try:
+        return _resolve(repo, cfg, scanned_sha, cited_paths, cited_commits)
+    except (c.ThunderstruckError, OSError) as exc:
+        reason = _USERINFO.sub(r"\1", str(exc).splitlines()[0] if str(exc) else type(exc).__name__)
+        return LinkResult(None, {}, [f"{NOT_LINKED}{reason}"])
+    except Exception as exc:  # subprocess.TimeoutExpired and anything unforeseen
+        return LinkResult(None, {}, [f"{NOT_LINKED}git did not answer ({type(exc).__name__})"])
+
+
+def _git(repo, *args: str, check: bool = True) -> str:
+    return c.git(repo, *args, check=check, timeout=GIT_TIMEOUT)
+
+
+def _resolve(repo, cfg: LinkConfig, sha: str, cited_paths, cited_commits) -> LinkResult:
+    warnings: list[str] = []
+
+    def stop(reason: str) -> LinkResult:
+        return LinkResult(None, {}, warnings + [NOT_LINKED + reason])
+
+    remotes = _git(repo, "remote").split()
+    name: str | None = None
+    if cfg.remote:
+        if cfg.remote in remotes:
+            name = cfg.remote
+        elif not cfg.base_url:
+            return stop(f"remote {cfg.remote!r} named in [links] does not exist")
+        else:
+            warnings.append(f"remote {cfg.remote!r} named in [links] does not exist; "
+                            "links use base_url and their push state is not checked")
+    elif "origin" in remotes:
+        name = "origin"
+    elif len(remotes) == 1:
+        name = remotes[0]
+
+    if cfg.base_url:
+        base, host = cfg.base_url, (urlsplit(cfg.base_url).hostname or "")
+    elif name:
+        remote = parse_remote(_git(repo, "remote", "get-url", name).strip())
+        if remote is None:
+            return stop(f"git remote {name!r} has no web address; set base_url in [links]")
+        base, host = remote.base, remote.host
+    else:
+        return stop("no git remote to link to; set remote or base_url in [links] "
+                    "in .thunderstruck.toml")
+
+    provider = None
+    if not cfg.code_template:
+        provider = cfg.provider or detect_provider(host)
+        if provider is None:
+            return stop(f"host {host} is not recognised; set provider (and base_url "
+                        f"if {host} is an SSH alias) in [links] in .thunderstruck.toml")
+
+    paths = sorted({p for p in (c.ref_path(x) for x in cited_paths) if p})
+    unlinked = _stale_paths(repo, sha, paths)
+    if unlinked:
+        warnings.append(f"{len(unlinked)} cited file(s) differ from the scanned commit "
+                        f"{sha[:7]} or are not in it, and are not linked: "
+                        + ", ".join(sorted(unlinked)))
+
+    commits: dict[str, str] = {}
+    for token in sorted({t for t in cited_commits if _HEX.fullmatch(t or "")}):
+        full = _git(repo, "rev-parse", "--verify", "--quiet", f"{token}^{{commit}}",
+                    check=False).strip()
+        if _FULL_SHA.fullmatch(full):
+            commits[token] = full
+
+    if name:
+        unpushed = [s for s in [sha, *sorted(set(commits.values()) - {sha})]
+                    if not _on_remote(repo, name, s)]
+        if unpushed:
+            shown = ", ".join(s[:7] for s in unpushed[:5]) + (", …" if len(unpushed) > 5 else "")
+            warnings.append(f"{len(unpushed)} linked commit(s) are on no branch of {name} "
+                            f"known locally ({shown}; normal in a detached or shallow CI "
+                            "checkout); their links resolve once pushed")
+
+    common = {"base": base, "sha": sha, "remote": name, "unlinked": frozenset(unlinked)}
+    if cfg.code_template:
+        ctx = LinkContext.for_templates(cfg.code_template, cfg.commit_template, **common)
+    else:
+        ctx = LinkContext.for_provider(provider, **common)
+    return LinkResult(ctx, commits, warnings)
+
+
+def _stale_paths(repo, sha: str, paths: list[str]) -> set[str]:
+    """Cited paths whose content at `sha` is not what validate.py read."""
+    if not paths:
+        return set()
+    listed = _git(repo, "--literal-pathspecs", "ls-tree", "-z", "--full-tree", sha, "--", *paths)
+    regular: set[str] = set()
+    for entry in listed.split("\0"):
+        meta, _, path = entry.partition("\t")
+        # 100644/100755 are files; 120000 symlinks and 160000 submodules are not
+        if path and meta.startswith("100"):
+            regular.add(path)
+    changed = set(filter(None, _git(repo, "--literal-pathspecs", "diff", "--name-only",
+                                     "-z", sha, "--", *paths).split("\0")))
+    return {p for p in paths if p not in regular or p in changed}
+
+
+def _on_remote(repo, remote: str, sha: str) -> bool:
+    refs = _git(repo, "branch", "-r", "--contains", sha, "--format=%(refname)", check=False)
+    return any(line.startswith(f"refs/remotes/{remote}/") for line in refs.splitlines())

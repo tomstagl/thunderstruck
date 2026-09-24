@@ -184,3 +184,216 @@ def test_template_without_fragment_has_no_whole_file_link_when_lines_are_in_the_
 ])
 def test_template_error(template, error):
     assert L.template_error(template) == error
+
+
+# ----------------------------------------------------------------- config --
+
+
+@pytest.mark.parametrize("links, fragment", [
+    ("yes", "must be a table"),
+    ({"provder": "github"}, "unknown key 'provder'"),
+    ({"enabled": "yes"}, "enabled"),
+    ({"remote": 1}, "remote must be a string"),
+    ({"provider": "gitea"}, "provider"),
+    ({"base_url": "javascript:alert(1)"}, "base_url"),
+    ({"base_url": "https://git.example.com/{x}"}, "base_url"),
+    ({"code_template": "{base}/{sha.__class__}", "commit_template": "{base}"}, "{sha.__class__}"),
+    ({"code_template": "{base}/{path}"}, "set together"),
+    ({"commit_template": "{base}/{sha}"}, "set together"),
+])
+def test_invalid_config_disables_links_with_one_warning(links, fragment):
+    cfg, warnings = L.config_from_profile({"links": links})
+    assert cfg is None
+    assert len(warnings) == 1 and fragment in warnings[0], warnings
+    assert warnings[0].startswith(L.NOT_LINKED)
+
+
+def test_disabled_is_silent():
+    assert L.config_from_profile({"links": {"enabled": False}}) == (None, [])
+
+
+def test_absent_table_uses_defaults():
+    assert L.config_from_profile({}) == (L.LinkConfig(), [])
+
+
+def test_base_url_trailing_slash_is_dropped():
+    cfg, _ = L.config_from_profile({"links": {"base_url": "https://git.example.com/a/b/"}})
+    assert cfg.base_url == "https://git.example.com/a/b"
+
+
+# ----------------------------------------------------------- link_context --
+
+import subprocess  # noqa: E402
+
+GIT_ID = ["-c", "user.email=t@example.com", "-c", "user.name=t", "-c", "commit.gpgsign=false"]
+
+
+def _git(repo, *args):
+    return subprocess.run(["git", "-C", str(repo), *GIT_ID, *args], check=True,
+                          capture_output=True, text=True).stdout.strip()
+
+
+def _repo(tmp_path, remote="https://github.com/acme/checkout.git", tracking=True,
+          name="origin"):
+    repo = tmp_path / "r"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    (repo / "src").mkdir()
+    for f in ("a.ts", "b.ts", "[id].ts"):
+        (repo / "src" / f).write_text("one\ntwo\nthree\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "init")
+    if remote:
+        _git(repo, "remote", "add", name, remote)
+        if tracking:
+            _git(repo, "update-ref", f"refs/remotes/{name}/main", "HEAD")
+    return repo, _git(repo, "rev-parse", "HEAD")
+
+
+def test_github_remote_links_with_no_warning(tmp_path):
+    repo, sha = _repo(tmp_path)
+    res = L.link_context(repo, {}, sha, ["src/a.ts"], [sha[:7]])
+    assert res.warnings == []
+    assert res.ctx.provider == "github" and res.ctx.remote == "origin"
+    assert res.ctx.code("src/a.ts", 2) == f"{GH}/blob/{sha}/src/a.ts#L2"
+    assert res.commits == {sha[:7]: sha}
+
+
+def test_no_remote_is_reported(tmp_path):
+    repo, sha = _repo(tmp_path, remote=None)
+    res = L.link_context(repo, {}, sha, [], [])
+    assert res.ctx is None and "no git remote" in res.warnings[0]
+
+
+def test_sole_remote_is_used_when_there_is_no_origin(tmp_path):
+    repo, sha = _repo(tmp_path, name="upstream")
+    res = L.link_context(repo, {}, sha, [], [])
+    assert res.ctx.remote == "upstream" and res.warnings == []
+
+
+def test_named_remote_must_exist(tmp_path):
+    repo, sha = _repo(tmp_path)
+    res = L.link_context(repo, {"links": {"remote": "fork"}}, sha, [], [])
+    assert res.ctx is None and "'fork'" in res.warnings[0]
+
+
+def test_base_url_without_remote_links_and_skips_push_check(tmp_path):
+    repo, sha = _repo(tmp_path, remote=None)
+    profile = {"links": {"provider": "gitlab", "base_url": "https://git.example.com/acme/x"}}
+    res = L.link_context(repo, profile, sha, ["src/a.ts"], [])
+    assert res.warnings == []
+    assert res.ctx.remote is None
+    assert res.ctx.code("src/a.ts", 1) == f"https://git.example.com/acme/x/-/blob/{sha}/src/a.ts#L1"
+
+
+def test_unrecognised_host_names_provider_and_base_url(tmp_path):
+    repo, sha = _repo(tmp_path, remote="git@github-work:acme/checkout.git")
+    res = L.link_context(repo, {}, sha, [], [])
+    assert res.ctx is None
+    assert "github-work" in res.warnings[0] and "provider" in res.warnings[0]
+    assert "base_url" in res.warnings[0]
+
+
+def test_self_hosted_provider_from_profile(tmp_path):
+    repo, sha = _repo(tmp_path, remote="git@git.example.com:acme/checkout.git")
+    res = L.link_context(repo, {"links": {"provider": "gitlab"}}, sha, [], [])
+    assert res.ctx.commit(sha) == f"https://git.example.com/acme/checkout/-/commit/{sha}"
+
+
+def test_templates_from_profile(tmp_path):
+    repo, sha = _repo(tmp_path, remote="ssh://git@git.example.com:7999/acme/checkout.git")
+    profile = {"links": {"code_template": "{base}/browse/{path}?at={sha}#{start}-{end}",
+                         "commit_template": "{base}/commits/{sha}"}}
+    res = L.link_context(repo, profile, sha, ["src/a.ts"], [])
+    assert res.ctx.code("src/a.ts", 2, 3) == \
+        f"https://git.example.com/acme/checkout/browse/src/a.ts?at={sha}#2-3"
+
+
+def test_token_in_remote_never_reaches_a_url_or_warning(tmp_path):
+    repo, sha = _repo(tmp_path, remote="https://bob:ghs_SECRET@github.com/acme/checkout.git")
+    res = L.link_context(repo, {}, sha, ["src/a.ts"], [sha])
+    blob = " ".join([res.ctx.base, res.ctx.code("src/a.ts", 1), res.ctx.commit(sha),
+                     *res.warnings])
+    assert "SECRET" not in blob and "bob" not in blob
+
+
+@pytest.mark.parametrize("change", [
+    "modified", "staged", "committed_after_scan", "untracked", "ignored", "symlink", "deleted"])
+def test_files_that_differ_from_the_scanned_commit_are_not_linked(tmp_path, change):
+    repo, sha = _repo(tmp_path)
+    target = "src/a.ts"
+    if change == "modified":
+        (repo / target).write_text("changed\n")
+    elif change == "staged":
+        (repo / target).write_text("changed\n")
+        _git(repo, "add", target)
+    elif change == "committed_after_scan":
+        (repo / target).write_text("changed\n")
+        _git(repo, "commit", "-qam", "later")
+    elif change == "untracked":
+        target = "src/new.ts"
+        (repo / target).write_text("x\n")
+    elif change == "ignored":
+        (repo / ".gitignore").write_text("gen/\n")
+        (repo / "gen").mkdir()
+        target = "gen/out.ts"
+        (repo / target).write_text("x\n")
+    elif change == "symlink":
+        (repo / "src" / "link.ts").symlink_to("a.ts")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-qm", "link")
+        _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+        sha = _git(repo, "rev-parse", "HEAD")
+        target = "src/link.ts"
+    elif change == "deleted":
+        (repo / target).unlink()
+    res = L.link_context(repo, {}, sha, [target, "./src/b.ts"], [])
+    assert res.ctx.code(target, 1) is None
+    assert res.ctx.code("src/b.ts", 1), "an unchanged file stays linked"
+    stale = [w for w in res.warnings if "not linked" in w]
+    assert len(stale) == 1 and target in stale[0] and "src/b.ts" not in stale[0]
+
+
+def test_bracketed_paths_are_literal(tmp_path):
+    repo, sha = _repo(tmp_path)
+    res = L.link_context(repo, {}, sha, ["src/[id].ts"], [])
+    assert res.warnings == []
+    assert res.ctx.code("src/[id].ts", 1).endswith("/src/%5Bid%5D.ts#L1")
+
+
+def test_bad_commit_tokens_are_not_expanded(tmp_path):
+    repo, sha = _repo(tmp_path)
+    res = L.link_context(repo, {}, sha, [], ["deadbeef", "not-hex", sha])
+    assert res.commits == {sha: sha}
+
+
+def test_unpushed_scanned_commit_is_linked_with_a_warning(tmp_path):
+    repo, sha = _repo(tmp_path, tracking=False)
+    res = L.link_context(repo, {}, sha, ["src/a.ts"], [])
+    assert res.ctx.code("src/a.ts", 1)
+    assert len(res.warnings) == 1 and sha[:7] in res.warnings[0]
+    assert "resolve once pushed" in res.warnings[0]
+
+
+def test_unpushed_cited_commit_is_warned(tmp_path):
+    repo, scanned = _repo(tmp_path)
+    _git(repo, "checkout", "-qb", "side")
+    (repo / "src" / "b.ts").write_text("side\n")
+    _git(repo, "commit", "-qam", "side")
+    side = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "checkout", "-q", "-")
+    res = L.link_context(repo, {}, scanned, [], [side])
+    assert res.commits == {side: side}
+    assert len(res.warnings) == 1 and side[:7] in res.warnings[0] and scanned[:7] not in res.warnings[0]
+
+
+def test_git_failure_degrades_to_one_warning(tmp_path):
+    res = L.link_context(tmp_path, {}, "a" * 40, ["x.ts"], [])
+    assert res.ctx is None and len(res.warnings) == 1
+    assert res.warnings[0].startswith(L.NOT_LINKED)
+
+
+def test_unknown_scanned_commit_is_reported(tmp_path):
+    repo, _ = _repo(tmp_path)
+    res = L.link_context(repo, {}, "HEAD", [], [])
+    assert res.ctx is None and "scanned commit" in res.warnings[0]
