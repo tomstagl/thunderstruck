@@ -1,6 +1,6 @@
 [project]
 name = "thunderstruck"
-version = "0.2.0"
+version = "0.3.0"
 description = "Resilience forensics for your codebase — forensic failure-mode analysis for git repositories."
 readme = "README.md"
 requires-python = ">=3.11"

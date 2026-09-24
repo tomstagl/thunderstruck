@@ -145,7 +145,7 @@ incomplete. A partial report that says so beats a retry loop.
 
 ## The catalog
 
-19 stability patterns drawn from Nygard's *Release It!*, the Amazon Builders'
+22 stability patterns drawn from Nygard's *Release It!*, the Amazon Builders'
 Library, the Google SRE book, and the metastable-failure literature.
 [Full list](skills/stability-catalog/references/patterns.md).
 
@@ -157,6 +157,9 @@ layer with a budget.
 Tier B: deadline propagation · circuit breakers · bulkheads · bounded queues ·
 graceful degradation · jitter on periodic work · steady state · fail fast ·
 no error swallowing.
+
+Tier A, JVM-specific: no blocking calls on event-loop threads · locks and
+waits with a bound · bounded query fan-out (no N+1 lazy loading).
 
 ### The metastability lens
 
@@ -250,7 +253,7 @@ comment, and
 Without `lizard` the scan still runs, ranks on churn alone, and says so.
 Degradation is always visible in the report.
 
-Detectors ship for TypeScript, JavaScript and Python. Adding a language is
+Detectors ship for TypeScript, JavaScript, Python and Java. Adding a language is
 mostly catalog work — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## What it is not

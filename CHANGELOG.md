@@ -4,6 +4,27 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.3.0
+
+### Added
+
+- Java as a scanned language, with detectors for every existing pattern
+  (`S01`–`S19`) and three new patterns: `S27` (no blocking calls on
+  event-loop threads), `S28` (locks and waits with a bound) and `S29`
+  (bounded query fan-out — no N+1 lazy loading). Framework coverage spans
+  Spring (MVC, WebFlux, WebClient, RestTemplate), Hibernate/JPA, Kafka,
+  resilience4j, gRPC, Akka, JMS and RabbitMQ. Every Java detector is
+  `low` or `medium` confidence. None claims `high` in this pass, because a
+  regex over Java has no AST to lean on. Four detectors are `medium` (the
+  `java.net.http` client and request timeouts, and the two empty-catch
+  detectors). Each has at least one real-world true positive and no unfixed
+  false positive in the final calibration sweep. The rest are `low`.
+- `scripts/calibrate.py`, which sweeps a real repository with a chosen set
+  of patterns so a detector's precision can be judged against code nobody
+  wrote for the test, not just its synthetic samples. The full calibration
+  log, with every hit's file:line and verdict, is at
+  [`docs/calibration/java.md`](docs/calibration/java.md).
+
 ## 0.2.0
 
 ### Added

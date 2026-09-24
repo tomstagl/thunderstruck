@@ -11,6 +11,7 @@ layer) must produce zero hits. Tests in tests/detectors/ pin that.
 
 from __future__ import annotations
 
+import bisect
 import re
 from typing import Callable
 
@@ -66,16 +67,62 @@ SLEEP_RES: dict[str, list[re.Pattern]] = {
         re.compile(r"\b(?:time|asyncio)\s*\.\s*sleep\s*\(\s*(?P<arg>[^),]*)"),
         re.compile(r"\b(?:sleep|delay)\s*\(\s*(?P<arg>[^),]*)"),
     ],
+    "java": [
+        # Any sleep-named call: Thread.sleep(ms), TimeUnit.SECONDS.sleep(n), a
+        # bare inherited sleep(ms), helpers like quietlySleep(ms) and
+        # sleepUninterruptibly(d, unit). The first argument is the wait.
+        # Accessors (setMaxSleepMs, getSleepTime, isSleeping, hasSleep…)
+        # configure or read a wait; they do not perform one.
+        re.compile(r"\b(?!(?:set|get|is|has)[A-Z])\w*[Ss]leep\w*\s*\(\s*(?P<arg>[^),]*)"),
+    ],
 }
 
 
 def _lang_key(ctx) -> str:
-    return "python" if ctx.lang == "python" else "typescript"
+    if ctx.lang == "python":
+        return "python"
+    if ctx.lang == "java":
+        return "java"
+    return "typescript"
 
 
 # --------------------------------------------------------------------------
 # S02 — capped exponential backoff with full jitter
 # --------------------------------------------------------------------------
+
+
+# Java: a retry wait sits inside the loop that retries. A sleep with no
+# enclosing `for`/`while`/`do` is simulated latency, a pacing delay or a
+# one-off pause, even when `@Retry` or `retry` appears a few lines away.
+# (TS/Python keep the shared window-only rule; AC-16.)
+_LOOP_HEADER_JAVA = re.compile(r"\b(?:while|for|do)\b")
+_TYPE_HEADER_JAVA = re.compile(r"\b(?:class|interface|enum|record)\s+[\w$]")
+_LOOP_LOOKBACK = 400
+
+
+def _inside_loop_java(lines: list[str], i: int, col: int) -> bool:
+    """True when line `i` (from column `col` back) is enclosed by a loop."""
+    if re.search(r"\b(?:while|for)\s*\(", lines[i][:col]):
+        return True  # `while (x) Thread.sleep(n);` or `for (...) { sleep(n); }`
+    depth = 0
+    for j in range(i, max(-1, i - _LOOP_LOOKBACK), -1):
+        text = lines[j][:col] if j == i else lines[j]
+        for k in range(len(text) - 1, -1, -1):
+            ch = text[k]
+            if ch == "}":
+                depth += 1
+            elif ch == "{":
+                if depth:
+                    depth -= 1
+                    continue
+                header = text[:k]
+                if not header.strip() and j > 0:
+                    header = lines[j - 1]  # Allman brace: header on the line above
+                if _TYPE_HEADER_JAVA.search(header):
+                    return False
+                if _LOOP_HEADER_JAVA.search(header):
+                    return True
+    return False
 
 
 def s02_backoff(ctx) -> Result:
@@ -98,6 +145,7 @@ def s02_backoff(ctx) -> Result:
 
     out: Result = []
     reported: set[str] = set()
+    is_java = _lang_key(ctx) == "java"
 
     for i, line in enumerate(ctx.code_lines):
         near = "\n".join(ctx.code_lines[max(0, i - 12):i + 13])
@@ -111,6 +159,8 @@ def s02_backoff(ctx) -> Result:
             arg = (m.group("arg") or "").strip()
             if not arg:
                 continue
+            if is_java and not _inside_loop_java(ctx.code_lines, i, m.start()):
+                break  # not a wait between attempts
 
             literal = arg if _LITERAL_MS.match(arg) else constants.get(arg)
             if literal is not None:
@@ -160,6 +210,30 @@ PERSIST = re.compile(
 PAGE_ADVANCE = re.compile(
     r"(?i)((page|cursor|offset|skip|start_?at)\s*(\+\+|\+=|=\s*[^=])"
     r"|has_?more|has_?next|next_?(page|cursor|token|url)|is_?last_?page)")
+# Java variants. `Iterator.hasNext()` and `Enumeration.hasMoreElements()` walk
+# an in-memory collection, and `offset` is as often a byte position in a
+# parser (`offset += n`) or a Kafka record offset as a page position. So a
+# more-pages test counts only as a flag (`while (hasMore)`) or on a page,
+# response or slice receiver (not `buffer.hasMore()`), and an offset advance
+# only when it steps by a page or batch size. An assignment counts only at the
+# start of a statement: `String page = it.next()` declares an element, while
+# `page = repo.findAll(next)` and `nextCursor = resp.cursor()` move on.
+PAGING_JAVA = re.compile(
+    r"(?i)(page|cursor|offset|next_?token|has_?more(?!elements|tokens)"
+    r"|per_?page|page_?size|paginat|\bskip)")
+PAGE_ADVANCE_JAVA = re.compile(
+    r"(?im)((?:^|[;{(,]|\bthis\s*\.)\s*\w*(page|cursor|start_?at)\s*(\+\+|\+=|=\s*[^=])"
+    r"|page\w*\s*(\+\+|\+=)"
+    r"|\+\+\s*\w*page|has_?more(?!elements|tokens)(?!\s*\()"
+    r"|(page|resp|response|result|batch|chunk|slice|list)\w*\s*\.\s*(get|is)?has_?more\s*\("
+    r"|(page|slice)\w*\s*\.\s*(hasNext|isLast|nextPageable)\s*\("
+    r"|next_?(page|cursor|token|url)|is_?last_?page"
+    r"|offset\s*\+=\s*[\w.]*(limit|page_?size|batch_?size|fetch_?size))")
+# A setter that records the position on a progress object
+# (`state.setLastOffset(offset)`, `job.setResumeToken(t)`) persists it; a
+# setter that builds the next request (`request.setPageToken(t)`) does not.
+PERSIST_JAVA = re.compile(
+    PERSIST.pattern + r"|(?i:\bset_?(last|resume|checkpoint|committed|saved)\w*\s*\()")
 LOOP_TS = re.compile(r"^\s*(?:\}\s*)?(?:do\b|while\s*\(|for\s*(?:await\s*)?\()")
 LOOP_PY = re.compile(r"^\s*(?:while|for)\b.*:")
 
@@ -186,7 +260,8 @@ def _py_block_end(lines: list[str], start: int, limit: int = 200) -> int:
     return min(len(lines) - 1, start + limit)
 
 
-def _persists_cursor(body_lines: list[str]) -> bool:
+def _persists_cursor(body_lines: list[str], persist: re.Pattern = PERSIST,
+                     paging: re.Pattern = PAGING) -> bool:
     """True only when a persistence call is about the *position*.
 
     Saving the rows a page returned is not a checkpoint: after a crash the job
@@ -195,10 +270,10 @@ def _persists_cursor(body_lines: list[str]) -> bool:
     side of it.
     """
     for i, line in enumerate(body_lines):
-        if not PERSIST.search(line):
+        if not persist.search(line):
             continue
         near = "\n".join(body_lines[max(0, i - 1):i + 2])
-        if PAGING.search(near):
+        if paging.search(near):
             return True
     return False
 
@@ -208,6 +283,10 @@ def s07_checkpoint(ctx) -> Result:
     is_py = _lang_key(ctx) == "python"
     loop_re = LOOP_PY if is_py else LOOP_TS
     end_of = _py_block_end if is_py else _ts_block_end
+    if _lang_key(ctx) == "java":
+        paging, advance, persist = PAGING_JAVA, PAGE_ADVANCE_JAVA, PERSIST_JAVA
+    else:
+        paging, advance, persist = PAGING, PAGE_ADVANCE, PERSIST
 
     out: Result = []
     i = 0
@@ -218,8 +297,8 @@ def s07_checkpoint(ctx) -> Result:
         end = end_of(lines, i)
         body_lines = lines[i:end + 1]
         body = "\n".join(body_lines)
-        if (PAGING.search(body) and PAGE_ADVANCE.search(body)
-                and not _persists_cursor(body_lines)):
+        if (paging.search(body) and advance.search(body)
+                and not _persists_cursor(body_lines, persist, paging)):
             out.append((i + 1, (
                 "paged loop with no persisted cursor — an interrupted run "
                 "restarts from the first page and re-pays the whole cost")))
@@ -252,6 +331,16 @@ RETRY_LAYERS: dict[str, list[tuple[str, re.Pattern]]] = {
         ("SDK retry config", re.compile(
             r"\b(max_attempts|Retry\s*\(|retry_strategy|retry_config|urllib3\.Retry)\b")),
     ],
+    "java": [
+        ("own retry loop", re.compile(
+            r"\b(for|while)\s*\(.*\b(attempt|attempts|retry|retries|tries)\b", re.I)),
+        ("Spring Retry", re.compile(
+            r"@\s*(?:[\w$]+\s*\.\s*)*Retryable\b|\bRetryTemplate\b|[Rr]etryTemplate\s*\.\s*execute\s*\(")),
+        ("resilience4j retry", re.compile(
+            r"@\s*(?:[\w$]+\s*\.\s*)*Retry\s*\(|\bRetry\s*\.\s*(of\w*|decorate\w*)\s*\(|\bRetryRegistry\b"
+            r"|\bRetryConfig\s*\.\s*(custom|of\w*)\s*\(")),
+        ("Failsafe retry", re.compile(r"\bFailsafe\s*\.\s*with\b|\bRetryPolicy\s*\.\s*builder\s*\(")),
+    ],
 }
 BUDGET = re.compile(r"(?i)(retry.?budget|token.?bucket|retry.?quota|budget_remaining)")
 
@@ -264,12 +353,69 @@ DECLARATION = re.compile(
     r"|const\s+\w+\s*=\s*(async\s*)?(\(|function)"
     r"|(public|private|protected)\s+)")
 
+# A Spring @Configuration class defines retry beans; it never calls through
+# them. Two bean definitions in one config class are not two stacked layers.
+SPRING_CONFIG = re.compile(r"@\s*(Configuration|AutoConfiguration)\b")
+
+
+# A Java method or constructor declaration line. Annotations above a
+# declaration belong to it; statements below it, up to the next declaration,
+# are its body. Good enough to tell "two mechanisms on one method" from "one
+# mechanism on each of two methods" without a parser.
+_JAVA_MODS = (r"(?:@[\w.]+(?:\([^)]*\))?\s+)*"
+              r"(?:(?:public|protected|private|static|final|synchronized|abstract"
+              r"|default|native|strictfp)\s+)*")
+METHOD_JAVA = re.compile(
+    r"^\s*" + _JAVA_MODS + r"(?:<[^>]+>\s+)?"
+    r"(?:(?!(?:return|new|else|throw|case|yield|assert)\b)[\w$.]+(?:<[^;=(){}]*>)?"
+    r"(?:\[\])*\s+)?"
+    r"(?!(?:if|for|while|switch|catch|synchronized|try|return|new|throw)\b)[\w$]+\s*\("
+    r"(?:(?:[^;()]|\([^;()]*\))*\)\s*(?:throws\s+[\w$.,\s]+)?\{"
+    r"|(?:[^;()]|\([^;()]*\))*$)")
+IMPORT_JAVA = re.compile(r"^\s*import\s")
+
+
+def _s10_java(ctx) -> Result:
+    """Java counts layers per method: `@Retryable` on one method and `@Retry`
+    on another are one retry layer each, not two stacked ones."""
+    lines = ctx.code_lines
+    decls = [i for i, line in enumerate(lines) if METHOD_JAVA.match(line)]
+
+    def owner(i: int) -> int:
+        if lines[i].lstrip().startswith("@"):  # an annotation binds forward
+            k = bisect.bisect_left(decls, i)
+            return decls[k] if k < len(decls) else -1
+        k = bisect.bisect_right(decls, i)
+        return decls[k - 1] if k else -1
+
+    by_owner: dict[int, dict[str, int]] = {}
+    for label, rx in RETRY_LAYERS["java"]:
+        for i, line in enumerate(lines):
+            if not rx.search(line) or IMPORT_JAVA.match(line):
+                continue
+            if DECLARATION.match(line):
+                continue  # defining a retry helper is not calling one
+            by_owner.setdefault(owner(i), {}).setdefault(label, i + 1)
+    out: Result = []
+    for layers in by_owner.values():
+        if len(layers) < 2:
+            continue
+        labels = ", ".join(layers)
+        out.append((max(layers.values()), (
+            f"{len(layers)} retry layers in one call path ({labels}) with no "
+            f"shared budget — attempts multiply rather than add")))
+    return sorted(out)
+
 
 def s10_retry_layers(ctx) -> Result:
+    if _lang_key(ctx) == "java":
+        if SPRING_CONFIG.search(ctx.code_text) or BUDGET.search(ctx.code_text):
+            return []
+        return _s10_java(ctx)
     if BUDGET.search(ctx.code_text):
         return []
     found: list[tuple[str, int]] = []
-    for label, rx in RETRY_LAYERS[_lang_key(ctx)]:
+    for label, rx in RETRY_LAYERS.get(_lang_key(ctx), []):
         for i, line in enumerate(ctx.code_lines):
             if not rx.search(line):
                 continue
@@ -302,11 +448,105 @@ FUNC_TS = re.compile(
     r"^\s*(export\s+)?(default\s+)?(async\s+)?(function\s+\w+|const\s+\w+\s*=|"
     r"(public|private|protected)?\s*\w+\s*\([^)]*\)\s*[:{])")
 FUNC_PY = re.compile(r"^\s*(async\s+)?def\s+\w+")
+# A Java member boundary: a method or constructor declaration (METHOD_JAVA,
+# which also takes package-private methods, parameter annotations with their
+# own parentheses and a parameter list continued onto the next line), or any
+# line that opens a field, nested type or member with an access or `static`
+# modifier. A lambda assigned to a field is its own member, not part of the
+# method above it. An extra boundary can only split a method (a miss); a
+# missing one merges two methods into one (a false "call, then validate").
+FUNC_JAVA = re.compile(
+    r"(?:" + METHOD_JAVA.pattern + r")"
+    r"|^\s*(?:(?:public|protected|private|static)\s"
+    r"|(?:(?:abstract|final|sealed|non-sealed)\s+)*(?:class|interface|enum|record)\s)")
+# `throw new ResponseStatusException(…)` counts only for BAD_REQUEST: after a
+# call it usually reports what the dependency returned (404, 502).
+VALIDATION_JAVA = re.compile(
+    r"\bvalidate\w*\s*\(|\bisValid\w*\s*\(|\bObjects\s*\.\s*requireNonNull\s*\("
+    r"|\bPreconditions\s*\.\s*check\w+\s*\(|\bAssert\s*\.\s*\w+\s*\("
+    r"|throw\s+new\s+(IllegalArgumentException|\w*Validation\w*Exception"
+    r"|ConstraintViolationException|BadRequest\w*"
+    r"|ResponseStatusException\s*\(\s*(?:HttpStatus\s*\.\s*)?BAD_REQUEST)\b")
+# Not validation, though they throw a validation-shaped exception: a switch
+# label that throws (an exhaustiveness check on a value the method already
+# has, often the response), and a throw inside a catch (translating an
+# exception whose check ran wherever it was thrown, usually before the call).
+SWITCH_LABEL_JAVA = re.compile(r"^\s*(?:case\b|default\b)")
+CATCH_JAVA = re.compile(r"\bcatch\s*\(")
+
+
+def _java_not_validation(lines: list[str], i: int) -> bool:
+    if SWITCH_LABEL_JAVA.match(lines[i]) or CATCH_JAVA.search(lines[i]):
+        return True
+    seen = 0
+    for k in range(i - 1, -1, -1):  # the catch header, one or two lines up
+        if not lines[k].strip():
+            continue
+        if CATCH_JAVA.search(lines[k]):
+            return True
+        seen += 1
+        if seen == 2:
+            break
+    return False
+
+
+# A check that reads what the call returned is response handling, not late
+# input validation: it names the variable the call line assigned (or one
+# assigned from it later), or reads a response body or status.
+RESPONSE_ACCESS_JAVA = re.compile(
+    r"\b(?:getBody|body|getStatusCode|getStatusCodeValue|statusCode)\s*\(")
+_IF_JAVA = re.compile(r"\bif\s*\(")
+
+
+def _java_assignment(line: str) -> tuple[str, str] | None:
+    """`Type name = rhs` / `name = rhs` → (name, rhs). Only the text before the
+    first `(` is searched for the `=`, so a call argument's `==` or `=` is
+    never taken for the assignment, and the scan stays linear."""
+    head = line.split("(", 1)[0]
+    k = head.find("=")
+    if k <= 0 or head[k - 1] in "=!<>" or head[k + 1:k + 2] == "=":
+        return None
+    words = re.findall(r"[\w$]+", head[:k])
+    return (words[-1], line[k + 1:]) if words else None
+
+
+_IDENT_JAVA = re.compile(r"(?<![\w$.])[\w$]+")
+
+
+def _mentions(text: str, names: set[str]) -> bool:
+    """A bare identifier in `text` (not a `.member`) is one of `names`."""
+    return bool(names) and not names.isdisjoint(_IDENT_JAVA.findall(text))
+
+
+# Java's own list rather than EXTERNAL_CALL plus extras: the shared list's
+# `fetch` prefix matches `fetchSize`/`FetchType`, `.invoke(` is reflection,
+# and `.execute(` on an executor or pool hands over a task, not a request.
+EXTERNAL_CALL_JAVA = re.compile(
+    r"\.\s*(?:send|sendAsync|exchange|retrieve|getForObject|getForEntity|postForObject"
+    r"|postForEntity|executeQuery|executeUpdate|queryFor\w+)\s*\("
+    r"|(?<!Query)\.\s*query\s*\("
+    r"|(?<![Ee]xecutor)(?<![Pp]ool)(?<![Ss]ervice)\.\s*execute\s*\("
+    r"|\bgenerateContent\b")
+
+
+def _java_reads_response(lines: list[str], i: int, derived: set[str]) -> bool:
+    """The check on line i, with the `if (…)` condition above a bare throw."""
+    text = lines[i]
+    if text.lstrip().startswith("throw"):
+        for k in range(i - 1, max(-1, i - 3), -1):
+            if lines[k].strip():
+                if _IF_JAVA.search(lines[k]):
+                    text = lines[k] + "\n" + text
+                break
+    return bool(RESPONSE_ACCESS_JAVA.search(text) or _mentions(text, derived))
 
 
 def s18_fail_fast(ctx) -> Result:
-    is_py = _lang_key(ctx) == "python"
-    func_re = FUNC_PY if is_py else FUNC_TS
+    key = _lang_key(ctx)
+    func_re = {"python": FUNC_PY, "java": FUNC_JAVA}.get(key, FUNC_TS)
+    call_re = EXTERNAL_CALL_JAVA if key == "java" else EXTERNAL_CALL
+    valid_re = VALIDATION_JAVA if key == "java" else VALIDATION
+    is_java = key == "java"
     lines = ctx.code_lines
 
     starts = [i for i, ln in enumerate(lines) if func_re.match(ln)]
@@ -317,10 +557,23 @@ def s18_fail_fast(ctx) -> Result:
     out: Result = []
     for a, b in zip(starts, starts[1:]):
         first_call = first_valid = None
+        derived: set[str] = set()  # Java: variables holding the call's result
         for i in range(a, b):
-            if first_call is None and EXTERNAL_CALL.search(lines[i]):
+            if first_call is None and call_re.search(lines[i]):
                 first_call = i
-            if first_valid is None and VALIDATION.search(lines[i]):
+                if is_java:
+                    asg = _java_assignment(lines[i])
+                    if asg:
+                        derived.add(asg[0])
+            elif is_java and first_call is not None:
+                asg = _java_assignment(lines[i])
+                if asg and (_mentions(asg[1], derived)
+                            or RESPONSE_ACCESS_JAVA.search(asg[1])):
+                    derived.add(asg[0])
+            if (first_valid is None and valid_re.search(lines[i])
+                    and not (is_java and (_java_not_validation(lines, i)
+                                          or (first_call is not None and i > first_call
+                                              and _java_reads_response(lines, i, derived))))):
                 first_valid = i
         if first_call is not None and first_valid is not None and first_call < first_valid:
             out.append((first_valid + 1, (
@@ -328,4 +581,130 @@ def s18_fail_fast(ctx) -> Result:
                 f"{first_call + 1} — work is paid for before it is known to be needed")))
             if len(out) >= 3:
                 break
+    return out
+
+
+# --------------------------------------------------------------------------
+# S29 — bounded query fan-out (no N+1 lazy-loading amplification)
+# --------------------------------------------------------------------------
+
+# Only files that touch persistence can lazy-load; a DTO loop elsewhere is not
+# a query.
+PERSISTENCE_CONTEXT = re.compile(
+    r"(javax|jakarta)\.persistence|org\.hibernate|org\.springframework\.data"
+    r"|@\s*(Entity|Transactional)\b|\bEntityManager\b|\w+Repository\b")
+# Lazy loading is a JPA/Hibernate behaviour. A document or aggregate store
+# (Spring Data MongoDB, JDBC, Cassandra, …) loads a nested list with its
+# parent, so reading through it per element is not a query — unless the file
+# is JPA as well.
+NON_ORM_STORE = re.compile(
+    r"org\.springframework\.data\.(mongodb|jdbc|cassandra|couchbase"
+    r"|elasticsearch|redis|neo4j|r2dbc)|\bcom\.mongodb\.")
+JPA_CONTEXT = re.compile(r"(javax|jakarta)\.persistence|org\.hibernate")
+# Batch fetching (`@BatchSize`, `FetchMode.SUBSELECT`) and fetch/load graphs
+# bound the fan-out as well: N+1 becomes N/size+1, or one query.
+EAGER_FETCH_HINT = re.compile(
+    r"(?i)@\s*(Named)?EntityGraph\b|JOIN\s+FETCH|Hibernate\s*\.\s*initialize\s*\("
+    r"|FetchType\s*\.\s*EAGER|@\s*BatchSize\b|FetchMode\s*\.\s*(SUBSELECT|JOIN)"
+    r"|\.(fetch|load)graph\b")
+# `for (Order order : orders)` / `for (final Order order : repo.findAll())`.
+# One level of nested generics (`Map.Entry<String, List<Order>>`); the two
+# alternatives start with disjoint characters, so this cannot backtrack
+# catastrophically on a long line.
+FOREACH_JAVA = re.compile(
+    r"\bfor\s*\(\s*(?:final\s+)?([\w.]+)(?:<(?:[^<>]|<[^<>]*>)*>)?(?:\[\])*"
+    r"\s+(\w+)\s*:([^\n]*)")
+# Element types that are never managed entities: JDK values, map entries, and
+# the DTO naming conventions. Reading through them is not a query.
+S29_VALUE_TYPE = re.compile(
+    r"(?:^|\.)(?:String|CharSequence|Integer|Long|Short|Byte|Double|Float"
+    r"|Boolean|Character|Number|BigDecimal|BigInteger|UUID|Object|Optional"
+    r"|Entry|File|Path|URI|URL|Instant|Duration|Date|Local\w*|Zoned\w*"
+    r"|Offset\w*|Class|int|long|short|byte|double|float|boolean|char)$"
+    r"|(?:Dto|DTO|Request|Response|View|Vm|VM|Projection|Payload|Command"
+    r"|Event|Form)$")
+# An iterable already mapped (`.map(OrderDto::from)`) yields DTOs, not rows.
+S29_MAPPED_SOURCE = re.compile(r"\.\s*map\s*\(|Dto|DTO")
+# What follows `el.getX().` — a collection operation or a further getter is
+# what touches an association. String/Optional/value calls (`trim`, `orElse`,
+# `equals`, `compareTo`, `name`) read a column that is already loaded.
+S29_COLLECTION_OPS = frozenset((
+    "size", "isEmpty", "stream", "parallelStream", "iterator", "forEach",
+    "contains", "containsAll", "containsKey", "add", "addAll", "remove",
+    "removeAll", "removeIf", "clear", "toArray", "values", "keySet",
+    "entrySet"))
+# Getters that never initialise a proxy or that belong to JDK value types.
+# `getId()` on a Hibernate proxy returns the key without a query.
+S29_VALUE_GETTERS = re.compile(
+    r"get(?:Id|Class|Year|Month\w*|Day\w*|Hour|Minute|Second|Nano|Time"
+    r"|Epoch\w*|Bytes|SimpleName)$")
+
+
+# Compiled once and variable-agnostic: they capture the receiver, which is
+# then compared with the loop variable. Compiling a pattern per loop thrashed
+# the `re` cache on loop-dense files.
+# The canonical N+1: an inner for-each over an association of the outer
+# element, `for (Book book : author.getBooks())`.
+S29_NESTED = re.compile(
+    r"\bfor\s*\([^:;\n]*:\s*(\w+)\s*\.\s*(get[A-Z]\w*)\s*\(\s*\)\s*\)")
+S29_CHAIN = re.compile(
+    r"\b(\w+)\s*\.\s*get[A-Z]\w*\s*\(\s*\)\s*\.\s*(\w+)\s*\((?=\s*(\S?))")
+S29_GETTER = re.compile(r"get[A-Z]\w*")
+
+
+def _s29_navigates(body: str, var: str) -> bool:
+    for m in S29_NESTED.finditer(body):
+        if m.group(1) == var and not S29_VALUE_GETTERS.fullmatch(m.group(2)):
+            return True
+    for m in S29_CHAIN.finditer(body):
+        if m.group(1) != var:
+            continue
+        op, first_arg = m.group(2), m.group(3)
+        if op in S29_COLLECTION_OPS:
+            return True
+        if op == "get" and first_arg and first_arg != ")":
+            return True  # `getLineItems().get(0)`, not `Optional.get()`
+        if S29_GETTER.fullmatch(op) and not S29_VALUE_GETTERS.fullmatch(op):
+            return True
+    return False
+
+
+def s29_n_plus_one(ctx) -> Result:
+    """Flag a for-each whose body navigates *through* a getter on the loop
+    element — `order.getLineItems().size()`, `order.getCustomer().getName()`.
+
+    A bare `order.getId()` reads a column of the row already loaded and is not
+    flagged; chaining off the getter is what touches an association. This is a
+    heuristic, not dataflow: it cannot know the association is lazy, so any
+    eager-fetch hint anywhere in the file suppresses it. It also cannot tell an
+    `@Embedded` value (`order.getAddress().getCity()`) from an association.
+    """
+    out: Result = []
+    try:
+        text = ctx.code_text
+        if not PERSISTENCE_CONTEXT.search(text) or EAGER_FETCH_HINT.search(text):
+            return []
+        if NON_ORM_STORE.search(text) and not JPA_CONTEXT.search(text):
+            return []
+        lines = ctx.code_lines
+        for i, line in enumerate(lines):
+            if "for" not in line:
+                continue
+            m = FOREACH_JAVA.search(line)
+            if not m:
+                continue
+            elem_type, var, source = m.group(1), m.group(2), m.group(3)
+            if S29_VALUE_TYPE.search(elem_type) or S29_MAPPED_SOURCE.search(source):
+                continue
+            end = _ts_block_end(lines, i) if "{" in line else min(i + 1, len(lines) - 1)
+            body = "\n".join(lines[i:end + 1])
+            if _s29_navigates(body, var):
+                out.append((i + 1, (
+                    f"loop over `{var}` navigates an association on each element "
+                    "with no eager fetch hint (@EntityGraph, JOIN FETCH, "
+                    "Hibernate.initialize) in this file — likely N+1 queries")))
+                if len(out) >= 3:
+                    break
+    except Exception:  # a lead generator never breaks the scan
+        return out
     return out

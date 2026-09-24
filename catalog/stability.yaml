@@ -34,6 +34,8 @@ languages:
     extensions: [".js", ".jsx", ".mjs", ".cjs"]
   python:
     extensions: [".py", ".pyi"]
+  java:
+    extensions: [".java"]
 
 # Language aliases: a detector written for `typescript` also runs on javascript.
 aliases:
@@ -110,6 +112,70 @@ patterns:
           window: 10
           confidence: medium
           note: "raw socket with no settimeout()"
+      java:
+        - id: S01-java-httpclient-no-connect-timeout
+          kind: file_absent
+          anchor: '(?:(?<=java\.net\.http\.)|(?<![\w$]\.))\bHttpClient\s*\.\s*(newBuilder\s*\(\s*\)|newHttpClient\s*\(\s*\))'
+          absent: '\bconnectTimeout\s*\(|\.\s*timeout\s*\(\s*[^\s)]'
+          confidence: medium
+          note: "java.net.http.HttpClient built with no connectTimeout(), and no request in the file sets .timeout() (which also bounds the connect)"
+        - id: S01-java-httprequest-no-timeout
+          kind: regex
+          pattern: '(?:(?<=java\.net\.http\.)|(?<![\w$]\.))\bHttpRequest\s*\.\s*newBuilder\s*\('
+          absent_within: '\.\s*timeout\s*\(|\.\s*set(Url|HttpMethod|Body|OidcToken|OauthToken)\s*\(|\bputHeaders\s*\('
+          window: 8
+          confidence: medium
+          note: "HttpRequest with no .timeout() — HttpClient has no default request timeout, so send() can wait forever"
+        - id: S01-java-okhttp-no-timeout
+          kind: regex
+          pattern: '\bOkHttpClient\s*\.\s*Builder\s*\(\s*\)|new\s+OkHttpClient\s*\(\s*\)'
+          absent_within: '\bcallTimeout\s*\('
+          window: 8
+          confidence: low
+          note: "OkHttpClient with no callTimeout — the per-operation defaults do not bound a slow-drip response"
+        - id: S01-java-jdbc-no-login-timeout
+          kind: regex
+          pattern: '\bDriverManager\s*\.\s*getConnection\s*\('
+          absent_within: '\bsetLoginTimeout\s*\(|[''"?&;](connectTimeout|loginTimeout|socketTimeout)[''"=]'
+          window: 4
+          window_before: 6
+          confidence: low
+          note: "DriverManager.getConnection with no login timeout — some drivers wait forever for an unreachable host"
+        - id: S01-java-future-get-no-timeout
+          kind: regex
+          pattern: '\b\w*[Ff]uture\w*\s*\.\s*(get|join)\s*\(\s*\)|\.\s*join\s*\(\s*\)'
+          present_within: '\b(CompletableFuture|Future)\b'
+          # A get() behind a positive `if (f.isDone())` guard returns at once.
+          absent_within: '\b(orTimeout|completeOnTimeout)\s*\(|\bif\s*\(\s*[\w.]+\s*\.\s*isDone\s*\(\s*\)\s*\)'
+          window: 2
+          window_before: 6
+          confidence: low
+          note: "Future.get()/join() with no timeout — blocks forever if the future never completes"
+        - id: S01-java-resttemplate-no-timeout
+          kind: regex
+          pattern: 'new\s+(\w+\.)*RestTemplate\s*\(\s*\)|new\s+(\w+\.)*SimpleClientHttpRequestFactory\s*\(\s*\)'
+          absent_within: '\b(setConnectTimeout|setReadTimeout|setConnectionRequestTimeout|connectTimeout|readTimeout)\s*\(\s*[^\s)]|\bsetRequestFactory\s*\(\s*(?!new\s+[\w.]+\s*\(\s*\))[^\s)]'
+          window: 8
+          confidence: low
+          note: "RestTemplate with no connect/read timeout — its default request factory waits forever"
+        - id: S01-java-webclient-no-timeout
+          kind: file_absent
+          anchor: '\bWebClient\s*\.\s*(builder|create)\s*\('
+          absent: '\.\s*timeout\s*\(\s*[^\s)]|\bresponseTimeout\s*\(\s*[^\s)]|ReadTimeoutHandler|CONNECT_TIMEOUT_MILLIS|\bclientConnector\s*\(\s*(?!new\s+[\w.]+\s*\(\s*(\)|HttpClient\s*\.\s*create\s*\(\s*\)\s*\)))[^\s)]'
+          confidence: low
+          note: "WebClient built with no responseTimeout(), configured connector or per-call timeout() anywhere in the file"
+        - id: S01-java-jms-receive-no-timeout
+          kind: regex
+          pattern: '\.\s*receive\s*\(\s*\)'
+          # Evidence of a JMS consumer on a line that is not an import, so a
+          # JMS import does not make an application type's receive() a JMS one.
+          # 50 lines back: a consumer is often created at the top of a method
+          # and read from much further down (artemis's XA example: 43 lines).
+          present_within: '^(?!\s*import\s)[^\n]*?(?:\b(?:MessageConsumer|JMSConsumer|QueueReceiver|TopicSubscriber)\b|\bcreate(?:Consumer|Receiver|Subscriber|DurableSubscriber|DurableConsumer|SharedConsumer|SharedDurableConsumer)\s*\(|\b(?:javax|jakarta)\s*\.\s*jms\b)'
+          window: 1
+          window_before: 50
+          confidence: low
+          note: "JMS receive() with no timeout — blocks the thread until a message arrives, forever if none does"
 
   - id: S02
     name: Capped exponential backoff with full jitter
@@ -135,6 +201,19 @@ patterns:
           handler: s02_backoff
           confidence: medium
           note: "retry backoff missing a cap, jitter, or growth"
+      java:
+        - id: S02-java-backoff
+          kind: module
+          handler: s02_backoff
+          confidence: low
+          note: "retry backoff missing a cap, jitter, or growth"
+        - id: S02-java-retryable-no-jitter
+          kind: regex
+          pattern: '@\s*Retryable\b'
+          absent_within: 'random\s*=\s*true|RandomBackOffPolicy|ExponentialRandomBackOffPolicy|jitter\s*='
+          window: 12
+          confidence: low
+          note: "@Retryable with no randomised backoff — Spring Retry defaults to a fixed 1s wait, so every client retries in lockstep"
 
   - id: S03
     name: Honor server pushback (Retry-After, 429/503)
@@ -178,6 +257,21 @@ patterns:
           require: '(?i)\b(retry|retries|retrying|attempt|attempts|backoff|sleep|setTimeout|delay|wait)\b'
           confidence: low
           note: "file handles 503 but never reads Retry-After"
+      java:
+        - id: S03-java-429-ignores-retry-after
+          kind: file_absent
+          anchor: '\b429\b|TOO_MANY_REQUESTS'
+          absent: '[Rr]etry-?[Aa]fter|RETRY_AFTER'
+          require: '(?s)\A(?=.*?(?i:\b(retry|retries|retrying|attempt|attempts|backoff|sleep|delay)\b)|.*?\b(?!(?:set|get|is|has)[A-Z])\w+[Rr]etry\w*\s*\()(?=.*?(\.\s*(send|sendAsync|exchange|execute|retrieve|getForObject|getForEntity|postForObject|postForEntity|newCall)\s*\(|\bstatusCode\s*\(\s*\)|getStatusCode\s*\(\s*\)|\.\s*code\s*\(\s*\)))'
+          confidence: low
+          note: "file handles 429 but never reads Retry-After"
+        - id: S03-java-503-ignores-retry-after
+          kind: file_absent
+          anchor: '\b503\b|SERVICE_UNAVAILABLE|HTTP_UNAVAILABLE'
+          absent: '[Rr]etry-?[Aa]fter|RETRY_AFTER'
+          require: '(?s)\A(?=.*?(?i:\b(retry|retries|retrying|attempt|attempts|backoff|sleep|delay)\b)|.*?\b(?!(?:set|get|is|has)[A-Z])\w+[Rr]etry\w*\s*\()(?=.*?(\.\s*(send|sendAsync|exchange|execute|retrieve|getForObject|getForEntity|postForObject|postForEntity|newCall)\s*\(|\bstatusCode\s*\(\s*\)|getStatusCode\s*\(\s*\)|\.\s*code\s*\(\s*\)))'
+          confidence: low
+          note: "file handles 503 but never reads Retry-After"
 
   - id: S04
     name: Retry only transient errors
@@ -211,6 +305,26 @@ patterns:
           absent: '\b(5\d\d|status_code\s*>=\s*500|is_transient|is_retryable|ConnectionError|Timeout|429|retry_if\w*|status_forcelist|allowed_methods|giveup|retry_on_exception|retry_on_result|retryable_exceptions)\b'
           confidence: medium
           note: "retry construct with no visible transient/permanent discrimination"
+      java:
+        - id: S04-java-catch-all-retry
+          kind: regex
+          pattern: 'catch\s*\(\s*(final\s+)?(Exception|Throwable|RuntimeException)\s+\w+\s*\)'
+          # Retry vocabulary counts only outside a string literal (an even
+          # number of quotes follows it on its line): a log message that says
+          # "retry" is not a retry.
+          present_within: '(?m)\b(attempt|attempts|retry|retries|retrying)\b(?=(?:[^"\n]*"[^"\n]*")*[^"\n]*$)'
+          absent_within: '\bthrow\b|isRetryable|isTransient|shouldRetry|instanceof'
+          window: 4
+          window_before: 6
+          confidence: low
+          note: "catch (Exception e) followed by a retry — retries permanent errors too"
+        - id: S04-java-retryable-all-exceptions
+          kind: regex
+          pattern: '@\s*Retryable\b'
+          absent_within: '\b(retryFor|include|value|noRetryFor|exclude|exceptionExpression|includes|excludes|predicate)\s*=|@\s*Retryable\s*\(\s*\{?\s*[\w.]+\.class'
+          window: 12
+          confidence: low
+          note: "@Retryable with no exception filter — retries every exception, permanent ones included"
 
   - id: S05
     name: Client-side rate limiting / budget gating
@@ -246,6 +360,14 @@ patterns:
           require: '(?i)(asyncio\s*\.\s*gather|^\s*(async\s+)?for\b|^\s*while\b|ThreadPoolExecutor|create_task|\.map\s*\()'
           confidence: medium
           note: "HTTP calls made in a loop or fan-out with no local rate limiter or concurrency gate in this file"
+      java:
+        - id: S05-java-client-calls-without-limiter
+          kind: file_absent
+          anchor: '^[ \t]*(?:for|while)\s*\((?![^\n]*\b(?:List|Set|Stream|Arrays)\s*\.\s*(?:of|asList)\s*\()[^\n]*\n(?:(?![ \t]*\}[ \t]*$)[^\n]*\n){0,8}?[^\n]*(?:[Hh]ttp[Cc]lient|[Rr]estTemplate|[Ww]eb[Cc]lient|[Ss]tub)\s*\.\s*(?!(?:builder|newBuilder|newHttpClient|create|mutate)\s*\()\w+\s*\(|\.\s*(?:forEach|parallelStream\s*\(\s*\)[^;]{0,200}?\.\s*(?:map|forEach))\s*\([^;]{0,300}?(?:[Hh]ttp[Cc]lient|[Rr]estTemplate|[Ww]eb[Cc]lient|[Ss]tub)\s*\.\s*(?!(?:builder|newBuilder|newHttpClient|create|mutate)\s*\()\w+\s*\('
+          require: '(?m)^\s*(for|while)\s*\(|\.\s*forEach\s*\(|\.\s*parallelStream\s*\(|CompletableFuture\s*\.\s*allOf\s*\('
+          absent: '(?i)(ratelimit|rate_limit|limiter|throttle|bucket4j|\bBucket\b|Semaphore|\.acquire\s*\(|\bsleep\s*\()'
+          confidence: low
+          note: "outbound calls made in a loop or fan-out with no local rate limiter or concurrency gate in this file"
 
   - id: S06
     name: Request prioritization (interactive over background)
@@ -273,6 +395,28 @@ patterns:
           absent: '(?i)\b(priority|interactive|criticality|tier|urgent|foreground)\b'
           confidence: low
           note: "one queue/limiter serves all callers; no priority or criticality field"
+      java:
+        - id: S06-java-single-pool-no-priority
+          kind: file_absent
+          # A pool this file creates. An injected executor is sized and shared
+          # elsewhere; a virtual-thread executor queues nothing behind a fixed
+          # number of workers.
+          anchor: '\bExecutors\s*\.\s*new(?!VirtualThreadPerTaskExecutor|ThreadPerTaskExecutor)\w*\s*\(|new\s+ThreadPoolExecutor\s*\('
+          # More than one kind of work reaches it: two submission sites, or a
+          # pass-through of a caller's task — a `Runnable`/`Callable<…>`/
+          # `Supplier<…>` parameter submitted before the method's first `}`
+          # (within 600 characters, which keeps the scan linear).
+          # A pool that runs one job of its own (`submit(this)`, a Runnable
+          # field, a loader built in a loop, a scheduled flush), or is only
+          # built and handed on (a bean, a gRPC server's executor), has no
+          # callers to prioritise. `execute(` counts only on an executor- or
+          # pool-named receiver: `statement.execute(sql)` is JDBC.
+          require: '(?s)(?:\.\s*(?:submit|invokeAll|invokeAny)|\b(?:supplyAsync|runAsync)|(?i:exec|pool|workers?|scheduler)\w*\s*\.\s*execute)\s*\(.*(?:\.\s*(?:submit|invokeAll|invokeAny)|\b(?:supplyAsync|runAsync)|(?i:exec|pool|workers?|scheduler)\w*\s*\.\s*execute)\s*\(|[(,]\s*(?:final\s+)?(?:Runnable|Callable\s*<[^>]*>|Supplier\s*<[^>]*>)\s+(\w+)\s*[,)][^}]{0,600}?(?:\.\s*submit|(?i:exec|pool|workers?|scheduler)\w*\s*\.\s*execute)\s*\(\s*\1\s*\)'
+          # A second pool: two creations, or one made through a static import
+          # (a bare `newFixedThreadPool(…)`) beside the anchored one.
+          absent: '(?i)(priority|interactive|criticality|urgent|foreground|background|batch)|(?s:(Executors\s*\.\s*new\w*|new\s+ThreadPoolExecutor)\s*\(.*(Executors\s*\.\s*new\w*|new\s+ThreadPoolExecutor)\s*\()|(?<![\w.])new(?:Fixed|Cached|Scheduled|SingleThread|WorkStealing)\w*\s*\('
+          confidence: low
+          note: "one executor serves every caller; no priority or criticality separation"
 
   - id: S07
     name: Idempotent, resumable jobs
@@ -311,6 +455,45 @@ patterns:
           absent: '(?i)\b(upsert|ON\s+CONFLICT|ON\s+DUPLICATE\s+KEY|MERGE\s+INTO|idempotenc)'
           confidence: medium
           note: "inserts with no upsert / ON CONFLICT — a replayed job duplicates rows"
+      java:
+        - id: S07-java-uncheckpointed-loop
+          kind: module
+          handler: s07_checkpoint
+          confidence: low
+          note: "paged/batched loop with no persisted cursor — a crash restarts from the beginning"
+        - id: S07-java-kafka-no-manual-commit
+          kind: file_absent
+          # Not the import line: the hit lands where the consumer is used.
+          anchor: '^(?!\s*import\s).*\bKafkaConsumer\b'
+          # A poll with an argument on one line (Kafka's poll(Duration) or
+          # poll(long), not a BlockingQueue's poll() or poll(timeout,
+          # TimeUnit)), in a file where auto-commit can ack a record whose
+          # processing has not finished: the polled records are handed to an
+          # executor or async stage (`submit(() -> process(records))`,
+          # `records.forEach(r -> pool.submit(...))`), or auto-commit is off
+          # and nothing commits, so every restart re-reads from the reset
+          # point. Starting the loop's own thread (`new Thread(runner)`,
+          # `executor.submit(this::run)`) is not a hand-off, and a parallel
+          # stream finishes before the next poll. A synchronous loop under auto-commit is at-least-once —
+          # poll() commits only what the previous poll returned — and is the
+          # KafkaConsumer javadoc's own example, so it is left alone.
+          require: '\A(?=[\s\S]*?\.\s*poll\s*\((?![^;\n]*TimeUnit)\s*[^\s)][^;\n]*\))[\s\S]*?(?:\b(?:submit|execute|runAsync|supplyAsync)\s*\([^;\n]*(?i:records?|recs?)\b|(?i:records?)\s*\.\s*forEach\s*\([^;\n]*\b(?:submit|execute|runAsync|supplyAsync)\s*\(|(?i:enable[._]?auto[._]?commit)\w*"?\s*[,(=:]\s*(?:"?false"?|Boolean\s*\.\s*FALSE))'
+          # Manual commits, a listener acknowledgment, offsets committed in a
+          # producer transaction, or offsets kept in an external store (seek).
+          absent: '\b(commitSync|commitAsync|acknowledge|sendOffsetsToTransaction)\s*\(|\.\s*seek\s*\('
+          confidence: low
+          note: "KafkaConsumer.poll() loop with no manual offset commit — auto-commit can ack a record before it is processed"
+        - id: S07-java-rabbitmq-auto-ack
+          kind: regex
+          pattern: '\.\s*basicConsume\s*\(\s*(?:[^,()]|\([^()]*\))+,\s*true\s*,'
+          # A server-named queue (`queueDeclare()`) or one declared exclusive
+          # is deleted with the consumer's connection, so acking saves nothing
+          # after a crash; direct reply-to requires autoAck=true.
+          absent_within: 'queueDeclare\s*\(\s*\)|queueDeclare\s*\([^,()]*,\s*\w+\s*,\s*true\s*,|amq\.rabbitmq\.reply-to'
+          window: 1
+          window_before: 25
+          confidence: low
+          note: "RabbitMQ basicConsume with autoAck=true — a crash mid-message loses it"
 
   - id: S08
     name: Bounded result sets and pagination
@@ -369,6 +552,32 @@ patterns:
           window: 6
           confidence: low
           note: "SELECT with no LIMIT"
+      java:
+        - id: S08-java-repository-no-pageable
+          kind: file_absent
+          anchor: 'interface\s+\w+\s+extends\s+[\w<>, .]*Repository\b'
+          # A by-id finder is bounded by the ids the caller passes in.
+          require: '(?m)^\s*(List|Collection|Set|Iterable|Stream)\s*<[^>]*>\s+(?!\w*ByIds?(?:In)?\s*\()(find|read|get|query|stream)\w*\s*\('
+          # Bounded forms: paging/slicing/scrolling, a Top-N/First-N name, a
+          # Limit parameter, a LIMIT/FETCH FIRST in a @Query, and a Stream
+          # finder given a fetch size (a cursor, not a materialised list).
+          absent: '\bPageable\b|\b(Page|Slice|Window)\s*<|\b(find|read|get|query|stream)\w*?(Top|First)\d+|\bLimit\s+\w+\s*[,)]|(?i:\bLIMIT\s+(\d|:|\?)|\bFETCH\s+FIRST\b)|FETCH_SIZE|[Ff]etchSize'
+          confidence: low
+          note: "Spring Data repository with collection finders and no Pageable/Slice/Top-N form — every call returns the whole match set"
+        - id: S08-java-kafka-no-max-poll-records
+          kind: file_absent
+          anchor: '^(?!\s*import\s).*\bKafkaConsumer\b'
+          # A one-argument (Kafka) poll in a file whose loop does blocking
+          # per-record work: an HTTP call, a JDBC/repository write, a sleep,
+          # or a blocking wait on a producer send. The default 500 records is
+          # already a bound; it overruns max.poll.interval.ms only when each
+          # record is slow, which a print or an in-memory update never is.
+          require: '\A(?=[\s\S]*?\.\s*poll\s*\((?![^;\n]*TimeUnit)\s*[^\s)][^;\n]*\))[\s\S]*?(?:\b(?:RestTemplate|RestClient|WebClient|HttpClient|OkHttpClient|JdbcTemplate)\b|\.\s*(?:executeUpdate|executeBatch|batchUpdate|saveAll|save|postForObject|postForEntity|exchange)\s*\(|\bThread\s*\.\s*sleep\s*\(|\.\s*send\s*\([^;]*\)\s*\.\s*get\s*\(|\.\s*block\s*\(\s*\))'
+          # max.poll.records set in the file (constant, property string or
+          # setter), or max.poll.interval.ms raised to fit the work.
+          absent: 'max\.poll\.(records|interval)|MAX_POLL_(RECORDS|INTERVAL)|[Mm]axPoll(Records|Interval)\w*\s*\(\s*[^\s)]'
+          confidence: low
+          note: "Kafka poll loop with no max.poll.records — a slow batch overruns max.poll.interval.ms and triggers a rebalance storm"
 
   - id: S09
     name: Single-flight / request coalescing plus caching
@@ -397,6 +606,21 @@ patterns:
           absent: '(?i)\b(in.?flight|single.?flight|coalesc|dedupe|dedup|pending|lru_cache|memoiz)\b'
           confidence: medium
           note: "cache-aside read with no in-flight deduplication"
+      java:
+        - id: S09-java-cache-aside-no-singleflight
+          kind: file_absent
+          anchor: '(?i)\b\w*(cache|caches|cachemap|cached\w*)\s*\.\s*(get|getIfPresent|containsKey)\s*\(\s*[^\s)]'
+          require: '(?s)\A(?=.*?(?i:\b\w*(cache|caches|cachemap|cached\w*)\s*\.\s*(put|putIfAbsent)\s*\())(?=.*?(^\s*(private|protected|public|static|final)\b[^;=(){}]*=\s*new\s+(Concurrent)?HashMap\b|\b(Caffeine|CacheBuilder)\s*\.\s*newBuilder\s*\())'
+          absent: '(?i)(single.?flight|coalesc|dedup|computeIfAbsent|LoadingCache|cache\w*\s*\.\s*get\s*\([^,()]+,)|\bsynchronized\b|\.\s*lock\s*\(\s*\)'
+          confidence: low
+          note: "cache-aside read with no in-flight deduplication (no computeIfAbsent, LoadingCache or loader-form get)"
+        - id: S09-java-cacheable-no-sync
+          kind: regex
+          pattern: '@\s*Cacheable\b'
+          absent_within: '\bsync\s*=\s*true|\bunless\s*='
+          window: 8
+          confidence: low
+          note: "@Cacheable without sync = true — concurrent misses all call through to the source"
 
   - id: S10
     name: Retry at one layer plus a retry budget
@@ -422,6 +646,12 @@ patterns:
           handler: s10_retry_layers
           confidence: medium
           note: "more than one retry layer in the same call path, with no shared budget"
+      java:
+        - id: S10-java-nested-retry
+          kind: module
+          handler: s10_retry_layers
+          confidence: low
+          note: "more than one retry mechanism in the same call path, with no shared budget"
 
   # ---------------------------------------------------------------- Tier B --
   - id: S11
@@ -449,6 +679,13 @@ patterns:
           absent: '(?i)\b(deadline|cancel|remaining|time_budget|CancelledError)\b'
           confidence: low
           note: "outbound calls with no deadline or cancellation passed through"
+      java:
+        - id: S11-java-grpc-no-deadline
+          kind: file_absent
+          anchor: '^(?![ \t]*import\b).*?(?:BlockingStub\b|newBlockingStub\s*\()'
+          absent: '(?i)deadline|\bstatic\s+void\s+main\s*\(|\bextends\s+[\w.]*ImplBase\b|\bimplements\s+[\w.]*AsyncService\b|\bBindableService\b'
+          confidence: low
+          note: "gRPC blocking stub call with no deadline"
 
   - id: S12
     name: Circuit breaker or retry token bucket
@@ -475,6 +712,13 @@ patterns:
           absent: '(?i)\b(circuit|breaker|pybreaker|half.?open|token.?bucket)\b'
           confidence: low
           note: "retries with no circuit breaker or retry token bucket"
+      java:
+        - id: S12-java-no-breaker
+          kind: file_absent
+          anchor: '^(?![^\n]*OptimisticLock)(?:[ \t]*(?:for|while)\s*\([^\n]*(?i:attempt|retries|retrycount|\btries\b|\bretry\b)[^\n]*\n(?:[^\n]*\n){0,2}?[ \t]*try\s*\{|[^\n]*?(?:@\s*Retryable\b|[Rr]etryTemplate\s*\.\s*execute\s*\(|\bFailsafe\s*\.\s*with\b))'
+          absent: '(?i)(circuit.?breaker|breaker|resilience4j|half.?open)|@\s*(?:Configuration|AutoConfiguration|ConfigurationProperties)\b'
+          confidence: low
+          note: "retries with no circuit breaker"
 
   - id: S13
     name: Bulkheads (separate pools, queues, workers)
@@ -501,6 +745,23 @@ patterns:
           absent: '(?i)\b(bulkhead|separate|dedicated|isolat|partition)\w*\b'
           confidence: low
           note: "one shared pool with no isolation between workloads"
+      java:
+        - id: S13-java-shared-executor
+          kind: file_absent
+          anchor: '\bExecutors\s*\.\s*new\w*\s*\(|new\s+ThreadPoolExecutor\s*\('
+          require: '(?s)\.\s*(submit|execute|invokeAll|supplyAsync|runAsync)\s*\(.*\.\s*(submit|execute|invokeAll|supplyAsync|runAsync)\s*\('
+          absent: '(?i)(bulkhead|dedicated|isolat|partition)|(?s:(Executors\s*\.\s*new\w*|new\s+ThreadPoolExecutor)\s*\(.*(Executors\s*\.\s*new\w*|new\s+ThreadPoolExecutor)\s*\()'
+          confidence: low
+          note: "one executor serves several submission sites with no second pool — every workload competes for the same threads"
+        - id: S13-java-akka-blocking-default-dispatcher
+          kind: file_absent
+          anchor: '\bAbstractActor\w*\b|\bAbstractBehavior\b|\bBehaviors\s*\.\s*(receive|setup)\b'
+          require: '\bThread\s*\.\s*sleep\s*\(|\.\s*execute(Query|Update)\s*\(|\bDriverManager\s*\.\s*getConnection\s*\(|\w*[Rr]estTemplate\s*\.\s*\w+\s*\(|\w*[Hh]ttp[Cc]lient\s*\.\s*send\s*\(|\.\s*toCompletableFuture\s*\(\s*\)\s*\.\s*(?:get|join)\s*\('
+          # A launcher's `main` that sleeps after starting the ActorSystem
+          # blocks the main thread, not an actor.
+          absent: 'withDispatcher|DispatcherSelector|blocking\S*dispatcher|\bstatic\s+void\s+main\s*\('
+          confidence: low
+          note: "actor makes blocking calls on the default dispatcher — it starves every other actor sharing it"
 
   - id: S14
     name: Bounded queues with backpressure or load shedding
@@ -528,6 +789,26 @@ patterns:
           pattern: '\b(asyncio\s*\.\s*Queue|queue\s*\.\s*Queue|Queue)\s*\(\s*\)'
           confidence: medium
           note: "Queue() with no maxsize — unbounded by default"
+      java:
+        - id: S14-java-unbounded-blocking-queue
+          kind: regex
+          pattern: 'new\s+([\w$]+\s*\.\s*)*(LinkedBlockingQueue|LinkedBlockingDeque)\s*(<[^>]*>)?\s*\(\s*\)'
+          absent_within: '(?i)idle\w*\s*=\s*new\s'
+          confidence: low
+          note: "LinkedBlockingQueue() with no capacity — unbounded by default, absorbs overload instead of shedding it"
+        - id: S14-java-executors-unbounded-queue
+          kind: regex
+          pattern: '\bExecutors\s*\.\s*(newFixedThreadPool|newSingleThreadExecutor)\s*\('
+          confidence: low
+          note: "Executors.newFixedThreadPool/newSingleThreadExecutor queue on an unbounded LinkedBlockingQueue"
+        - id: S14-java-rabbitmq-no-prefetch
+          kind: file_absent
+          # Not an autoAck consumer (second argument `true`): the broker
+          # ignores prefetch for those, and S07 reports the autoAck itself.
+          anchor: '\.\s*basicConsume\s*\((?!\s*(?:[^,()]|\([^()]*\))+,\s*true\s*,)'
+          absent: '(?i)basicQos\s*\(|prefetch'
+          confidence: low
+          note: "RabbitMQ consumer with no basicQos prefetch — the broker pushes the whole queue into this process"
 
   - id: S15
     name: Graceful degradation and fallbacks
@@ -552,6 +833,13 @@ patterns:
           kind: file_absent
           anchor: '\b(requests|httpx|aiohttp)\s*[.(]'
           absent: '(?i)\b(fallback|degrade|stale|default_value|cached_value)\b'
+          confidence: low
+          note: "external call with no fallback branch"
+      java:
+        - id: S15-java-no-fallback
+          kind: file_absent
+          anchor: '\w*(?:[Hh]ttp[Cc]lient|[Rr]estTemplate|[Ww]eb[Cc]lient)\s*\.\s*(?!(?:builder|newBuilder|newHttpClient|create|mutate)\s*\()\w+\s*\('
+          absent: '(?i)(fallback|degrade|stale|default(Value|Response)|onErrorReturn|onErrorResume|\.exceptionally\s*\()|\bcatch\s*\(\s*(?:final\s+)?(?:[\w.]+\s*\|\s*)*(?:Exception|RuntimeException|Throwable|[\w.]*(?:RestClient|WebClient|Http|IO|Rpc|StatusRuntime|Feign|Timeout|Connect|Socket|ResourceAccess|CallNotPermitted)\w*Exception)\s+\w+\s*\)\s*\{(?:[^{};]*;){0,3}\s*return\b|@\s*Recover\b|CircuitBreakerFactory'
           confidence: low
           note: "external call with no fallback branch"
 
@@ -598,6 +886,15 @@ patterns:
           window: 5
           confidence: low
           note: "cron schedule pinned to a fixed minute with no splay"
+      java:
+        - id: S16-java-scheduled-no-jitter
+          kind: regex
+          pattern: '@\s*Scheduled\s*\([^)]*\bcron\s*='
+          absent_within: '(?i)(jitter|random|splay|stagger)|@\s*SchedulerLock\b'
+          window: 10
+          window_before: 3
+          confidence: low
+          note: "@Scheduled cron with no jitter — cron fires on the wall clock, so every instance fires in lockstep"
 
   - id: S17
     name: Steady state (TTLs, cleanup, growth bounds)
@@ -624,6 +921,14 @@ patterns:
           absent: '(?i)\b(ttl|expire|expiry|evict|maxsize|max_size|max_age|lru|clear\s*\()\b'
           confidence: medium
           note: "in-memory cache with no TTL, eviction, or size bound"
+      java:
+        - id: S17-java-unbounded-cache
+          kind: file_absent
+          anchor: '(?i)\b\w*(cache|caches|cachemap|cached\w*|memo(?!ry)\w*)\s*=\s*new\s+(Concurrent)?HashMap\b|\b\w*(cache|caches|cachemap|cached\w*)\s*\.\s*(put|putIfAbsent)\s*\(|Caffeine\s*\.\s*newBuilder\s*\('
+          require: '^\s*(private|protected|public|static|final)\b[^;=(){}]*=\s*new\s+(Concurrent)?HashMap\b|\b(Caffeine|CacheBuilder)\s*\.\s*newBuilder\s*\('
+          absent: '(?i)(ttl|expire|evict|maximumSize|maximumWeight|removeEldestEntry|\.clear\s*\(|removeIf\s*\(|\.\s*size\s*\(\s*\)\s*>|softValues|weakKeys|weakValues)|<\s*Class\s*<|\bCacheManager\b|\bgetCache\s*\('
+          confidence: low
+          note: "in-memory cache with no TTL, eviction, or size bound"
 
   - id: S18
     name: Fail fast (validate before expensive work)
@@ -644,6 +949,12 @@ patterns:
           note: "validation appears after an expensive external call"
       python:
         - id: S18-py-validate-after-call
+          kind: module
+          handler: s18_fail_fast
+          confidence: low
+          note: "validation appears after an expensive external call"
+      java:
+        - id: S18-java-validate-after-call
           kind: module
           handler: s18_fail_fast
           confidence: low
@@ -689,6 +1000,115 @@ patterns:
           pattern: 'except\s*:\s*$'
           confidence: medium
           note: "bare except catches SystemExit and KeyboardInterrupt too"
+      java:
+        - id: S19-java-empty-catch
+          kind: regex
+          # A parameter named `ignored`/`ignore`/`expected`/`unused` (or the
+          # unnamed `_`) is the Java convention for a deliberate swallow, the
+          # one IntelliJ's and Error Prone's empty-catch checks honour. The
+          # parameter list is bounded ({0,200}) so a pathological line of
+          # unclosed `catch (` stays linear.
+          pattern: 'catch\s*\((?![^)]{0,200}[\s|](?i:ignored?|expected|unused)\d*\s*\)|[^)]{0,200}\s_\s*\))[^)]{0,200}\)\s*\{\s*\}'
+          # Parking a thread until the process is killed: a latch nobody
+          # counts down, or joining the current thread. The interrupt is the
+          # intended exit, so swallowing it loses nothing.
+          absent_within: 'new\s+CountDownLatch\s*\(\s*1\s*\)\s*\.\s*await\s*\(\s*\)|Thread\s*\.\s*currentThread\s*\(\s*\)\s*\.\s*join\s*\(\s*\)'
+          window_before: 2
+          confidence: medium
+          note: "empty catch block — the failure leaves no trace"
+        - id: S19-java-catch-only-comment
+          kind: regex
+          pattern: 'catch\s*\((?![^)]{0,200}[\s|](?i:ignored?|expected|unused)\d*\s*\)|[^)]{0,200}\s_\s*\))[^)]{0,200}\)\s*\{\s*$'
+          present_within: '^\s*\}'
+          window: 1
+          window_offset: 1
+          confidence: medium
+          note: "catch block with no handling beyond a comment"
+
+  # ------------------------------------------- Tier A (JVM-specific) --
+  - id: S27
+    name: No blocking calls on non-blocking/event-loop threads
+    tier: A
+    weight: 1.0
+    metastable_role: amplifier
+    failure_if_absent: >-
+      A blocking call inside a reactive pipeline or an event-loop handler
+      occupies a thread meant to service many concurrent requests. One slow
+      call starves the whole event loop instead of one request.
+    references:
+      - "Project Reactor reference docs — Schedulers and blocking calls"
+      - "Nygard, Release It! (2nd ed.), ch. 4 — Blocked Threads"
+    detectors:
+      java:
+        - id: S27-java-blocking-in-reactive
+          kind: regex
+          pattern: '\bThread\s*\.\s*sleep\s*\(|\bDriverManager\s*\.\s*getConnection\s*\(|\.\s*execute(Query|Update)\s*\(|[Hh]ttp[Cc]lient\s*\.\s*send\s*\(|(restTemplate|RestTemplate|jdbcTemplate|JdbcTemplate)\s*\.\s*\w+\s*\('
+          present_within: '\b(Mono|Flux)\b|reactor\.core|io\.netty|ChannelHandlerContext|akka\.stream'
+          absent_within: 'Schedulers\s*\.\s*(boundedElastic|fromExecutor\w*|newBoundedElastic)|\bsubscribeOn\s*\(|\bpublishOn\s*\('
+          window: 12
+          window_before: 12
+          confidence: low
+          note: "blocking call inside a Reactor/WebFlux/Netty/Akka-Streams context with no scheduler offload — starves the event loop"
+
+  - id: S28
+    name: Bounded, timed lock/wait acquisition
+    tier: A
+    weight: 1.0
+    metastable_role: sustaining
+    failure_if_absent: >-
+      A lock held across a slow call, or a wait with no bound, lets one
+      stalled holder block every other thread indefinitely — a convoy that
+      compounds under load instead of shedding it.
+    references:
+      - "Nygard, Release It! (2nd ed.), ch. 4 — Blocked Threads"
+      - "java.util.concurrent.locks.Lock javadoc — tryLock(long, TimeUnit)"
+    detectors:
+      java:
+        - id: S28-java-monitor-held-across-io
+          kind: regex
+          pattern: '\bsynchronized\s*\(|\bsynchronized\s+[\w<]'
+          present_within: '(?s)\A(?:(?!\}).)*?(?:\bThread\s*\.\s*sleep\s*\(|\.\s*(send|exchange|executeQuery|executeUpdate|getForObject|getForEntity|postForObject|postForEntity|getConnection|block)\s*\(|\.\s*join\s*\(\s*\))'
+          window: 15
+          confidence: low
+          note: "synchronized section makes a blocking call before it closes — a stalled call holds the monitor and every other thread queues behind it"
+        - id: S28-java-untimed-lock-across-io
+          kind: regex
+          pattern: '\.\s*(lock|lockInterruptibly)\s*\(\s*\)'
+          present_within: '(?s)\A(?:(?!\.\s*unlock\s*\().)*?(?:\bThread\s*\.\s*sleep\s*\(|\.\s*(send|exchange|executeQuery|executeUpdate|getForObject|getForEntity|postForObject|postForEntity|getConnection|block)\s*\(|\.\s*join\s*\(\s*\))'
+          window: 15
+          confidence: low
+          note: "Lock.lock() with no timed tryLock, held across a blocking call before unlock()"
+        - id: S28-java-untimed-wait
+          kind: regex
+          pattern: '(\.\s*|^\s*)(await|wait)\s*\(\s*\)(?!\s*\.\s*atMost)'
+          # Contracts that block by definition: BlockingQueue put*/take*, and
+          # the untimed awaitTermination() beside its timed variant. A latch
+          # nobody counts down parks a launcher's main thread on purpose.
+          absent_within: '@Override\s+(public\s+)?[\w<>\[\],\s]*?\b(put|take)\w*\s*\(|\bvoid\s+awaitTermination\s*\(\s*\)|new\s+CountDownLatch\s*\(\s*1\s*\)\s*\.\s*await\s*\(\s*\)'
+          window_before: 8
+          confidence: low
+          note: "Condition.await()/Object.wait() with no timeout — waits forever if the signal never comes"
+
+  - id: S29
+    name: Bounded query fan-out (no N+1 lazy-loading amplification)
+    tier: A
+    weight: 1.0
+    metastable_role: amplifier
+    failure_if_absent: >-
+      Iterating a result set and touching a lazy association per row turns
+      one query into N+1. Under load this is a fan-out amplifier — the same
+      mechanism as an unbounded result set, but produced by ORM lazy loading
+      rather than a missing limit.
+    references:
+      - "Hibernate ORM user guide — Fetching"
+      - "Nygard, Release It! (2nd ed.), ch. 4 — Unbounded Result Sets"
+    detectors:
+      java:
+        - id: S29-java-n-plus-one
+          kind: module
+          handler: s29_n_plus_one
+          confidence: low
+          note: "loop navigates an association per row with no eager fetch hint in the file"
 
 # ---------------------------------------------------------------- Tier C ----
 # Catalogued for the investigator's vocabulary; not scanned in v1.

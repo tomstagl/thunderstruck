@@ -57,7 +57,7 @@ def test_sample_report_shows_the_injection_finding():
 def test_catalog_tiers_match_the_documented_split(catalog):
     tier_a = [p["id"] for p in catalog["patterns"] if p["tier"] == "A"]
     tier_b = [p["id"] for p in catalog["patterns"] if p["tier"] == "B"]
-    assert tier_a == [f"S{n:02d}" for n in range(1, 11)], tier_a
+    assert tier_a == [f"S{n:02d}" for n in (*range(1, 11), 27, 28, 29)], tier_a
     assert tier_b == [f"S{n:02d}" for n in range(11, 20)], tier_b
 
 
