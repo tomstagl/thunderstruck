@@ -410,6 +410,15 @@ def main(argv: list[str] | None = None) -> int:
         c.die(str(exc))
         return 2
 
+    # stderr only: hotspots.json and everything rendered from it stay free of
+    # machine-specific paths.
+    checkout = c.source_checkout()
+    if checkout:
+        print(f"thunderstruck: warning: running from the source checkout "
+              f"{checkout}, not an installed release. Its current branch and "
+              f"uncommitted edits decide what this scan checks. Install from "
+              f"the GitHub marketplace for a fixed version.", file=sys.stderr)
+
     if args.stdout:
         print(json.dumps(payload, indent=2))
         return 0

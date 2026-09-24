@@ -4,6 +4,22 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.3.1
+
+### Fixed
+
+- Skills no longer depend on the model resolving plugin paths by hand. The
+  `$T` shorthand is gone: every command names its script by the full
+  `${CLAUDE_PLUGIN_ROOT}` path, and references, the example config and the
+  catalog are named by substituted paths too. A regression test fails on any
+  unset shell variable in a skill command, and on any plugin path that is
+  not anchored or does not exist (#20).
+- `signals.py` warns on stderr when the plugin runs from a git checkout. A
+  local-directory marketplace or `--plugin-dir` runs that working tree in
+  place, so its branch and uncommitted edits decide what a scan checks (#20).
+- The README says that a local-directory install is a development mode that
+  runs the checkout live (#20).
+
 ## 0.3.0
 
 ### Added

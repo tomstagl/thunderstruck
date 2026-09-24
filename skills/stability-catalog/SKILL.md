@@ -13,9 +13,10 @@ Use it when writing or reviewing anything that calls an external system. The
 question these answer is not "is this correct?" but **"what happens to this
 under load, or when the thing it depends on is already struggling?"**
 
-`references/patterns.md` has every pattern with its failure mode and what the
-detectors look for. It is generated from `catalog/stability.yaml`, so it
-matches what `/thunderstruck-scan` actually checks.
+`${CLAUDE_SKILL_DIR}/references/patterns.md` has every pattern with its
+failure mode and what the detectors look for. It is generated from
+`${CLAUDE_PLUGIN_ROOT}/catalog/stability.yaml`, so it matches what
+`/thunderstruck-scan` actually checks.
 
 ## The ones that matter most
 

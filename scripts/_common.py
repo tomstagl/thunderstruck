@@ -77,6 +77,17 @@ def plugin_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+def source_checkout() -> Path | None:
+    """The plugin root when it is a git working tree, else None.
+
+    An installed release has no .git. A local-directory marketplace or
+    --plugin-dir runs a checkout in place, so its branch and uncommitted edits
+    decide what a scan checks.
+    """
+    root = plugin_root()
+    return root if (root / ".git").exists() else None
+
+
 def out_dir(repo_root: Path) -> Path:
     return Path(repo_root) / OUTPUT_DIRNAME
 

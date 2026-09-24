@@ -22,7 +22,9 @@ Parse these from the user's invocation. All optional.
 | `--include-tests` | off | Rank test files too. |
 | `--refresh-context` | off | Fetch the service context even if the cached copy is fresh. |
 
-`$T` below is `${CLAUDE_PLUGIN_ROOT}/scripts`.
+Every script runs from this plugin's own `scripts/` directory, by the full
+path shown in each command. Use the paths exactly as written; never look for
+the scripts anywhere else, such as a thunderstruck checkout.
 
 ## Step 0 — preflight
 
@@ -42,7 +44,7 @@ ask whether to add it. Do not add it without asking.
 ## Step 1 — signals
 
 ```bash
-uv run "$T/signals.py" --top N --since W [--path P] [--include-tests]
+uv run "${CLAUDE_PLUGIN_ROOT}/scripts/signals.py" --top N --since W [--path P] [--include-tests]
 ```
 
 Writes `.thunderstruck/hotspots.json`. Relay any warnings it prints — a
@@ -52,7 +54,7 @@ should know the ranking is weaker.
 ## Step 1b — service context
 
 ```bash
-uv run "$T/context.py" [--refresh]
+uv run "${CLAUDE_PLUGIN_ROOT}/scripts/context.py" [--refresh]
 ```
 
 Pass `--refresh` when the user gave `--refresh-context`. The first line is
@@ -74,7 +76,7 @@ runs exactly as it would have without it.
 ## Step 2 — bundles
 
 ```bash
-uv run "$T/bundle.py"
+uv run "${CLAUDE_PLUGIN_ROOT}/scripts/bundle.py"
 ```
 
 Writes one briefing per hotspot plus `.thunderstruck/catalog-brief.md`. Its
@@ -103,20 +105,20 @@ Save each result immediately — do not batch them up, so an interrupted scan
 keeps what it has:
 
 ```bash
-uv run "$T/save_finding.py" --id H01 --from /path/to/result.json
+uv run "${CLAUDE_PLUGIN_ROOT}/scripts/save_finding.py" --id H01 --from /path/to/result.json
 ```
 
 If an investigator returns nothing usable, record it and move on. Never retry
 it more than the one repair round in step 4:
 
 ```bash
-uv run "$T/save_finding.py" --id H01 --failed
+uv run "${CLAUDE_PLUGIN_ROOT}/scripts/save_finding.py" --id H01 --failed
 ```
 
 ## Step 4 — validate, with exactly one repair round
 
 ```bash
-uv run "$T/validate.py"
+uv run "${CLAUDE_PLUGIN_ROOT}/scripts/validate.py"
 ```
 
 Exit 0 means every finding's evidence resolved. Exit 1 means at least one did
@@ -140,7 +142,7 @@ on. **No further retries.** A partial report that says so beats a loop.
 ## Step 5 — report
 
 ```bash
-uv run "$T/report.py"
+uv run "${CLAUDE_PLUGIN_ROOT}/scripts/report.py"
 ```
 
 Writes `report.md`, `report.json` and `index.json`. The last enables the
@@ -171,5 +173,5 @@ summary. The investigator subagents are told the same, and report it as an
 
 ## Reference
 
-- `references/orchestration.md` — failure handling, resuming, cost control
-- `references/report-format.md` — output schemas and the finding contract
+- `${CLAUDE_SKILL_DIR}/references/orchestration.md` — failure handling, resuming, cost control
+- `${CLAUDE_SKILL_DIR}/references/report-format.md` — output schemas and the finding contract
