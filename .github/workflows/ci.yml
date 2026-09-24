@@ -45,6 +45,24 @@ jobs:
       - name: Generated docs are in sync
         run: uv run --python ${{ matrix.python }} scripts/gen_catalog_docs.py --check
 
+      - name: Sample report is in sync
+        run: uv run --python ${{ matrix.python }} scripts/gen_sample_report.py --check
+
+  sample-macos:
+    # The sample must be byte-identical on macOS too (#26). Only the check
+    # runs here; the full suite stays on Linux.
+    name: sample report on macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sample report is in sync
+        run: uv run scripts/gen_sample_report.py --check
+
   dogfood:
     name: scan this repo with itself
     runs-on: ubuntu-latest

@@ -50,7 +50,10 @@ uv run scripts/gen_catalog_docs.py
 uv run scripts/gen_sample_report.py
 ```
 
-Both are checked in CI. `skills/stability-catalog/references/patterns.md` is
+Both are checked in CI (`--check` on either script shows what is stale). The
+sample is byte-reproducible on any machine, whatever your git configuration;
+a change that alters report output, or a bump of the generator's pinned
+dependencies, regenerates it in the same PR. `skills/stability-catalog/references/patterns.md` is
 generated — never edit it by hand.
 
 ## Detector kinds

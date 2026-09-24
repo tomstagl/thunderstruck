@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pyyaml>=6.0", "lizard>=1.17"]
+# dependencies = ["pyyaml==6.0.3", "lizard==1.24.0"]  # exact: they shape the sample (#26)
+# [tool.uv]
+# exclude-newer = "2026-09-24T00:00:00Z"  # transitive deps too; bump with the pins
 # ///
 """Regenerate examples/sample-report.md from the test fixture.
 
@@ -22,8 +24,10 @@ validate.py exactly like a real investigator's would.
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -35,10 +39,34 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tests" / "fixtu
 
 import _common as c  # noqa: E402
 
+# This checkout, never CLAUDE_PLUGIN_ROOT: the sample describes the code it sits next to.
+ROOT = Path(__file__).resolve().parent.parent
+
 # Pinned so the fixture, and therefore the sample, is reproducible.
 BASE_DATE = datetime(2025, 1, 6, 9, 0, 0, tzinfo=timezone.utc)
 SINCE = "2020-01-01"
 SAMPLE_REMOTE = "https://github.example.com/acme/fixture.git"
+DATE_LABEL = "dates fixed for this sample"
+# Every clock-dependent spot in the report, and what it becomes. Each must
+# match exactly once: a report format change then breaks generation loudly
+# instead of letting the clock back into the sample.
+PINNED = (
+    (re.compile(r"^Scanned \d{4}-\d{2}-\d{2} · ", re.M), "Scanned {day} (" + DATE_LABEL + ") · "),
+    (re.compile(r"fetched \d{4}-\d{2}-\d{2} \(\d+ days? ago\)"), "fetched {day} (0 days ago)"),
+)
+
+
+def pin_dates(report: str, day: str) -> str:
+    """Replace the run's real dates with `day` and say so in the run line.
+
+    Only the generator does this, so a real scan can never print a fixed date.
+    """
+    for pattern, replacement in PINNED:
+        report, n = pattern.subn(replacement.format(day=day), report)
+        if n != 1:
+            raise SystemExit(f"pin_dates: {pattern.pattern!r} matched {n} times, not once — "
+                             "report.py's format changed; update PINNED in this script")
+    return report
 
 # file fragment -> the finding an investigator should reach on that fracture
 CANNED: dict[str, list[dict]] = {
@@ -166,7 +194,7 @@ CANNED: dict[str, list[dict]] = {
 
 
 def _line_of(repo: Path, rel: str, anchor: str) -> int:
-    for n, line in enumerate(repo.joinpath(rel).read_text().split("\n"), 1):
+    for n, line in enumerate(repo.joinpath(rel).read_text(encoding="utf-8").split("\n"), 1):
         if anchor in line:
             return n
     return 1
@@ -180,9 +208,9 @@ def _run(args: list[str], cwd: Path, env: dict | None = None) -> subprocess.Comp
 
 
 def generate() -> str:
-    from build_fixture import add_remote, add_service_context, build
+    from build_fixture import add_remote, add_service_context, build, isolated_git_env
 
-    root = c.plugin_root()
+    root = ROOT
     scripts = root / "scripts"
     with tempfile.TemporaryDirectory() as tmp:
         repo = build(Path(tmp) / "fixture", base_date=BASE_DATE)
@@ -195,14 +223,16 @@ def generate() -> str:
         add_remote(repo, SAMPLE_REMOTE)
         with (repo / c.PROFILE_FILENAME).open("a", encoding="utf-8") as fh:
             fh.write('\n[links]\nprovider = "github"\n')
-        env = {k: v for k, v in os.environ.items() if not k.startswith("FAKE_CATALOG_")}
+        # The whole pipeline runs without user git config, as the fixture was built
+        env = isolated_git_env({k: v for k, v in os.environ.items()
+                                if not k.startswith(("FAKE_CATALOG_", "CLAUDE_PLUGIN_"))})
         env.update(THUNDERSTRUCK_TRUST_CONTEXT="1", XDG_CONFIG_HOME=str(Path(tmp) / "xdg"))
         _run([sys.executable, str(scripts / "signals.py"), "--repo", str(repo),
               "--top", "9", "--since", SINCE], repo, env)
         _run([sys.executable, str(scripts / "context.py"), "--repo", str(repo)], repo, env)
         _run([sys.executable, str(scripts / "bundle.py"), "--repo", str(repo)], repo, env)
 
-        data = json.loads((repo / ".thunderstruck" / "hotspots.json").read_text())
+        data = json.loads((repo / ".thunderstruck" / "hotspots.json").read_text(encoding="utf-8"))
         by_file = {h["file"]: h for h in data["hotspots"]}
 
         for fragment, findings in CANNED.items():
@@ -237,31 +267,39 @@ def generate() -> str:
             proc = subprocess.run(
                 [sys.executable, str(scripts / "save_finding.py"),
                  "--repo", str(repo), "--id", hs["id"]],
-                input=json.dumps(doc), capture_output=True, text=True, cwd=str(repo))
+                input=json.dumps(doc), capture_output=True, text=True, cwd=str(repo), env=env)
             if proc.returncode != 0:
                 raise SystemExit(f"save_finding failed: {proc.stderr}")
 
         for hs in data["hotspots"]:
             path = repo / ".thunderstruck" / "findings" / f"{hs['id']}.json"
             if not path.is_file():
-                subprocess.run(
+                proc = subprocess.run(
                     [sys.executable, str(scripts / "save_finding.py"),
                      "--repo", str(repo), "--id", hs["id"]],
                     input=json.dumps({
                         "hotspot_id": hs["id"], "file": hs["file"], "findings": [],
                         "notes": "no credible production failure mode found"}),
-                    capture_output=True, text=True, cwd=str(repo))
+                    capture_output=True, text=True, cwd=str(repo), env=env)
+                if proc.returncode != 0:
+                    raise SystemExit(f"save_finding failed: {proc.stderr}")
 
         validation = subprocess.run(
             [sys.executable, str(scripts / "validate.py"), "--repo", str(repo)],
-            capture_output=True, text=True, cwd=str(repo))
+            capture_output=True, text=True, cwd=str(repo), env=env)
         if validation.returncode != 0:
             raise SystemExit(
                 "the sample findings no longer satisfy validate.py — fix the "
                 f"canned findings in this script:\n{validation.stdout}")
 
-        _run([sys.executable, str(scripts / "report.py"), "--repo", str(repo)], repo)
-        report = (repo / ".thunderstruck" / "report.md").read_text()
+        _run([sys.executable, str(scripts / "report.py"), "--repo", str(repo)], repo, env)
+        # the fixture's last commit: no pinned date can predate what was scanned
+        day = _run(["git", "-C", str(repo), "log", "-1", "--format=%cs"], repo, env).stdout.strip()
+        report = (repo / ".thunderstruck" / "report.md").read_text(encoding="utf-8")
+        if "## Service context" not in report:
+            raise SystemExit("the fixture's service context was not fetched (the stub "
+                             "catalog failed or timed out); the sample needs it")
+        report = pin_dates(report, day)
 
     header = (
         "<!-- Generated by scripts/gen_sample_report.py from the test fixture in\n"
@@ -269,9 +307,31 @@ def generate() -> str:
         "     validator: each ref resolved to a file:line, a commit in that repo,\n"
         "     a detector hit or a catalog edge. Refs link to a placeholder host\n"
         "     (github.example.com), so the links do not resolve; in a real scan they\n"
-        "     open the cited lines at the scanned commit. Regenerate with:\n"
-        "     uv run scripts/gen_sample_report.py -->\n\n")
+        "     open the cited lines at the scanned commit. Dates are fixed to the\n"
+        "     fixture's last commit so the file is byte-reproducible; CI fails when\n"
+        "     it is stale. Regenerate with:  uv run scripts/gen_sample_report.py\n"
+        "     Check with:       uv run scripts/gen_sample_report.py --check -->\n\n")
     return header + report
+
+
+REGENERATE = "uv run scripts/gen_sample_report.py"
+DIFF_LINES = 80
+
+
+def check(dest: Path, body: str) -> tuple[bool, str]:
+    """Compare the committed sample with a fresh generation."""
+    if not dest.is_file():
+        return False, f"{dest.name} does not exist — regenerate with: {REGENERATE}"
+    current = dest.read_text(encoding="utf-8")
+    if current == body:
+        return True, f"{dest.name} is up to date"
+    diff = list(difflib.unified_diff(current.splitlines(), body.splitlines(),
+                                     f"{dest.name} (committed)", f"{dest.name} (generated)",
+                                     lineterm=""))
+    shown = diff[:DIFF_LINES]
+    if len(diff) > DIFF_LINES:
+        shown.append(f"… {len(diff) - DIFF_LINES} more diff line(s)")
+    return False, "\n".join([f"{dest.name} is stale:", *shown, f"regenerate with: {REGENERATE}"])
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -279,14 +339,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--check", action="store_true")
     args = ap.parse_args(argv)
 
-    dest = c.plugin_root() / "examples" / "sample-report.md"
+    dest = ROOT / "examples" / "sample-report.md"
     body = generate()
     if args.check:
-        if not dest.is_file():
-            print(f"{dest} does not exist", file=sys.stderr)
-            return 1
-        print(f"{dest.name} regenerated cleanly")
-        return 0
+        ok, message = check(dest, body)
+        print(message, file=sys.stdout if ok else sys.stderr)
+        return 0 if ok else 1
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(body, encoding="utf-8")
     print(f"wrote {dest} ({len(body.splitlines())} lines)")
