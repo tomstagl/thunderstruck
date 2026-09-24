@@ -4,6 +4,20 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.6.0
+
+### Added
+
+- **Links for every listed file** (#24). Every file in the ranked hotspots table, *Hotspots investigated with no finding* and *Incomplete* links to the whole file at the scanned commit, including in a report with no findings.
+- Each ranked hotspot also links to the file's change history up to the scanned commit, on GitHub, GitLab and Bitbucket. That history is the churn that earned the hotspot's rank. Custom URL templates get no history link.
+- `report.json` carries `url` on hotspot, clean and incomplete entries, and `history_url` on hotspots. Each is `null` when unlinked. `index.json` is unchanged.
+
+### Changed
+
+- The warning about files that differ from the scanned commit names the first five, then "… and N more".
+- `code_template` and `commit_template` may only contain characters that are safe in a link: letters, digits and `. _ ~ % / + { } # : ? = & ; , @ -`.
+- Git receives the paths to check in chunks, so a large `--top` can't overflow a command line and leave the whole report unlinked.
+
 ## 0.5.1
 
 ### Security

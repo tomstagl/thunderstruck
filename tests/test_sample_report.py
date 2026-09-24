@@ -160,3 +160,28 @@ def test_check_truncates_long_diffs(tmp_path):
     ok, message = gen.check(dest, "".join(f"new {n}\n" for n in range(200)))
     assert not ok and "more diff line(s)" in message
     assert len(message.splitlines()) <= gen.DIFF_LINES + 3
+
+
+# ------------------------------------------------------------ hotspot links --
+
+
+def test_sample_links_every_hotspot_and_clean_file():
+    """#24 AC-7: every ranked hotspot is one click from its code and its
+    history, and every clean entry from its code, at the scanned commit."""
+    import re
+    sample = (Path(__file__).resolve().parent.parent / "examples" / "sample-report.md").read_text()
+    head = re.search(r"· `main` @ `([0-9a-f]{7})`", sample)[1]
+    base = re.escape(gen.SAMPLE_REMOTE.removesuffix(".git"))
+    sha = rf"{head}[0-9a-f]{{33}}"
+    ranked = sample.split("## Ranked hotspots", 1)[1]
+    rows = [line for line in ranked.splitlines() if re.match(r"\| H\d+ \|", line)]
+    assert rows
+    for row in rows:
+        assert re.match(rf"\| H\d+ \| \[`([^`]+)`\]\({base}/blob/{sha}/\1\) · "
+                        rf"\[history\]\({base}/commits/{sha}/\1\) \|", row), row
+    clean = sample.split("## Hotspots investigated with no finding", 1)[1].split("\n## ", 1)[0]
+    items = [line for line in clean.splitlines() if line.startswith("- **H")]
+    assert items
+    for item in items:
+        assert re.match(rf"- \*\*H\d+\*\* \[`([^`]+)`\]\({base}/blob/{sha}/\1\) — ", item), item
+    assert "not linked" not in sample
