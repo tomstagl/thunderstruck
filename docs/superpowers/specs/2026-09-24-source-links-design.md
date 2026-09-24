@@ -1,4 +1,4 @@
-# Source links in the report: design
+# Source links in the report — design
 
 **Requirements:** [#22](https://github.com/tomstagl/thunderstruck/issues/22). The problem, user stories, scope, acceptance criteria (AC-n) and success measures are in the ticket and are not repeated here.
 **Plan:** `docs/superpowers/plans/2026-09-24-source-links.md`
@@ -11,47 +11,51 @@ This document describes how the feature works. Examples use generic names (`git.
 signals.py    unchanged
 bundle.py     unchanged    bundles stay byte-identical; checkpointing is untouched
 investigator  unchanged    never writes or sees a URL
-validate.py   unchanged    resolves refs exactly as today
-report.py     + links      builds a LinkContext once, then wraps each resolved ref in a link
-  links.py    NEW          pure functions: parse a remote, build a URL, encode a path
-guardrail.py  unchanged    index.json has the same shape as before
+validate.py   refactor     path normalisation moves to _common.ref_path (no behaviour change)
+report.py     + links      one link_context() call after collect(), then wraps refs
+  links.py    NEW          remote parsing, URL building, and the only git calls for linking
+guardrail.py  unchanged    index.json keeps its shape
 ```
 
-Links are built only in `report.py`, and only after `validate.py` has resolved every ref. A URL is computed from three inputs: git config (the remote), the profile (`[links]`) and a ref that has already been resolved. It is never taken from model output or from repository text. If a finding JSON contains a `url` field, the report ignores it and overwrites it. This follows CLAUDE.md's governing rule: the model decides *which* line matters, and a script decides *how to point at it*.
+Links are built only in `report.py`, and only for refs that `validate.py` resolved: every `code`, `detector` and `commit` ref, and every `location.file`. A URL comes from three inputs only: git (the remote, the scanned tree, commit ids), the profile (`[links]`) and the resolved ref. It is never taken from model output or from repository text. If a finding JSON carries a `url` field, it is overwritten. This follows CLAUDE.md's governing rule: the model decides *which* line matters, and a script decides *how to point at it*.
 
-`scripts/links.py` imports only the stdlib and has no side effects except `git` subprocess calls, which live in a single function (`link_context`). Everything else is a pure function, which keeps the unit tests table-driven and fast.
+**The location line range is not validated.** `validate.py` checks that `location.file` exists but treats `location.lines` as free text. The link code therefore parses `lines` itself, strictly (§5), and falls back to a file-level link when the value does not parse. `validate.py` is not tightened in this feature. Rejecting findings that are valid today would change the finding contract. That belongs in its own ticket (§12).
+
+`scripts/links.py` is stdlib-only. Every git call made for linking lives in `link_context()`. All other functions are pure.
 
 ## 2. Configuration contract
 
-`[links]` is an optional table in the repo's committed profile, `.thunderstruck.toml`. Without it, the defaults apply and a repo on github.com, gitlab.com or bitbucket.org gets links with no setup.
+`[links]` is an optional table in the repo's committed profile, `.thunderstruck.toml`. Without it, a repo whose remote is on github.com, gitlab.com or bitbucket.org is linked with no setup.
 
 ```toml
 [links]
-enabled  = true                       # false: plain refs as before, and no warning
-remote   = "origin"                   # which git remote to read
-provider = "gitlab"                   # github | gitlab | bitbucket; required for self-hosted hosts
-base_url = "https://git.example.com/acme/checkout"   # overrides the web base derived from the remote
+enabled  = true                  # false: plain refs as before, and no warning
+remote   = "upstream"            # default: "origin", else the repo's only remote
+provider = "gitlab"              # github | gitlab | bitbucket
+base_url = "https://git.example.com/acme/checkout"   # web base; replaces the one derived from the remote
 
-# Escape hatch for hosts whose URL scheme is none of the three (e.g. Bitbucket Data Center).
-# When both templates are set, provider is ignored.
+# For hosts with another URL scheme (e.g. Bitbucket Data Center). Both or neither.
+# When set, provider is ignored.
 code_template   = "{base}/browse/{path}?at={sha}#{start}-{end}"
 commit_template = "{base}/commits/{sha}"
 ```
 
-Validation:
+Validation (`config_from_profile`). Any failure disables linking and produces exactly one warning, which names the key:
 
-- An unknown `provider`, a `base_url` whose scheme is not `http`/`https`, or a template that uses a placeholder outside `{base} {sha} {path} {start} {end}` makes the report drop links entirely and print one warning naming the key. Nothing crashes, and there are no partial links.
-- Only one of `code_template`/`commit_template` set → the same failure, handled the same way.
-- Placeholders are substituted with literal `str.replace`, never `str.format`, so `{sha.__class__}` stays inert text and is rejected by the placeholder check.
+- `enabled` is not a bool, or `remote`, `provider`, `base_url` or a template is not a string.
+- `provider` is not one of the three.
+- `base_url` has a scheme other than `http`/`https`, has no host, or contains `{`, `}` or whitespace.
+- Only one of the two templates is set.
+- A template uses a placeholder other than `{base} {sha} {path} {start} {end}`.
 
-## 3. Resolving the remote
+A profile that fails to load (bad TOML) produces the warning *"references are not linked: .thunderstruck.toml could not be read"*. The report is still rendered.
 
-`link_context(repo, profile, head)` returns `LinkContext | None` plus a list of warnings.
+## 3. Resolving the web base and provider
 
-1. `enabled = false` → `None`, no warning.
-2. Remote name: `[links] remote`, else `origin`. If `origin` does not exist and the repo has exactly one remote, that remote is used. Otherwise there is no remote.
-3. `git remote get-url <name>` → `parse_remote(url)`.
-4. `base_url` from the profile replaces the parsed base. When the base came only from the profile, no remote is needed.
+1. `enabled = false` → no links, no warning.
+2. **Remote name.** If `remote` is set, that remote must exist. If it does not, the warning is *"remote 'x' named in [links] does not exist"*: linking continues when `base_url` is set, and stops otherwise. If `remote` is unset, use `origin`, else the only remote when there is exactly one, else none.
+3. **Base.** `base_url` from the profile, else `parse_remote(git remote get-url <name>)`. If neither yields a base, the warning is *"references are not linked: no git remote to link to; set remote or base_url in [links]"*.
+4. **Provider.** The templates, else `provider`, else auto-detection from the **exact** hosts `github.com`, `gitlab.com` and `bitbucket.org`. If no provider is found, the warning is *"references are not linked: host H is not recognised; set provider (and base_url if H is an SSH alias) in [links]"*. We do not guess from substrings in the host name: a wrong guess produces links that silently 404.
 
 `parse_remote` accepts:
 
@@ -61,111 +65,156 @@ Validation:
 | scp-like | `git@gitlab.com:acme/platform/checkout.git` | `https://gitlab.com/acme/platform/checkout` |
 | ssh URL | `ssh://git@git.example.com:2222/acme/checkout.git` | `https://git.example.com/acme/checkout` |
 | git protocol | `git://git.example.com/acme/checkout` | `https://git.example.com/acme/checkout` |
-| local path / `file://` | `/srv/git/checkout.git` | none |
+| local path, `file://`, empty path, invalid port | `/srv/git/checkout.git` | none |
 
 Rules:
 
-- **Userinfo is always dropped**: user, password and token alike. CI remotes routinely carry `x-access-token:…@`. It must never reach `report.md` or `report.json`.
-- The ssh port is dropped, because it is not the web port. An https port is kept.
-- A trailing `.git` and a trailing `/` are stripped. Nested groups (GitLab subgroups) are kept.
-- The provider is auto-detected **only** from the exact hosts `github.com`, `gitlab.com` and `bitbucket.org`. Any other host needs `provider` (or the templates) and produces the warning *"references are not linked: host git.example.com is not recognised; set provider in [links]"*. We do not guess from substrings like `gitlab` in the host name: a wrong guess produces links that silently 404, which is the link equivalent of a false positive.
+- **Userinfo is always dropped**, whether user, password or token. CI remotes routinely carry `x-access-token:…@`.
+- The ssh port is dropped, because it is not the web port. An https or http port is kept.
+- A trailing `.git` and any trailing `/` are stripped. GitLab subgroups are kept.
+- A base containing `{`, `}` or whitespace is rejected, so it can never feed template substitution.
+- An SSH host alias from `~/.ssh/config` (`git@github-work:acme/x`) parses to host `github-work`. That is not an exact host, so the warning asks for `provider` and `base_url`.
 
 ## 4. Building URLs
 
-The SHA is always the full `repo.head` from `hotspots.json`, the commit that was scanned. It is never a branch name, so a link keeps pointing at the code the finding describes after the branch moves on.
+The SHA is always the full `repo.head` from `hotspots.json`, the commit that was scanned. It is never a branch name.
 
-| Provider | Code, range | Code, single line | Commit |
+| Provider | Code, range | Code, single line | Code, whole file | Commit |
+|---|---|---|---|---|
+| github | `{base}/blob/{sha}/{path}#L{s}-L{e}` | `…#L{s}` | `{base}/blob/{sha}/{path}` | `{base}/commit/{sha}` |
+| gitlab | `{base}/-/blob/{sha}/{path}#L{s}-{e}` | `…#L{s}` | `{base}/-/blob/{sha}/{path}` | `{base}/-/commit/{sha}` |
+| bitbucket | `{base}/src/{sha}/{path}#lines-{s}:{e}` | `…#lines-{s}` | `{base}/src/{sha}/{path}` | `{base}/commits/{sha}` |
+
+- **Rendered files.** GitHub and GitLab render Markdown-like files and ignore line anchors on them. For those two providers, a code link to a path ending in `.md .markdown .mdown .mkd .rst .adoc .asciidoc .org .textile .rdoc .ipynb` gets `?plain=1` before the `#` fragment.
+- **Templates.** With a single line, `{end}` = `{start}`. For a whole-file link, the template is cut at its first `#` and `{start}`/`{end}` are removed. If a placeholder remains in the part before the `#`, no file-level link is emitted.
+- **Substitution** is a single `re.sub` pass over the template with a fixed mapping, so a value can never be re-expanded. Never `str.format`.
+- **Paths.** The path is first normalised with `_common.ref_path`, the same rule the validator applies (`str.strip().lstrip("./")`), so the path that is linked is the path that was resolved. Each `/`-separated segment is then encoded with `urllib.parse.quote(seg, safe="")`. That encodes space, `#`, `?`, `%`, `(`, `)`, `[`, `]` and non-ASCII, so a file name cannot end the Markdown link or add a fragment.
+
+## 5. What gets linked, and how refs are read
+
+| Ref | Parsed with | Rendered | Links to |
 |---|---|---|---|
-| github | `{base}/blob/{sha}/{path}#L{s}-L{e}` | `…#L{s}` | `{base}/commit/{sha}` |
-| gitlab | `{base}/-/blob/{sha}/{path}#L{s}-{e}` | `…#L{s}` | `{base}/-/commit/{sha}` |
-| bitbucket | `{base}/src/{sha}/{path}#lines-{s}:{e}` | `…#lines-{s}` | `{base}/commits/{sha}` |
+| Finding location | `location.file` + `location.lines` (below) | [`file:lines`](…) | file + range, or whole file |
+| `code` evidence | `validate.CODE_REF` | [`file:16-28`](…) | file + range |
+| `detector` evidence | `validate.DETECTOR_REF` | [`S02@file:16`](…) | file + line |
+| `commit` evidence | first whitespace-separated token, as `validate.py` does | [`cab143e`](…) followed by the rest of the ref in backticks, when there is any | commit page |
+| `catalog` evidence | — | unchanged | none |
 
-Templates get `{end}` = `{start}` for a single line.
+**`location.lines`.** An int, or a string matching `^\s*(\d+)(?:\s*-\s*(\d+))?\s*$`, with `1 ≤ start ≤ end ≤` the number of lines in the file on disk. The file is unchanged since the scanned commit (§6), so that count is the count at the scanned commit. Anything else, such as `"L16"`, an en dash, a list, or a range past the end of the file, gives a whole-file link. The displayed text stays exactly as the model wrote it.
 
-**Path encoding.** A leading `./` is stripped, and each `/`-separated segment is encoded with `urllib.parse.quote(seg, safe="")`. That encodes space, `#`, `?`, `(`, `)`, `[`, `]` and non-ASCII, so a file name cannot end the Markdown link early or smuggle in a fragment. For example, a file named `a](javascript:x).ts` becomes `a%5D%28javascript%3Ax%29.ts`.
+A ref that fails to parse is shown exactly as today, unlinked. The hotspot table, the clean and incomplete lists, `index.json` and the guardrail are out of scope (see the ticket).
 
-**Commit refs.** The validator accepts short SHAs. The report expands each one with `git rev-parse --verify <ref>^{commit}` (local and deterministic) for the URL and shows the first 7 characters as link text. If it cannot be expanded (in practice, never after validation), the ref is shown unlinked.
+## 6. Links must never show other lines
 
-## 5. What gets linked
+`validate.py` checks refs against the **working tree**. A permalink shows the **scanned commit**. `link_context` receives every cited path and leaves a path unlinked in any of these cases:
 
-| Ref | Rendered as | Links to |
+| Check | Command | Why |
 |---|---|---|
-| Finding location | [`src/client/releases.ts:16-28`](…) | file, line range |
-| `code` evidence | [`src/client/releases.ts:16`](…) | file, line or range |
-| `detector` evidence | [`S02@src/client/releases.ts:16`](…) | file, line |
-| `commit` evidence | [`cab143e`](…) | commit page |
-| `catalog` evidence | unchanged | none (not a location in this repo) |
-| Hotspot table, clean and incomplete lists, index.json, guardrail | unchanged | out of scope (ticket) |
+| Path absent at the scanned commit, or a symlink (`120000`), or a submodule (`160000`) | `git --literal-pathspecs ls-tree -z --full-tree <sha> -- <paths>` | The file is untracked, ignored, new or deleted. For a symlink or submodule, the host page is not the file that was read. |
+| Working tree or index differs from the scanned commit | `git --literal-pathspecs diff --name-only -z <sha> -- <paths>` | Covers edits, staged changes, **and commits made after the scan**. The check compares against the scanned SHA, not the current HEAD. |
 
-The link text keeps today's backticked ref, apart from the shortened commit SHA, so a report read as plain text still shows exactly what was cited.
+`--literal-pathspecs` stops paths like `src/[id].ts` from being read as globs. Paths are sorted and deduplicated first, so the warning text is deterministic: *"2 cited file(s) differ from the scanned commit abc1234 or are not in it, and are not linked: src/a.ts, src/b.ts"*.
 
-## 6. Staleness: when a link would lie
+**Push state.** Links pinned to a commit the host does not have will 404 until it is pushed. For the scanned SHA and every cited commit, `git branch -r --contains <sha> --format=%(refname)` must list a ref under `refs/remotes/<remote>/`. This check is offline: it reads remote-tracking refs and never contacts the host. Commits that fail the check are still linked, because the links start working once the commits are pushed. The warning is *"3 linked commit(s) are on no branch of origin known locally (abc1234, …; normal in a detached or shallow CI checkout); their links resolve once pushed"*. The check is skipped when the base came from `base_url` with no remote, because there is nothing to check against.
 
-`validate.py` checks line numbers against the **working tree**, but a permalink shows the file **at the scanned commit**. They differ when the scan runs on a dirty tree.
+**Commit ids.** Cited commit tokens are expanded with `git rev-parse --verify <token>^{commit}` inside `link_context`, which returns a token→full-SHA map. A token that does not expand is left unlinked.
 
-- **Changed or untracked cited file.** `git status --porcelain -z -- <every cited path>` runs once. A path that is modified, added, deleted, renamed or untracked is left **unlinked**, and one warning lists those paths: *"2 cited file(s) differ from the scanned commit abc1234 and are not linked: src/a.ts, src/b.ts"*. A link that lands on the wrong line is worse than no link. The report already prints the file:line in plain text, so nothing is lost.
-- **Scanned commit not pushed.** If `git branch -r --contains <head>` finds no ref under `refs/remotes/<remote>/`, links are still emitted (they start working once the commit is pushed), and the report warns: *"the scanned commit abc1234 is on no branch of origin known locally; links resolve once it is pushed"*. This check is offline: it reads remote-tracking refs and never contacts the host. A shallow CI checkout without remote-tracking refs gets the same warning, which is accurate: we cannot tell.
+**Failure handling.** Every git call uses a 30-second timeout. `ThunderstruckError`, `subprocess.TimeoutExpired` and `OSError` all end in *"references are not linked: <reason>"* with no links at all. `report.py` also wraps the whole linking step, so an unexpected exception degrades to that warning and never fails the report.
 
 ## 7. Output contracts
 
-**report.md.** Links as in §5. Link warnings are added to *Run warnings* after the scan and context warnings.
+**report.md.** Links as described in §5. Link warnings are printed in *Run warnings* after the scan and context warnings.
 
-**report.json.** The changes are additive only, so the schema stays `thunderstruck.report/v1`:
+**report.json.** The changes are additive, and the schema stays `thunderstruck.report/v1`:
 
 ```json
 "links": {"provider": "github", "base_url": "https://github.com/acme/checkout",
           "sha": "<40 hex>", "remote": "origin"},
+"warnings": ["…scan warnings…", "…link warnings…"],
 "findings": [{"location": {"file": "…", "lines": "16-28", "url": "https://…"},
               "evidence": [{"type": "code", "ref": "…", "url": "https://…"},
                            {"type": "catalog", "ref": "…", "url": null}]}]
 ```
 
-`links` is `null` when linking is disabled or impossible, and then `url` is `null` everywhere. Link warnings are appended to the top-level `warnings` list, the same list the Markdown prints. `url` is added to copies of the finding dicts. `.thunderstruck/findings/*.json` is never rewritten.
+`links` is `null` when linking is off or impossible, and then every `url` is `null`. `provider` is `null` when templates are used. `remote` is `null` when only `base_url` was used. Top-level `warnings` is the scan warnings followed by the link warnings. Context warnings stay out of `report.json`, as they are today. URLs are computed once, in `collect()`, on deep copies of the findings. Both renderers read the same values, and `.thunderstruck/findings/*.json` is never written.
 
-**index.json and guardrail.** Unchanged. The guardrail's constraints (stdlib, <100ms, statements of fact) make it the wrong place for a feature the user can already get with one click in the report.
+**index.json and guardrail.** Unchanged.
 
 ## 8. Security
 
-- No credentials in output (§3). A test asserts that a token-bearing remote produces no `@`, token substring or username anywhere in `report.md` or `report.json`.
-- Only `http`/`https` URLs are emitted. The profile's `base_url` scheme is checked, and the parsed remote is always rewritten to `https` (or kept `http` when the remote was `http`).
-- Path encoding (§4) prevents Markdown or link injection through file names. Finding text (failure mode, notes) is not linked or re-encoded by this feature. Its handling is unchanged.
-- No network access at any point.
-- The report now names the remote's web base. It already names the repo and branch, and it stays in the gitignored `.thunderstruck/` directory.
+- No credentials in output (§3). A test runs with a token-bearing remote and checks that `report.md` and `report.json` contain neither the token nor the username.
+- Only `http`/`https` URLs are emitted, whether they come from the remote or from `base_url`.
+- Templates are substituted in a single pass. A base containing braces is rejected, and unknown placeholders are rejected (§2, §4).
+- Path encoding (§4) prevents Markdown and link injection through file names. Finding prose is not touched by this feature.
+- No network access.
+- The report now names the remote's web base. The README's *Privacy* section says so.
 
 ## 9. Degradation
 
 | Situation | Refs | Warning |
 |---|---|---|
 | `enabled = false` | plain | none |
-| no remote, no `base_url` | plain | "references are not linked: no git remote 'origin'; set [links] in .thunderstruck.toml" |
-| unrecognised host, no `provider` | plain | names the host and the key to set |
-| invalid `[links]` config | plain | names the key |
-| cited file dirty or untracked | that file plain | lists the files |
-| scanned commit not on a remote-tracking branch | linked | "links resolve once it is pushed" |
-| `git` call fails | plain | "references are not linked: <reason>" |
-
-`report.py` never exits non-zero because of linking.
+| profile unreadable, or `[links]` invalid | plain | names the file or key |
+| named remote missing, no `base_url` | plain | names the remote |
+| no remote and no `base_url` | plain | asks for `remote` or `base_url` |
+| host not recognised (incl. SSH alias) | plain | names the host, `provider` and `base_url` |
+| git call fails or times out | plain | reason |
+| cited file changed, absent, symlink or submodule | that file plain | lists the files |
+| `location.lines` unreadable or out of range | whole-file link | none (the text shows what was cited) |
+| scanned or cited commit not on a remote-tracking ref | linked | lists the commits |
 
 ## 10. Test strategy
 
-- **`tests/test_links.py`** (unit, table-driven): every row of the §3 table; userinfo and token removal; ssh port removal; `.git` and slash stripping; GitLab subgroups; unknown host → no provider; URL shapes for each provider, range and single line; path encoding (space, `#`, parentheses, brackets, unicode, `./` prefix); template substitution, unknown placeholder rejected, `{sha.__class__}` rejected; non-http `base_url` rejected.
-- **`tests/test_pipeline.py`** (fixture): with a github.com remote and a matching remote-tracking ref, the rendered report contains a link for the location and for each code, commit and detector ref, and `report.json` carries `url`s. A dirty cited file is unlinked and named. No remote → plain refs plus the warning. `enabled = false` → no warning. `index.json` has no `url` key. A token-bearing remote leaks nothing.
-- **Determinism**: `test_bundles_are_within_budget_and_deterministic` is unchanged and must still pass. The bundler is not touched.
-- **Sample report**: `gen_sample_report.py` gives the fixture a remote on a reserved placeholder host and a remote-tracking ref (§11). The regenerated sample shows links, and `--check` guards it.
+- **`tests/test_links.py`** (unit, table-driven, no git):
+  - every row of the §3 table, plus invalid ports and empty paths;
+  - userinfo and token removal, ssh port removal, subgroups, braces rejected;
+  - exact-host provider detection;
+  - URL shapes per provider: range, single line, whole file, and `?plain=1` on `.md`;
+  - template substitution: single pass, whole-file cut at `#`;
+  - path normalisation and encoding (`./`, `../`, space, `#`, `%`, brackets, unicode);
+  - `location.lines` parsing: int, `"16"`, `"16-28"`, `" 16 - 28 "`, `"L16"`, en dash, reversed and out-of-range values;
+  - every `config_from_profile` failure.
+- **`tests/test_links.py`** (git, `tmp_path` repos), for `link_context`:
+  - remote selection: origin, sole remote, explicitly named remote, missing named remote, `base_url` only;
+  - an unrecognised host;
+  - a modified file, a staged file, a file committed after the scan, an untracked file, an ignored file, a symlink and a `[id]` path;
+  - commit expansion, including a token that does not expand;
+  - push state, for the scanned SHA and for an unpushed cited commit;
+  - a git failure.
+- **`tests/test_pipeline.py`** (fixture, derived from `scanned_copy` / `context_scanned_copy`):
+  - every ref type is linked;
+  - a commit ref with a subject keeps its subject;
+  - catalog refs stay plain;
+  - no remote gives plain refs and a warning;
+  - `enabled = false` is silent;
+  - a malformed `location.lines` gives a whole-file link;
+  - a token-bearing remote leaks nothing;
+  - a finding-supplied `url` is overwritten;
+  - `report.json` URLs and `links`;
+  - `index.json` has no `url`;
+  - the findings files are byte-identical after `report.py`.
+- **Determinism:** `test_bundles_are_within_budget_and_deterministic` is unchanged and must pass.
+- **Sample report:** a new shape test checks that every `_code_`, `_detector_` and `_commit_` evidence line and every finding location in `examples/sample-report.md` is a link. This is *not* a freshness check. `gen_sample_report.py --check` only tests that the file exists (see §12).
 
 ## 11. Decisions
 
 | Decision | Rationale |
 |---|---|
-| Web permalinks only, no relative or editor links | The user's choice. `.thunderstruck/` is gitignored, so relative links would not render on a host anyway, and `vscode://` URIs need absolute paths that make reports unshareable. |
-| Pin to the scanned SHA, never the branch | A finding describes one version of the code. Branch links drift as soon as someone edits the file. |
-| Build links in `report.py`, not in `signals.py` | This is presentation. Keeping it out of the scan and the bundles guarantees that checkpointing and bundle determinism cannot be affected. `report.py` already reads the repo. |
+| Web permalinks only | The user chose this. `.thunderstruck/` is gitignored, and `vscode://` URIs need absolute paths that make reports unshareable. |
+| Pin links to the scanned SHA; check staleness against that SHA, not HEAD | A finding describes one version of the code. A scan spans minutes, and the user may commit in between. |
+| Build links in `report.py`; all linking git calls in `link_context` | Presentation only, so checkpointing and bundles cannot be affected. It is also one place to test and to time out. |
+| Parse `location.lines` in the link code; do not tighten `validate.py` | Tightening would reject findings that are valid today, which is a contract change for another ticket. A whole-file link is never wrong. |
 | Exact-host auto-detection only | A guessed provider produces confident, broken links. |
-| Leave dirty files unlinked; still link an unpushed commit | A dirty file's link shows the wrong lines permanently. An unpushed commit's link becomes correct once it is pushed. |
-| Additive `report.json` fields, no schema bump | Existing consumers keep working. The `v1` contract only ever gains optional keys. |
-| Sample report uses `https://github.example.com/acme/fixture` with `provider = "github"` | `example.com` is reserved (RFC 2606), so the links cannot point at someone's real repository. It also exercises the self-hosted path through the profile. The cost is that the sample's links do not resolve. The generated header says so. |
+| A changed or absent file gets no link; an unpushed commit still gets a link | The first would show the wrong lines permanently. The second becomes correct once the commit is pushed. |
+| `?plain=1` on rendered file types (GitHub and GitLab) | Otherwise the anchor is ignored and the reader lands at the top of the rendered page. |
+| Additive `report.json` fields, no schema bump | Existing consumers keep working. |
+| The sample report uses `https://github.example.com/acme/fixture` with `provider = "github"` | `example.com` is reserved (RFC 2606), so a sample link can never point at a real repository. It also exercises the self-hosted path. The generated header says the links do not resolve. |
+| Shallow CI checkouts get the push warning | We cannot tell offline. The wording names that case so it reads as expected. |
 
-## 12. Open design questions
+## 12. Open design questions and follow-ups
 
-- Should a later version also link the ranked-hotspot table and the clean and incomplete lists? The ticket keeps them out of scope. The same `LinkContext` would cover them with no design change.
-- Bitbucket Data Center and Gitea/Forgejo are covered only through templates. If they turn out to be common, they could become first-class providers.
+- **`validate.py` should check `location.lines`**: format, and bounds against the file. This is a separate ticket, because it changes which findings pass.
+- **`_common.ref_path`'s `lstrip("./")` also strips the leading dot of dotfiles** (`.github/x.yml` → `github/x.yml`). That is a pre-existing validator bug, and this feature deliberately matches the validator. A fix belongs with the ticket above.
+- **`gen_sample_report.py --check` does not compare content, and CI does not run it**, even though CLAUDE.md says both generated files are checked. Making it a real check needs the scan date in the report to be pinned or normalised. This is a separate ticket.
+- Linking the hotspot table and the clean and incomplete lists would reuse the same `LinkContext` (ticket, open question).
+- Bitbucket Data Center, Gitea and Forgejo are covered only through templates.
