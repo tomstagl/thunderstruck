@@ -6,25 +6,32 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-from build_fixture import build
+from build_fixture import build, isolated_git_env
 
 BASE = datetime(2025, 1, 6, 9, 0, 0, tzinfo=timezone.utc)
 
 
 def _head(repo: Path) -> str:
     return subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], check=True,
-                          capture_output=True, text=True).stdout.strip()
+                          capture_output=True, text=True, env=isolated_git_env()).stdout.strip()
+
+
+def _clear_git_env(monkeypatch, xdg: Path) -> None:
+    import os
+    for key in [k for k in os.environ if k.startswith("GIT_")]:
+        monkeypatch.delenv(key)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
 
 
 def test_fixture_ignores_user_git_config(tmp_path, monkeypatch):
-    """Signing, hooks, templates, injected config and a sha256 default each
-    changed or broke the fixture before; none of them may reach it now."""
+    """Signing, hooks, templates, injected config, ignore and attributes
+    files and a sha256 default each changed or broke the fixture before;
+    none of them may reach it now."""
     hooks = tmp_path / "hooks"
     hooks.mkdir()
     for name in ("commit-msg", "pre-commit"):
-        hook = hooks / name
-        hook.write_text("#!/bin/sh\nexit 1\n")
-        hook.chmod(0o755)
+        (hooks / name).write_text("#!/bin/sh\nexit 1\n")
+        (hooks / name).chmod(0o755)
     template = tmp_path / "template"
     (template / "hooks").mkdir(parents=True)
     (template / "hooks" / "commit-msg").write_text("#!/bin/sh\nexit 1\n")
@@ -35,17 +42,28 @@ def test_fixture_ignores_user_git_config(tmp_path, monkeypatch):
         "[gpg]\n\tprogram = false\n"
         f"[core]\n\thooksPath = {hooks}\n"
         f"[init]\n\ttemplateDir = {template}\n\tdefaultObjectFormat = sha256\n")
+    xdg = tmp_path / "xdg"
+    (xdg / "git").mkdir(parents=True)
+    (xdg / "git" / "ignore").write_text("*.ts\npackage.json\n")
+    (xdg / "git" / "attributes").write_text("*.ts working-tree-encoding=UTF-16\n")
 
+    _clear_git_env(monkeypatch, xdg)
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(hostile))
     monkeypatch.setenv("GIT_DEFAULT_HASH", "sha256")
+    monkeypatch.setenv("GIT_COMMON_DIR", str(tmp_path / "elsewhere"))
+    monkeypatch.setenv("GIT_CONFIG_PARAMETERS", "'commit.gpgsign'='true'")
     monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
     monkeypatch.setenv("GIT_CONFIG_KEY_0", "commit.gpgsign")
     monkeypatch.setenv("GIT_CONFIG_VALUE_0", "true")
     hostile_head = _head(build(tmp_path / "hostile", base_date=BASE))
 
-    for var in ("GIT_DEFAULT_HASH", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0"):
-        monkeypatch.delenv(var)
+    # the reference: nothing from the caller at all
+    empty = tmp_path / "empty-xdg"
+    empty.mkdir()
+    _clear_git_env(monkeypatch, empty)
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.setenv("GIT_ATTR_NOSYSTEM", "1")
     clean_head = _head(build(tmp_path / "clean", base_date=BASE))
 
     assert len(hostile_head) == 40, "the fixture must stay sha1"
@@ -94,6 +112,23 @@ def test_real_report_never_prints_the_label(scanned_copy, plugin_root):
     assert gen.DATE_LABEL not in report
     scanned = _hotspots(scanned_copy)["generated_at"][:10]
     assert f"Scanned {scanned} · " in report, "a real scan prints its real date, unlabelled"
+
+
+def test_only_the_generator_can_pin_dates(plugin_root):
+    """AC-5, structurally: no pipeline script knows about pinned dates."""
+    for script in (plugin_root / "scripts").glob("*.py"):
+        if script.name == "gen_sample_report.py":
+            continue
+        text = script.read_text(encoding="utf-8")
+        assert "pin_dates" not in text and gen.DATE_LABEL not in text, script.name
+
+
+def test_the_sample_does_not_carry_todays_date():
+    """AC-1 across days: nothing in a generated sample comes from the clock."""
+    from datetime import date
+    body = gen.generate()
+    assert date.today().isoformat() not in body
+    assert f"({gen.DATE_LABEL})" in body
 
 
 # -------------------------------------------------------------- check mode --

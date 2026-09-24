@@ -299,6 +299,13 @@ def isolated_git_env(base: dict | None = None) -> dict:
            if not k.startswith("GIT_")}
     env["GIT_CONFIG_GLOBAL"] = os.devnull
     env["GIT_CONFIG_NOSYSTEM"] = "1"
+    # git reads its default ignore and attributes files (~/.config/git/ignore,
+    # $XDG_CONFIG_HOME/git/attributes, /etc/gitattributes) with no config at
+    # all; an ignored *.ts or a working-tree-encoding would break the build
+    env["GIT_ATTR_NOSYSTEM"] = "1"
+    env.update(GIT_CONFIG_COUNT="2",
+               GIT_CONFIG_KEY_0="core.excludesFile", GIT_CONFIG_VALUE_0=os.devnull,
+               GIT_CONFIG_KEY_1="core.attributesFile", GIT_CONFIG_VALUE_1=os.devnull)
     return env
 
 
