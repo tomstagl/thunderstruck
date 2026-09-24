@@ -28,6 +28,7 @@ recorded as analysis_failed. No retry loops.
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import os
 import re
@@ -171,9 +172,13 @@ class Validator:
         else:
             try:
                 st = os.lstat(path)
-            except OSError:
+            except OSError as exc:
                 st = None
-            if st is None:
+                if exc.errno == errno.ELOOP:   # Python 3.13+ resolves loops without raising
+                    error = "passes through a symbolic link in the working tree"
+            if error:
+                pass
+            elif st is None:
                 error = ("is tracked but missing from the working tree (deleted locally, "
                          "or outside a sparse checkout)")
             elif not stat.S_ISREG(st.st_mode):
