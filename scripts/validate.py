@@ -348,6 +348,20 @@ class Validator:
         return errors
 
 
+def canonicalise(finding: dict) -> None:
+    """Write the canonical path back into a valid finding, so a file has one
+    identity everywhere: its key, index.json, the guardrail and the report."""
+    loc = finding.get("location")
+    if isinstance(loc, dict) and loc.get("file"):
+        loc["file"] = c.ref_path(loc["file"])
+    for ev in finding.get("evidence") or []:
+        if isinstance(ev, dict) and ev.get("type") == "code":
+            m = CODE_REF.match(str(ev.get("ref") or "").strip())
+            if m:
+                rng = m["start"] + (f"-{m['end']}" if m["end"] else "")
+                ev["ref"] = f"{c.ref_path(m['path'])}:{rng}"
+
+
 def stable_key(file: str, failure_mode: str) -> str:
     """Identity that survives re-ranking, so a later run can tell whether a
     finding is the same one. Display IDs renumber; this does not."""
@@ -415,6 +429,7 @@ def main(argv: list[str] | None = None) -> int:
         n = len(doc.get("findings") or []) if isinstance(doc, dict) else 0
         if not errors and isinstance(doc, dict):
             for f in doc["findings"]:
+                canonicalise(f)
                 f["key"] = stable_key(f.get("location", {}).get("file", ""),
                                       f.get("failure_mode", ""))
                 f["content_hash"] = c.sha256_file(

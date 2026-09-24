@@ -241,3 +241,63 @@ def test_commit_evidence_matches_bracketed_paths_literally(repo):
     doc["findings"][0]["evidence"].append({"type": "commit", "ref": only_i, "note": "n"})
     errors = _validator(repo).check_document(doc)
     assert any("does not touch" in e for e in errors), errors
+
+
+# --------------------------------------------------------------- identity --
+
+
+def _validate_file(repo: Path, doc: dict, plugin_root: Path) -> dict:
+    """Run validate.py for real, so the write-back is exercised end to end."""
+    import json
+    import sys
+    out = repo / ".thunderstruck"
+    (out / "findings").mkdir(parents=True, exist_ok=True)
+    (out / "hotspots.json").write_text(json.dumps({"hotspots": []}))
+    path = out / "findings" / "H01.json"
+    path.write_text(json.dumps(doc))
+    proc = subprocess.run([sys.executable, str(plugin_root / "scripts" / "validate.py"),
+                           "--repo", str(repo)], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    return json.loads(path.read_text())
+
+
+def test_dot_slash_paths_are_written_back_canonical(repo, plugin_root):
+    from validate import stable_key
+    saved = _validate_file(repo, _doc("./src/a.ts", "3-4", code_ref="././src/a.ts:3"), plugin_root)
+    f = saved["findings"][0]
+    assert f["location"]["file"] == "src/a.ts"
+    assert f["evidence"][0]["ref"] == "src/a.ts:3"
+    assert f["key"] == stable_key("src/a.ts", "fails")
+
+
+def test_a_dot_slash_and_a_plain_spelling_share_one_index_entry(scanned_copy, plugin_root):
+    import copy
+    import json
+    import sys
+    from test_pipeline import _hotspots, _valid_finding, _validate, _write_finding
+    hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
+    first = doc["findings"][0]
+    file = first["location"]["file"]
+    second = copy.deepcopy(first)
+    second["failure_mode"] = "fails differently"
+    first["location"]["file"] = "./" + file
+    doc["findings"].append(second)
+    _write_finding(scanned_copy, hid, doc)
+    assert _validate(scanned_copy, plugin_root).returncode == 0
+    proc = subprocess.run([sys.executable, str(plugin_root / "scripts" / "report.py"),
+                           "--repo", str(scanned_copy)], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    index = json.loads((scanned_copy / ".thunderstruck" / "index.json").read_text())
+    assert list(index["files"]) == [file]
+    assert len(index["files"][file]["findings"]) == 2
+
+
+def test_a_plain_path_keeps_its_key(repo, plugin_root):
+    from validate import stable_key
+    saved = _validate_file(repo, _doc("src/a.ts"), plugin_root)
+    assert saved["findings"][0]["key"] == stable_key("src/a.ts", "fails")
+
+
+def test_a_dotfile_under_a_dot_directory_validates_end_to_end(repo, plugin_root):
+    saved = _validate_file(repo, _doc(".github/scripts/deploy.py", "2-3"), plugin_root)
+    assert saved["findings"][0]["location"]["file"] == ".github/scripts/deploy.py"
