@@ -154,6 +154,7 @@ A ref that fails to parse is shown exactly as today, unlinked. The hotspot table
 | Situation | Refs | Warning |
 |---|---|---|
 | `enabled = false` | plain | none |
+| the report has no findings | — | none (nothing to link, so git is not consulted) |
 | profile unreadable, or `[links]` invalid | plain | names the file or key |
 | named remote missing, no `base_url` | plain | names the remote |
 | no remote and no `base_url` | plain | asks for `remote` or `base_url` |
@@ -181,7 +182,7 @@ A ref that fails to parse is shown exactly as today, unlinked. The hotspot table
   - commit expansion, including a token that does not expand;
   - push state, for the scanned SHA and for an unpushed cited commit;
   - a git failure.
-- **`tests/test_pipeline.py`** (fixture, derived from `scanned_copy` / `context_scanned_copy`):
+- **`tests/test_report_links.py`** (fixture, derived from `scanned_copy` / `context_scanned_copy`):
   - every ref type is linked;
   - a commit ref with a subject keeps its subject;
   - catalog refs stay plain;

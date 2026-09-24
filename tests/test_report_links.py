@@ -1,0 +1,195 @@
+"""Report links end to end: the fixture is scanned, a hand-written finding is
+validated, and report.py renders it. Every URL must come from links.py over a
+resolved ref, and every failure must leave the report rendered and plain."""
+
+from __future__ import annotations
+
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+import report
+from build_fixture import add_remote
+from test_pipeline import _hotspots, _valid_finding, _validate, _write_finding
+
+BASE = "https://github.com/acme/fixture"
+
+
+def _render(repo: Path, plugin_root: Path, mutate=None) -> tuple[str, dict, dict]:
+    data = _hotspots(repo)
+    hid, doc = _valid_finding(repo, data)
+    if mutate:
+        mutate(doc["findings"][0])
+    _write_finding(repo, hid, doc)
+    proc = _validate(repo, plugin_root)
+    assert proc.returncode == 0, proc.stdout
+    proc = subprocess.run([sys.executable, str(plugin_root / "scripts" / "report.py"),
+                           "--repo", str(repo)], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    out = repo / ".thunderstruck"
+    return ((out / "report.md").read_text(), json.loads((out / "report.json").read_text()),
+            doc["findings"][0])
+
+
+def _head(repo: Path) -> str:
+    return _hotspots(repo)["repo"]["head"]
+
+
+def _evidence_lines(md: str, etype: str) -> list[str]:
+    return [line for line in md.splitlines() if line.startswith(f"- _{etype}_ ")]
+
+
+# ---------------------------------------------------------------- report.md --
+
+
+def test_every_resolved_ref_is_linked(linked_copy, plugin_root):
+    md, _, finding = _render(linked_copy, plugin_root)
+    head = _head(linked_copy)
+    blob = re.escape(f"{BASE}/blob/{head}/")
+    file = re.escape(finding["location"]["file"])
+
+    assert re.search(rf"\*\* · \[`{file}:1-2`\]\({blob}{file}#L1-L2\)", md), md
+    code = _evidence_lines(md, "code")
+    assert code and re.match(rf"- _code_ \[`{file}:1`\]\({blob}{file}#L1\) — ", code[0])
+    detector = _evidence_lines(md, "detector")
+    assert detector and re.match(rf"- _detector_ \[`S\d+@{file}:\d+`\]\({blob}{file}#L\d+\)",
+                                 detector[0]), detector
+    commit = _evidence_lines(md, "commit")
+    assert commit and re.match(
+        rf"- _commit_ \[`[0-9a-f]{{7}}`\]\({re.escape(BASE)}/commit/[0-9a-f]{{40}}\) — ",
+        commit[0]), commit
+    assert "references are not linked" not in md
+
+
+def test_commit_ref_keeps_its_subject(linked_copy, plugin_root):
+    def with_subject(f):
+        ev = next(e for e in f["evidence"] if e["type"] == "commit")
+        ev["ref"] = ev["ref"] + "\tfix: retry storm"
+    md, _, _ = _render(linked_copy, plugin_root, with_subject)
+    commit = _evidence_lines(md, "commit")[0]
+    assert re.match(r"- _commit_ \[`[0-9a-f]{7}`\]\([^)]+/commit/[0-9a-f]{40}\) `fix: retry storm` — ",
+                    commit), commit
+
+
+def test_unreadable_location_lines_link_the_whole_file(linked_copy, plugin_root):
+    def odd_lines(f):
+        f["location"]["lines"] = "L16"
+    md, payload, finding = _render(linked_copy, plugin_root, odd_lines)
+    file = finding["location"]["file"]
+    url = f"{BASE}/blob/{_head(linked_copy)}/{file}"
+    assert f"[`{file}:L16`]({url})" in md
+    assert payload["findings"][0]["location"]["url"] == url
+
+
+def test_no_remote_renders_plain_refs_and_says_why(scanned_copy, plugin_root):
+    md, payload, finding = _render(scanned_copy, plugin_root)
+    assert "](http" not in md
+    assert f"`{finding['location']['file']}:1-2`" in md
+    assert "references are not linked: no git remote" in md
+    assert payload["links"] is None
+    assert any("no git remote" in w for w in payload["warnings"])
+
+
+def test_disabled_links_are_silent(scanned_copy, plugin_root):
+    (scanned_copy / ".thunderstruck.toml").write_text("[links]\nenabled = false\n")
+    md, payload, _ = _render(scanned_copy, plugin_root)
+    assert "](http" not in md and "not linked" not in md
+    assert payload["links"] is None
+
+
+def test_invalid_profile_does_not_fail_the_report(linked_copy, plugin_root):
+    (linked_copy / ".thunderstruck.toml").write_text("[links]\nprovider = 'gitea'\n")
+    md, _, _ = _render(linked_copy, plugin_root)
+    assert "](http" not in md
+    assert "references are not linked: [links] provider" in md
+
+
+def test_token_in_remote_never_reaches_output(scanned_copy, plugin_root):
+    add_remote(scanned_copy, "https://bob:ghs_SECRET@github.com/acme/fixture.git")
+    md, payload, _ = _render(scanned_copy, plugin_root)
+    assert f"]({BASE}/" in md
+    blob = md + json.dumps(payload)
+    assert "ghs_SECRET" not in blob and "bob" not in blob
+
+
+def test_file_edited_after_the_scan_is_not_linked(linked_copy, plugin_root):
+    data = _hotspots(linked_copy)
+    hid, doc = _valid_finding(linked_copy, data)
+    _write_finding(linked_copy, hid, doc)
+    assert _validate(linked_copy, plugin_root).returncode == 0
+    file = doc["findings"][0]["location"]["file"]
+    with (linked_copy / file).open("a") as fh:
+        fh.write("\n// edited after the scan\n")
+    subprocess.run([sys.executable, str(plugin_root / "scripts" / "report.py"),
+                    "--repo", str(linked_copy)], check=True, capture_output=True)
+    md = (linked_copy / ".thunderstruck" / "report.md").read_text()
+    assert f"`{file}:1-2`" in md and f"[`{file}:1-2`]" not in md
+    assert re.search(rf"differ from the scanned commit [0-9a-f]{{7}} or are not in it, "
+                     rf"and are not linked: {re.escape(file)}", md)
+    # commits are not files: they stay linked
+    assert "/commit/" in md
+
+
+def test_unpushed_scan_is_linked_with_a_warning(scanned_copy, plugin_root):
+    add_remote(scanned_copy, "https://github.com/acme/fixture.git", tracking=False)
+    md, _, _ = _render(scanned_copy, plugin_root)
+    assert f"]({BASE}/blob/" in md
+    assert "their links resolve once pushed" in md
+
+
+def test_finding_supplied_urls_are_overwritten(linked_copy, plugin_root):
+    def planted(f):
+        f["location"]["url"] = "https://evil.example/loc"
+        for ev in f["evidence"]:
+            ev["url"] = "https://evil.example/ev"
+    md, payload, _ = _render(linked_copy, plugin_root, planted)
+    assert "evil.example" not in md and "evil.example" not in json.dumps(payload)
+
+
+def test_catalog_refs_are_never_linked(tmp_path):
+    finding = {"location": {"file": "x.ts", "lines": "1"},
+               "evidence": [{"type": "catalog", "ref": "dependsOn component:default/x"}]}
+    report._set_urls([finding], None, tmp_path)
+    assert finding["evidence"][0]["url"] is None
+    assert report._evidence_ref(finding["evidence"][0]) == "`dependsOn component:default/x`"
+
+
+# -------------------------------------------------------------- report.json --
+
+
+def test_report_json_carries_the_same_links(linked_copy, plugin_root):
+    md, payload, _ = _render(linked_copy, plugin_root)
+    head = _head(linked_copy)
+    assert payload["links"] == {"provider": "github", "base_url": BASE, "sha": head,
+                                "remote": "origin"}
+    f = payload["findings"][0]
+    assert f["location"]["url"].startswith(f"{BASE}/blob/{head}/")
+    for ev in f["evidence"]:
+        assert "url" in ev
+        assert ev["url"] and f"]({ev['url']})" in md
+
+
+def test_link_warnings_are_in_report_json(scanned_copy, plugin_root):
+    add_remote(scanned_copy, "https://github.com/acme/fixture.git", tracking=False)
+    _, payload, _ = _render(scanned_copy, plugin_root)
+    assert payload["warnings"][-1].endswith("their links resolve once pushed")
+
+
+def test_index_and_finding_files_are_untouched(linked_copy, plugin_root):
+    data = _hotspots(linked_copy)
+    hid, doc = _valid_finding(linked_copy, data)
+    _write_finding(linked_copy, hid, doc)
+    assert _validate(linked_copy, plugin_root).returncode == 0
+    finding_file = linked_copy / ".thunderstruck" / "findings" / f"{hid}.json"
+    before = finding_file.read_bytes()
+    subprocess.run([sys.executable, str(plugin_root / "scripts" / "report.py"),
+                    "--repo", str(linked_copy)], check=True, capture_output=True)
+    assert finding_file.read_bytes() == before
+    index = (linked_copy / ".thunderstruck" / "index.json").read_text()
+    assert '"url"' not in index
+
+
+def test_a_report_without_findings_says_nothing_about_links(tmp_path):
+    assert report.link_refs(tmp_path, "a" * 40, []) == (None, [])

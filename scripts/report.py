@@ -19,6 +19,7 @@ prediction tracking will match on later.
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import sys
 from datetime import datetime, timezone
@@ -28,6 +29,8 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _common as c  # noqa: E402
+import links  # noqa: E402
+from validate import CODE_REF, DETECTOR_REF, _count_lines  # noqa: E402
 
 CONFIDENCE_RANK = {"high": 0, "medium": 1, "low": 2}
 BADGE = {"high": "high", "medium": "medium", "low": "low"}
@@ -66,7 +69,7 @@ def collect(repo: Path) -> dict[str, Any]:
                           "notes": doc.get("notes", "")})
             continue
         for f in items:
-            f = dict(f)
+            f = copy.deepcopy(f)  # urls are added below; the finding files stay untouched
             f["hotspot_id"] = hid
             f["hotspot_score"] = scores.get(hid)
             findings.append(f)
@@ -82,10 +85,103 @@ def collect(repo: Path) -> dict[str, Any]:
     if not isinstance(context_doc, dict):
         context_doc = {}
     raw_warnings = context_doc.get("warnings")
+    link_meta, link_warnings = link_refs(repo, hotspots["repo"]["head"], findings)
     return {"hotspots": hotspots, "findings": findings,
             "failed": failed, "clean": clean, "validation": validation,
             "context": c.load_service_context(repo),
-            "context_warnings": [str(w) for w in raw_warnings] if isinstance(raw_warnings, list) else []}
+            "context_warnings": [str(w) for w in raw_warnings] if isinstance(raw_warnings, list) else [],
+            "links": link_meta, "link_warnings": link_warnings}
+
+
+# --------------------------------------------------------------------------
+# source links
+# --------------------------------------------------------------------------
+
+
+def link_refs(repo: Path, head: str, findings: list[dict]) -> tuple[dict | None, list[str]]:
+    """Set a `url` on every finding location and evidence item, in place.
+
+    URLs come only from links.py, over refs validate.py resolved; a `url` the
+    investigator wrote is overwritten. Linking never fails the report.
+    """
+    if not findings:
+        return None, []
+    try:
+        try:
+            profile = c.load_profile(repo)
+        except c.ThunderstruckError:
+            _set_urls(findings, None, repo)
+            return None, [f"{links.NOT_LINKED}.thunderstruck.toml could not be read"]
+        paths: set[str] = set()
+        commits: set[str] = set()
+        for f in findings:
+            loc = f.get("location")
+            if isinstance(loc, dict) and loc.get("file"):
+                paths.add(str(loc["file"]))
+            for ev in _evidence(f):
+                ref, etype = str(ev.get("ref") or "").strip(), ev.get("type")
+                if etype == "code" and (m := CODE_REF.match(ref)):
+                    paths.add(m["path"])
+                elif etype == "detector" and (m := DETECTOR_REF.match(ref)):
+                    paths.add(m["path"])
+                elif etype == "commit" and ref:
+                    commits.add(ref.split()[0])
+        result = links.link_context(repo, profile, head, paths, commits)
+        _set_urls(findings, result, repo)
+        ctx = result.ctx
+        meta = ({"provider": ctx.provider, "base_url": ctx.base, "sha": ctx.sha,
+                 "remote": ctx.remote} if ctx else None)
+        return meta, result.warnings
+    except Exception as exc:  # noqa: BLE001 — a presentation feature must not sink the report
+        _set_urls(findings, None, repo)
+        return None, [f"{links.NOT_LINKED}internal error ({type(exc).__name__})"]
+
+
+def _evidence(f: dict) -> list[dict]:
+    return [ev for ev in (f.get("evidence") or []) if isinstance(ev, dict)]
+
+
+def _set_urls(findings: list[dict], result: "links.LinkResult | None", repo: Path) -> None:
+    ctx = result.ctx if result else None
+    for f in findings:
+        loc = f.get("location")
+        if isinstance(loc, dict):
+            loc["url"] = _location_url(ctx, loc, repo) if ctx else None
+        for ev in _evidence(f):
+            ev["url"] = _evidence_url(ctx, result, ev) if ctx else None
+
+
+def _location_url(ctx: "links.LinkContext", loc: dict, repo: Path) -> str | None:
+    if not loc.get("file"):
+        return None
+    rel = c.ref_path(loc["file"])
+    span = links.parse_lines(loc.get("lines"), _count_lines(repo / rel))
+    return ctx.code(rel, *span) if span else ctx.code(rel)
+
+
+def _evidence_url(ctx: "links.LinkContext", result: "links.LinkResult", ev: dict) -> str | None:
+    ref, etype = str(ev.get("ref") or "").strip(), ev.get("type")
+    if etype == "code" and (m := CODE_REF.match(ref)):
+        return ctx.code(m["path"], int(m["start"]), int(m["end"]) if m["end"] else None)
+    if etype == "detector" and (m := DETECTOR_REF.match(ref)):
+        return ctx.code(m["path"], int(m["line"]))
+    if etype == "commit" and ref:
+        full = result.commits.get(ref.split()[0])
+        return ctx.commit(full) if full else None
+    return None
+
+
+def _linked(text: str, url: str | None) -> str:
+    return f"[`{text}`]({url})" if url else f"`{text}`"
+
+
+def _evidence_ref(ev: dict) -> str:
+    ref = str(ev.get("ref") or "").strip()
+    url = ev.get("url")
+    if ev.get("type") == "commit" and url and ref:
+        sha, *rest = ref.split(None, 1)
+        return _linked(sha[:7], url) + (f" `{rest[0]}`" if rest else "")
+    return _linked(str(ev.get("ref")), url)
 
 
 # --------------------------------------------------------------------------
@@ -162,7 +258,8 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
         "",
     ]
 
-    warnings = list(hs.get("warnings") or []) + list(data.get("context_warnings") or [])
+    warnings = (list(hs.get("warnings") or []) + list(data.get("context_warnings") or [])
+                + list(data.get("link_warnings") or []))
     if warnings:
         L += ["## Run warnings", ""]
         L += [f"- {w}" for w in warnings]
@@ -198,6 +295,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
             loc = f.get("location") or {}
             symbol = f" · `{loc['symbol']}`" if loc.get("symbol") else ""
             lines = f":{loc['lines']}" if loc.get("lines") else ""
+            where = _linked(f"{loc.get('file', '?')}{lines}", loc.get("url"))
             rows = ["| | |", "|---|---|",
                     f"| Trigger | {f.get('trigger_condition', '—')} |",
                     f"| Amplifier | {f.get('amplifier', '—')} |",
@@ -209,14 +307,14 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
             L += [f"### {f['id']} · {f.get('failure_mode', '(no failure mode)')}",
                   "",
                   f"**{BADGE.get(f.get('confidence'), '?')} confidence** · "
-                  f"`{loc.get('file', '?')}{lines}`{symbol} · "
+                  f"{where}{symbol} · "
                   f"hotspot {f['hotspot_id']} (score {f.get('hotspot_score')})",
                   "",
                   *rows,
                   "",
                   "**Evidence**", ""]
             for ev in f.get("evidence") or []:
-                L.append(f"- _{ev.get('type')}_ `{ev.get('ref')}` — {ev.get('note', '')}")
+                L.append(f"- _{ev.get('type')}_ {_evidence_ref(ev)} — {ev.get('note', '')}")
             L += ["",
                   f"**Verify** — {f.get('how_to_verify', '—')}  ",
                   f"**Why this confidence** — {f.get('confidence_rationale', '—')}  "]
@@ -280,7 +378,8 @@ def render_json(data: dict) -> dict:
             "clean_hotspots": len(data["clean"]),
             "failed_hotspots": len(data["failed"]),
         },
-        "warnings": hs.get("warnings", []),
+        "warnings": list(hs.get("warnings") or []) + list(data.get("link_warnings") or []),
+        "links": data.get("links"),
         "degraded": hs.get("degraded", {}),
         "service_context": ({k: data["context"].get(k) for k in
                              ("status", "entity_ref", "context_hash", "fetched_at",

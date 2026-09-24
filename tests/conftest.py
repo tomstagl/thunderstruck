@@ -107,3 +107,14 @@ def scanned_copy(scanned_repo: Path, tmp_path: Path) -> Path:
     dest = tmp_path / "scanned-plain"
     shutil.copytree(scanned_repo, dest, symlinks=True)
     return dest
+
+
+FIXTURE_REMOTE = "https://github.com/acme/fixture.git"
+
+
+@pytest.fixture
+def linked_copy(scanned_copy: Path) -> Path:
+    """A scanned fixture copy whose origin is on github.com and pushed."""
+    from build_fixture import add_remote
+    add_remote(scanned_copy, FIXTURE_REMOTE)
+    return scanned_copy

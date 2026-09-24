@@ -287,6 +287,15 @@ def add_service_context(repo: Path, python: str, stub: Path) -> None:
     profile.write_text(existing + "\n".join(lines), encoding="utf-8")
 
 
+def add_remote(repo: Path, url: str, name: str = "origin", tracking: bool = True) -> None:
+    """Give the fixture a remote for report links. With `tracking`, HEAD is
+    also on a remote-tracking branch, as if it had been pushed. No commit is
+    made, so history and SHAs are unchanged."""
+    run(repo, "remote", "add", name, url)
+    if tracking:
+        run(repo, "update-ref", f"refs/remotes/{name}/main", "HEAD")
+
+
 def run(repo: Path, *args: str, env: dict | None = None) -> None:
     subprocess.run(["git", "-C", str(repo), *args], check=True,
                    capture_output=True, text=True, env=env)

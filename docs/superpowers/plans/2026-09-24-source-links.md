@@ -59,7 +59,7 @@
 ### Task 3: Linked refs in report.md (AC-1, AC-2, AC-5, AC-6)
 
 **Files:**
-- modify `scripts/report.py` and `tests/test_pipeline.py`;
+- modify `scripts/report.py`; create `tests/test_report_links.py` (reuses the helpers in `tests/test_pipeline.py`);
 - modify `tests/fixtures/build_fixture.py`: add `add_remote(repo, url, tracking=True)`, which runs `git remote add` and, when `tracking` is set, `git update-ref refs/remotes/<name>/main HEAD`;
 - modify `tests/conftest.py`: add a `linked_copy` fixture that runs `add_remote` on `scanned_copy`.
 
@@ -88,7 +88,9 @@
 
 ### Task 4: URLs in report.json (AC-8)
 
-**Files:** modify `scripts/report.py` and `tests/test_pipeline.py`.
+**Files:** modify `scripts/report.py` and `tests/test_report_links.py`.
+
+> Tasks 3 and 4 touch the same functions and landed as one commit.
 
 - [ ] **Step 1:** Write failing tests:
   - `report.json` has a `links` object (`provider`, `base_url`, `sha`, `remote`), `location.url` and every `evidence[].url`, with `null` for catalog;
