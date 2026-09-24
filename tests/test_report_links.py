@@ -406,6 +406,11 @@ def test_unlinkable_report_without_findings_warns_once_and_renders_as_before(
     for title in ("Ranked hotspots", "Hotspots investigated with no finding"):
         assert _section(md, title) == _section(plain, title)
 
+    _no_findings(scanned_copy)
+    (scanned_copy / ".thunderstruck.toml").unlink()
+    _, incomplete = _report(scanned_copy, plugin_root)
+    assert incomplete["incomplete"] and all(e["url"] is None for e in incomplete["incomplete"])
+
 
 def test_custom_templates_link_code_without_history(linked_copy, plugin_root):
     (linked_copy / ".thunderstruck.toml").write_text(
@@ -418,6 +423,20 @@ def test_custom_templates_link_code_without_history(linked_copy, plugin_root):
     assert h["url"] == f"https://git.example.com/acme/fixture/browse/{h['file']}?at={head}"
     assert h["history_url"] is None
     assert "[history]" not in md and f"[`{h['file']}`](https://git.example.com/" in _row(md, h["id"])
+
+
+def test_templates_without_a_whole_file_form_say_so(linked_copy, plugin_root):
+    (linked_copy / ".thunderstruck.toml").write_text(
+        "[links]\nbase_url = 'https://git.example.com/acme/fixture'\n"
+        "code_template = '{base}/file?name={path}&ci={sha}&ln={start}-{end}'\n"
+        "commit_template = '{base}/commits/{sha}'\n")
+    _no_findings(linked_copy)
+    md, payload = _report(linked_copy, plugin_root)
+    assert all(e["url"] is None for e in payload["incomplete"])
+    assert [w for w in payload["warnings"] if "no whole-file form" in w] == [
+        "listed files are not linked: code_template puts {start} or {end} before '#', "
+        "so it has no whole-file form"]
+    assert "](http" not in _section(md, "Ranked hotspots")
 
 
 def test_listed_paths_that_could_leave_the_repo_are_never_linked():

@@ -160,9 +160,13 @@ def link_refs(repo: Path, head: str, findings: list[dict], hotspots: list[dict] 
         _set_urls(findings, result, repo)
         hotspot_links = _set_file_urls(hotspots, listed, result.ctx)
         ctx = result.ctx
+        warnings = list(result.warnings)
+        if ctx and ctx.code_file is None and (hotspots or listed):
+            warnings.append("listed files are not linked: code_template puts {start} or {end} "
+                            "before '#', so it has no whole-file form")
         meta = ({"provider": ctx.provider, "base_url": ctx.base, "sha": ctx.sha,
                  "remote": ctx.remote} if ctx else None)
-        return meta, result.warnings, hotspot_links
+        return meta, warnings, hotspot_links
     except Exception as exc:  # noqa: BLE001 — a presentation feature must not sink the report
         return unlinked([f"{links.NOT_LINKED}internal error ({type(exc).__name__})"])
 

@@ -15,7 +15,8 @@ All notable changes to thunderstruck are recorded here. The format follows
 ### Changed
 
 - The warning about files that differ from the scanned commit names the first five, then "… and N more".
-- `code_template` and `commit_template` may only contain characters that are safe in a link: letters, digits and `. _ ~ % / + { } # : ? = & ; , @ -`.
+- **Possibly breaking for custom templates:** `code_template` and `commit_template` may no longer contain whitespace, control characters, or ``| ( ) < > [ ] ` \ "``. Those would break a link or a table row. A template containing one disables linking, with a warning naming the character.
+- A code template with `{start}` or `{end}` before `#` has no whole-file form, so listed files stay plain, and a warning now says so.
 - Git receives the paths to check in chunks, so a large `--top` can't overflow a command line and leave the whole report unlinked.
 
 ## 0.5.1

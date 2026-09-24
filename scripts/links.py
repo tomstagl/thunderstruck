@@ -57,8 +57,9 @@ _URL_SCHEMES = frozenset({"http", "https", "ssh", "git", "git+ssh", "ssh+git"})
 # or be read as a template placeholder.
 _SAFE_HOST = re.compile(r"^[A-Za-z0-9.-]+(?::\d+)?$")
 _SAFE_PATH = re.compile(r"^[A-Za-z0-9._~%/+-]+$")
-# A template's literal text lands in link targets, some inside table cells.
-_SAFE_TEMPLATE = re.compile(r"^[A-Za-z0-9._~%/+{}#:?=&;,@-]+$")
+# A template's literal text lands in link targets, some inside table cells:
+# whitespace, controls and these would end the link or split the row.
+_LINK_BREAKERS = frozenset("|()<>[]`\\\"")
 _LINES = re.compile(r"^\s*(\d+)(?:\s*-\s*(\d+))?\s*$")
 
 
@@ -156,8 +157,9 @@ def template_error(template: str, allowed=PLACEHOLDERS, required=()) -> str | No
     rest = _PLACEHOLDER.sub("", template)
     if "{" in rest or "}" in rest:
         return "an unbalanced brace"
-    if not _SAFE_TEMPLATE.match(template):
-        return "a character that cannot appear in a link"
+    for ch in template:
+        if ch in _LINK_BREAKERS or ch.isspace() or not ch.isprintable():
+            return f"the character {ch!r}, which cannot appear in a link"
     for name in required:
         if name not in names:
             return "no {" + name + "}"
@@ -250,6 +252,7 @@ CONFIG_KEYS = frozenset({"enabled", "remote", "provider", "base_url",
                          "code_template", "commit_template"})
 GIT_TIMEOUT = 30
 PATHS_PER_CALL = 100
+CHARS_PER_CALL = 8000
 _HEX = re.compile(r"[0-9a-fA-F]{4,40}")
 _FULL_SHA = re.compile(r"[0-9a-f]{40}")
 
@@ -306,6 +309,8 @@ def config_from_profile(profile) -> tuple[LinkConfig | None, list[str]]:
              ("commit_template", commit_t, frozenset({"base", "sha"}), ("sha",)))
     for key, tpl, allowed, required in rules:
         if tpl is not None and (err := template_error(tpl, allowed, required)):
+            if err.startswith("the character"):
+                return bad(f"{key} has {err}")
             return bad(f"{key} has {err}; allowed: "
                        + " ".join("{" + p + "}" for p in sorted(allowed)))
     return LinkConfig(remote=section.get("remote"), provider=provider,
@@ -416,15 +421,29 @@ def _resolve(repo, cfg: LinkConfig, sha: str, cited_paths, cited_commits) -> Lin
 
 
 def _stale_paths(repo, sha: str, paths: list[str]) -> set[str]:
-    """Cited paths whose content at `sha` is not what validate.py read.
+    """Paths (cited or listed) whose content at `sha` is not what is on disk now.
 
-    Paths go to git in chunks: a large --top must not overflow a command line
-    (about 32K characters on Windows) and take every link down with it.
+    Paths go to git in chunks, bounded by count and by length: a large --top
+    must not overflow a command line (about 32K characters on Windows) and
+    take every link down with it.
     """
     stale: set[str] = set()
-    for i in range(0, len(paths), PATHS_PER_CALL):
-        stale |= _stale_chunk(repo, sha, paths[i:i + PATHS_PER_CALL])
+    for chunk in _chunks(paths):
+        stale |= _stale_chunk(repo, sha, chunk)
     return stale
+
+
+def _chunks(paths: list[str]):
+    chunk: list[str] = []
+    size = 0
+    for p in paths:
+        if chunk and (len(chunk) >= PATHS_PER_CALL or size + len(p) + 1 > CHARS_PER_CALL):
+            yield chunk
+            chunk, size = [], 0
+        chunk.append(p)
+        size += len(p) + 1
+    if chunk:
+        yield chunk
 
 
 def _stale_chunk(repo, sha: str, paths: list[str]) -> set[str]:

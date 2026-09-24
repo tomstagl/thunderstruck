@@ -23,7 +23,7 @@ Nothing new reaches a URL. Hotspot files come from `hotspots.json`, which `signa
 
 ### 2.1 History template
 
-`TEMPLATES` gains a fifth entry per provider, the file's change history up to the scanned commit:
+A new `HISTORY` table, next to `TEMPLATES`, gives each provider's link to a file's change history up to the scanned commit:
 
 | Provider | Template | Checked |
 |---|---|---|
@@ -60,11 +60,13 @@ The names are shown as they are, not quoted. A file name containing `, ` or ` �
 
 ### 2.3 Chunked git calls
 
-`_stale_paths` now receives every hotspot path as well as the cited ones, and `--top` has no upper limit. A single `ls-tree`, `diff` or `ls-files` call could exceed the command-line limit (about 32K characters on Windows). The resulting `OSError` would unlink every reference, findings included. `_stale_paths` therefore splits the paths into chunks of `PATHS_PER_CALL = 100` and merges the results.
+`_stale_paths` now receives every hotspot path as well as the cited ones, and `--top` has no upper limit. A single `ls-tree`, `diff` or `ls-files` call could exceed the command-line limit (about 32K characters on Windows). The resulting `OSError` would unlink every reference, findings included. `_stale_paths` therefore splits the paths into chunks of at most `PATHS_PER_CALL = 100` paths and `CHARS_PER_CALL = 8000` characters, and merges the results.
 
 ### 2.4 Template characters
 
-A custom template's literal text now reaches a table cell, where a `|` splits the row and a space or `)` ends the link. `template_error` rejects any template character outside `A-Z a-z 0-9 . _ ~ % / + { } # : ? = & ; , @ -`. The documented Data Center example passes this check.
+A custom template's literal text now reaches a table cell. There, a `|` splits the row, and whitespace, `(`, `)`, `<`, `>`, `[`, `]`, a backtick, `\` or `"` would end the link or change its meaning. `template_error` rejects exactly those characters and controls, and names the one it found. Everything else stays allowed, including the `$`, `!`, `*` and `'` that some hosts use, such as Phabricator's `;{sha}${start}-{end}`.
+
+A code template with `{start}` or `{end}` before the `#` has no whole-file form. Such a template links findings but can't link listed files. The report then says so in one warning, rather than leaving the sections silently plain.
 
 ## 3. `report.py`
 
@@ -141,7 +143,8 @@ A path that fails `c.path_problem` gets no link. A hotspot path is trusted input
 
 No blockers. Changes made:
 - chunked git calls (§2.3);
-- restricted template characters (§2.4);
+- restricted template characters (§2.4), narrowed after the code review to a blocklist so existing templates keep working;
+- chunks bounded by length as well as count (§2.3), and a warning for templates with no whole-file form (§2.4), both from the code review;
 - the inertness test builds real links for hostile names, since hostile names set after `collect()` would never be linked;
 - URLs are `None` on every failure path;
 - more stale cases at the report level (assume-unchanged);

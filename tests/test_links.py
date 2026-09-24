@@ -216,8 +216,10 @@ def test_template_without_fragment_has_no_whole_file_link_when_lines_are_in_the_
     ("{base}/{branch}", "{branch}"),
     ("{base}/{path", "an unbalanced brace"),
     ("{base}/browse/{path}?at={sha}&x=1;y#{start}-{end}", None),
-    *[(f"{{base}}/{{path}}{ch}{{sha}}", "a character that cannot appear in a link")
-      for ch in ["|", " ", ")", "(", "<", ">", "`", "[", "]", "\\", '"', "\n"]],
+    ("{base}/browse/{path};{sha}${start}-{end}", None),   # Phabricator
+    ("{base}/{path}?at={sha}&v=!*'~@,", None),
+    *[(f"{{base}}/{{path}}{ch}{{sha}}", f"the character {ch!r}, which cannot appear in a link")
+      for ch in ["|", " ", ")", "(", "<", ">", "`", "[", "]", "\\", '"', "\n", "\t", "\x7f"]],
 ])
 def test_template_error(template, error):
     assert L.template_error(template) == error
@@ -440,6 +442,24 @@ def test_many_paths_are_checked_in_chunks(tmp_path, monkeypatch):
     assert res.ctx.code("src/a.ts") and res.ctx.code("src/p000.ts") is None
     assert res.warnings[0].startswith("250 file(s)")
     assert max(len(a) for a in calls) < L.PATHS_PER_CALL + 10
+
+
+def test_chunks_are_bounded_by_count_and_length():
+    many = [f"p{i}" for i in range(250)]
+    assert [len(c) for c in L._chunks(many)] == [100, 100, 50]
+    long = ["d/" * 200 + f"f{i}" for i in range(100)]
+    chunks = list(L._chunks(long))
+    assert sum(chunks, []) == long
+    assert all(sum(len(p) + 1 for p in c) <= L.CHARS_PER_CALL for c in chunks)
+    assert list(L._chunks([])) == [] and list(L._chunks(["x" * 9000])) == [["x" * 9000]]
+
+
+def test_bad_template_character_is_named(tmp_path):
+    cfg, warnings = L.config_from_profile({"links": {"code_template": "{base}/{path} {sha}",
+                                                     "commit_template": "{base}/{sha}"}})
+    assert cfg is None and warnings == [
+        "references are not linked: [links] code_template has the character ' ', which "
+        "cannot appear in a link in .thunderstruck.toml"]
 
 
 def test_bracketed_paths_are_literal(tmp_path):
