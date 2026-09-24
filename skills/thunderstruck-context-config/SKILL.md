@@ -7,7 +7,8 @@ description: Set up or update thunderstruck's service context — the service-ca
 
 Configure the `[context]` table in `.thunderstruck.toml` at the repository
 root. It says which catalog entity this repository is, and which command
-prints that entity as JSON. `$T` below is `${CLAUDE_PLUGIN_ROOT}/scripts`.
+prints that entity as JSON. The scripts run from this plugin's own
+`scripts/` directory, by the full path shown in each command.
 
 The command runs on this machine with the user's environment. Choosing and
 approving it is the user's decision, every time.
@@ -15,7 +16,7 @@ approving it is the user's decision, every time.
 ## 1. Find the entity
 
 ```bash
-uv run "$T/context.py" --detect-entity
+uv run "${CLAUDE_PLUGIN_ROOT}/scripts/context.py" --detect-entity
 ```
 
 Exit 0 prints a ref such as `component:default/checkout`, read from
@@ -46,7 +47,7 @@ wherever the command already reads them.
 
 Add or replace the `[context]` table and its single `[[context.sources]]`
 entry in `.thunderstruck.toml`, leaving the rest of the file as it is. The
-full shape is in `examples/thunderstruck.toml.example` in the plugin.
+full shape is in `${CLAUDE_PLUGIN_ROOT}/examples/thunderstruck.toml.example`.
 `{entity_ref}` is the only placeholder. The file is meant to be committed so
 the team shares the mapping; do not commit it yourself.
 
@@ -55,7 +56,7 @@ the team shares the mapping; do not commit it yourself.
 Print the definition. This runs nothing and changes nothing:
 
 ```bash
-uv run "$T/context.py" --show
+uv run "${CLAUDE_PLUGIN_ROOT}/scripts/context.py" --show
 ```
 
 Show its output to the user verbatim: the `argv` and `preflight` lists, any
@@ -65,7 +66,7 @@ fresh context. Only after an explicit yes, approve exactly the hash that
 `--show` printed:
 
 ```bash
-uv run "$T/context.py" --approve --expect <definition hash from --show>
+uv run "${CLAUDE_PLUGIN_ROOT}/scripts/context.py" --approve --expect <definition hash from --show>
 ```
 
 `--approve` refuses when the hash differs, so an edit made after the user
@@ -81,7 +82,7 @@ CI; never set it yourself.
 ## 5. Check
 
 ```bash
-uv run "$T/context.py" --refresh
+uv run "${CLAUDE_PLUGIN_ROOT}/scripts/context.py" --refresh
 ```
 
 Show the status line, the edges in `.thunderstruck/context.json` and any

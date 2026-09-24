@@ -33,6 +33,8 @@ uv run scripts/gen_catalog_docs.py          # --check exits 1 if stale
 uv run scripts/gen_sample_report.py         # runs the real pipeline over the fixture
 
 # Plugin manifests. validate does NOT load the plugin — install to prove that.
+# A local-directory marketplace runs this checkout in place (live), not the
+# cached copy: edits here change the installed plugin. signals.py warns.
 claude plugin validate . --strict
 claude plugin marketplace add "$PWD" && claude plugin install thunderstruck@thunderstruck
 claude plugin list          # must say "enabled", not "failed to load"

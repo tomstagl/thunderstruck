@@ -43,6 +43,13 @@ A full example: [`examples/sample-report.md`](examples/sample-report.md).
 /plugin install thunderstruck@thunderstruck
 ```
 
+Install from GitHub as above. Claude Code then keeps a copy of the plugin, and
+everything it needs ships in that copy. Adding the marketplace from a local
+directory (`/plugin marketplace add ./thunderstruck`) is different: Claude
+Code runs that checkout in place, so its current branch and uncommitted edits
+are what every scan uses. That is meant for working on thunderstruck itself,
+and the scan warns when it happens.
+
 Then, in any git repository:
 
 ```
