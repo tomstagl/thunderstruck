@@ -34,7 +34,7 @@
   - `TEMPLATES`, `PLAIN_EXTS`, `_fill` (one `re.sub` with a mapping), `template_error`;
   - `LinkContext` with `for_provider`, `for_templates`, `code(path, start=None, end=None)` and `commit(full_sha)`.
 
-  `code` returns `None` for a path in `unlinked`. Add `_common.ref_path(p) = str(p).strip().lstrip("./")`, and have `validate.py` use it in both of its call sites.
+  `code` returns `None` for a path in `unlinked`. Add `_common.ref_path(p) = str(p).lstrip("./")`, and have `validate.py` use it in both of its call sites.
 - [ ] **Step 4:** Run `pytest tests/test_links.py tests/test_pipeline.py -q` and confirm they pass.
 - [ ] **Step 5:** Commit: `Parse git remotes and build permalinks for GitHub, GitLab and Bitbucket`.
 

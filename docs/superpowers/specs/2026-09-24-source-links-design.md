@@ -88,7 +88,7 @@ The SHA is always the full `repo.head` from `hotspots.json`, the commit that was
 - **Rendered files.** GitHub and GitLab render Markdown-like files and ignore line anchors on them. For those two providers, a code link to a path ending in `.md .markdown .mdown .mkd .rst .adoc .asciidoc .org .textile .rdoc .ipynb` gets `?plain=1` before the `#` fragment.
 - **Templates.** With a single line, `{end}` = `{start}`. For a whole-file link, the template is cut at its first `#` and `{start}`/`{end}` are removed. If a placeholder remains in the part before the `#`, no file-level link is emitted.
 - **Substitution** is a single `re.sub` pass over the template with a fixed mapping, so a value can never be re-expanded. Never `str.format`.
-- **Paths.** The path is first normalised with `_common.ref_path`, the same rule the validator applies (`str.strip().lstrip("./")`), so the path that is linked is the path that was resolved. Each `/`-separated segment is then encoded with `urllib.parse.quote(seg, safe="")`. That encodes space, `#`, `?`, `%`, `(`, `)`, `[`, `]` and non-ASCII, so a file name cannot end the Markdown link or add a fragment.
+- **Paths.** The path is first normalised with `_common.ref_path`, the same rule the validator applies (`str(path).lstrip("./")`), so the path that is linked is the path that was resolved. Each `/`-separated segment is then encoded with `urllib.parse.quote(seg, safe="")`. That encodes space, `#`, `?`, `%`, `(`, `)`, `[`, `]` and non-ASCII, so a file name cannot end the Markdown link or add a fragment.
 
 ## 5. What gets linked, and how refs are read
 
