@@ -296,8 +296,10 @@ def generate() -> str:
         "     validator: each ref resolved to a file:line, a commit in that repo,\n"
         "     a detector hit or a catalog edge. Refs link to a placeholder host\n"
         "     (github.example.com), so the links do not resolve; in a real scan they\n"
-        "     open the cited lines at the scanned commit. Regenerate with:\n"
-        "     uv run scripts/gen_sample_report.py -->\n\n")
+        "     open the cited lines at the scanned commit. Dates are fixed to the\n"
+        "     fixture's last commit so the file is byte-reproducible; CI fails when\n"
+        "     it is stale. Regenerate with:  uv run scripts/gen_sample_report.py\n"
+        "     Check with:       uv run scripts/gen_sample_report.py --check -->\n\n")
     return header + report
 
 

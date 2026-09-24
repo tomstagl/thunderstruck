@@ -3,13 +3,15 @@
      validator: each ref resolved to a file:line, a commit in that repo,
      a detector hit or a catalog edge. Refs link to a placeholder host
      (github.example.com), so the links do not resolve; in a real scan they
-     open the cited lines at the scanned commit. Regenerate with:
-     uv run scripts/gen_sample_report.py -->
+     open the cited lines at the scanned commit. Dates are fixed to the
+     fixture's last commit so the file is byte-reproducible; CI fails when
+     it is stale. Regenerate with:  uv run scripts/gen_sample_report.py
+     Check with:       uv run scripts/gen_sample_report.py --check -->
 
 # thunderstruck — fixture
 
 **fixture** · `main` @ `446de9b`  
-Scanned 2026-09-24 · window `2020-01-01` (since 2020-01-01, 18 commits) · 9 files considered · 9 hotspots investigated  
+Scanned 2025-07-29 (dates fixed for this sample) · window `2020-01-01` (since 2020-01-01, 18 commits) · 9 files considered · 9 hotspots investigated  
 **5 finding(s)** across 5 file(s) — 3 high, 2 medium
 
 > Findings are **falsifiable hypotheses**, not verified defects. Every claim cites evidence that resolved to a real file:line, commit, detector hit or catalog edge, and every finding names one concrete way to prove it wrong. Check the `Verify` line before you act on one.
@@ -21,7 +23,7 @@ Scanned 2026-09-24 · window `2020-01-01` (since 2020-01-01, 18 commits) · 9 fi
 
 ## Service context
 
-`component:default/fixture-app` · 4 edge(s), 1 hop · fetched 2026-09-24 (0 days ago) · context `sha256:d6d341f7aa4f`
+`component:default/fixture-app` · 4 edge(s), 1 hop · fetched 2025-07-29 (0 days ago) · context `sha256:d6d341f7aa4f`
 
 Component-level context from the service catalog: it describes the whole component, not a file.
 

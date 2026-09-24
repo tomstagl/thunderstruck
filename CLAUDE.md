@@ -30,7 +30,7 @@ uv run --with pytest --with pyyaml --with lizard pytest tests/detectors -k "S02-
 
 # Regenerate the two generated artefacts (both checked in CI)
 uv run scripts/gen_catalog_docs.py          # --check exits 1 if stale
-uv run scripts/gen_sample_report.py         # runs the real pipeline over the fixture
+uv run scripts/gen_sample_report.py         # runs the real pipeline over the fixture; --check diffs it
 
 # Plugin manifests. validate does NOT load the plugin — install to prove that.
 # A local-directory marketplace runs this checkout in place (live), not the
@@ -172,6 +172,12 @@ exercised.
 The sample report is produced by running the real pipeline over the fixture,
 and its findings pass the real validator. If the finding contract changes,
 generation fails rather than the sample quietly becoming a lie.
+
+The sample report is byte-reproducible: the fixture is built with no user
+git config, the generator pins its dependencies exactly, and the report's
+dates are fixed to the fixture's last commit (only the generator does that —
+a real scan never prints a fixed date). Bumping `lizard` or `pyyaml` in the
+generator means regenerating the sample in the same PR.
 
 ## Plugin manifest
 
