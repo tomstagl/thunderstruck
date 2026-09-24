@@ -232,7 +232,7 @@ def test_a_file_outside_a_sparse_checkout_says_so(repo):
 def test_commit_evidence_matches_bracketed_paths_literally(repo):
     (repo / "src" / "i.ts").write_text("x\n")
     (repo / "src" / "[id].ts").write_text("y\n")
-    _git(repo, "add", "src/[id].ts")
+    _git(repo, "--literal-pathspecs", "add", "src/[id].ts")  # else [id] globs i.ts too
     _git(repo, "commit", "-qm", "route")
     _git(repo, "add", "src/i.ts")
     _git(repo, "commit", "-qm", "only i.ts")
