@@ -21,7 +21,6 @@ from __future__ import annotations
 import argparse
 import copy
 import json
-import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _common as c  # noqa: E402
 import links  # noqa: E402
+import mdtext as md  # noqa: E402
 from validate import CODE_REF, DETECTOR_REF, _count_lines  # noqa: E402
 
 CONFIDENCE_RANK = {"high": 0, "medium": 1, "low": 2}
@@ -183,20 +183,9 @@ def _evidence_url(ctx: "links.LinkContext", result: "links.LinkResult", ev: dict
     return None
 
 
-def _code(text: str) -> str:
-    """A CommonMark code span that holds `text` whatever it contains.
-
-    The fence is one backtick longer than the longest run inside, so a model-
-    written range or a file name cannot close the span and inject a link.
-    """
-    text = " ".join(str(text).splitlines())
-    fence = "`" * (max((len(r) for r in re.findall(r"`+", text)), default=0) + 1)
-    pad = " " if text[:1] == "`" or text[-1:] == "`" else ""
-    return f"{fence}{pad}{text}{pad}{fence}"
-
-
-def _linked(text: str, url: str | None) -> str:
-    return f"[{_code(text)}]({url})" if url else _code(text)
+# Every value the report did not write itself goes through mdtext (#28).
+_code = md.code
+_linked = md.linked
 
 
 def _evidence_ref(ev: dict) -> str:
@@ -213,14 +202,14 @@ def _evidence_ref(ev: dict) -> str:
 # --------------------------------------------------------------------------
 
 
-def _edge_attrs(edge: dict) -> str:
+def _edge_attrs(edge: dict, cell: bool = True) -> str:
     attrs = edge.get("attributes") or {}
-    return "; ".join(f"{k}: {v}" for k, v in sorted(attrs.items()))
+    return "; ".join(f"{md.text(k, cell)}: {md.text(v, cell)}" for k, v in sorted(attrs.items()))
 
 
 def _deps(deps: list[dict]) -> str:
     return ", ".join(
-        f"`{d['neighbour']}` ({d['direction']}"
+        f"{md.code(d['neighbour'], cell=True)} ({md.text(d['direction'], cell=True)}"
         + (f"; {_edge_attrs(d)}" if d.get("attributes") else "") + ")"
         for d in deps)
 
@@ -238,15 +227,16 @@ def render_service_context(ctx: dict | None, now: datetime) -> list[str]:
     fetched = str(ctx.get("fetched_at") or "")
     age = _age_days(fetched, now)
     L = ["## Service context", "",
-         f"`{ctx['entity_ref']}` · {len(ctx['edges'])} edge(s), 1 hop · fetched "
+         f"{md.code(ctx['entity_ref'])} · {len(ctx['edges'])} edge(s), 1 hop · fetched "
          f"{fetched[:10]}" + (f" ({age} days ago)" if age is not None else "")
-         + f" · context `{str(ctx.get('context_hash'))[:19]}`", "",
+         + f" · context {md.code(str(ctx.get('context_hash'))[:19])}", "",
          "Component-level context from the service catalog: it describes the whole "
          "component, not a file.", "",
          "| Edge | Direction | Attributes |", "|---|---|---|"]
     for edge in ctx["edges"]:
-        L.append(f"| `{edge['ref']}` | {edge['direction']} | {_edge_attrs(edge) or '—'} |")
-    hidden = [f"{n} {d}" for d, n in sorted((ctx.get("truncated") or {}).items()) if n]
+        L.append(f"| {md.code(edge['ref'], cell=True)} | {md.text(edge['direction'], cell=True)} "
+                 f"| {_edge_attrs(edge) or '—'} |")
+    hidden = [f"{n} {md.text(d)}" for d, n in sorted((ctx.get("truncated") or {}).items()) if n]
     if hidden:
         L += ["", f"_… and {', '.join(hidden)} not listed "
                   f"(cap {c.MAX_NEIGHBOURS_PER_DIRECTION} per direction)._"]
@@ -265,11 +255,11 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
     files_affected = len({f["location"]["file"] for f in findings if f.get("location")})
 
     L: list[str] = [
-        f"# thunderstruck — {repo_name}",
+        f"# thunderstruck — {md.text(repo_name, heading=True)}",
         "",
-        f"**{repo_name}** · `{hs['repo']['branch']}` @ `{hs['repo']['head'][:7]}`  ",
-        f"Scanned {hs['generated_at'][:10]} · window `{hs['window']['since']}` "
-        f"(since {hs['window']['since_date']}, {hs['window']['commits']} commits) · "
+        f"**{md.text(repo_name)}** · {md.code(hs['repo']['branch'])} @ {md.code(hs['repo']['head'][:7])}  ",
+        f"Scanned {hs['generated_at'][:10]} · window {md.code(hs['window']['since'])} "
+        f"(since {md.text(hs['window']['since_date'])}, {hs['window']['commits']} commits) · "
         f"{hs['counts']['files_considered']} files considered · "
         f"{hs['counts']['hotspots']} hotspots investigated  ",
         f"**{len(findings)} finding(s)** across {files_affected} file(s)"
@@ -286,7 +276,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
                 + list(data.get("link_warnings") or []))
     if warnings:
         L += ["## Run warnings", ""]
-        L += [f"- {w}" for w in warnings]
+        L += [f"- {md.text(w)}" for w in warnings]
         L.append("")
     L += render_service_context(data.get("context"), now or datetime.now(timezone.utc))
 
@@ -305,7 +295,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
     for pid, cov in sorted(hs["pattern_coverage"].items()):
         if not cov.get("scanned"):
             continue
-        L.append(f"| `{pid}` | {cov['name']} | {cov['tier']} | "
+        L.append(f"| {md.code(pid, cell=True)} | {md.text(cov['name'], cell=True)} | {cov['tier']} | "
                  f"{lead_files.get(pid, 0)} | {per_pattern.get(pid, 0)} |")
     other = per_pattern.get("OTHER", 0)
     if other:
@@ -317,18 +307,19 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
         L += ["## Findings", ""]
         for f in findings:
             loc = f.get("location") or {}
-            symbol = f" · `{loc['symbol']}`" if loc.get("symbol") else ""
+            symbol = f" · {md.code(loc['symbol'])}" if loc.get("symbol") else ""
             lines = f":{loc['lines']}" if loc.get("lines") else ""
             where = _linked(f"{loc.get('file', '?')}{lines}", loc.get("url"))
             rows = ["| | |", "|---|---|",
-                    f"| Trigger | {f.get('trigger_condition', '—')} |",
-                    f"| Amplifier | {f.get('amplifier', '—')} |",
-                    f"| Sustaining effect | {f.get('sustaining_effect') or '_none — this one stops when the trigger stops_'} |",
-                    f"| Blast radius | {f.get('blast_radius', '—')} |"]
+                    f"| Trigger | {md.text(f.get('trigger_condition', '—'), cell=True)} |",
+                    f"| Amplifier | {md.text(f.get('amplifier', '—'), cell=True)} |",
+                    f"| Sustaining effect | "
+                    f"{md.text(f['sustaining_effect'], cell=True) if f.get('sustaining_effect') else '_none — this one stops when the trigger stops_'} |",
+                    f"| Blast radius | {md.text(f.get('blast_radius', '—'), cell=True)} |"]
             if f.get("catalog_evidence"):
                 rows.append(f"| Dependents / dependencies | {_deps(f['catalog_evidence'])} |")
-            rows.append(f"| Missing patterns | {', '.join(f'`{p}`' for p in f.get('missing_patterns') or []) or '—'} |")
-            L += [f"### {f['id']} · {f.get('failure_mode', '(no failure mode)')}",
+            rows.append(f"| Missing patterns | {', '.join(md.code(p, cell=True) for p in f.get('missing_patterns') or []) or '—'} |")
+            L += [f"### {f['id']} · {md.text(f.get('failure_mode', '(no failure mode)'), heading=True)}",
                   "",
                   f"**{BADGE.get(f.get('confidence'), '?')} confidence** · "
                   f"{where}{symbol} · "
@@ -338,13 +329,13 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
                   "",
                   "**Evidence**", ""]
             for ev in f.get("evidence") or []:
-                L.append(f"- _{ev.get('type')}_ {_evidence_ref(ev)} — {ev.get('note', '')}")
+                L.append(f"- _{md.text(ev.get('type'))}_ {_evidence_ref(ev)} — {md.text(ev.get('note', ''))}")
             L += ["",
-                  f"**Verify** — {f.get('how_to_verify', '—')}  ",
-                  f"**Why this confidence** — {f.get('confidence_rationale', '—')}  "]
+                  f"**Verify** — {md.text(f.get('how_to_verify', '—'))}  ",
+                  f"**Why this confidence** — {md.text(f.get('confidence_rationale', '—'))}  "]
             if f.get("prediction"):
-                L.append(f"**Prediction** — {f['prediction']}  ")
-            L += ["", f"<sub>stable key `{f.get('key', '—')}`</sub>", "", "---", ""]
+                L.append(f"**Prediction** — {md.text(f['prediction'])}  ")
+            L += ["", f"<sub>stable key {md.code(f.get('key', '—'))}</sub>", "", "---", ""]
     else:
         L += ["## Findings", "",
               "None. Every investigated hotspot came back clean — see below for "
@@ -353,8 +344,8 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
     if data["clean"]:
         L += ["## Hotspots investigated with no finding", ""]
         for entry in data["clean"]:
-            note = f" — {entry['notes']}" if entry.get("notes") else ""
-            L.append(f"- **{entry['hotspot_id']}** `{entry['file']}`{note}")
+            note = f" — {md.text(entry['notes'])}" if entry.get("notes") else ""
+            L.append(f"- **{entry['hotspot_id']}** {md.code(entry['file'])}{note}")
         L.append("")
 
     if data["failed"]:
@@ -362,9 +353,9 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
               "These hotspots were ranked but produced no usable analysis. The "
               "report is partial.", ""]
         for entry in data["failed"]:
-            L.append(f"- **{entry['hotspot_id']}** `{entry['file']}` — {entry['reason']}")
+            L.append(f"- **{entry['hotspot_id']}** {md.code(entry['file'])} — {md.text(entry['reason'])}")
             for err in entry.get("errors", [])[:3]:
-                L.append(f"  - {err}")
+                L.append(f"  - {md.text(err)}")
         L.append("")
 
     L += ["## Ranked hotspots", "",
@@ -372,8 +363,8 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
           "|---|---|---|---|---|---|---|"]
     for h in hs["hotspots"]:
         cx = h.get("complexity") or {}
-        pats = ", ".join(h["stability"]["patterns"]) or "—"
-        L.append(f"| {h['id']} | `{h['file']}` | {h['scores']['score']} | "
+        pats = ", ".join(md.text(p, cell=True) for p in h["stability"]["patterns"]) or "—"
+        L.append(f"| {h['id']} | {md.code(h['file'], cell=True)} | {h['scores']['score']} | "
                  f"{h['churn']['commits']} | {h['churn']['fix_commits']} | "
                  f"{cx.get('ccn_max', '—')} | {pats} |")
     L += ["",
