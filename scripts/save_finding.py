@@ -69,6 +69,12 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         doc.setdefault("hotspot_id", args.id)
         doc.setdefault("file", entry["file"])
+        # validate.py owns these; a model echoing them must not pass as validated
+        doc.pop("validated_with", None)
+        for f in doc.get("findings") or []:
+            if isinstance(f, dict):
+                for owned in ("key", "content_hash", "catalog_evidence"):
+                    f.pop(owned, None)
 
     doc["bundle_hash"] = entry["bundle_hash"]
     doc["schema"] = c.FINDING_SCHEMA_VERSION

@@ -230,6 +230,8 @@ def test_non_utf8_profile_is_reported_as_unreadable(linked_copy, plugin_root):
     (linked_copy / ".thunderstruck.toml").write_bytes(b"[links]\nprovider = '\xff'\n")
     data = _hotspots(linked_copy)
     hid, doc = _valid_finding(linked_copy, data)
+    # the profile can't be read, so validate.py can't run; stand in for it
+    doc["validated_with"] = report.c.VALIDATION_RULES
     _write_finding(linked_copy, hid, doc)
     (linked_copy / ".thunderstruck" / "validation.json").write_text(json.dumps(
         {"results": [{"hotspot_id": hid, "valid": True}]}))

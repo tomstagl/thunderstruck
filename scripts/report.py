@@ -65,6 +65,13 @@ def collect(repo: Path) -> dict[str, Any]:
             continue
         doc = c.load_json(path, {}) or {}
         items = doc.get("findings") or []
+        if items and doc.get("validated_with") != c.VALIDATION_RULES:
+            # saved after the last validation, or validated under older rules:
+            # nothing reaches the report that today's validator hasn't passed
+            failed.append({"hotspot_id": hid, "file": hs["file"],
+                           "reason": "findings not validated by this version's rules "
+                                     "— re-run the scan"})
+            continue
         if not items:
             clean.append({"hotspot_id": hid, "file": hs["file"],
                           "notes": doc.get("notes", "")})

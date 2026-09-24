@@ -432,6 +432,23 @@ def write_catalog_brief(dest: Path, catalog: dict, profile: dict) -> Path:
     return path
 
 
+def _validated_under_older_rules(doc: dict) -> bool:
+    """A findings file that validate.py passed under an earlier rules version.
+
+    Only validate.py writes `key`, and save_finding strips it from model
+    output, so its presence means "validated"; clean and failed files carry no
+    findings and are reused as before.
+    """
+    validated = any(isinstance(f, dict) and "key" in f for f in doc.get("findings") or [])
+    return validated and doc.get("validated_with") != c.VALIDATION_RULES
+
+
+def _validator(repo: Path, data: dict, catalog: dict, ctx: dict | None, hid: str):
+    from validate import Validator
+    return Validator(repo, data, catalog, context=ctx,
+                     bundle_context={hid: ctx["context_hash"] if ctx else None})
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="bundle.py",
                                  description="build per-hotspot context bundles")
@@ -460,6 +477,7 @@ def main(argv: list[str] | None = None) -> int:
 
     findings_dir = c.out_dir(repo) / "findings"
     index = []
+    requeued = 0
     for hs in hotspots:
         body = build_bundle(repo, hs, data, catalog, profile,
                             args.budget, args.commits, hotspots, ctx)
@@ -472,6 +490,11 @@ def main(argv: list[str] | None = None) -> int:
         # also what makes an interrupted scan resumable.
         cached_doc = c.load_json(findings_dir / f"{hs['id']}.json", {}) or {}
         cached = cached_doc.get("bundle_hash") == bundle_hash
+        if cached and _validated_under_older_rules(cached_doc):
+            # re-check with today's rules: reuse what still passes, re-investigate
+            # what doesn't (the scan's validate step re-stamps what passes)
+            cached = not _validator(repo, data, catalog, ctx, hs["id"]).check_document(cached_doc)
+            requeued += not cached
 
         index.append({"id": hs["id"], "file": hs["file"], "bundle": str(path),
                       "bundle_hash": bundle_hash,
@@ -496,6 +519,9 @@ def main(argv: list[str] | None = None) -> int:
     total = sum(b["tokens_estimated"] for b in index)
     todo = [b for b in index if not b["cached"]]
     print(f"\n{len(index)} bundles, ~{total} tokens total -> {dest_dir}")
+    if requeued:
+        print(f"{requeued} bundle(s) had findings that fail today's validation rules "
+              f"(v{c.VALIDATION_RULES}) and are investigated again")
     print(f"{len(todo)} need investigating, {len(index) - len(todo)} reused from cache")
     return 0
 

@@ -435,6 +435,7 @@ def main(argv: list[str] | None = None) -> int:
                 f["content_hash"] = c.sha256_file(
                     repo / c.ref_path(f.get("location", {}).get("file", "")))
                 f["catalog_evidence"] = catalog_evidence(f, validator.catalog_edges)
+            doc["validated_with"] = c.VALIDATION_RULES
             path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
         results.append({"path": str(path), "hotspot_id": doc.get("hotspot_id", path.stem)
                         if isinstance(doc, dict) else path.stem,

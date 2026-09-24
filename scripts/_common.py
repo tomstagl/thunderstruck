@@ -363,6 +363,12 @@ class Filters:
 # --------------------------------------------------------------------------
 
 
+# Bumped whenever validate.py's rules tighten. A findings file carries the
+# version that validated it; older ones are re-checked before they are reused
+# (bundle.py) and never reported unchecked (report.py).
+VALIDATION_RULES = 2
+
+
 def ref_path(path: Any) -> str:
     """A cited path in canonical form: leading `./` segments removed, nothing else.
 

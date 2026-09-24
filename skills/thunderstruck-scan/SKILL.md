@@ -82,6 +82,9 @@ uv run "${CLAUDE_PLUGIN_ROOT}/scripts/bundle.py"
 Writes one briefing per hotspot plus `.thunderstruck/catalog-brief.md`. Its
 last line reports how many need investigating and how many were reused from
 cache — a bundle whose content hash is unchanged already has a valid finding.
+Findings validated by an older version of the plugin are re-checked here:
+those that fail today's rules are investigated again, and the line before the
+counts says how many.
 
 **If `--dry-run`: stop here.** Report the ranked hotspots, how many
 investigators would run, and the total bundle size. Nothing else.

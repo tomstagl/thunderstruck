@@ -301,3 +301,113 @@ def test_a_plain_path_keeps_its_key(repo, plugin_root):
 def test_a_dotfile_under_a_dot_directory_validates_end_to_end(repo, plugin_root):
     saved = _validate_file(repo, _doc(".github/scripts/deploy.py", "2-3"), plugin_root)
     assert saved["findings"][0]["location"]["file"] == ".github/scripts/deploy.py"
+
+
+# ------------------------------------------------ findings from older rules --
+
+
+def _bundle(repo: Path, plugin_root: Path) -> tuple[dict, str]:
+    import json
+    import sys
+    proc = subprocess.run([sys.executable, str(plugin_root / "scripts" / "bundle.py"),
+                           "--repo", str(repo)], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    index = json.loads((repo / ".thunderstruck" / "bundles" / "index.json").read_text())
+    return {b["id"]: b for b in index["bundles"]}, proc.stdout
+
+
+def _saved(repo: Path, hid: str, doc: dict, bundle_hash: str) -> Path:
+    import json
+    doc = {**doc, "bundle_hash": bundle_hash}
+    path = repo / ".thunderstruck" / "findings" / f"{hid}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(doc))
+    return path
+
+
+def _old_validated(doc: dict) -> dict:
+    """What 0.4.0's validator left behind: keys, no rules stamp."""
+    import copy
+    doc = copy.deepcopy(doc)
+    for f in doc["findings"]:
+        f["key"] = "0123456789ab"
+    return doc
+
+
+def test_findings_from_older_rules_that_still_pass_are_reused(scanned_copy, plugin_root):
+    from test_pipeline import _hotspots, _valid_finding
+    hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
+    bundles, _ = _bundle(scanned_copy, plugin_root)
+    _saved(scanned_copy, hid, _old_validated(doc), bundles[hid]["bundle_hash"])
+    bundles, out = _bundle(scanned_copy, plugin_root)
+    assert bundles[hid]["cached"] is True
+    assert "investigated again" not in out
+
+
+def test_findings_from_older_rules_that_now_fail_are_reinvestigated(scanned_copy, plugin_root):
+    from test_pipeline import _hotspots, _valid_finding
+    hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
+    doc["findings"][0]["location"]["lines"] = "L1"      # passed 0.4.0, fails now
+    bundles, _ = _bundle(scanned_copy, plugin_root)
+    _saved(scanned_copy, hid, _old_validated(doc), bundles[hid]["bundle_hash"])
+    bundles, out = _bundle(scanned_copy, plugin_root)
+    assert bundles[hid]["cached"] is False
+    assert "1 bundle(s) had findings that fail today's validation rules" in out
+    assert out.strip().splitlines()[-1].endswith("reused from cache"), "the skill reads the last line"
+
+
+def test_clean_and_failed_files_are_reused_as_before(scanned_copy, plugin_root):
+    from test_pipeline import _hotspots
+    hs = _hotspots(scanned_copy)["hotspots"]
+    bundles, _ = _bundle(scanned_copy, plugin_root)
+    _saved(scanned_copy, hs[0]["id"], {"hotspot_id": hs[0]["id"], "findings": [], "notes": "clean"},
+           bundles[hs[0]["id"]]["bundle_hash"])
+    _saved(scanned_copy, hs[1]["id"], {"hotspot_id": hs[1]["id"], "findings": [],
+                                       "analysis_failed": True}, bundles[hs[1]["id"]]["bundle_hash"])
+    bundles, _ = _bundle(scanned_copy, plugin_root)
+    assert bundles[hs[0]["id"]]["cached"] and bundles[hs[1]["id"]]["cached"]
+
+
+def test_validated_findings_are_stamped_and_reused(scanned_copy, plugin_root):
+    import json
+    from test_pipeline import _hotspots, _valid_finding, _validate
+    hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
+    bundles, _ = _bundle(scanned_copy, plugin_root)
+    path = _saved(scanned_copy, hid, doc, bundles[hid]["bundle_hash"])
+    assert _validate(scanned_copy, plugin_root).returncode == 0
+    assert json.loads(path.read_text())["validated_with"] == c.VALIDATION_RULES
+    bundles, _ = _bundle(scanned_copy, plugin_root)
+    assert bundles[hid]["cached"] is True
+
+
+def test_report_never_shows_findings_the_current_rules_did_not_pass(scanned_copy, plugin_root):
+    import json
+    import sys
+    from test_pipeline import _hotspots, _valid_finding, _validate, _write_finding
+    hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
+    _write_finding(scanned_copy, hid, doc)
+    assert _validate(scanned_copy, plugin_root).returncode == 0
+    _write_finding(scanned_copy, hid, doc)                # re-saved, not re-validated
+    subprocess.run([sys.executable, str(plugin_root / "scripts" / "report.py"),
+                    "--repo", str(scanned_copy)], check=True, capture_output=True)
+    payload = json.loads((scanned_copy / ".thunderstruck" / "report.json").read_text())
+    assert payload["findings"] == []
+    reasons = {e["hotspot_id"]: e["reason"] for e in payload["incomplete"]}
+    assert "not validated by this version's rules" in reasons[hid]
+
+
+def test_save_finding_strips_validator_owned_fields(scanned_copy, plugin_root):
+    import json
+    import sys
+    from test_pipeline import _hotspots, _valid_finding
+    _bundle(scanned_copy, plugin_root)
+    hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
+    doc["validated_with"] = c.VALIDATION_RULES
+    doc["findings"][0].update(key="forged", content_hash="x", catalog_evidence=[])
+    proc = subprocess.run([sys.executable, str(plugin_root / "scripts" / "save_finding.py"),
+                           "--repo", str(scanned_copy), "--id", hid],
+                          input=json.dumps(doc), capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+    saved = json.loads((scanned_copy / ".thunderstruck" / "findings" / f"{hid}.json").read_text())
+    assert "validated_with" not in saved
+    assert not {"key", "content_hash", "catalog_evidence"} & set(saved["findings"][0])
