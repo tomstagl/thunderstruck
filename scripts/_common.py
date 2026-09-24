@@ -363,6 +363,14 @@ class Filters:
 # --------------------------------------------------------------------------
 
 
+def ref_path(path: Any) -> str:
+    """A cited path as the validator resolves it, relative to the repo root.
+
+    Shared so that report links point at exactly the file validate.py checked.
+    """
+    return str(path).lstrip("./")
+
+
 def read_text(path: Path) -> str | None:
     try:
         return Path(path).read_text(encoding="utf-8", errors="replace")

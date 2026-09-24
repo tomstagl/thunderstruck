@@ -110,7 +110,7 @@ class Validator:
             if not m:
                 errors.append(f"{where}.ref {ref!r} is not path:line or path:start-end")
                 return etype
-            rel = m.group("path").lstrip("./")
+            rel = c.ref_path(m.group("path"))
             total = self._lines_in(rel)
             if total is None:
                 errors.append(f"{where}.ref {ref!r} — no such file in the repository")
@@ -168,7 +168,7 @@ class Validator:
         loc = f.get("location")
         if not isinstance(loc, dict) or not loc.get("file"):
             errors.append(f"{where}.location.file is missing")
-        elif self._lines_in(str(loc["file"]).lstrip("./")) is None:
+        elif self._lines_in(c.ref_path(loc["file"])) is None:
             errors.append(f"{where}.location.file {loc['file']!r} — no such file")
 
         pats = f.get("missing_patterns")
@@ -213,12 +213,12 @@ class Validator:
         files: list[str] = []
         loc = f.get("location")
         if isinstance(loc, dict) and loc.get("file"):
-            files.append(str(loc["file"]).lstrip("./"))
+            files.append(c.ref_path(loc["file"]))
         for ev in evidence:
             if isinstance(ev, dict) and ev.get("type") == "code":
                 m = CODE_REF.match(str(ev.get("ref") or "").strip())
                 if m:
-                    files.append(m.group("path").lstrip("./"))
+                    files.append(c.ref_path(m.group("path")))
         files = list(dict.fromkeys(files))
         for i, (ev, etype) in enumerate(zip(evidence, types)):
             if etype != "commit":
@@ -328,7 +328,7 @@ def main(argv: list[str] | None = None) -> int:
                 f["key"] = stable_key(f.get("location", {}).get("file", ""),
                                       f.get("failure_mode", ""))
                 f["content_hash"] = c.sha256_file(
-                    repo / str(f.get("location", {}).get("file", "")).lstrip("./"))
+                    repo / c.ref_path(f.get("location", {}).get("file", "")))
                 f["catalog_evidence"] = catalog_evidence(f, validator.catalog_edges)
             path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
         results.append({"path": str(path), "hotspot_id": doc.get("hotspot_id", path.stem)

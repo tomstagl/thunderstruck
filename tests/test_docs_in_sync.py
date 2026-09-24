@@ -61,6 +61,21 @@ def test_catalog_tiers_match_the_documented_split(catalog):
     assert tier_b == [f"S{n:02d}" for n in range(11, 20)], tier_b
 
 
+def test_sample_report_links_its_refs():
+    """Every resolved file:line, detector and commit ref in the sample is one
+    click from the code. Shape only — this does not prove the sample is fresh."""
+    sample = (ROOT / "examples" / "sample-report.md").read_text()
+    link = r"\[`[^`]+`\]\(https://github\.example\.com/acme/fixture/"
+    refs = [line for line in sample.splitlines()
+            if re.match(r"- _(code|detector|commit)_ ", line)]
+    locations = [line for line in sample.splitlines()
+                 if re.match(r"\*\*(high|medium|low) confidence\*\* · ", line)]
+    assert refs and locations
+    unlinked = [line for line in refs if not re.match(r"- _\w+_ " + link, line)]
+    unlinked += [line for line in locations if not re.search(r"\*\* · " + link, line)]
+    assert not unlinked, "unlinked refs in sample-report.md:\n" + "\n".join(unlinked)
+
+
 def test_versions_agree():
     plugin = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())
     market = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text())

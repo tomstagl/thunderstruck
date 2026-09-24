@@ -117,3 +117,21 @@ timeout_s = 20
 extractor = "backstage-relations"
 edge_types = { dependsOn = "outbound", dependencyOf = "inbound" }
 neighbour_attributes = { tier = "example.com/criticality-tier" }
+
+
+# --------------------------------------------------------------------------
+# Source links
+# --------------------------------------------------------------------------
+# Refs in report.md link to the cited lines at the scanned commit. Remotes on
+# github.com, gitlab.com and bitbucket.org need nothing here.
+#
+# [links]
+# enabled  = true                  # false: plain refs, no warning
+# remote   = "origin"              # default: origin, else the only remote
+# provider = "gitlab"              # github | gitlab | bitbucket, for self-hosted hosts
+# base_url = "https://git.example.com/acme/checkout"   # when the remote is an SSH alias
+#
+# Other URL schemes (e.g. Bitbucket Data Center) — set both templates; placeholders
+# are {base} {sha} {path} {start} {end}:
+# code_template   = "{base}/browse/{path}?at={sha}#{start}-{end}"
+# commit_template = "{base}/commits/{sha}"

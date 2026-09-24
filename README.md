@@ -224,13 +224,37 @@ context definition on that machine. It is meant for CI, where the
 `.thunderstruck.toml` that defines the command is reviewed in the repository
 like any other code; do not set it on a workstation.
 
+### Source links
+
+Every file:line, detector and commit ref in `report.md` links to the code
+at the scanned commit — one click to the cited lines. A remote on github.com,
+gitlab.com or bitbucket.org needs no setup. Anything else needs a `[links]`
+table:
+
+```toml
+[links]
+provider = "gitlab"                                  # github | gitlab | bitbucket
+base_url = "https://git.example.com/acme/checkout"   # when the remote is an SSH alias
+# enabled = false                                    # plain refs, no warning
+```
+
+A link never opens other lines than the ones cited. A cited file that differs
+from the scanned commit — edited, staged, committed since, untracked — is left
+unlinked and named under *Run warnings*, as is any reason links could not be
+built at all. A commit that is not yet on the remote is still linked, with a
+warning that its links resolve once pushed. `report.json` carries the same
+URLs. See
+[`examples/thunderstruck.toml.example`](examples/thunderstruck.toml.example)
+for templates covering other hosts.
+
 ## Privacy
 
 **Nothing leaves your machine that Claude Code was not already going to see.**
 
 The scripts run locally and write only into `.thunderstruck/`. They make no
 network calls, send no telemetry, and talk to no external
-service. There is no API key because there is no API. The one opt-in
+service. There is no API key because there is no API. The report names
+your git remote's web address, without any credentials in it, so its links work. The one opt-in
 exception is a service context command you configure and approve yourself:
 it may call your service catalog. thunderstruck passes it the entity ref (and,
 when neighbour attributes are configured, each neighbour's ref), and it runs
