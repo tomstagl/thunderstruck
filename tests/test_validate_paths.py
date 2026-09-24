@@ -411,3 +411,14 @@ def test_save_finding_strips_validator_owned_fields(scanned_copy, plugin_root):
     saved = json.loads((scanned_copy / ".thunderstruck" / "findings" / f"{hid}.json").read_text())
     assert "validated_with" not in saved
     assert not {"key", "content_hash", "catalog_evidence"} & set(saved["findings"][0])
+
+
+# ---------------------------------------------------------------- prompts --
+
+
+@pytest.mark.parametrize("rel", ["agents/thunderstruck-investigator.md",
+                                 "skills/thunderstruck-scan/SKILL.md"])
+def test_the_investigator_is_told_the_accepted_forms(plugin_root, rel):
+    text = (plugin_root / rel).read_text(encoding="utf-8")
+    for form in ('"42-118"', "start ≤ end", "no `./`", "no `..`", "git tracks"):
+        assert form in text, f"{rel} no longer states {form}"

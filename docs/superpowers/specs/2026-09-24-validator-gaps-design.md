@@ -25,21 +25,26 @@
 - empty;
 - absolute (`/…`, or a Windows drive such as `C:…`);
 - has a `..` segment;
-- contains a backslash (git paths always use `/`).
+- contains a backslash (git paths always use `/`);
+- is not in canonical form: an empty segment (`a//b`), a `.` segment, or a trailing `/`. pathlib would silently collapse these onto a real file.
 
 Callers that already use `ref_path`, namely `report.py` and `links.py`, get the fix for free. `links._escapes` stays as defence in depth.
 
 ## 3. Tracked files only
 
-The `Validator` loads the index once: `git ls-files -s -z`, which gives `{path: mode}`. It then resolves a cited path, whether a location or a code ref, with `_resolve(raw) -> (rel, total_lines, error)`. The checks run in this order, and **no file is opened until all of them pass** (AC-2):
+The `Validator` loads the index once through `_common.tracked_index`: `git ls-files -s -z`, read as bytes and decoded as UTF-8 with `surrogateescape`, so a file name the locale can't decode doesn't crash validation. The result is `{path: mode}`. Unmerged entries keep their first stage. Intent-to-add entries count as tracked, since their content is on disk. It then resolves a cited path, whether a location or a code ref, with `_resolve(raw) -> (rel, total_lines, error)`. The checks run in this order, and **no file is opened until all of them pass** (AC-2):
 
 1. `rel = ref_path(raw)`. If `path_problem(rel)`, error: "must be a path relative to the repository root, without `..`".
 2. `rel` is not in the index:
+   - if it is a directory, error: "is a directory";
    - if it exists on disk, error: "is not tracked by git (untracked or ignored files can't be cited)";
-   - otherwise, error: "no such file in the repository".
+   - otherwise, error: "no such file in the repository", plus "did you mean …" when the index holds the same path in a different case.
 3. The mode is `120000`: "is a symbolic link". The mode is `160000`: "is a submodule, not a file". Paths inside a submodule, or under a tracked symlinked directory, are never in the index, so step 2 already rejects them.
-4. `(repo / rel).resolve()` is not inside `repo.resolve()`: "resolves outside the repository". This covers a tracked directory replaced locally by a symlink.
-5. Only now are the lines counted, from the working tree, so tracked files with uncommitted edits validate against what is on disk (AC-3).
+4. `(repo / rel).resolve() != repo.resolve() / rel`: "passes through a symbolic link in the working tree". This means no component of the path may be a symlink. A plain "stays inside the repo" test would let a tracked file replaced locally by a link to an ignored `.env` pass (review finding). `resolve()` only calls lstat and readlink; it opens nothing.
+5. `os.lstat` fails: "is tracked but missing from the working tree (deleted locally, or outside a sparse checkout)". The path is not a regular file (`S_ISREG`): "is not a regular file". Without this check, a FIFO would block the line count forever.
+6. Only now are the lines counted, from the working tree, so tracked files with uncommitted edits validate against what is on disk (AC-3).
+
+`commit_touches` passes only paths that resolved, with `--literal-pathspecs`. Without that, `src/[id].ts` is a glob that matches `src/i.ts`, and a commit to the wrong file would count as history.
 
 The index lookup and the line counts are cached per validator run. A repository with 100k files costs one `ls-files` call.
 
@@ -48,14 +53,14 @@ The index lookup and the line counts are cached per validator run. A repository 
 A single helper, `parse_range(value) -> (start, end) | None`, accepts:
 
 - an int (not a bool);
-- a string matching `^\d+$` or `^\d+-\d+$`.
+- a string matching `[0-9]+` or `[0-9]+-[0-9]+`, anchored with `^…\Z`. The regex uses `[0-9]` and `\Z`, not `\d` and `$`, so Unicode digits such as `١٦` and a trailing newline don't count as line numbers. `CODE_REF` gets the same treatment.
 
 Nothing else is accepted: no spaces, no `L` prefix, no en dash. The range must satisfy `1 ≤ start ≤ end ≤ total`.
 
 - **`location.lines`:** optional. A missing key, or `null`, means a whole-file location and stays valid. Any other value must parse and fit. Otherwise the error is: `location.lines 'L16' must be a line ("42") or a range ("42-118") with start ≤ end inside src/a.ts, which has 120 lines`.
-- **`code` refs:** the existing `CODE_REF` regex already constrains the syntax; the new check is `start ≤ end`. Error: `evidence[i].ref 'a.ts:28-16' — the range must run from a lower line to a higher one inside a.ts (120 lines)`.
+- **`code` refs:** a malformed range (such as `a.ts:L16` or an en dash) and an out-of-range or reversed one both get the same message. The path is resolved first (split at the last `:`), so the message can give the file's length: `evidence[i].ref 'a.ts:28-16' — that line does not exist: use a line ("42") or a range ("42-118") with start ≤ end inside a.ts, which has 120 lines`. The `location.lines` error is built by the same function.
 
-`links.parse_lines` stays lenient (spaces, ints). It is the report's display fallback. After this change it only ever sees validated values, and it keeps rendering a whole-file link for anything else. `report.py`'s reversed-range `min/max` stays as harmless defence in depth.
+`links.parse_lines` stays lenient (spaces, ints). It is the report's display fallback and only ever sees validated values. It keeps rendering a whole-file link for anything else. `report.py`'s reversed-range `min/max` stays as defence in depth against a tampered file. `report.py` also never counts lines for a path with a `path_problem`: with the new `ref_path`, `repo / "/etc/x"` would otherwise be `/etc/x`.
 
 ## 5. One identity per file
 
@@ -72,19 +77,16 @@ When a document is valid, `validate.py` already writes back `key`, `content_hash
 
 `_common.VALIDATION_RULES = 2` is a rules version. `validate.py` stamps each valid document with `"validated_with": VALIDATION_RULES`.
 
-`bundle.py` now marks a bundle cached only if the `bundle_hash` matches **and** the findings file was not validated under older rules:
+A findings file counts as validated under older rules when it has findings carrying `key` and lacks the current stamp. Only `validate.py` writes `key`, and `save_finding.py` now strips `key`, `content_hash`, `catalog_evidence` and `validated_with` from model output, so a model can't forge any of them.
 
-```python
-validated = any(isinstance(f, dict) and "key" in f for f in cached_doc.get("findings") or [])
-stale_rules = validated and cached_doc.get("validated_with") != c.VALIDATION_RULES
-cached = cached_doc.get("bundle_hash") == bundle_hash and not stale_rules
-```
+When the `bundle_hash` matches and the file was validated under older rules, **`bundle.py` re-runs today's `Validator` on it**:
 
-- **Previously validated findings (from 0.4.0 or earlier):** they carry `key` and no stamp, so their hotspots are investigated again once. The existing parallelism cap still applies.
-- **Clean documents (no findings):** they carry no `key` and stay cached. Nothing in them can fail the new rules.
-- **Failed and unvalidated documents:** they also carry no `key` and behave as today.
+- if it still passes, the bundle stays cached, and the scan's validate step re-stamps it;
+- if it fails, the bundle is not cached, and the hotspot is investigated again.
 
-`bundle.py` prints how many bundles were re-queued because of a rules change, so the cost is visible.
+`bundle.py` prints the number re-queued on the line *before* its final counts line, which the scan skill reads. This is cheaper than re-investigating every old finding, and it matches AC-7 exactly: only findings that *fail* the new rules are redone (review finding). Clean and failed files have no findings and are reused as before.
+
+**The report is gated on the stamp.** `report.py` shows a file's findings only when it carries the current stamp. Any other file with findings is listed under *Incomplete* as "findings not validated by this version's rules — re-run the scan". So nothing reaches the report or `index.json` without today's validator having passed it, even when `report.py` runs alone after an upgrade, or after a file was re-saved without validation.
 
 A future rule change bumps `VALIDATION_RULES`.
 
@@ -110,7 +112,24 @@ The investigator prompt (`agents/thunderstruck-investigator.md`) and the repair-
   - **Canonicalisation:** `./src/a.ts` is written back as `src/a.ts`, and its key equals the key for `src/a.ts`.
   - **Keys:** an existing finding without `./` keeps its key.
 - **`tests/test_pipeline.py`**: the existing `_valid_finding` flow still passes.
-- **Stale cache:** a hotspot with a validated findings file but no stamp is not cached, a stamped one is cached, and a clean document is cached.
+- **Stale cache:**
+  - an old validated file that still passes is reused;
+  - one that now fails is re-queued, with the message on the line before the counts;
+  - clean and failed files are reused;
+  - validate stamps what it passes;
+  - the report lists an unstamped file with findings as Incomplete;
+  - `save_finding` strips validator-owned fields.
+- **Review cases:**
+  - Unicode digits and trailing newlines;
+  - `//`, `/.` and a trailing `/`;
+  - a directory, and a case mismatch;
+  - a tracked file replaced by a link to an ignored `.env`;
+  - a FIFO, under a 5-second alarm;
+  - a file deleted locally, and one outside a sparse checkout;
+  - `commit_touches` with `[id].ts`.
+
+  The open spy covers `Path.open`, `builtins.open`, `io.open` and `os.open`.
+- **End to end, by hand:** in a scratch repository, a hotspot under `.github/scripts/` is ranked, and a finding written with `./` is canonicalised, validated, reported, indexed and shown by the guardrail.
 - **Prompt text:** the investigator prompt and the scan skill name the accepted forms (substring checks, so the text can't silently drift).
 - **Sample:** `gen_sample_report.py --check` (from #26) passes after regeneration.
 
@@ -122,9 +141,12 @@ The investigator prompt (`agents/thunderstruck-investigator.md`) and the repair-
 | Reject, never rewrite, a suspicious path | Rewriting `/etc/x` to `etc/x` is what let a finding validate against an unrelated file. |
 | Canonicalise only leading `./` | That's the only harmless spelling difference. Everything else is either the real path or rejected. |
 | Canonical paths written back by the validator | One place fixes identity for the key, the index, the guardrail and the report. |
-| A rules version stamp decides cache staleness | This is deterministic, needs no validation inside `bundle.py`, and leaves clean and failed documents as they behave today. |
+| A rules version stamp, and a re-check of stale files in `bundle.py` | Only findings that fail today's rules are redone (AC-7). Clean and failed files behave as today. |
+| The report is gated on the stamp | Findings reach the report only through today's validator, whatever order the scripts run in. |
 | Lenient `links.parse_lines` stays | It is display-only, and harmless once the validator is strict. |
 
 ## 11. Open design questions
+
+- **Follow-up (review finding 10):** `signals.py` can still rank files that can never validate. It checks candidates with `is_file()`, which follows symlinks, and it lists files with `git ls-files` without `-z`, so non-ASCII names come back quoted. That is outside #25's criteria; a follow-up ticket makes signals use `tracked_index` and skip symlinks and submodules.
 
 - The backslash rule could reject a legitimate Linux file name that contains `\`. That is vanishingly rare in source trees, and such a file can still be cited once the rule is relaxed. It is kept strict for now.

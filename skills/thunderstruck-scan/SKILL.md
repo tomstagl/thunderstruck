@@ -132,7 +132,10 @@ its errors to the task:
 
 > Your previous output for `<ID>` failed validation:
 > <the errors verbatim>
-> Fix only these problems and return the corrected JSON. Every `ref` must
+> Fix only these problems and return the corrected JSON. Paths are copied
+> exactly as the bundle shows them — relative to the repository root, no `./`,
+> no `..`, a file git tracks — and a line range is `"42"` or `"42-118"` with
+> start ≤ end inside the file. Every `ref` must
 > resolve: a code ref's file and line must exist, a commit SHA must be one
 > from the bundle's change history for this file, a detector ref must be copied verbatim
 > from the bundle's Detector leads section, and a catalog ref must be copied verbatim from

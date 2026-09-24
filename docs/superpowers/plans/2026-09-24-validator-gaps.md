@@ -1,6 +1,6 @@
 # Validator Gaps Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Every path in a finding is one canonical, tracked, in-repository file, and every line range lies inside it. Findings validated under older rules are investigated again.
 
@@ -10,54 +10,65 @@
 
 **Branch:** `feat/validator-gaps`. One commit per task. The full suite passes on every commit: `uv run --with pytest --with pyyaml --with lizard pytest tests/ -q`.
 
+## Revision (design review and execution)
+
+- **A test slip:** commit 25455c2 was pushed with four failing tests. Piping pytest through `tail` hid its exit code. Commit 7f0bce5 fixed them, and every later commit checked pytest's real exit code.
+- **The design review's majors, all folded in (spec updated):**
+  - the report is gated on the rules stamp;
+  - `report.py` never counts lines of an escaping path;
+  - no symlink may appear in any path component, and the path must be a regular file;
+  - a locally deleted or sparse file gets its own message;
+  - `commit_touches` uses literal pathspecs;
+  - `bundle.py` re-checks stale files instead of re-investigating all of them.
+
 ### Task 1: Canonical paths, tracked files only (AC-2, AC-3)
 
 **Files:** `scripts/_common.py`, `scripts/validate.py`; new `tests/test_validate_paths.py`; `tests/test_links.py` (the `../` expectation).
 
-- [ ] Write failing tests for every path case in spec §9, including the `Path.open` spy.
-- [ ] Implement `ref_path` (leading `./` only), `path_problem`, the `Validator` index load (`git ls-files -s -z`) and `_resolve` (spec §2–§3). `check_finding` and `check_evidence` (code refs) use `_resolve`.
-- [ ] Update `test_links.py`: `../src/x.ts` now stays `../src/x.ts`, and it is unlinked because it escapes.
-- [ ] Run the full suite, then commit: `Resolve cited paths against the git index and reject paths that leave the repository`.
+- [x] Write failing tests for every path case in spec §9, including the `Path.open` spy.
+- [x] Implement `ref_path` (leading `./` only), `path_problem`, the `Validator` index load (`git ls-files -s -z`) and `_resolve` (spec §2–§3). `check_finding` and `check_evidence` (code refs) use `_resolve`.
+- [x] Update `test_links.py`: `../src/x.ts` now stays `../src/x.ts`, and it is unlinked because it escapes.
+- [x] Run the full suite, then commit: `Resolve cited paths against the git index and reject paths that leave the repository`.
 
 ### Task 2: Line ranges (AC-1)
 
 **Files:** `scripts/validate.py`, `tests/test_validate_paths.py`, `scripts/gen_sample_report.py` (clamp), `examples/sample-report.md` (regenerated).
 
-- [ ] Write failing tests: the `location.lines` accept/reject table and a reversed code ref (spec §9).
-- [ ] Implement `parse_range` and both checks, with the error texts in spec §4.
-- [ ] In the generator, clamp the canned range end to the file length. Regenerate the sample: only the `api.ts` and `format.ts` locations change. Run `--check`.
-- [ ] Run the full suite, then commit: `Check every line range, including a finding's location`.
+- [x] Write failing tests: the `location.lines` accept/reject table and a reversed code ref (spec §9).
+- [x] Implement `parse_range` and both checks, with the error texts in spec §4.
+- [x] In the generator, clamp the canned range end to the file length. Regenerate the sample: only the `api.ts` and `format.ts` locations change. Run `--check`.
+- [x] Run the full suite, then commit: `Check every line range, including a finding's location`.
 
 ### Task 3: One identity per file (AC-4, AC-5)
 
 **Files:** `scripts/validate.py`, `tests/test_validate_paths.py`.
 
-- [ ] Write failing tests:
+- [x] Write failing tests:
   - `./src/a.ts` is written back canonical, and its key equals the key for `src/a.ts`;
   - after `report.py`, `index.json` has a single entry for the file;
   - a finding without `./` keeps its key.
-- [ ] Implement the write-back canonicalisation (spec §5).
-- [ ] Run the full suite, then commit: `Write canonical paths back, so a file has one key and one index entry`.
+- [x] Implement the write-back canonicalisation (spec §5).
+- [x] Run the full suite, then commit: `Write canonical paths back, so a file has one key and one index entry`.
 
 ### Task 4: Re-investigate findings validated under older rules (AC-7)
 
 **Files:** `scripts/_common.py` (`VALIDATION_RULES`), `scripts/validate.py` (stamp), `scripts/bundle.py`, new tests in `tests/test_validate_paths.py`.
 
-- [ ] Write failing tests on the fixture:
+- [x] Write failing tests on the fixture:
   - a validated doc without the stamp makes its bundle not cached;
   - a stamped doc is cached;
   - a clean doc is cached;
   - `bundle.py` prints the re-queued count.
-- [ ] Implement the changes in spec §6.
-- [ ] Run the full suite, then commit: `Re-investigate findings validated under older rules`.
+- [x] Implement the changes in spec §6.
+- [x] Run the full suite, then commit: `Re-investigate findings validated under older rules`.
 
 ### Task 5: Prompts, docs, version (AC-6)
 
 **Files:** `agents/thunderstruck-investigator.md`, `skills/thunderstruck-scan/SKILL.md`, a test asserting the forms appear, `CHANGELOG.md`, and version `0.5.0` in all four places.
 
-- [ ] Add the accepted-forms text (spec §7), and a test that looks for `"42-118"`, "tracked" and "no `./`" in both files.
-- [ ] Add a CHANGELOG entry. It notes that findings from earlier scans are investigated again once.
-- [ ] Run the full suite, `gen_catalog_docs.py --check`, `gen_sample_report.py --check` and `claude plugin validate . --strict`, then commit: `State the accepted path and line forms to the investigator; bump to 0.5.0`.
+- [x] Add the accepted-forms text (spec §7), and a test that looks for `"42-118"`, "tracked" and "no `./`" in both files.
+- [x] Add a CHANGELOG entry. It notes that findings from earlier scans are investigated again once.
+- [x] Run the full suite, `gen_catalog_docs.py --check`, `gen_sample_report.py --check` and `claude plugin validate . --strict`, then commit: `State the accepted path and line forms to the investigator; bump to 0.5.0`.
 
 ## AC coverage
 

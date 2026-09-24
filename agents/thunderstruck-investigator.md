@@ -77,6 +77,13 @@ if any of these fail, and you get exactly one chance to repair it.
   `S0x@path:line` copied exactly
   from a detector lead in the bundle. A `catalog` ref is an edge copied exactly
   from the Service context section, e.g. `dependencyOf component:default/web-frontend`.
+- **Paths and line ranges have one form.** Copy every path exactly as the
+  bundle shows it: relative to the repository root, no `./`, no `..`, never
+  absolute, and naming a file git tracks (untracked, ignored, symlinked and
+  submodule files are rejected). `location.lines` is a line (`"42"`) or a
+  range (`"42-118"`) with start ≤ end, inside the file; leave it out when the
+  finding is about the whole file. A `code` ref is `path:42` or
+  `path:42-118` under the same rules.
 - **Catalog evidence only supports.** Cite an edge only when the failure
   plausibly reaches that neighbour, always alongside `code` evidence, and word
   `blast_radius` at component level ("web-frontend depends on this
