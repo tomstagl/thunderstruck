@@ -114,7 +114,8 @@ def test_rejected_paths_are_never_opened(repo, tmp_path, monkeypatch):
     monkeypatch.setattr(os, "open", spying(os.open))
     for path in ("src/../../outside.txt", str(outside), "../outside.txt", "gen/out.ts"):
         _validator(repo).check_document(_doc(path, code_ref=f"{path}:1"))
-    assert not [p for p in opened if "outside" in p or "gen" in p], opened
+    forbidden = {str(outside), str(tmp_path / "outside.txt"), str(repo / "gen" / "out.ts")}
+    assert not [p for p in opened if p in forbidden or p.endswith(("/outside.txt", "/gen/out.ts"))], opened
 
 
 def test_tracked_dir_replaced_by_a_symlink_to_outside(repo, tmp_path):
@@ -207,12 +208,14 @@ def test_a_tracked_path_replaced_by_a_fifo_does_not_block(repo):
     import signal
     (repo / "src" / "a.ts").unlink()
     os.mkfifo(repo / "src" / "a.ts")
-    signal.signal(signal.SIGALRM, lambda *_: pytest.fail("validation blocked on a FIFO"))
+    previous = signal.signal(signal.SIGALRM,
+                             lambda *_: pytest.fail("validation blocked on a FIFO"))
     signal.alarm(5)
     try:
         errors = _validator(repo).check_document(_doc("src/a.ts"))
     finally:
         signal.alarm(0)
+        signal.signal(signal.SIGALRM, previous)
     assert any("not a regular file" in e for e in errors), errors
 
 
@@ -422,3 +425,73 @@ def test_the_investigator_is_told_the_accepted_forms(plugin_root, rel):
     text = (plugin_root / rel).read_text(encoding="utf-8")
     for form in ('"42-118"', "start ≤ end", "no `./`", "no `..`", "git tracks"):
         assert form in text, f"{rel} no longer states {form}"
+
+
+
+# ------------------------------------------------------- code review fixes --
+
+
+def test_a_symlink_loop_is_rejected_not_raised(repo):
+    (repo / "lib").mkdir()
+    (repo / "lib" / "b.ts").write_text("x\n")
+    _git(repo, "add", "lib")
+    _git(repo, "commit", "-qm", "lib")
+    (repo / "lib" / "b.ts").unlink()
+    (repo / "lib").rmdir()
+    (repo / "lib").symlink_to("lib")
+    errors = _validator(repo).check_document(_doc("lib/b.ts"))
+    assert any("symbolic link" in e for e in errors), errors
+
+
+def test_a_tracked_posix_name_with_a_colon_is_not_absolute(repo):
+    (repo / "a:b.ts").write_text("x\n")
+    _git(repo, "add", "a:b.ts")
+    _git(repo, "commit", "-qm", "colon")
+    doc = _doc("a:b.ts", code_ref="src/a.ts:1")
+    assert _validator(repo).check_document(doc) == []
+
+
+def test_a_line_and_column_ref_names_the_accepted_form(repo):
+    errors = _validator(repo).check_document(_doc("src/a.ts", code_ref="src/a.ts:1:3"))
+    assert any("is not path:line or path:start-end" in e for e in errors), errors
+
+
+def test_a_one_line_file_says_line_not_lines(repo):
+    (repo / "one.ts").write_text("x\n")
+    _git(repo, "add", "one.ts")
+    _git(repo, "commit", "-qm", "one")
+    errors = _validator(repo).check_document(_doc("one.ts", "2"))
+    assert errors and "which has 1 line " in errors[0], errors
+
+
+def test_save_finding_keeps_malformed_findings_for_the_repair_round(scanned_copy, plugin_root):
+    import json
+    import sys
+    from test_pipeline import _hotspots
+    _bundle(scanned_copy, plugin_root)
+    hid = _hotspots(scanned_copy)["hotspots"][0]["id"]
+    proc = subprocess.run([sys.executable, str(plugin_root / "scripts" / "save_finding.py"),
+                           "--repo", str(scanned_copy), "--id", hid],
+                          input=json.dumps({"findings": 5}), capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+    saved = json.loads((scanned_copy / ".thunderstruck" / "findings" / f"{hid}.json").read_text())
+    assert saved["findings"] == 5, "validate.py reports it, and the repair round can fix it"
+
+
+def test_bundle_survives_a_malformed_cached_file(scanned_copy, plugin_root):
+    from test_pipeline import _hotspots
+    hid = _hotspots(scanned_copy)["hotspots"][0]["id"]
+    bundles, _ = _bundle(scanned_copy, plugin_root)
+    _saved(scanned_copy, hid, {"hotspot_id": hid, "findings": 5}, bundles[hid]["bundle_hash"])
+    _bundle(scanned_copy, plugin_root)                   # must not raise
+
+
+def test_bundle_treats_an_uncheckable_cached_file_as_stale(scanned_copy, plugin_root, monkeypatch):
+    import bundle
+    import validate
+
+    def boom(self, doc):
+        raise c.ThunderstruckError("git ls-files failed")
+    monkeypatch.setattr(validate.Validator, "check_document", boom)
+    assert bundle._still_valid(validate.Validator(scanned_copy, {"hotspots": []},
+                                                  c.load_catalog()), {}) is False

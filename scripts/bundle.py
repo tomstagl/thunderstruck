@@ -439,14 +439,20 @@ def _validated_under_older_rules(doc: dict) -> bool:
     output, so its presence means "validated"; clean and failed files carry no
     findings and are reused as before.
     """
-    validated = any(isinstance(f, dict) and "key" in f for f in doc.get("findings") or [])
+    findings = doc.get("findings")
+    validated = isinstance(findings, list) and any(
+        isinstance(f, dict) and "key" in f for f in findings)
     return validated and doc.get("validated_with") != c.VALIDATION_RULES
 
 
-def _validator(repo: Path, data: dict, catalog: dict, ctx: dict | None, hid: str):
-    from validate import Validator
-    return Validator(repo, data, catalog, context=ctx,
-                     bundle_context={hid: ctx["context_hash"] if ctx else None})
+def _still_valid(validator, doc: dict) -> bool:
+    """Today's rules on a file older rules passed. Any failure to check it,
+    git included, counts as invalid: the hotspot is investigated again rather
+    than the scan failing on one bad cached file."""
+    try:
+        return not validator.check_document(doc)
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -478,6 +484,7 @@ def main(argv: list[str] | None = None) -> int:
     findings_dir = c.out_dir(repo) / "findings"
     index = []
     requeued = 0
+    validator = None  # built once, only if some cached file needs a re-check
     for hs in hotspots:
         body = build_bundle(repo, hs, data, catalog, profile,
                             args.budget, args.commits, hotspots, ctx)
@@ -493,7 +500,12 @@ def main(argv: list[str] | None = None) -> int:
         if cached and _validated_under_older_rules(cached_doc):
             # re-check with today's rules: reuse what still passes, re-investigate
             # what doesn't (the scan's validate step re-stamps what passes)
-            cached = not _validator(repo, data, catalog, ctx, hs["id"]).check_document(cached_doc)
+            if validator is None:
+                from validate import Validator
+                ctx_hash = ctx["context_hash"] if ctx else None
+                validator = Validator(repo, data, catalog, context=ctx,
+                                      bundle_context={h["id"]: ctx_hash for h in hotspots})
+            cached = _still_valid(validator, cached_doc)
             requeued += not cached
 
         index.append({"id": hs["id"], "file": hs["file"], "bundle": str(path),

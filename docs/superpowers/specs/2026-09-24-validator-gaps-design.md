@@ -147,6 +147,6 @@ The investigator prompt (`agents/thunderstruck-investigator.md`) and the repair-
 
 ## 11. Open design questions
 
-- **Follow-up (review finding 10):** `signals.py` can still rank files that can never validate. It checks candidates with `is_file()`, which follows symlinks, and it lists files with `git ls-files` without `-z`, so non-ASCII names come back quoted. That is outside #25's criteria; a follow-up ticket makes signals use `tracked_index` and skip symlinks and submodules.
+- **Follow-up (review finding 10):** `signals.py` can still rank files that can never validate. It checks candidates with `is_file()`, which follows symlinks, and it lists files with `git ls-files` without `-z`, so non-ASCII names come back quoted. That is outside #25's criteria and is tracked in #30.
 
 - The backslash rule could reject a legitimate Linux file name that contains `\`. That is vanishingly rare in source trees, and such a file can still be cited once the rule is relaxed. It is kept strict for now.

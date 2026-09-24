@@ -77,7 +77,8 @@ def range_fits(span: tuple[int, int] | None, total: int) -> bool:
 
 def range_error(rel: str, total: int) -> str:
     """The one message for any unusable line range, in a location or a code ref."""
-    return f"that line does not exist: use {RANGE_FORM} inside {rel}, which has {total} lines"
+    lines = "line" if total == 1 else "lines"
+    return f"that line does not exist: use {RANGE_FORM} inside {rel}, which has {total} {lines}"
 
 
 def _count_lines(path: Path) -> int | None:
@@ -121,6 +122,12 @@ class Validator:
             self._index = c.tracked_index(self.repo)
         return self._index
 
+    def _resolves_to_itself(self, path: Path, rel: str) -> bool:
+        try:
+            return path.resolve() == self.repo.resolve() / rel
+        except (OSError, RuntimeError):  # a symlink loop raises on Python 3.11
+            return False
+
     def _spelling_hint(self, rel: str) -> str:
         lowered = rel.lower()
         match = next((p for p in self._tracked() if p.lower() == lowered), None)
@@ -144,17 +151,20 @@ class Validator:
             error = (f"{why}. Cite the path relative to the repository root, exactly "
                      f"as the bundle shows it")
         elif (mode := self._tracked().get(rel)) is None:
-            if os.path.isdir(path):
+            hint = self._spelling_hint(rel)
+            if hint:
+                error = "is not tracked under that spelling" + hint
+            elif os.path.isdir(path):
                 error = "is a directory, not a file"
             elif os.path.lexists(path):
                 error = "is not tracked by git; untracked and ignored files can't be cited"
             else:
-                error = "no such file in the repository" + self._spelling_hint(rel)
+                error = "no such file in the repository"
         elif mode == "120000":
             error = "is a symbolic link; cite the file it points to"
         elif mode == "160000":
             error = "is a submodule, not a file"
-        elif path.resolve() != self.repo.resolve() / rel:
+        elif not self._resolves_to_itself(path, rel):
             # a tracked path replaced locally by a link, even to a file inside
             # the repository such as an ignored .env, is not what git tracks
             error = "passes through a symbolic link in the working tree"
@@ -194,7 +204,7 @@ class Validator:
         if etype == "code":
             m = CODE_REF.match(ref)
             raw_path = m["path"] if m else ref.rpartition(":")[0]
-            if not m and not raw_path:
+            if not m and (not raw_path or re.search(r":[0-9]+\Z", raw_path)):
                 errors.append(f"{where}.ref {ref!r} is not path:line or path:start-end")
                 return etype
             rel, total, problem = self._resolve(raw_path)

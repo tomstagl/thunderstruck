@@ -382,7 +382,7 @@ def ref_path(path: Any) -> str:
     return rel
 
 
-_DRIVE = re.compile(r"^[A-Za-z]:")
+_DRIVE = re.compile(r"^[A-Za-z]:[/\\]")   # C:/ or C:\ — a POSIX name like a:b.ts is fine
 
 
 def path_problem(rel: str) -> str | None:
