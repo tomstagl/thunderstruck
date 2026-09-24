@@ -74,14 +74,14 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 |---|---|
 | Trigger | The releases API returns 5xx or times out for more than two seconds while several callers are active |
 | Amplifier | withRetry retries 3 times inside a loop that retries 5 times; attempts multiply to 15 rather than adding |
-| Sustaining effect | Every client waits exactly SLEEP_MS and returns together, so the upstream is re-saturated the moment it starts recovering — the herd re-forms on its own schedule |
+| Sustaining effect | Every client waits exactly SLEEP\_MS and returns together, so the upstream is re-saturated the moment it starts recovering — the herd re-forms on its own schedule |
 | Blast radius | Every feature that resolves a release, including user-facing lookups; the catalog lists web-frontend as depending on this component |
 | Dependents / dependencies | `component:default/web-frontend` (inbound; tier: 2) |
 | Missing patterns | `S02`, `S10` |
 
 **Evidence**
 
-- _code_ [`src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/releases.ts#L16) — setTimeout(resolve, SLEEP_MS)
+- _code_ [`src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/releases.ts#L16) — setTimeout(resolve, SLEEP\_MS)
 - _commit_ [`cab143e`](https://github.example.com/acme/fixture/commit/cab143e2bb7f28e6e32db82f10846070ff48fff0) — most recent change to this file
 - _detector_ [`S02@src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/releases.ts#L16) — lead confirmed against the code
 - _catalog_ `dependencyOf component:default/web-frontend` — listed in the service catalog as depending on this component
@@ -113,7 +113,7 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 - _detector_ [`S07@src/sync/collection.ts:6`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/sync/collection.ts#L6) — lead confirmed against the code
 
 **Verify** — Kill the process after page 2 of a 5-page sync, restart it, and assert no row is created twice and page 1 is not refetched  
-**Why this confidence** — The loop has no persisted cursor and db.create is not an upsert; three commits in the window describe duplicate rows and restarts  
+**Why this confidence** — The loop has no persisted cursor and `db.create` is not an upsert; three commits in the window describe duplicate rows and restarts  
 **Prediction** — Duplicate-row reports will recur after any sync incident  
 
 <sub>stable key `480a1ba2865f`</sub>
@@ -185,7 +185,7 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 
 **Evidence**
 
-- _code_ [`src/client/api.ts:6`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/api.ts#L6) — res.status === 429
+- _code_ [`src/client/api.ts:6`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/api.ts#L6) — `res.status` === 429
 - _commit_ [`caa1a5b`](https://github.example.com/acme/fixture/commit/caa1a5bbcfa87eb794bdada5446c12744035cb92) — most recent change to this file
 - _detector_ [`S03@src/client/api.ts:6`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/api.ts#L6) — lead confirmed against the code
 

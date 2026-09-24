@@ -10,6 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import mdtext
 import report
 from build_fixture import add_remote
 from test_pipeline import _hotspots, _valid_finding, _validate, _write_finding
@@ -112,7 +113,7 @@ def test_invalid_profile_does_not_fail_the_report(linked_copy, plugin_root):
     (linked_copy / ".thunderstruck.toml").write_text("[links]\nprovider = 'gitea'\n")
     md, _, _ = _render(linked_copy, plugin_root)
     assert "](http" not in md
-    assert "references are not linked: [links] provider" in md
+    assert mdtext.text("references are not linked: [links] provider") in md
 
 
 def test_token_in_remote_never_reaches_output(scanned_copy, plugin_root):
@@ -136,7 +137,7 @@ def test_file_edited_after_the_scan_is_not_linked(linked_copy, plugin_root):
     md = (linked_copy / ".thunderstruck" / "report.md").read_text()
     assert f"`{file}:1-2`" in md and f"[`{file}:1-2`]" not in md
     assert re.search(rf"differ from the scanned commit [0-9a-f]{{7}} or are not in it, "
-                     rf"and are not linked: {re.escape(file)}", md)
+                     rf"and are not linked: {re.escape(mdtext.text(file))}", md)
     # commits are not files: they stay linked
     assert "/commit/" in md
 
@@ -236,7 +237,7 @@ def test_non_utf8_profile_is_reported_as_unreadable(linked_copy, plugin_root):
     (linked_copy / ".thunderstruck" / "validation.json").write_text(json.dumps(
         {"results": [{"hotspot_id": hid, "valid": True}]}))
     md = report.render_markdown(report.collect(linked_copy), linked_copy)
-    assert "references are not linked: .thunderstruck.toml could not be read" in md
+    assert mdtext.text("references are not linked: .thunderstruck.toml could not be read") in md
 
 
 def test_code_spans_survive_backticks():

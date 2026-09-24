@@ -40,7 +40,10 @@ jobs:
           git config --global init.defaultBranch main
 
       - name: Run the test suite
-        run: uv run --python ${{ matrix.python }} --with pytest --with pyyaml --with lizard pytest tests/ -v
+        # the renderer tests (#28) must run in CI, never skip
+        env:
+          THUNDERSTRUCK_REQUIRE_RENDERER: "1"
+        run: uv run --python ${{ matrix.python }} --with pytest --with pyyaml --with lizard --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/ -v
 
       - name: Generated docs are in sync
         run: uv run --python ${{ matrix.python }} scripts/gen_catalog_docs.py --check
