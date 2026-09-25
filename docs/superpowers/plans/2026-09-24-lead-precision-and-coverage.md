@@ -95,7 +95,7 @@ Satisfies: AC-8.
 - Modify: `catalog/stability.yaml` header comment (document `require` for `regex`)
 - Create: `tests/test_engine_v2.py`
 
-- [ ] **Step 1: Failing tests** in `tests/test_engine_v2.py`
+- [x] **Step 1: Failing tests** in `tests/test_engine_v2.py`
 
 ```python
 from __future__ import annotations
@@ -149,13 +149,13 @@ def test_hash_inside_multiline_string_is_kept():
     assert "# not a comment" in _common.strip_comments(src, "python")
 ```
 
-- [ ] **Step 2: Run and confirm they fail**
+- [x] **Step 2: Run and confirm they fail**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard pytest tests/test_engine_v2.py -q
 ```
 
-- [ ] **Step 3: `require` in `_run_regex`.** Insert before the line loop:
+- [x] **Step 3: `require` in `_run_regex`.** Insert before the line loop:
 
 ```python
     req = det.get("require")
@@ -164,7 +164,7 @@ uv run --with pytest --with pyyaml --with lizard pytest tests/test_engine_v2.py 
         return []  # the file never does the thing the pattern guards
 ```
 
-- [ ] **Step 4: Docstring rule in `_strip_python`** (spec §6.1). Track
+- [x] **Step 4: Docstring rule in `_strip_python`** (spec §6.1). Track
   `depth` (open brackets outside strings and comments), `prev_code` (the
   last non-blank line after stripping) and `in_string`. At a line matching
   `_PY_DOCSTRING_START`:
@@ -180,10 +180,10 @@ uv run --with pytest --with pyyaml --with lizard pytest tests/test_engine_v2.py 
   quote opening mid-line (`Q = """`), which then copies the following lines
   verbatim until it closes.
 
-- [ ] **Step 5:** Tests green, then the full suite. S08-py samples must not
+- [x] **Step 5:** Tests green, then the full suite. S08-py samples must not
   change.
 
-- [ ] **Step 6: Commit** `engine: require on regex detectors; triple-quoted arguments are strings (AC-8)`
+- [x] **Step 6: Commit** `engine: require on regex detectors; triple-quoted arguments are strings (AC-8)`
 
 ---
 

@@ -554,56 +554,101 @@ def _strip_cstyle(text: str) -> str:
 _PY_DOCSTRING_START = re.compile(r'^[ \t]*[rbuRBU]{0,2}("""|\'\'\')')
 
 
+# A triple quote that opens a line continues an expression, and is a string
+# rather than a docstring, when the previous code line leaves one open.
+_PY_CONTINUES = re.compile(r"(?:[=,\\+\-*/%|&^<>~@]|\b(?:and|or|not|in|is))\s*$")
+
+
+def _py_code(segment: str, depth: int) -> tuple[str, int, str | None]:
+    """Strip a `#` comment from one line of code, keeping string literals.
+
+    Returns the processed text, the bracket depth after it, and the triple
+    quote left open at its end (None if every string closed on this line).
+    """
+    result: list[str] = []
+    i, n, quote = 0, len(segment), None
+    while i < n:
+        ch = segment[i]
+        if quote:
+            if ch == "\\":
+                result.append(segment[i:i + 2])
+                i += 2
+                continue
+            if segment.startswith(quote, i):
+                result.append(quote)
+                i += len(quote)
+                quote = None
+                continue
+            result.append(ch)
+            i += 1
+        elif ch in "\"'":
+            triple = segment[i:i + 3]
+            quote = triple if triple in ('"""', "'''") else ch
+            result.append(quote)
+            i += len(quote)
+        elif ch == "#":
+            result.append(_blank(segment[i:]))
+            break
+        else:
+            if ch in "([{":
+                depth += 1
+            elif ch in ")]}":
+                depth = max(0, depth - 1)
+            result.append(ch)
+            i += 1
+    # A single-quoted string can't span lines; only a triple quote stays open.
+    open_triple = quote if quote in ('"""', "'''") else None
+    return "".join(result), depth, open_triple
+
+
 def _strip_python(text: str) -> str:
-    lines = text.split("\n")
+    """Blank comments and docstrings; keep every other string verbatim.
+
+    A triple quote that opens a line is a docstring unless it continues an
+    expression: an open bracket, or a previous code line ending in `=`, `,`,
+    a backslash or an operator. So SQL passed on its own lines to
+    `cur.execute(` stays visible to detectors, while a docstring after a
+    multi-line signature or after `x = 1` is still blanked.
+    """
     out: list[str] = []
-    in_doc: str | None = None
-    for line in lines:
-        if in_doc is not None:
-            end = line.find(in_doc)
+    in_string: str | None = None  # open triple quote
+    in_doc = False                # ...and whether it is a docstring
+    depth = 0
+    prev_code = ""
+    for line in text.split("\n"):
+        if in_string is not None:
+            end = line.find(in_string)
             if end == -1:
-                out.append(_blank(line))
-            else:
-                out.append(_blank(line[: end + 3]) + line[end + 3:])
-                in_doc = None
+                out.append(_blank(line) if in_doc else line)
+                continue
+            head = line[: end + 3]
+            in_string = None
+            code, depth, in_string = _py_code(line[end + 3:], depth)
+            out.append((_blank(head) if in_doc else head) + code)
+            in_doc = False
+            if code.strip():
+                prev_code = code
             continue
 
         m = _PY_DOCSTRING_START.match(line)
-        if m:
+        if m and not (depth > 0 or _PY_CONTINUES.search(prev_code.rstrip())):
             quote = m.group(1)
             rest = line[m.end():]
             if quote in rest:  # single-line docstring
                 cut = m.end() + rest.find(quote) + 3
-                out.append(_blank(line[:cut]) + line[cut:])
+                code, depth, in_string = _py_code(line[cut:], depth)
+                out.append(_blank(line[:cut]) + code)
             else:
                 out.append(_blank(line))
-                in_doc = quote
+                in_string, in_doc = quote, True
+            prev_code = '"""'  # a docstring is a complete statement
             continue
 
-        # Strip a trailing # comment, but not a # inside a string literal.
-        result, i, n_l, quote = [], 0, len(line), None
-        while i < n_l:
-            ch = line[i]
-            if quote:
-                result.append(ch)
-                if ch == "\\":
-                    if i + 1 < n_l:
-                        result.append(line[i + 1])
-                    i += 2
-                    continue
-                if ch == quote:
-                    quote = None
-            elif ch in "\"'":
-                quote = ch
-                result.append(ch)
-            elif ch == "#":
-                result.append(_blank(line[i:]))
-                i = n_l
-                break
-            else:
-                result.append(ch)
-            i += 1
-        out.append("".join(result))
+        code, depth, in_string = _py_code(line, depth)
+        in_doc = False
+        out.append(code)
+        if code.strip():
+            prev_code = code
     return "\n".join(out)
 
 

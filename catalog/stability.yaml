@@ -11,7 +11,9 @@
 # Detector kinds
 #   regex        `pattern` matches a line. Optional `absent_within` (regex that
 #                must NOT appear in the `window` lines from the match) and
-#                `present_within` (regex that MUST appear there).
+#                `present_within` (regex that MUST appear there). Optional
+#                `require` means the same as for file_absent: the file must
+#                match it somewhere, or the detector is skipped.
 #   file_absent  `anchor` matches somewhere in the file AND `absent` matches
 #                nowhere in it. Optional `require` must ALSO match somewhere
 #                in the file — use it to scope a whole-file absence to files
