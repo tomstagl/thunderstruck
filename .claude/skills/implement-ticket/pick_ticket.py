@@ -26,7 +26,7 @@ STALE_AFTER = timedelta(hours=24)
 
 # A placeholder such as YYYY-MM-DD-topic-design.md never matches, so a ticket
 # whose spec is "to be written" reports that it has no spec path.
-_EDGE = r"(?<![\w/.-])"
+_EDGE = r"(?<![\w.-])"  # a "/" may precede: a blob URL names the same path
 SPEC_RE = re.compile(_EDGE + r"docs/superpowers/specs/\d{4}-\d{2}-\d{2}-[a-z0-9-]+-design\.md")
 PLAN_RE = re.compile(_EDGE + r"docs/superpowers/plans/\d{4}-\d{2}-\d{2}-[a-z0-9-]+\.md")
 

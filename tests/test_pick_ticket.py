@@ -154,6 +154,12 @@ def test_the_same_path_twice_is_one_path(repo, tmp_path):
     assert out["picked"]["number"] == 39
 
 
+def test_a_path_inside_a_blob_url_counts(repo, tmp_path):
+    body = f"[spec](https://github.com/o/r/blob/main/{SPEC})\n`{PLAN}`"
+    _, out, _ = run(repo, tmp_path, candidates(issue(body=body)))
+    assert out["picked"]["spec"] == SPEC
+
+
 def test_no_plan_path(repo, tmp_path):
     assert reason(repo, tmp_path, issue(body=f"`{SPEC}`")) == "no plan path in ticket"
 
