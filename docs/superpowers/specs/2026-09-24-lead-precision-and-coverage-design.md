@@ -101,7 +101,7 @@ census. It is detector output. The table becomes:
 
 | Column | Source |
 |---|---|
-| `Files with an unconfirmed lead` | as today |
+| `Files with an unconfirmed lead` | files with a lead of this pattern, minus the files where a validated finding cites that pattern's lead (so the column means what it says) |
 | `Leads read` | detector hits inside investigated hotspots |
 | `Leads confirmed` | distinct `detector` refs of this pattern cited by a finding that passed validation |
 | `Findings` | as today |
@@ -335,8 +335,13 @@ The stability weight carries these files.
 New default excludes: dirs `.github`, `.circleci`, `.gitlab`; globs
 `.gitlab-ci.yml`, `docker-compose*.y*ml`, `mkdocs.yml`,
 `.pre-commit-config.yaml`, `openapi*.y*ml`, `swagger*.y*ml`,
-`*.config.{ts,js,mjs,cjs}` (tooling). CI and tooling configuration fails
-builds, not production.
+and `<tool>.config.*` for named build and test tools (`playwright`,
+`vitest`, `vite`, `jest`, `webpack`, `next`, `eslint` and similar) (tooling).
+CI and tooling configuration fails builds, not production. A blanket
+`*.config.ts` was the first draft. Review found it also dropped runtime
+configuration such as NestJS `database.config.ts` and Angular
+`app.config.ts`, which hold exactly the timeouts and pool sizes this tool
+looks for, so only named tools are excluded.
 
 ### 7.2 Detectors (all `confidence: low` until calibrated)
 

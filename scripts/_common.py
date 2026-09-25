@@ -8,6 +8,7 @@ needs (paths, hashing) are stdlib-only so the hook can run on bare python3.
 from __future__ import annotations
 
 import errno
+import functools
 import hashlib
 import json
 import os
@@ -31,14 +32,38 @@ CONTEXT_USABLE = ("fresh", "cached", "stale")
 MAX_NEIGHBOURS_PER_DIRECTION = 25
 
 # Files that are churn-heavy or complexity-heavy for reasons that say nothing
-# about fragility. Scanning them wastes subagents on noise.
-DEFAULT_EXCLUDE_GLOBS = [
-    "*.lock", "*.lockb", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
-    "poetry.lock", "uv.lock", "Cargo.lock", "composer.lock", "Gemfile.lock",
-    "*.min.js", "*.min.css", "*.map", "*.snap",
-    "*.generated.*", "*_pb2.py", "*_pb2_grpc.py", "*.pb.go", "*.g.dart",
-    "*.svg", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.ico", "*.pdf",
-    "*.woff", "*.woff2", "*.ttf", "*.eot",
+# about fragility. Scanning them wastes subagents on noise. Each entry carries
+# the reason the report's "Not scanned" section gives for it; an entry a
+# profile adds reports "profile".
+_EXCLUDE_GLOB_GROUPS: list[tuple[str, list[str]]] = [
+    ("asset", ["*.lock", "*.lockb", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
+               "poetry.lock", "uv.lock", "Cargo.lock", "composer.lock", "Gemfile.lock",
+               "*.map", "*.snap",
+               "*.svg", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.ico", "*.pdf",
+               "*.woff", "*.woff2", "*.ttf", "*.eot"]),
+    ("build", ["*.min.js", "*.min.css"]),
+    ("generated", ["*.generated.*", "*_pb2.py", "*_pb2_grpc.py", "*.pb.go", "*.g.dart",
+                   "*.d.ts", "*.pyi", "openapi*.yaml", "openapi*.yml",
+                   "swagger*.yaml", "swagger*.yml"]),
+    # CI and tooling configuration fails builds, not production. Named tools
+    # only: `database.config.ts` or Angular's `app.config.ts` is runtime
+    # configuration, and exactly where timeouts and pool sizes live.
+    ("tooling", [f"{tool}.config.*" for tool in (
+                    "playwright", "vitest", "vite", "jest", "webpack", "rollup",
+                    "next", "nuxt", "tailwind", "postcss", "babel", "eslint",
+                    "prettier", "cypress", "karma", "svelte", "astro", "tsup",
+                    "esbuild", "commitlint", "lint-staged", "stylelint", "metro",
+                    "docusaurus", "vue", "remix", "turbo", "wrangler")]
+                + ["karma.conf.*", ".gitlab-ci.yml", "docker-compose*.yml",
+                   "docker-compose*.yaml", "mkdocs.yml", ".pre-commit-config.yaml"]),
+]
+_EXCLUDE_DIR_GROUPS: list[tuple[str, list[str]]] = [
+    ("vendored", ["node_modules", "vendor", "third_party", ".venv", "venv"]),
+    ("build", ["dist", "build", "out", ".next", ".nuxt", "target", "__pycache__",
+               ".mypy_cache", ".pytest_cache", "coverage"]),
+    ("generated", ["generated", "__generated__"]),
+    ("migration", ["migrations"]),
+    ("tooling", [".git", ".thunderstruck", ".github", ".circleci", ".gitlab"]),
 ]
 # Test code churns and branches as much as production code, but its failure
 # modes are CI failures, not outages. Ranking it spends investigators on the
@@ -46,17 +71,20 @@ DEFAULT_EXCLUDE_GLOBS = [
 DEFAULT_EXCLUDE_TEST_GLOBS = [
     "*.test.*", "*.spec.*", "test_*.py", "*_test.py", "*_test.go",
     "conftest.py", "*.fixture.*", "*.stories.*",
+    "tests.py", "*_tests.py", "*.cy.*",
 ]
 DEFAULT_EXCLUDE_TEST_DIRS = [
     "tests", "test", "__tests__", "spec", "specs", "e2e", "fixtures",
-    "testdata", "__mocks__",
+    "testdata", "__mocks__", "cypress", "benchmarks", "bench",
 ]
-DEFAULT_EXCLUDE_DIRS = [
-    "node_modules", "vendor", "third_party", "dist", "build", "out",
-    ".next", ".nuxt", "target", "__pycache__", ".venv", "venv",
-    ".git", ".mypy_cache", ".pytest_cache", "coverage", "migrations",
-    ".thunderstruck",
-]
+DEFAULT_EXCLUDE_GLOBS = [g for _, group in _EXCLUDE_GLOB_GROUPS for g in group]
+DEFAULT_EXCLUDE_DIRS = [d for _, group in _EXCLUDE_DIR_GROUPS for d in group]
+_DEFAULT_REASON = {
+    **{("glob", g): r for r, group in _EXCLUDE_GLOB_GROUPS for g in group},
+    **{("dir", d): r for r, group in _EXCLUDE_DIR_GROUPS for d in group},
+    **{("glob", g): "test" for g in DEFAULT_EXCLUDE_TEST_GLOBS},
+    **{("dir", d): "test" for d in DEFAULT_EXCLUDE_TEST_DIRS},
+}
 DEFAULT_EXCLUDE_AUTHORS = [
     "dependabot", "renovate", "github-actions", "greenkeeper",
     "snyk-bot", "imgbot", "pre-commit-ci",
@@ -220,7 +248,7 @@ def load_profile(repo_root: Path) -> dict[str, Any]:
     try:
         with path.open("rb") as fh:
             return tomllib.load(fh)
-    except (tomllib.TOMLDecodeError, OSError) as exc:
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError, OSError) as exc:
         raise ThunderstruckError(f"could not read {path}: {exc}")
 
 
@@ -302,6 +330,12 @@ def detect_language(path: str | Path, langmap: dict[str, str]) -> str | None:
     return langmap.get(Path(path).suffix.lower())
 
 
+def rank_only_with_leads(catalog: dict[str, Any], lang: str | None) -> bool:
+    """Languages (config) whose files rank only when a detector hit them."""
+    spec = (catalog.get("languages") or {}).get(lang or "") or {}
+    return bool(spec.get("rank_only_with_leads"))
+
+
 def detector_language(catalog: dict[str, Any], lang: str) -> str:
     """Resolve a language to the one its detectors are written under."""
     return (catalog.get("aliases") or {}).get(lang, lang)
@@ -345,6 +379,7 @@ class Filters:
                 # that wants to ignore one more directory should not silently
                 # start scanning node_modules.
                 getattr(f, attr).extend(str(x) for x in extra)
+        f.__post_init__()  # recompile with the profile's additions
         return f
 
     def __post_init__(self) -> None:
@@ -353,26 +388,174 @@ class Filters:
         if not self.include_tests:
             globs += DEFAULT_EXCLUDE_TEST_GLOBS
             dirs += DEFAULT_EXCLUDE_TEST_DIRS
-        self._glob_res = [_glob_to_re(g) for g in globs]
-        self._dirs = set(dirs)
+        # First entry wins, so a profile repeating a default keeps its reason.
+        self._globs: list[tuple[re.Pattern, str]] = []
+        for g in dict.fromkeys(globs):
+            self._globs.append((_glob_to_re(g), _DEFAULT_REASON.get(("glob", g), "profile")))
+        self._dirs: dict[str, str] = {}
+        for d in dirs:
+            self._dirs.setdefault(d, _DEFAULT_REASON.get(("dir", d), "profile"))
         self._authors = [a.lower() for a in self.exclude_authors]
 
-    def excludes_path(self, rel_path: str) -> bool:
-        parts = Path(rel_path).parts
-        if any(p in self._dirs for p in parts):
-            return True
+    def exclusion_reason(self, rel_path: str) -> str | None:
+        """Why a path is not scanned, or None if it is.
+
+        One of test, generated, vendored, build, migration, asset, tooling,
+        profile or path. `excludes_path` is defined by this, so the ranking
+        and the report's "Not scanned" counts can never disagree.
+        """
+        for part in Path(rel_path).parts:
+            if part in self._dirs:
+                return self._dirs[part]
         name = Path(rel_path).name
-        if any(r.match(name) for r in self._glob_res):
-            return True
+        for rx, reason in self._globs:
+            if rx.match(name):
+                return reason
         if self.path_prefix:
             prefix = self.path_prefix.strip("/")
             if prefix and not (rel_path == prefix or rel_path.startswith(prefix + "/")):
-                return True
-        return False
+                return "path"
+        return None
+
+    def excludes_path(self, rel_path: str) -> bool:
+        return self.exclusion_reason(rel_path) is not None
 
     def excludes_author(self, author: str) -> bool:
         a = (author or "").lower()
         return any(bot in a for bot in self._authors)
+
+
+# --------------------------------------------------------------------------
+# commit classification
+# --------------------------------------------------------------------------
+
+# Intent, not vocabulary. "Add retry with backoff" is resilience work, and
+# counting it as a fix makes hardening a file look like fragility.
+_CC_PREFIX = re.compile(r"^\s*([A-Za-z]+)(?:\([^)]*\))?!?:")
+_CC_KIND = {
+    **dict.fromkeys(("fix", "hotfix", "bugfix", "revert"), "fix"),
+    **dict.fromkeys(("refactor", "style", "chore", "build", "ci", "deps"), "refactor"),
+    **dict.fromkeys(("feat", "feature", "perf", "docs", "doc", "test", "tests"), "feature"),
+}
+_REVERT = re.compile(r'^\s*Revert\s+"')
+FIX_INTENT = re.compile(
+    r"(?i)\b(fix(e[ds]|ing)?|bug(s|fix)?|hotfix|revert(ed|s)?|regress\w*|"
+    r"crash(e[ds])?|outage|incident|deadlock\w*|hang(ing|s)?|stall\w*|"
+    r"leak(s|ed|ing)?|oom|broken|repair\w*)\b")
+RESILIENCE_KEYWORDS = re.compile(
+    r"(?i)\b(retry|retries|retrying|backoff|jitter|timeouts?|429|rate.?limit\w*|"
+    r"throttl\w*|circuit.?breaker\w*|idempoten\w*|dedupe?\w*)\b")
+REFACTOR_KEYWORDS = re.compile(
+    r"(?i)\b(refactor\w*|cleanup|clean.?up|rename[ds]?|tidy|reformat|lint|style|"
+    r"move[ds]?|extract\w*|simplif\w*)\b")
+COMMIT_KINDS = ("fix", "resilience", "refactor", "feature")
+
+
+@functools.lru_cache(maxsize=32)
+def _extra_fix_re(words: tuple[str, ...]) -> re.Pattern | None:
+    words = tuple(w.strip() for w in words if isinstance(w, str) and w.strip())
+    if not words:
+        return None
+    return re.compile(r"(?i)(?<!\w)(?:" + "|".join(map(re.escape, words)) + r")(?!\w)")
+
+
+def profile_fix_keywords(profile: dict[str, Any]) -> tuple[str, ...]:
+    """`[history] fix_keywords` from the profile: extra fix words for teams
+    that don't write commit subjects in English."""
+    history = profile.get("history") if isinstance(profile, dict) else None
+    words = history.get("fix_keywords") if isinstance(history, dict) else None
+    if not isinstance(words, list):
+        return ()
+    return tuple(w for w in words if isinstance(w, str) and w.strip())
+
+
+def classify_commit(subject: str, extra_fix: tuple[str, ...] = ()) -> str:
+    """fix, resilience, refactor or feature (spec §4 of the #19 design).
+
+    A Conventional Commits prefix wins. Otherwise fix intent beats resilience
+    vocabulary, which beats refactor vocabulary; anything else is a feature.
+    """
+    subject = subject or ""
+    m = _CC_PREFIX.match(subject)
+    if m and m.group(1).lower() in _CC_KIND:
+        return _CC_KIND[m.group(1).lower()]
+    extra = _extra_fix_re(tuple(extra_fix))
+    if _REVERT.match(subject) or FIX_INTENT.search(subject) or (extra and extra.search(subject)):
+        return "fix"
+    if RESILIENCE_KEYWORDS.search(subject):
+        return "resilience"
+    if REFACTOR_KEYWORDS.search(subject):
+        return "refactor"
+    return "feature"
+
+
+def path_glob_to_re(glob: str) -> re.Pattern:
+    """A repo-relative path glob: `*` and `?` stay inside one directory,
+    `**` crosses directories (`src/**/batch/*.java` matches `src/batch/X.java`
+    and `src/a/b/batch/X.java`)."""
+    out, i = [], 0
+    while i < len(glob):
+        if glob.startswith("**/", i):
+            out.append("(?:.*/)?")
+            i += 3
+        elif glob.startswith("**", i):
+            out.append(".*")
+            i += 2
+        elif glob[i] == "*":
+            out.append("[^/]*")
+            i += 1
+        elif glob[i] == "?":
+            out.append("[^/]")
+            i += 1
+        else:
+            out.append(re.escape(glob[i]))
+            i += 1
+    return re.compile("^" + "".join(out) + "$")
+
+
+@dataclass(frozen=True)
+class Suppression:
+    """A profile `[[suppress]]` rule. It silences a detector (or every
+    detector of a pattern) on matching paths, and always carries a reason,
+    which the report prints. There are no inline suppression comments: a
+    marker in the code would be the repository steering its own audit."""
+    detector: str
+    path: str
+    reason: str
+    path_re: re.Pattern
+
+    def matches(self, detector_id: str, pattern_id: str, file: str) -> bool:
+        return self.detector in (detector_id, pattern_id) and bool(self.path_re.match(file))
+
+
+def load_suppressions(profile: dict[str, Any]) -> tuple[list[Suppression], list[str]]:
+    """The profile's `[[suppress]]` rules, plus a warning for each one that is
+    ignored. A malformed rule never aborts the run."""
+    raw = profile.get("suppress") if isinstance(profile, dict) else None
+    if raw is None:
+        return [], []
+    if not isinstance(raw, list):
+        return [], [f"{PROFILE_FILENAME}: `suppress` must be an array of tables "
+                    f"([[suppress]]); ignored."]
+    rules: list[Suppression] = []
+    warnings: list[str] = []
+    for n, entry in enumerate(raw, 1):
+        where = f"{PROFILE_FILENAME}: [[suppress]] rule {n}"
+        if not isinstance(entry, dict):
+            warnings.append(f"{where} is not a table; ignored.")
+            continue
+        detector, path, reason = (entry.get(k) for k in ("detector", "path", "reason"))
+        if not isinstance(detector, str) or not detector.strip():
+            warnings.append(f"{where} has no detector; ignored.")
+        elif not isinstance(path, str) or not path.strip():
+            warnings.append(f"{where} ({detector}) has no path; ignored.")
+        elif not isinstance(reason, str) or not reason.strip():
+            warnings.append(f"{where} ({detector} on {path}) has no reason; ignored. "
+                            f"A suppression must say why.")
+        else:
+            rules.append(Suppression(detector.strip(), path.strip(), reason.strip(),
+                                     path_glob_to_re(path.strip())))
+    return rules, warnings
 
 
 # --------------------------------------------------------------------------
@@ -383,7 +566,7 @@ class Filters:
 # Bumped whenever validate.py's rules tighten. A findings file carries the
 # version that validated it; older ones are re-checked before they are reused
 # (bundle.py) and never reported unchecked (report.py).
-VALIDATION_RULES = 2
+VALIDATION_RULES = 3
 
 
 def ref_path(path: Any) -> str:
@@ -507,7 +690,39 @@ def strip_comments(text: str, lang: str) -> str:
     """
     if lang == "python":
         return _strip_python(text)
+    if lang == "yaml":
+        return "\n".join(_strip_yaml_line(line) for line in text.split("\n"))
+    if lang == "properties":
+        return "\n".join(_blank(line) if line.lstrip()[:1] in ("#", "!") else line
+                         for line in text.split("\n"))
     return _strip_cstyle(text)
+
+
+def _strip_yaml_line(line: str) -> str:
+    """A YAML `#` starts a comment at the line start or after whitespace, and
+    only outside a quoted scalar; `c#d` is part of the value."""
+    quote = None
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if quote == "'":
+            if ch == "'":
+                if line[i + 1:i + 2] == "'":  # '' is an escaped quote
+                    i += 2
+                    continue
+                quote = None
+        elif quote == '"':
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == '"':
+                quote = None
+        elif ch in "'\"" and (i == 0 or line[i - 1] in " \t:-[{,"):
+            quote = ch
+        elif ch == "#" and (i == 0 or line[i - 1] in " \t"):
+            return line[:i] + _blank(line[i:])
+        i += 1
+    return line
 
 
 def _blank(segment: str) -> str:
@@ -554,56 +769,101 @@ def _strip_cstyle(text: str) -> str:
 _PY_DOCSTRING_START = re.compile(r'^[ \t]*[rbuRBU]{0,2}("""|\'\'\')')
 
 
+# A triple quote that opens a line continues an expression, and is a string
+# rather than a docstring, when the previous code line leaves one open.
+_PY_CONTINUES = re.compile(r"(?:[=,\\+\-*/%|&^<>~@]|\b(?:and|or|not|in|is))\s*$")
+
+
+def _py_code(segment: str, depth: int) -> tuple[str, int, str | None]:
+    """Strip a `#` comment from one line of code, keeping string literals.
+
+    Returns the processed text, the bracket depth after it, and the triple
+    quote left open at its end (None if every string closed on this line).
+    """
+    result: list[str] = []
+    i, n, quote = 0, len(segment), None
+    while i < n:
+        ch = segment[i]
+        if quote:
+            if ch == "\\":
+                result.append(segment[i:i + 2])
+                i += 2
+                continue
+            if segment.startswith(quote, i):
+                result.append(quote)
+                i += len(quote)
+                quote = None
+                continue
+            result.append(ch)
+            i += 1
+        elif ch in "\"'":
+            triple = segment[i:i + 3]
+            quote = triple if triple in ('"""', "'''") else ch
+            result.append(quote)
+            i += len(quote)
+        elif ch == "#":
+            result.append(_blank(segment[i:]))
+            break
+        else:
+            if ch in "([{":
+                depth += 1
+            elif ch in ")]}":
+                depth = max(0, depth - 1)
+            result.append(ch)
+            i += 1
+    # A single-quoted string can't span lines; only a triple quote stays open.
+    open_triple = quote if quote in ('"""', "'''") else None
+    return "".join(result), depth, open_triple
+
+
 def _strip_python(text: str) -> str:
-    lines = text.split("\n")
+    """Blank comments and docstrings; keep every other string verbatim.
+
+    A triple quote that opens a line is a docstring unless it continues an
+    expression: an open bracket, or a previous code line ending in `=`, `,`,
+    a backslash or an operator. So SQL passed on its own lines to
+    `cur.execute(` stays visible to detectors, while a docstring after a
+    multi-line signature or after `x = 1` is still blanked.
+    """
     out: list[str] = []
-    in_doc: str | None = None
-    for line in lines:
-        if in_doc is not None:
-            end = line.find(in_doc)
+    in_string: str | None = None  # open triple quote
+    in_doc = False                # ...and whether it is a docstring
+    depth = 0
+    prev_code = ""
+    for line in text.split("\n"):
+        if in_string is not None:
+            end = line.find(in_string)
             if end == -1:
-                out.append(_blank(line))
-            else:
-                out.append(_blank(line[: end + 3]) + line[end + 3:])
-                in_doc = None
+                out.append(_blank(line) if in_doc else line)
+                continue
+            head = line[: end + 3]
+            in_string = None
+            code, depth, in_string = _py_code(line[end + 3:], depth)
+            out.append((_blank(head) if in_doc else head) + code)
+            in_doc = False
+            if code.strip():
+                prev_code = code
             continue
 
         m = _PY_DOCSTRING_START.match(line)
-        if m:
+        if m and not (depth > 0 or _PY_CONTINUES.search(prev_code.rstrip())):
             quote = m.group(1)
             rest = line[m.end():]
             if quote in rest:  # single-line docstring
                 cut = m.end() + rest.find(quote) + 3
-                out.append(_blank(line[:cut]) + line[cut:])
+                code, depth, in_string = _py_code(line[cut:], depth)
+                out.append(_blank(line[:cut]) + code)
             else:
                 out.append(_blank(line))
-                in_doc = quote
+                in_string, in_doc = quote, True
+            prev_code = '"""'  # a docstring is a complete statement
             continue
 
-        # Strip a trailing # comment, but not a # inside a string literal.
-        result, i, n_l, quote = [], 0, len(line), None
-        while i < n_l:
-            ch = line[i]
-            if quote:
-                result.append(ch)
-                if ch == "\\":
-                    if i + 1 < n_l:
-                        result.append(line[i + 1])
-                    i += 2
-                    continue
-                if ch == quote:
-                    quote = None
-            elif ch in "\"'":
-                quote = ch
-                result.append(ch)
-            elif ch == "#":
-                result.append(_blank(line[i:]))
-                i = n_l
-                break
-            else:
-                result.append(ch)
-            i += 1
-        out.append("".join(result))
+        code, depth, in_string = _py_code(line, depth)
+        in_doc = False
+        out.append(code)
+        if code.strip():
+            prev_code = code
     return "\n".join(out)
 
 

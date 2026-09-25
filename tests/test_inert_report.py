@@ -87,6 +87,8 @@ def test_hostile_repository_names_stay_inert(scanned_copy, plugin_root):
     hs["repo"]["branch"] = "feat/`x`](https://evil.example)"
     hs["window"]["since"] = "12m](https://evil.example)"
     hs["warnings"] = [f"warning: {HOSTILE}"]
+    hs["suppressed"] = [{"detector": "S06`](https://evil.example)", "path": "src/**|`x`",
+                         "reason": f"reason: {HOSTILE}", "hits": 1}]
     hs["hotspots"][0]["file"] = "src/`a`|b](https://evil.example).ts"
     data["clean"] = [{"hotspot_id": "H98", "file": "c|d.ts", "notes": HOSTILE}]
     data["failed"] = [{"hotspot_id": "H99", "file": "e.ts", "reason": HOSTILE,
@@ -96,6 +98,10 @@ def test_hostile_repository_names_stay_inert(scanned_copy, plugin_root):
     f.update(confidence="x](https://evil.example)", key="k`<img src=//e.co/>`",
              missing_patterns=["S02", "x`<img src=//e.co/>`"])
     f["evidence"][0]["type"] = "code_ [x](https://evil.example)"
+    commits = [ev for ev in f["evidence"] if ev.get("type") == "commit"]
+    assert commits and all("subject" in ev for ev in commits), "collect() attaches subjects"
+    for ev in commits:  # a commit subject is repository text (#19 AC-3)
+        ev.update(subject=f"subject: {HOSTILE}", kind="fix](https://evil.example)")
     data["context"] = {"entity_ref": "component:default/x](https://evil.example)",
                        "context_hash": "`<img src=//e.co/>`", "fetched_at": "<b>2026</b>",
                        "edges": [{"ref": "dependsOn x|y", "direction": "outbound](https://evil.example)",
@@ -103,7 +109,7 @@ def test_hostile_repository_names_stay_inert(scanned_copy, plugin_root):
     data["context_warnings"] = ["# fake context heading", f"ctx {HOSTILE}"]
     markdown = report.render_markdown(data, scanned_copy)
     _assert_inert(markdown)
-    ranked = markdown.split("## Ranked hotspots", 1)[1]
+    ranked = markdown.split("## Ranked hotspots", 1)[1].split("\n## ", 1)[0]
     for renderer in RENDERERS:
         rows = renderer(ranked).tags.count("tr")
         assert rows == len(hs["hotspots"]) + 1, "a hostile file name must not split the row"
@@ -151,7 +157,7 @@ def test_hostile_linked_file_names_stay_inert(scanned_copy, plugin_root):
     assert all(v["url"] and v["history_url"] for v in data["hotspot_links"].values())
     markdown = report.render_markdown(data, scanned_copy)
     _assert_inert(markdown)
-    ranked = markdown.split("## Ranked hotspots", 1)[1]
+    ranked = markdown.split("## Ranked hotspots", 1)[1].split("\n## ", 1)[0]
     for renderer in RENDERERS:
         html = renderer(ranked)
         assert html.tags.count("tr") == len(hs["hotspots"]) + 1

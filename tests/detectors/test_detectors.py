@@ -16,7 +16,8 @@ import _common
 from detectors import run_detectors
 
 SAMPLES = Path(__file__).parent / "samples"
-EXT_LANG = {".ts": "typescript", ".py": "python", ".java": "java"}
+EXT_LANG = {".ts": "typescript", ".py": "python", ".java": "java",
+            ".yaml": "yaml", ".yml": "yaml", ".properties": "properties"}
 
 
 def _cases() -> list[tuple[str, str, str, Path]]:
@@ -52,7 +53,9 @@ def test_sample(catalog, pattern_id, lang, polarity, path):
     hits = run_detectors(catalog, rel, text, lang, pattern_ids=[pattern_id])
     fired = {h.pattern_id for h in hits}
 
-    if polarity == "positive":
+    # positive_<shape> guards a real case against over-correction; any other
+    # stem (negative, negative_<shape>) must stay silent.
+    if polarity.startswith("positive"):
         assert pattern_id in fired, (
             f"{pattern_id} did not fire on its positive sample {path}.\n"
             f"Sample:\n{text}")

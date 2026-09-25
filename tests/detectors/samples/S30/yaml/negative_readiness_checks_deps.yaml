@@ -1,0 +1,11 @@
+spec:
+  containers:
+    - name: app
+      readinessProbe:
+        httpGet:
+          path: /actuator/health
+          port: 8080
+      livenessProbe:
+        httpGet:
+          path: /actuator/health/liveness
+          port: 8080

@@ -4,6 +4,36 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.8.0
+
+Trustworthy leads and visible coverage (#19).
+
+### Added
+
+- **Not scanned.** `report.md` says what the scan did not look at: files with no commit in the window, files no finding could cite, excluded paths by reason (tests, generated code, vendored code, migrations, tooling and CI config, the profile, `--path`), and extensions with no detectors. A programming language with no detectors, such as Kotlin or Go, gets a run warning with its file count. `hotspots.json` and `report.json` carry `coverage_gaps`.
+- **Lead precision.** The pattern coverage table shows files with an unconfirmed lead, leads read, and leads confirmed, with a note that 0 leads does not mean the pattern is present. `report.json` carries `lead_precision`.
+- **Dormant integration points.** Files untouched in the window that carry timeout, retry, pushback or blocking-call leads are listed (`--dormant N`, default 5; the sweep is capped by `--dormant-limit`, with a warning when the cap is hit). `/thunderstruck-scan --investigate-dormant N` investigates the first N inside the usual parallel cap.
+- **Configuration scanning.** `.yaml`/`.yml` and `.properties` are scanned and rank only when they carry a lead. New detectors: Istio VirtualService without a route timeout (S01), mesh and resilience4j retry layers (S10), and a new Tier A pattern **S30**, liveness probes that check dependencies instead of only the process.
+- **Retry-layer inventory.** `hotspots.json` `retry_layers` lists every retry layer in the repository: code, mesh and resilience4j config, and library defaults nobody configured (boto3, Feign, AWS SDK v3). Every hotspot that retries is briefed with all of them.
+- **Suppression.** `[[suppress]]` rules in `.thunderstruck.toml` silence a detector or pattern on a path glob, with a required reason. Every rule is printed in every report with its hit count. There are no inline suppression comments.
+- **`calibrate.py --summary`** prints hit counts per detector and nothing that identifies the repository, so noise on private code can be reported publicly.
+- **Commit subjects in the report.** Every cited commit shows its subject and class next to the link.
+- **Findings that span files.** `index.json` files a finding under every file it cites as code evidence, so the guardrail warns on those files too ("cited as evidence"). A hotspot cited by another finding is no longer presented as clean.
+- Calibration logs for configuration, TypeScript and Python under `docs/calibration/`.
+
+### Changed
+
+- **`high` confidence needs a corroborating commit**: a cited fix to the cited code, or, for an `OTHER`-only finding, the commit that wrote the cited lines. The most recent change to a file is no longer enough. Findings validated under the old rule are re-checked (`VALIDATION_RULES` 3).
+- **Commit classification.** A Conventional Commits prefix wins, and resilience work (retry, backoff, timeout, rate limit) is its own class instead of a fix, so hardening a file no longer makes it look fragile. `[history] fix_keywords` adds fix words for non-English commit subjects.
+- **Detector precision.** 18 reproduced false-positive shapes on correct Python, TypeScript and Java code no longer fire, each with a negative sample. S17-ts now sees `new Map<K, V>()`. S17-py drops to `low`. S27's offload window grows from 12 to 20 lines.
+- **Default excludes** cover Django `tests.py`, `*_tests.py`, Cypress, benchmarks, named build and test tool configs, `*.d.ts`, `*.pyi`, generated directories, OpenAPI specs and CI configuration.
+
+### Fixed
+
+- A profile's `exclude_dirs`, `exclude_globs` and `exclude_authors` were ignored: `Filters.from_profile` extended the lists after they had been compiled.
+- A `.thunderstruck.toml` that is not valid UTF-8 is reported as unreadable instead of crashing the report.
+- A triple-quoted Python string passed as an argument, such as SQL given to `execute()`, is no longer blanked as a docstring, so detectors see it.
+
 ## 0.7.0
 
 ### Fixed

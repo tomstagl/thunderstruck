@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -46,12 +47,17 @@ def collect(repo: Path) -> dict[str, Any]:
     validation = c.load_json(out / "validation.json", {}) or {}
     by_hotspot = {r["hotspot_id"]: r for r in validation.get("results", [])}
 
-    scores = {h["id"]: h["scores"]["score"] for h in hotspots["hotspots"]}
+    # dormant files are reported like hotspots only when they were investigated
+    dormant = hotspots.get("dormant") or []
+    briefed = {b.get("id") for b in (c.load_json(out / "bundles" / "index.json", {}) or {})
+               .get("bundles", []) if isinstance(b, dict)}
+    investigated = hotspots["hotspots"] + [d for d in dormant if d["id"] in briefed]
+    scores = {h["id"]: h["scores"]["score"] for h in investigated}
     findings: list[dict] = []
     failed: list[dict] = []
     clean: list[dict] = []
 
-    for hs in hotspots["hotspots"]:
+    for hs in investigated:
         hid = hs["id"]
         result = by_hotspot.get(hid)
         path = out / "findings" / f"{hid}.json"
@@ -90,18 +96,49 @@ def collect(repo: Path) -> dict[str, Any]:
     ))
     for n, f in enumerate(findings, 1):
         f["id"] = f"FR-{n:03d}"
+    _attach_commit_subjects(repo, findings)
     context_doc = c.load_json(out / c.CONTEXT_FILENAME, {}) or {}
     if not isinstance(context_doc, dict):
         context_doc = {}
     raw_warnings = context_doc.get("warnings")
     link_meta, link_warnings, hotspot_links = link_refs(
-        repo, hotspots["repo"]["head"], findings, hotspots["hotspots"], clean + failed)
+        repo, hotspots["repo"]["head"], findings, hotspots["hotspots"] + dormant,
+        clean + failed)
+    failed_ids = {e["hotspot_id"] for e in failed}
     return {"hotspots": hotspots, "findings": findings,
             "failed": failed, "clean": clean, "validation": validation,
+            # what an investigator actually read: briefed, and not incomplete
+            "read": [h for h in investigated if h["id"] not in failed_ids],
             "context": c.load_service_context(repo),
             "context_warnings": _context_warnings(raw_warnings),
             "links": link_meta, "link_warnings": link_warnings,
             "hotspot_links": hotspot_links}
+
+
+def _attach_commit_subjects(repo: Path, findings: list[dict]) -> None:
+    """Give every commit evidence item its subject and class, so a reader sees
+    the history itself rather than only the investigator's note on it. The
+    refs were already resolved by validate.py; a failure here renders as
+    unavailable and never fails the report."""
+    try:
+        extra_fix = c.profile_fix_keywords(c.load_profile(repo))
+    except c.ThunderstruckError:
+        extra_fix = ()
+    cache: dict[str, str | None] = {}
+    for f in findings:
+        for ev in _evidence(f):
+            if ev.get("type") != "commit" or not str(ev.get("ref") or "").strip():
+                continue
+            sha = str(ev["ref"]).split()[0]
+            if sha not in cache:
+                try:
+                    cache[sha] = c.git_paths(repo, "log", "-1", "--format=%s", sha,
+                                             "--").strip("\n")
+                except (c.ThunderstruckError, OSError, subprocess.SubprocessError):
+                    cache[sha] = None
+            subject = cache[sha]
+            ev["subject"] = subject
+            ev["kind"] = c.classify_commit(subject, extra_fix) if subject is not None else None
 
 
 def _context_warnings(raw: Any) -> list[str]:
@@ -118,6 +155,16 @@ def _context_warnings(raw: Any) -> list[str]:
 # --------------------------------------------------------------------------
 # source links
 # --------------------------------------------------------------------------
+
+
+def _cited_code_files(f: dict) -> list[str]:
+    """Files a finding cites as code evidence, in citation order, once each."""
+    out: list[str] = []
+    for ev in _evidence(f):
+        if ev.get("type") == "code" and (m := CODE_REF.match(str(ev.get("ref") or "").strip())):
+            if m["path"] not in out:
+                out.append(m["path"])
+    return out
 
 
 def link_refs(repo: Path, head: str, findings: list[dict], hotspots: list[dict] | None = None,
@@ -235,9 +282,16 @@ _linked = md.linked
 def _evidence_ref(ev: dict) -> str:
     ref = str(ev.get("ref") or "").strip()
     url = ev.get("url")
-    if ev.get("type") == "commit" and url and ref:
+    if ev.get("type") == "commit" and ref:
         sha, *rest = ref.split(None, 1)
-        return _linked(sha[:7], url) + (f" {_code(rest[0])}" if rest else "")
+        out = (_linked(sha[:7], url) + (f" {_code(rest[0])}" if rest else "")
+               if url else _linked(ref, None))
+        if "subject" in ev:
+            subject = ev.get("subject")
+            # the subject is repository text: inert, like every other value (#28)
+            out += (f" — “{md.text(subject)}” ({md.text(ev.get('kind') or '?')})"
+                    if isinstance(subject, str) else " — (subject unavailable)")
+        return out
     return _linked(str(ev.get("ref")), url)
 
 
@@ -288,6 +342,77 @@ def render_service_context(ctx: dict | None, now: datetime) -> list[str]:
     return L
 
 
+def render_dormant(data: dict) -> list[str]:
+    """Untouched files that carry integration-point leads (#19 AC-7)."""
+    rows = data["hotspots"].get("dormant") or []
+    if not rows:
+        return []
+    L = ["", "## Dormant integration points", "",
+         "No commit touched these files in the window, so they cannot rank on churn. "
+         "They carry integration-point leads (timeouts, retries, pushback, blocking "
+         "calls), and code nobody changes is often code everything depends on. They "
+         "are investigated only with `--investigate-dormant N`.", "",
+         "| # | File | Last change | Leads |",
+         "|---|---|---|---|"]
+    for d in rows:
+        pats = ", ".join(md.text(p, cell=True) for p in d["stability"]["patterns"]) or "—"
+        file_cell = _linked(d["file"], _hotspot_link(data, d["id"], "url"), cell=True)
+        when = md.text((d["churn"].get("last_modified") or "—")[:10], cell=True)
+        L.append(f"| {d['id']} | {file_cell} | {when} | {pats} |")
+    return L
+
+
+def lead_precision(data: dict) -> dict[str, dict[str, int]]:
+    """Per pattern: detector hits in the files an investigator read (hotspots
+    and investigated dormant files, not incomplete ones), and the distinct
+    ones a validated finding cites (confirmed). Over many runs this is
+    the detector's precision on code we never see (#19 AC-2)."""
+    out: dict[str, dict[str, int]] = {}
+    read = data.get("read")
+    for h in data["hotspots"]["hotspots"] if read is None else read:
+        for hit in h.get("detector_hits") or []:
+            out.setdefault(hit["pattern_id"], {"read": 0, "confirmed": 0})["read"] += 1
+    confirmed: set[str] = set()
+    for f in data["findings"]:
+        for ev in _evidence(f):
+            if ev.get("type") == "detector" and (m := DETECTOR_REF.match(str(ev.get("ref") or ""))):
+                confirmed.add(m.group(0))
+    for ref in confirmed:
+        pid = DETECTOR_REF.match(ref)["pid"]
+        out.setdefault(pid, {"read": 0, "confirmed": 0})["confirmed"] += 1
+    return dict(sorted(out.items()))
+
+
+GAP_LABELS = {"test": "test code", "generated": "generated code", "vendored": "vendored code",
+              "build": "build output", "migration": "database migrations",
+              "asset": "lock files and assets", "tooling": "CI and tooling configuration",
+              "profile": "excluded by the repo profile", "path": "outside --path"}
+
+
+def render_not_scanned(gaps: dict | None) -> list[str]:
+    """What the scan did not look at, and why. Degradation is visible (#19 AC-1)."""
+    if not isinstance(gaps, dict):
+        return []
+    L = ["## Not scanned", "",
+         f"Of {gaps.get('tracked', 0)} tracked files, {gaps.get('considered', 0)} changed in "
+         f"the window in a supported language and were considered for ranking.", ""]
+    if gaps.get("unchanged"):
+        L.append(f"- {gaps['unchanged']} in a supported language had no commit in the "
+                 f"window, so they could not rank on churn")
+    if gaps.get("not_citable"):
+        L.append(f"- {gaps['not_citable']} are not citable (symbolic links, submodules, "
+                 f"or names that are not UTF-8)")
+    for reason, n in (gaps.get("excluded") or {}).items():
+        L.append(f"- {n} excluded: {md.text(GAP_LABELS.get(reason, reason))}")
+    unsupported = gaps.get("unsupported") or {}
+    if unsupported:
+        kinds = ", ".join(f"{n} {md.code(ext) if ext != 'other' else 'other'}"
+                          for ext, n in sorted(unsupported.items(), key=lambda kv: (-kv[1], kv[0])))
+        L.append(f"- no detectors for their language or format: {kinds}")
+    L.append("")
+    return L
+
+
 def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
     hs, findings = data["hotspots"], data["findings"]
     repo_name = Path(hs["repo"]["root"]).name
@@ -318,10 +443,17 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
 
     warnings = (list(hs.get("warnings") or []) + list(data.get("context_warnings") or [])
                 + list(data.get("link_warnings") or []))
-    if warnings:
+    suppressed = hs.get("suppressed") or []
+    if warnings or suppressed:
         L += ["## Run warnings", ""]
         L += [f"- {md.text(w)}" for w in warnings]
+        if suppressed:
+            L.append(f"- **Suppressed leads** — {len(suppressed)} rule(s) in "
+                     f"{md.code(c.PROFILE_FILENAME)} silence detector hits before ranking:")
+            L += [f"  - {md.code(r['detector'])} on {md.code(r['path'])}: "
+                  f"{r['hits']} hit(s) — {md.text(r['reason'])}" for r in suppressed]
         L.append("")
+    L += render_not_scanned(hs.get("coverage_gaps"))
     L += render_service_context(data.get("context"), now or datetime.now(timezone.utc))
 
     # ---- coverage table
@@ -330,21 +462,36 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
     for f in findings:
         for pid in f.get("missing_patterns") or []:
             per_pattern[pid] = per_pattern.get(pid, 0) + 1
+    precision = lead_precision(data)
+    confirmed_files: dict[str, set[str]] = {}
+    ranked_files = {h["file"] for h in hs["hotspots"]}  # lead_files counts ranked candidates
+    for f in findings:
+        for ev in _evidence(f):
+            if ev.get("type") == "detector" and (m := DETECTOR_REF.match(str(ev.get("ref") or ""))):
+                if m["path"] in ranked_files:
+                    confirmed_files.setdefault(m["pid"], set()).add(m["path"])
     L += ["## Pattern coverage", "",
           "Leads are detector hits — mechanical, noisy, and never a finding on "
-          "their own. Findings are what survived an investigator reading the code.",
+          "their own. Findings are what survived an investigator reading the code. "
+          "*Leads read* counts the hits inside investigated hotspots; *Leads "
+          "confirmed* counts those a validated finding cites.",
           "",
-          "| ID | Pattern | Tier | Files with a lead | Findings |",
-          "|---|---|---|---|---|"]
+          "| ID | Pattern | Tier | Files with an unconfirmed lead | Leads read "
+          "| Leads confirmed | Findings |",
+          "|---|---|---|---|---|---|---|"]
     for pid, cov in sorted(hs["pattern_coverage"].items()):
         if not cov.get("scanned"):
             continue
+        p = precision.get(pid, {"read": 0, "confirmed": 0})
         L.append(f"| {md.code(pid, cell=True)} | {md.text(cov['name'], cell=True)} | {md.text(cov['tier'], cell=True)} | "
-                 f"{lead_files.get(pid, 0)} | {per_pattern.get(pid, 0)} |")
+                 f"{max(0, lead_files.get(pid, 0) - len(confirmed_files.get(pid, ())))} | "
+                 f"{p['read']} | {p['confirmed']} | "
+                 f"{per_pattern.get(pid, 0)} |")
     other = per_pattern.get("OTHER", 0)
     if other:
-        L.append(f"| `OTHER` | Not in the catalog | — | — | {other} |")
-    L.append("")
+        L.append(f"| `OTHER` | Not in the catalog | — | — | — | — | {other} |")
+    L += ["", "<sub>“0” leads means no file matched the detector's anchor. It "
+          "does not mean the pattern is present.</sub>", ""]
 
     # ---- findings
     if findings:
@@ -388,8 +535,16 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
 
     if data["clean"]:
         L += ["## Hotspots investigated with no finding", ""]
+        cited_by: dict[str, list[str]] = {}
+        for f in findings:
+            for cited in _cited_code_files(f):
+                if cited != (f.get("location") or {}).get("file"):
+                    cited_by.setdefault(cited, []).append(f["id"])
         for entry in data["clean"]:
             note = f" — {md.text(entry['notes'])}" if entry.get("notes") else ""
+            if entry["file"] in cited_by:
+                note = (" — no finding of its own; cited as evidence by "
+                        + ", ".join(cited_by[entry["file"]]) + note)
             L.append(f"- **{entry['hotspot_id']}** {_linked(entry['file'], entry.get('url'))}{note}")
         L.append("")
 
@@ -416,6 +571,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
         L.append(f"| {h['id']} | {file_cell} | {h['scores']['score']} | "
                  f"{h['churn']['commits']} | {h['churn']['fix_commits']} | "
                  f"{cx.get('ccn_max', '—')} | {pats} |")
+    L += render_dormant(data)
     L += ["",
           f"<sub>thunderstruck · catalog `{hs.get('schema')}` · "
           f"report `{c.REPORT_SCHEMA_VERSION}`</sub>", ""]
@@ -454,6 +610,13 @@ def render_json(data: dict) -> dict:
                               "edges", "truncated")}
                             if data.get("context") else None),
         "pattern_coverage": hs["pattern_coverage"],
+        "coverage_gaps": hs.get("coverage_gaps"),
+        "dormant": [{"id": d["id"], "file": d["file"],
+                     "last_modified": d["churn"].get("last_modified"),
+                     "patterns": d["stability"]["patterns"],
+                     "url": _hotspot_link(data, d["id"], "url")}
+                    for d in hs.get("dormant") or []],
+        "lead_precision": lead_precision(data),
         "findings": data["findings"],
         "clean": data["clean"],
         "incomplete": data["failed"],
@@ -469,6 +632,7 @@ def render_json(data: dict) -> dict:
 
 def render_index(data: dict) -> dict:
     files: dict[str, dict] = {}
+    secondary: list[tuple[str, dict, str]] = []
     for f in data["findings"]:
         loc = f.get("location") or {}
         path = loc.get("file")
@@ -487,6 +651,16 @@ def render_index(data: dict) -> dict:
         if f.get("catalog_evidence"):
             item["catalog_evidence"] = f["catalog_evidence"]
         entry["findings"].append(item)
+        for cited in _cited_code_files(f):
+            if cited != path:
+                secondary.append((cited, item, path))
+    # A finding also warns on every other file it cites as code evidence. Paths
+    # are canonical (#25), so one file never gets two entries.
+    hashes = {cited: h for f in data["findings"]
+              for cited, h in (f.get("evidence_hashes") or {}).items()}
+    for cited, item, anchor in secondary:
+        entry = files.setdefault(cited, {"content_hash": hashes.get(cited), "findings": []})
+        entry["findings"].append({**item, "via": "evidence", "anchor": anchor})
     return {"schema": "thunderstruck.index/v1",
             "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "head": data["hotspots"]["repo"]["head"],

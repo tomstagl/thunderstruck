@@ -1,0 +1,9 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: db
+spec:
+  hosts: [db]
+  tcp:
+    - route:
+        - destination: {host: db}

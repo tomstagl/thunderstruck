@@ -135,3 +135,29 @@ neighbour_attributes = { tier = "example.com/criticality-tier" }
 # are {base} {sha} {path} {start} {end}:
 # code_template   = "{base}/browse/{path}?at={sha}#{start}-{end}"
 # commit_template = "{base}/commits/{sha}"
+
+
+# --------------------------------------------------------------------------
+# Suppressing leads
+# --------------------------------------------------------------------------
+# A detector hit is a lead, not a finding. When a lead is wrong for this
+# repository in a way the code cannot show (a scheduled job that is
+# single-instance by deployment, a query bounded by the domain), silence it
+# here rather than turning off the whole pattern. Each rule drops matching
+# hits before ranking, so they neither raise a file's score nor reach an
+# investigator. Every rule, its reason and its hit count is printed in every
+# report.
+#
+# `detector` is a detector id (S16-java-scheduled-no-jitter) or a pattern id
+# (S16) for all of its detectors. `path` is a glob relative to the repository
+# root: `*` stays inside one directory, `**` crosses directories. `reason` is
+# required. A rule without one is ignored, with a warning.
+#
+# There are no inline "ignore" comments on purpose: text in the code that
+# tells the audit to look away is exactly what the investigator reports as a
+# finding. calibrate.py ignores these rules; it measures the detector itself.
+#
+# [[suppress]]
+# detector = "S16-java-scheduled-no-jitter"
+# path     = "src/main/java/**/batch/*.java"
+# reason   = "single-instance batch service (replicas: 1)"

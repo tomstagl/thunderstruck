@@ -8,7 +8,8 @@ Three kinds, declared in catalog/stability.yaml:
 
   regex        a line matches `pattern`; optionally a regex must be absent
                (`absent_within`) or present (`present_within`) in the next
-               `window` lines.
+               `window` lines. An optional `require` skips files it matches
+               nowhere, exactly as for file_absent.
   file_absent  `anchor` matches somewhere in the file and `absent` matches
                nowhere. An optional `require` must also match somewhere in
                the file, so a whole-file absence can be scoped to files that
@@ -107,6 +108,10 @@ def _run_regex(ctx: DetectorContext, pattern: dict, det: dict) -> list[Hit]:
     window = int(det.get("window", 1))
     offset = int(det.get("window_offset", 0))
     before = int(det.get("window_before", 0))
+    req = det.get("require")
+    if req and not _rx(req, True).search(
+            ctx.raw_text if det.get("include_comments") else ctx.code_text):
+        return []  # the file never does the thing the pattern guards
 
     hits: list[Hit] = []
     for i, line in enumerate(lines):

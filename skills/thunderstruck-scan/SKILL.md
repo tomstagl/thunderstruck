@@ -21,6 +21,7 @@ Parse these from the user's invocation. All optional.
 | `--dry-run` | off | Steps 1–2 only. Print the plan and stop. |
 | `--include-tests` | off | Rank test files too. |
 | `--refresh-context` | off | Fetch the service context even if the cached copy is fresh. |
+| `--investigate-dormant N` | 0 | Also investigate the first N dormant integration points (files untouched in the window that carry timeout/retry/pushback leads). They are always listed in the report; investigating them costs N more subagents, inside the same cap of 4 in parallel. |
 
 Every script runs from this plugin's own `scripts/` directory, by the full
 path shown in each command. Use the paths exactly as written; never look for
@@ -76,10 +77,11 @@ runs exactly as it would have without it.
 ## Step 2 — bundles
 
 ```bash
-uv run "${CLAUDE_PLUGIN_ROOT}/scripts/bundle.py"
+uv run "${CLAUDE_PLUGIN_ROOT}/scripts/bundle.py" [--investigate-dormant N]
 ```
 
-Writes one briefing per hotspot plus `.thunderstruck/catalog-brief.md`. Its
+Pass `--investigate-dormant N` only when the user gave it. Writes one
+briefing per hotspot (and per investigated dormant file, ids `D01`…) plus `.thunderstruck/catalog-brief.md`. Its
 last line reports how many need investigating and how many were reused from
 cache — a bundle whose content hash is unchanged already has a valid finding.
 Findings validated by an older version of the plugin are re-checked here:

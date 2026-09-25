@@ -1521,3 +1521,27 @@ matters.
 - `S04-java-catch-all-retry`: the string-literal test counts quotes on the line, so an escaped quote (`\"`) inside a literal, or a text block, can misplace the boundary. Retry vocabulary that exists only in a log message is ignored by design (see Lost to tightening).
 - `S19-java-empty-catch` / `S28-java-untimed-wait`: the park-forever exemption recognises only the two literal idioms. A latch held in a field and never counted down is not recognised.
 - `S03-java-*-ignores-retry-after`: `require` still accepts `.code()` on any receiver as reading a response status, so an enum accessor plus a genuine retry word elsewhere in the file can still satisfy it.
+
+## Batch 7 — S27 window 12 → 20 (#19, AC-11)
+
+#19 widened `S27-java-blocking-in-reactive`'s `window` from 12 to 20 lines, so
+a `subscribeOn(Schedulers.boundedElastic())` 13 or more lines down a Reactor
+chain counts as the offload it is (`negative_long_chain_offload.java`). A
+wider window can only suppress hits, never add them, so the risk is a
+missed true positive, not new noise. The six Batch 1 repositories, at the
+same commits as Batch 1, were swept with `calibrate.py --lang java
+--patterns S27` at both windows.
+
+| Repo | Commit | S27 hits, window 12 | S27 hits, window 20 |
+|---|---|---|---|
+| jhy/jsoup | `49a15317317970a7ea3f0a5ded303ef319860f4a` | 0 | 0 |
+| brettwooldridge/HikariCP | `a4d93f4f85517f90e632b795486d7102e933d7ff` | 0 | 0 |
+| apache/commons-pool | `c4aba65cd8445685f89422b18219ea9853e4306d` | 0 | 0 |
+| spring-petclinic/spring-petclinic-reactive | `68534cf88a9d022467b9590b953ea4fc7f78bd6b` | 0 | 0 |
+| spring-projects/spring-petclinic | `818c4136ea971c21674525f9053de0d9c7ad8cfe` | 0 | 0 |
+| spring-petclinic/spring-petclinic-microservices | `295fa8d5ee10f7b6daddf83a2c65f9051a87564b` | 0 | 0 |
+
+Delta: none. No true positive was lost on these repositories. They carry
+no S27 lead at either window, as in Batch 1, so this sweep shows the change
+costs nothing here. It does not show the wider window on a hit-bearing
+reactive codebase. The negative sample is the evidence for that case.

@@ -31,6 +31,7 @@ Scanned and reasoned about by default, at full weight.
 - RestTemplate with no connect/read timeout — its default request factory waits forever
 - WebClient built with no responseTimeout(), configured connector or per-call timeout() anywhere in the file
 - JMS receive() with no timeout — blocks the thread until a message arrives, forever if none does
+- Istio VirtualService with HTTP routes and no route timeout — the mesh default is to wait indefinitely
 
 **References.** Nygard, Release It! (2nd ed.), ch. 5 — Timeouts; Amazon Builders' Library — Timeouts, retries and backoff with jitter
 
@@ -97,7 +98,8 @@ Scanned and reasoned about by default, at full weight.
 
 **What the detectors look for.**
 
-- one queue/limiter serves all callers; no priority or criticality field
+- one shared queue/limiter declared at module or class level; no priority or criticality field
+- one shared queue/limiter/pool serves all callers; no priority or criticality field
 - one executor serves every caller; no priority or criticality separation
 
 **References.** Google SRE Book, ch. 21 — Criticality; Nygard, Release It! (2nd ed.), ch. 5 — Shed Load
@@ -127,7 +129,7 @@ Scanned and reasoned about by default, at full weight.
 
 - Promise.all over an unbounded collection — concurrency equals input size
 - Prisma findMany with no take: — result set grows with the table
-- SELECT with no LIMIT
+- multi-row SELECT with no LIMIT
 - asyncio.gather over an unbounded collection — concurrency equals input size
 - full result-set fetch with no limit
 - Spring Data repository with collection finders and no Pageable/Slice/Top-N form — every call returns the whole match set
@@ -158,7 +160,13 @@ Scanned and reasoned about by default, at full weight.
 **What the detectors look for.**
 
 - more than one retry layer in the same call path, with no shared budget
+- AWS SDK v3 client with no retry settings: the default is 3 attempts, a layer nobody wrote
+- boto3 client with no retry config: botocore retries by default, a layer nobody wrote
 - more than one retry mechanism in the same call path, with no shared budget
+- Feign builder with no retryer: Retryer.Default makes up to 5 attempts, a layer nobody wrote
+- mesh retry policy: a retry layer outside the code, which multiplies with any retry the application does
+- resilience4j retry configured in YAML: a retry layer that stacks with any other
+- resilience4j retry configured in properties: a retry layer that stacks with any other
 
 **References.** Google SRE Book, ch. 22 — Addressing Cascading Failures; Amazon Builders' Library — Timeouts, retries and backoff with jitter
 
@@ -200,6 +208,18 @@ Scanned and reasoned about by default, at full weight.
 
 **References.** Hibernate ORM user guide — Fetching; Nygard, Release It! (2nd ed.), ch. 4 — Unbounded Result Sets
 
+### S30 — Liveness checks only the process itself
+
+**Failure if absent.** A liveness probe that checks a dependency restarts healthy pods when the dependency slows. Restarts cut capacity, the survivors take more load and fail their probes too: the restart loop outlives the original blip.
+
+**Role in a metastable failure.** Usually the *sustaining*.
+
+**What the detectors look for.**
+
+- liveness probe on an aggregate or dependency health endpoint — a slow dependency restarts healthy pods
+
+**References.** Kubernetes docs — Configure Liveness, Readiness and Startup Probes; Nygard, Release It! (2nd ed.), ch. 4 — Chain Reactions
+
 ## Tier B
 
 Scanned and reasoned about by default, at lower weight.
@@ -239,6 +259,7 @@ Scanned and reasoned about by default, at lower weight.
 **What the detectors look for.**
 
 - one shared pool with no isolation between workloads
+- one shared (module-level or instance) pool with no isolation between workloads
 - one executor serves several submission sites with no second pool — every workload competes for the same threads
 - actor makes blocking calls on the default dispatcher — it starves every other actor sharing it
 
@@ -252,7 +273,7 @@ Scanned and reasoned about by default, at lower weight.
 
 **What the detectors look for.**
 
-- in-memory queue with no capacity bound or rejection path
+- module-level, class-field or this. queue with no capacity bound or rejection path
 - Queue() with no maxsize — unbounded by default
 - LinkedBlockingQueue() with no capacity — unbounded by default, absorbs overload instead of shedding it
 - Executors.newFixedThreadPool/newSingleThreadExecutor queue on an unbounded LinkedBlockingQueue
@@ -295,6 +316,7 @@ Scanned and reasoned about by default, at lower weight.
 
 **What the detectors look for.**
 
+- module-level or class-field Map cache with no TTL, eviction, or size bound
 - in-memory cache with no TTL, eviction, or size bound
 
 **References.** Nygard, Release It! (2nd ed.), ch. 5 — Steady State
@@ -319,10 +341,11 @@ Scanned and reasoned about by default, at lower weight.
 
 **What the detectors look for.**
 
-- empty catch block — the failure leaves no trace
+- empty catch block — the failure leaves no trace (a parameter named _x, ignored, expected or unused marks it deliberate)
 - catch block with no handling beyond a comment
-- except: pass — the failure leaves no trace
-- bare except catches SystemExit and KeyboardInterrupt too
+- except:/except Exception: with only pass — the failure leaves no trace
+- bare except catches SystemExit and KeyboardInterrupt too, and this one does not re-raise
+- empty catch block — the failure leaves no trace
 
 **References.** Nygard, Release It! (2nd ed.), ch. 17 — Transparency; Google SRE Book, ch. 6 — Monitoring Distributed Systems
 

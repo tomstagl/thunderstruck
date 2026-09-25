@@ -74,13 +74,15 @@ CANNED: dict[str, list[dict]] = {
         "symbol": "fetchRelease",
         "anchor": "setTimeout(resolve, SLEEP_MS)",
         "missing_patterns": ["S02", "S10"],
-        "failure_mode": "Release fetches retry on a fixed 2s schedule through two "
-                        "stacked retry layers, so one upstream blip becomes 15 "
+        "failure_mode": "Release fetches retry on a fixed 2s schedule through three "
+                        "stacked retry layers, so one upstream blip becomes 60 "
                         "requests per caller arriving in lockstep",
         "trigger_condition": "The releases API returns 5xx or times out for more "
                              "than two seconds while several callers are active",
         "amplifier": "withRetry retries 3 times inside a loop that retries 5 "
-                     "times; attempts multiply to 15 rather than adding",
+                     "times, and the mesh route retries each request up to 3 "
+                     "more times; attempts multiply to 5 x 3 x 4 = 60 rather "
+                     "than adding",
         "sustaining_effect": "Every client waits exactly SLEEP_MS and returns "
                              "together, so the upstream is re-saturated the "
                              "moment it starts recovering — the herd re-forms "
@@ -89,13 +91,20 @@ CANNED: dict[str, list[dict]] = {
                         "user-facing lookups; the catalog lists web-frontend "
                         "as depending on this component",
         "catalog": ["dependencyOf component:default/web-frontend"],
+        # the inner retry layer lives in another file; citing it files FR-001
+        # under that file too (#19 AC-4)
+        "also_cite": [("src/client/retry-wrapper.ts", "export async function withRetry",
+                       "the inner retry layer: 3 attempts per call"),
+                      ("deploy/releases-virtualservice.yaml", "attempts: 3",
+                       "the mesh layer: up to 4 tries per request, outside the code")],
         "confidence": "high",
-        "confidence_rationale": "Both retry layers are visible in the code, and "
-                                "five separate 'fix timeout' commits on this file "
-                                "in the window show the cause was never addressed",
+        "confidence_rationale": "All three retry layers are visible in the code and "
+                                "the mesh configuration, and five separate 'fix "
+                                "timeout' commits on this file in the window show "
+                                "the cause was never addressed",
         "how_to_verify": "Stub the releases endpoint to fail for 3s and call "
                          "fetchRelease from 10 clients at once; count upstream "
-                         "requests (expect 150) and assert the inter-arrival "
+                         "requests (expect 600) and assert the inter-arrival "
                          "times are not identical",
         "prediction": "The next incident on this path is a retry storm after a "
                       "brief upstream degradation, not a slow dependency",
@@ -193,6 +202,24 @@ CANNED: dict[str, list[dict]] = {
 }
 
 
+def _corroborating_commit(repo: Path, hs: dict, spec: dict, line: int,
+                          env: dict) -> tuple[str | None, str]:
+    """The commit an investigator should cite (#19 AC-5): for an OTHER-only
+    finding, the one that wrote the cited line; otherwise the most recent fix
+    to the file, or, when there is none, the most recent change."""
+    if spec["missing_patterns"] == ["OTHER"]:
+        blame = _run(["git", "-C", str(repo), "blame", "--porcelain", "-L",
+                      f"{line},{line}", "--", hs["file"]], repo, env).stdout
+        return blame.split(" ", 1)[0], "introduced this text"
+    for sha in hs["churn"]["recent_shas"]:
+        subject = _run(["git", "-C", str(repo), "log", "-1", "--format=%s", sha],
+                       repo, env).stdout.strip()
+        if c.classify_commit(subject) == "fix":
+            return sha, "most recent fix to this file"
+    shas = hs["churn"]["recent_shas"]
+    return (shas[0], "most recent change to this file") if shas else (None, "")
+
+
 def _line_of(repo: Path, rel: str, anchor: str) -> int:
     for n, line in enumerate(repo.joinpath(rel).read_text(encoding="utf-8").split("\n"), 1):
         if anchor in line:
@@ -223,6 +250,10 @@ def generate() -> str:
         add_remote(repo, SAMPLE_REMOTE)
         with (repo / c.PROFILE_FILENAME).open("a", encoding="utf-8") as fh:
             fh.write('\n[links]\nprovider = "github"\n')
+            # a reasoned suppression, so the sample shows how one is reported
+            fh.write('\n[[suppress]]\ndetector = "S15-ts-no-fallback"\n'
+                     'path = "src/client/artists.ts"\n'
+                     'reason = "artist pages fall back to the CDN snapshot at the edge"\n')
         # The whole pipeline runs without user git config, as the fixture was built
         env = isolated_git_env({k: v for k, v in os.environ.items()
                                 if not k.startswith(("FAKE_CATALOG_", "CLAUDE_PLUGIN_"))})
@@ -244,10 +275,13 @@ def generate() -> str:
                 line = _line_of(repo, hs["file"], spec["anchor"])
                 evidence = [{"type": "code", "ref": f"{hs['file']}:{line}",
                              "note": spec["anchor"]}]
-                sha = (hs["churn"]["recent_shas"] or [None])[0]
+                for rel, anchor, note in spec.get("also_cite", []):
+                    evidence.append({"type": "code",
+                                     "ref": f"{rel}:{_line_of(repo, rel, anchor)}",
+                                     "note": note})
+                sha, note = _corroborating_commit(repo, hs, spec, line, env)
                 if sha:
-                    evidence.append({"type": "commit", "ref": sha,
-                                     "note": "most recent change to this file"})
+                    evidence.append({"type": "commit", "ref": sha, "note": note})
                 hit = next((h for h in hs["detector_hits"]
                             if h["pattern_id"] in spec["missing_patterns"]), None)
                 if hit:
@@ -258,7 +292,7 @@ def generate() -> str:
                                      "note": "listed in the service catalog as "
                                              "depending on this component"})
                 item = {k: v for k, v in spec.items()
-                        if k not in ("symbol", "anchor", "catalog")}
+                        if k not in ("symbol", "anchor", "catalog", "also_cite")}
                 # the symbol's span, clamped to the file: a range past the end
                 # of the file is rejected by the validator (#25)
                 total = len((repo / hs["file"]).read_text(encoding="utf-8").splitlines())

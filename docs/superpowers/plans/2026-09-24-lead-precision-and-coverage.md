@@ -95,7 +95,7 @@ Satisfies: AC-8.
 - Modify: `catalog/stability.yaml` header comment (document `require` for `regex`)
 - Create: `tests/test_engine_v2.py`
 
-- [ ] **Step 1: Failing tests** in `tests/test_engine_v2.py`
+- [x] **Step 1: Failing tests** in `tests/test_engine_v2.py`
 
 ```python
 from __future__ import annotations
@@ -149,13 +149,13 @@ def test_hash_inside_multiline_string_is_kept():
     assert "# not a comment" in _common.strip_comments(src, "python")
 ```
 
-- [ ] **Step 2: Run and confirm they fail**
+- [x] **Step 2: Run and confirm they fail**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard pytest tests/test_engine_v2.py -q
 ```
 
-- [ ] **Step 3: `require` in `_run_regex`.** Insert before the line loop:
+- [x] **Step 3: `require` in `_run_regex`.** Insert before the line loop:
 
 ```python
     req = det.get("require")
@@ -164,7 +164,7 @@ uv run --with pytest --with pyyaml --with lizard pytest tests/test_engine_v2.py 
         return []  # the file never does the thing the pattern guards
 ```
 
-- [ ] **Step 4: Docstring rule in `_strip_python`** (spec §6.1). Track
+- [x] **Step 4: Docstring rule in `_strip_python`** (spec §6.1). Track
   `depth` (open brackets outside strings and comments), `prev_code` (the
   last non-blank line after stripping) and `in_string`. At a line matching
   `_PY_DOCSTRING_START`:
@@ -180,10 +180,10 @@ uv run --with pytest --with pyyaml --with lizard pytest tests/test_engine_v2.py 
   quote opening mid-line (`Q = """`), which then copies the following lines
   verbatim until it closes.
 
-- [ ] **Step 5:** Tests green, then the full suite. S08-py samples must not
+- [x] **Step 5:** Tests green, then the full suite. S08-py samples must not
   change.
 
-- [ ] **Step 6: Commit** `engine: require on regex detectors; triple-quoted arguments are strings (AC-8)`
+- [x] **Step 6: Commit** `engine: require on regex detectors; triple-quoted arguments are strings (AC-8)`
 
 ---
 
@@ -199,7 +199,7 @@ Coordinate with #14, which covers JVM source sets (`integrationTest`,
 `testFixtures`, `jmh`). Do not duplicate them here. If #14 has merged,
 rebase and keep its entries.
 
-- [ ] **Step 1: Failing test**, table-driven:
+- [x] **Step 1: Failing test**, table-driven:
 
 ```python
 import pytest
@@ -225,12 +225,12 @@ def test_exclusion_reason(path, reason):
     assert F.excludes_path(path) == (reason is not None)
 ```
 
-- [ ] **Step 2: Implement.** Split the default lists into
+- [x] **Step 2: Implement.** Split the default lists into
   `(reason, entries)` groups. Additions:
   - test: globs `tests.py`, `*_tests.py`, `*.cy.*`; dirs `cypress`,
     `benchmarks`, `bench`;
-  - tooling: globs `*.config.ts`, `*.config.js`, `*.config.mjs`,
-    `*.config.cjs`, `*.config.mts`, `.gitlab-ci.yml`, `docker-compose*.yml`,
+  - tooling: globs `<tool>.config.*` for named tools (spec §7.1; not a
+    blanket `*.config.*`, which drops runtime config), `.gitlab-ci.yml`, `docker-compose*.yml`,
     `docker-compose*.yaml`, `mkdocs.yml`, `.pre-commit-config.yaml`; dirs
     `.github`, `.circleci`, `.gitlab`;
   - generated: globs `*.d.ts`, `*.pyi`, `openapi*.yaml`, `openapi*.yml`,
@@ -239,9 +239,9 @@ def test_exclusion_reason(path, reason):
   Profile additions report `profile`, and `--path` reports `path`.
   `excludes_path` becomes `return self.exclusion_reason(rel_path) is not None`.
 
-- [ ] **Step 3:** Full suite. `test_pipeline` fixture paths are unaffected.
+- [x] **Step 3:** Full suite. `test_pipeline` fixture paths are unaffected.
 
-- [ ] **Step 4: Commit** `filters: tests.py, cypress, tooling configs, generated dirs; exclusion reasons (AC-12)`
+- [x] **Step 4: Commit** `filters: tests.py, cypress, tooling configs, generated dirs; exclusion reasons (AC-12)`
 
 ---
 
@@ -257,7 +257,7 @@ Satisfies: AC-9.
   needs the plain `positive`/`negative` files.
 - Create: samples below under `tests/detectors/samples/<ID>/python/`
 
-- [ ] **Step 1: Negative samples (the reproduced false positives).**
+- [x] **Step 1: Negative samples (the reproduced false positives).**
 
 `S19/python/negative_optional_import.py`
 ```python
@@ -362,7 +362,7 @@ def render_thumbnails(paths):
         return list(pool.map(make_thumb, paths))
 ```
 
-- [ ] **Step 2: Positives that guard against over-correction.**
+- [x] **Step 2: Positives that guard against over-correction.**
 
 `S04/python/positive_while_attempts.py`
 ```python
@@ -394,13 +394,13 @@ def submit(fn, *a):
 The existing `positive.py` files for S04, S05, S06, S07, S08 and S19 must
 keep firing.
 
-- [ ] **Step 3: Run. The negatives fail.**
+- [x] **Step 3: Run. The negatives fail.**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard pytest tests/detectors -k "python" -q
 ```
 
-- [ ] **Step 4: Catalog edits** (verified; see "Verification already done").
+- [x] **Step 4: Catalog edits** (verified; see "Verification already done").
 
 ```yaml
 # S19-py-except-pass — narrow typed swallows are deliberate
@@ -434,9 +434,9 @@ Update each detector's `note` where its meaning narrowed (for example,
 S19-py-except-pass: "`except:`/`except Exception:` with only `pass` — the
 failure leaves no trace").
 
-- [ ] **Step 5:** Samples green, then the full suite, then
+- [x] **Step 5:** Samples green, then the full suite, then
   `gen_catalog_docs.py`.
-- [ ] **Step 6: Commit** `python detectors: silence reproduced false positives (AC-9)`
+- [x] **Step 6: Commit** `python detectors: silence reproduced false positives (AC-9)`
 
 ---
 
@@ -449,7 +449,7 @@ Satisfies: AC-10.
 Coordinate with #17 (S19-ts catch-only-comment firing on a *logged* catch).
 Do not overlap: this task touches `S19-ts-empty-catch` only.
 
-- [ ] **Step 1: Negatives.**
+- [x] **Step 1: Negatives.**
 
 `S19/typescript/negative_ignored_param.ts`
 ```ts
@@ -514,7 +514,7 @@ export function useScroll(cb: () => void) {
 }
 ```
 
-- [ ] **Step 2: Positives.**
+- [x] **Step 2: Positives.**
 
 `S17/typescript/positive.ts`
 ```ts
@@ -529,7 +529,7 @@ class Svc {
 ```
 The existing S06, S08 and S19 TS positives must keep firing.
 
-- [ ] **Step 3: Catalog edits** (verified).
+- [x] **Step 3: Catalog edits** (verified).
 
 ```yaml
 # S19-ts-empty-catch — same deliberate-swallow convention as Java
@@ -549,7 +549,7 @@ anchor: '(?i)^(?:export\s+)?(?:const|let|var)\s+\w*(?:queue|limiter|throttle|wor
 ```
 Plus the S08-ts-select `absent_within` from Task 3.
 
-- [ ] **Step 4:** The fixture still produces FR-004's `S06@src/sync/scheduler.ts:1`
+- [x] **Step 4:** The fixture still produces FR-004's `S06@src/sync/scheduler.ts:1`
   (`const queue:` at column 0). The sample report changes, as intended:
   S06 leads go from 4 files to 2. `collection.ts` loses S06, because its
   only anchor was an `import { enqueue }`, and `artists.ts` loses it too,
@@ -558,7 +558,7 @@ Plus the S08-ts-select `absent_within` from Task 3.
   `uv run scripts/gen_sample_report.py`, check that the diff is only that,
   commit the regenerated sample in this task (CI checks freshness), then
   run the full suite.
-- [ ] **Step 5: Commit** `typescript detectors: silence reproduced false positives; S17 now sees generic Maps (AC-10)`
+- [x] **Step 5: Commit** `typescript detectors: silence reproduced false positives; S17 now sees generic Maps (AC-10)`
 
 ---
 
@@ -566,7 +566,7 @@ Plus the S08-ts-select `absent_within` from Task 3.
 
 Satisfies: AC-11.
 
-- [ ] Create `S27/java/negative_long_chain_offload.java`:
+- [x] Create `S27/java/negative_long_chain_offload.java`:
 
 ```java
 class UserService {
@@ -587,12 +587,12 @@ class UserService {
     }
 }
 ```
-- [ ] Run it and watch it fail. Set `S27-java-blocking-in-reactive.window: 20`,
+- [x] Run it and watch it fail. Set `S27-java-blocking-in-reactive.window: 20`,
   then rerun `pytest tests/detectors -k "S27 or java" -q`.
-- [ ] Recalibrate: rerun the batch-1 repositories from `docs/calibration/java.md`
+- [x] Recalibrate: rerun the batch-1 repositories from `docs/calibration/java.md`
   with `calibrate.py --lang java --patterns S27`. Record the delta (expected
   0 new hits) in a "Batch 7" section.
-- [ ] **Commit** `S27: widen offload window to 20 lines (AC-11)`
+- [x] **Commit** `S27: widen offload window to 20 lines (AC-11)`
 
 ---
 
@@ -604,7 +604,7 @@ Satisfies: AC-13.
 `scripts/signals.py`, `scripts/report.py`, `examples/thunderstruck.toml.example`,
 `tests/test_suppress.py`.
 
-- [ ] **Failing tests:**
+- [x] **Failing tests:**
   - `path_glob_to_re("src/**/batch/*.java")` matches
     `src/main/java/a/batch/X.java` and not `src/batch/sub/X.java`;
   - `load_suppressions({"suppress": [{"detector": "S16", "path": "*.java"}]})`
@@ -613,14 +613,14 @@ Satisfies: AC-13.
     `S14-py-unbounded-queue` on `jobs.py`, `hotspots.json` has no S14 hit on
     that file, `suppressed == [{"detector": …, "path": …, "reason": …,
     "hits": 1}]`, and the report contains `Suppressed leads`.
-- [ ] **Implement.** A `Suppression(detector, path_re, reason)` dataclass.
+- [x] **Implement.** A `Suppression(detector, path_re, reason)` dataclass.
   A rule matches a hit when `rule.detector in (hit.detector_id,
   hit.pattern_id)` and `path_re` matches `hit.file`. Apply it in `build()`
   right after `run_detectors`, in the dormant sweep too (Task 11), and
   never in `calibrate.py`. Warnings go to `payload["warnings"]`.
-- [ ] Document it in `thunderstruck.toml.example`, including why there are
+- [x] Document it in `thunderstruck.toml.example`, including why there are
   no inline markers (spec §8).
-- [ ] **Commit** `profile [[suppress]]: reasoned, visible lead suppression (AC-13)`
+- [x] **Commit** `profile [[suppress]]: reasoned, visible lead suppression (AC-13)`
 
 ---
 
@@ -634,7 +634,7 @@ here from `bundle.py`/`signals.py`; spec §4), `scripts/signals.py`,
 `agents/thunderstruck-investigator.md` (one sentence on `resilience`),
 `tests/test_classify.py`.
 
-- [ ] **Failing test:**
+- [x] **Failing test:**
 
 ```python
 import pytest
@@ -660,13 +660,13 @@ def test_classify(subject, expected):
 def test_profile_keywords():
     assert classify_commit("Fehler behoben", extra_fix=("behoben",)) == "fix"
 ```
-- [ ] **Implement** the rules in spec §4. `collect_history` counts `fix` only
+- [x] **Implement** the rules in spec §4. `collect_history` counts `fix` only
   and adds `resilience_commits`. `[history] fix_keywords` is read from the
   profile and compiled once with `re.escape`.
-- [ ] Every fixture commit uses a Conventional Commits prefix, so the
+- [x] Every fixture commit uses a Conventional Commits prefix, so the
   fixture's fix counts do not change. Assert that `gen_sample_report.py`
   output differs only where later tasks intend it to.
-- [ ] **Commit** `history: resilience work is not a fix; profile fix keywords (AC-6)`
+- [x] **Commit** `history: resilience work is not a fix; profile fix keywords (AC-6)`
 
 ---
 
@@ -680,7 +680,7 @@ Satisfies: AC-5, AC-3.
 `scripts/gen_sample_report.py`, `tests/test_pipeline.py`,
 `tests/test_inert_report_text.py` (or wherever #34's renderer tests live).
 
-- [ ] **Failing tests** in `tests/test_pipeline.py`:
+- [x] **Failing tests** in `tests/test_pipeline.py`:
   - a finding with `confidence: high` whose only commit is
     `refactor: tidy imports` (it touches the file) → an error containing
     `no cited commit is a fix`;
@@ -697,10 +697,10 @@ Satisfies: AC-5, AC-3.
     `bundle.py` (it already isn't: assert the bump reaches it);
   - the report for a valid finding contains the commit's subject in quotes
     and `(fix)`.
-- [ ] **Failing test** in #34's inert-text suite: a fixture commit with the
+- [x] **Failing test** in #34's inert-text suite: a fixture commit with the
   subject `[x](https://evil.example) <img src=x> # h` renders as literal
   text under both renderers when cited.
-- [ ] **Implement.**
+- [x] **Implement.**
   - `Validator._subject(sha)` is cached and runs `git log -1 --format=%s`
     through `c.git_paths`.
   - `Validator._introduced(rel, start, end) -> set[str]` is cached, runs
@@ -715,15 +715,15 @@ Satisfies: AC-5, AC-3.
   - `report.py collect()` attaches `subject` and `kind` to each commit
     evidence item. `_evidence_ref` renders `md.text(subject)` and the class
     after the link (spec §2.3).
-- [ ] **Sample report:** FR-003 keeps `high`. Its commit evidence must be
+- [x] **Sample report:** FR-003 keeps `high`. Its commit evidence must be
   the commit that introduced `src/util/format.ts:4-14`. Check that with
   `git blame` on the built fixture, and fix the ref in
   `gen_sample_report.py` if it differs. Check that FR-002, FR-004 and FR-005
   cite a `fix:` commit where they claim `high`.
-- [ ] Investigator prompt: *"The most recent change to a file is not
+- [x] Investigator prompt: *"The most recent change to a file is not
   corroboration. `high` needs a commit the bundle labels `fix`, or, for an
   `OTHER`-only finding, the commit that introduced the cited lines."*
-- [ ] **Commit** `validate: high confidence needs a corroborating commit; report shows commit subjects (AC-5, AC-3)`
+- [x] **Commit** `validate: high confidence needs a corroborating commit; report shows commit subjects (AC-5, AC-3)`
 
 ---
 
@@ -736,7 +736,7 @@ Satisfies: AC-4.
 investigated with no finding*), `scripts/guardrail.py` (`build_context`),
 `tests/test_guardrail.py`, `tests/test_pipeline.py`.
 
-- [ ] **Failing tests:**
+- [x] **Failing tests:**
   - after the fixture pipeline, `index.json.files["src/client/retry-wrapper.ts"]`
     holds FR-001 with `via == "evidence"`. For that, FR-001 in
     `gen_sample_report.py` must cite `src/client/retry-wrapper.ts:<withRetry line>`
@@ -750,10 +750,10 @@ investigated with no finding*), `scripts/guardrail.py` (`build_context`),
     `releases.ts` marks only the primary entry stale;
   - `save_finding.py` strips a model-supplied `evidence_hashes`;
   - the guardrail latency test still passes.
-- [ ] **Implement** per spec §2.4. Paths are already canonical (#31), so
+- [x] **Implement** per spec §2.4. Paths are already canonical (#31), so
   there is no normalisation in `render_index`. The guardrail change is one
   conditional in the line format, still stdlib-only.
-- [ ] **Commit** `index: file findings under every file cited as code evidence (AC-4)`
+- [x] **Commit** `index: file findings under every file cited as code evidence (AC-4)`
 
 ---
 
@@ -764,7 +764,7 @@ Satisfies: AC-1, AC-2.
 **Files:** `scripts/signals.py` (`coverage_gaps`), `scripts/report.py`,
 `tests/test_pipeline.py`.
 
-- [ ] **Failing tests** (fixture plus two planted files: `mobile/App.kt` and
+- [x] **Failing tests** (fixture plus two planted files: `mobile/App.kt` and
   `db/migrations/001.py`):
   - `hotspots.json.coverage_gaps` has `unsupported[".kt"] == 1`,
     `excluded["migration"] == 1`, and
@@ -777,12 +777,12 @@ Satisfies: AC-1, AC-2.
     `| ID | Pattern | Tier | Files with an unconfirmed lead | Leads read | Leads confirmed | Findings |`,
     followed by the footnote;
   - `report.json.lead_precision["S02"] == {"read": n, "confirmed": 1}`.
-- [ ] **Implement** per spec §2.1–2.2. `coverage_gaps` is computed from the
+- [x] **Implement** per spec §2.1–2.2. `coverage_gaps` is computed from the
   `c.tracked_index(repo)` that `build()` already loads (#36), with the same
   `is_utf8`/`path_problem`/`tracked_file_problem` test for `not_citable`.
   Render through `md.text`/`md.code`, as with every value in the report. Keep `unsupported` to 8 keys plus
   `other`. Sort all keys for determinism.
-- [ ] **Commit** `report: Not scanned section and per-pattern lead precision (AC-1, AC-2)`
+- [x] **Commit** `report: Not scanned section and per-pattern lead precision (AC-1, AC-2)`
 
 ---
 
@@ -796,7 +796,7 @@ S05, S10, S27, S28, and S30 after Task 13), `scripts/signals.py`
 (D bundles), `scripts/report.py`, `skills/thunderstruck-scan/SKILL.md`
 (`--investigate-dormant N`), `tests/test_dormant.py`.
 
-- [ ] **Failing tests:**
+- [x] **Failing tests:**
   - a temp repo with an old commit adding `src/legacy_client.py`
     (`requests.get(url)`, no timeout), then 5 later commits touching other
     files, run with `--since 30d` (use `GIT_COMMITTER_DATE` and
@@ -810,14 +810,14 @@ S05, S10, S27, S28, and S30 after Task 13), `scripts/signals.py`
     section reads `No commits in the window. Last change:`. Two runs give
     identical bytes;
   - speed guard: 500 generated dormant Python files sweep in < 10 s.
-- [ ] **Implement** per spec §5. Reuse `stability_weight` and apply
+- [x] **Implement** per spec §5. Reuse `stability_weight` and apply
   suppressions (Task 6). Qualification is at least one `medium`/`high`
   hit, or `low` hits from two different patterns.
-- [ ] Report section **Dormant integration points** comes after *Ranked
+- [x] Report section **Dormant integration points** comes after *Ranked
   hotspots*, with one line explaining why these files are here.
-- [ ] Scan skill: document `--investigate-dormant N` (default 0), which
+- [x] Scan skill: document `--investigate-dormant N` (default 0), which
   counts against the ≤4-parallel cap.
-- [ ] **Commit** `signals: list dormant integration points; opt-in investigation (AC-7)`
+- [x] **Commit** `signals: list dormant integration points; opt-in investigation (AC-7)`
 
 ---
 
@@ -830,7 +830,7 @@ Satisfies: AC-14.
 `yaml`/`properties`), `scripts/signals.py` (rank gate),
 `tests/detectors/test_detectors.py` (`EXT_LANG`), `tests/test_config_langs.py`.
 
-- [ ] **Failing tests:**
+- [x] **Failing tests:**
   - `detect_language("k8s/deploy.yaml") == "yaml"` and
     `detect_language("src/main/resources/application.properties") == "properties"`;
   - YAML: `a: "x # y"  # comment` → `# comment` is blanked, the quoted `#` is
@@ -840,12 +840,12 @@ Satisfies: AC-14.
   - in a temp repo, a `values.yaml` changed 10 times with no detector hit is
     **not** in `hotspots`, while a churned `.py` file is;
   - a YAML file lizard cannot parse produces no warning.
-- [ ] **Implement.** Add `_strip_hash(text, lang)`. Apply the rank gate in
+- [x] **Implement.** Add `_strip_hash(text, lang)`. Apply the rank gate in
   `build()` before sorting: drop rows whose language has
   `rank_only_with_leads` and `detector_hits == []`. Set
   `EXT_LANG[".yaml"] = EXT_LANG[".yml"] = "yaml"` and
   `EXT_LANG[".properties"] = "properties"`.
-- [ ] **Commit** `catalog: yaml and properties as scanned languages, ranked only with leads (AC-14)`
+- [x] **Commit** `catalog: yaml and properties as scanned languages, ranked only with leads (AC-14)`
 
 ---
 
@@ -858,7 +858,7 @@ Satisfies: AC-15.
 `tests/detectors/test_detectors.py` if Tier A discovery needs the new
 languages.
 
-- [ ] **Samples** (the regexes were checked by hand against these):
+- [x] **Samples** (the regexes were checked by hand against these):
 
 `S01/yaml/positive.yaml`
 ```yaml
@@ -896,16 +896,16 @@ spec:
 `S10/properties/positive.properties`: `resilience4j.retry.instances.payments.maxAttempts=3`.
 `S10/properties/negative.properties`: `resilience4j.retry.instances.payments.maxAttempts=1`.
 
-- [ ] **Catalog:** add the detectors from spec §7.2 and pattern S30 from spec
+- [x] **Catalog:** add the detectors from spec §7.2 and pattern S30 from spec
   §7.3, placed after S29. Mark the S10 config detectors `inventory:
   retry_layer`.
-- [ ] **Calibrate** (a new log `docs/calibration/config.md`) against 3 public
+- [x] **Calibrate** (a new log `docs/calibration/config.md`) against 3 public
   repositories with Kubernetes, Istio or Spring config, for example
   `GoogleCloudPlatform/microservices-demo`, `istio/istio` samples, and
   `spring-petclinic/spring-petclinic-microservices`. Pin SHAs and judge every
   hit.
-- [ ] `gen_catalog_docs.py` → `patterns.md` gains S30.
-- [ ] **Commit** `catalog: S30 liveness probes; mesh and resilience4j retry layers; VirtualService timeouts (AC-15)`
+- [x] `gen_catalog_docs.py` → `patterns.md` gains S30.
+- [x] **Commit** `catalog: S30 liveness probes; mesh and resilience4j retry layers; VirtualService timeouts (AC-15)`
 
 ---
 
@@ -920,7 +920,7 @@ and **all** tracked config files), `scripts/bundle.py` (section),
 `tests/test_retry_inventory.py`, and samples for the library-default
 detectors.
 
-- [ ] **Library-default samples:**
+- [x] **Library-default samples:**
 
 `S10/python/positive_boto3_default.py`
 ```python
@@ -936,7 +936,7 @@ s3 = boto3.client("s3", config=Config(retries={"max_attempts": 2, "mode": "stand
 Java: `Feign.builder()` with no `.retryer(` → positive. `.retryer(Retryer.NEVER_RETRY)` → negative.
 TS: `import { S3Client } from '@aws-sdk/client-s3'; new S3Client({})` → positive. `new S3Client({ maxAttempts: 2 })` → negative.
 
-- [ ] **Failing tests:**
+- [x] **Failing tests:**
   - fixture plus `deploy/releases-virtualservice.yaml` (the S01 positive
     above) → `retry_layers` contains `{kind: "config", file:
     "deploy/releases-virtualservice.yaml", detector_id:
@@ -946,7 +946,7 @@ TS: `import { S3Client } from '@aws-sdk/client-s3'; new S3Client({})` → positi
     listing all three;
   - a `score: false` hit does not change a file's `stability.weight`;
   - the bundle determinism test still passes.
-- [ ] **Commit** `signals: repo-wide retry-layer inventory across code, config and library defaults (AC-16)`
+- [x] **Commit** `signals: repo-wide retry-layer inventory across code, config and library defaults (AC-16)`
 
 ---
 
@@ -954,7 +954,7 @@ TS: `import { S3Client } from '@aws-sdk/client-s3'; new S3Client({})` → positi
 
 Satisfies: AC-17.
 
-- [ ] **Failing test:** in a temp repo, plant the file
+- [x] **Failing test:** in a temp repo, plant the file
   `src/acme_secret_pricing/engine.py`, containing
   `requests.get(ACME_INTERNAL_URL)`. Then:
   - `calibrate.py --repo R --lang all --patterns all --summary` → valid JSON
@@ -962,11 +962,11 @@ Satisfies: AC-17.
   - `detectors["S01-py-requests-no-timeout"]["hits"] == 1`;
   - none of `acme`, `secret_pricing`, `engine.py`, `ACME_INTERNAL_URL`, the
     repo's path, or any commit SHA appear in the output.
-- [ ] **Implement** per spec §9. `--lang all` iterates the catalog
+- [x] **Implement** per spec §9. `--lang all` iterates the catalog
   languages, and `--patterns all` uses every scanned pattern.
-- [ ] Add to CONTRIBUTING.md: "Found noise on a private repo? Paste
+- [x] Add to CONTRIBUTING.md: "Found noise on a private repo? Paste
   `calibrate.py --summary` into an issue."
-- [ ] **Commit** `calibrate: --summary, counts only, safe to share (AC-17)`
+- [x] **Commit** `calibrate: --summary, counts only, safe to share (AC-17)`
 
 ---
 
@@ -974,22 +974,22 @@ Satisfies: AC-17.
 
 Satisfies: AC-18.
 
-- [ ] Follow the protocol in `docs/calibration/java.md`. Per language, pick
+- [x] Follow the protocol in `docs/calibration/java.md`. Per language, pick
   3–5 public repositories: ≥1 web service, ≥1 worker/ETL, ≥1 HTTP-client
   library. Pin their SHAs.
   - Python candidates: `netbox-community/netbox`, `fastapi/full-stack-fastapi-template`, `httpie/cli`, `celery/celery`.
   - TS candidates: `immich-app/immich` (server), `actualbudget/actual`, `sindresorhus/got`, `bullmq`'s examples.
 
   Record the final choice in the log.
-- [ ] Run `calibrate.py --lang {typescript,python} --patterns all` and judge
+- [x] Run `calibrate.py --lang {typescript,python} --patterns all` and judge
   every hit. Each false positive becomes a `negative_<shape>` sample and a
   fix, or is logged with a reason.
-- [ ] A detector at `confidence: high` whose log shows any unexplained
+- [x] A detector at `confidence: high` whose log shows any unexplained
   false positive drops to `medium`. Today that means S19-py-except-pass,
   S19-ts-empty-catch, S01-py-requests-no-timeout, S01-py-urlopen-no-timeout
   and the S03 429 detectors.
-- [ ] Write `docs/calibration/typescript.md` and `docs/calibration/python.md`.
-- [ ] **Commit** per language: `calibration: typescript (AC-18)`, `calibration: python (AC-18)`
+- [x] Write `docs/calibration/typescript.md` and `docs/calibration/python.md`.
+- [x] **Commit** per language: `calibration: typescript (AC-18)`, `calibration: python (AC-18)`
 
 ---
 
@@ -997,13 +997,13 @@ Satisfies: AC-18.
 
 Satisfies: AC-19.
 
-- [ ] Fixture (`tests/fixtures/build_fixture.py`):
+- [x] Fixture (`tests/fixtures/build_fixture.py`):
   - add `deploy/releases-virtualservice.yaml` (mesh retries, no timeout);
   - add an old, unchanged `src/client/legacy.ts` with a bare `fetch()`
     before the window (dormant);
   - add a YAML comment shaped like an instruction (repository content is
     data).
-- [ ] `gen_sample_report.py`:
+- [x] `gen_sample_report.py`:
   - FR-001 cites the VirtualService as `code` evidence. It is now three
     retry layers: loop ×5, `withRetry` ×3, and the mesh's `attempts: 3`,
     which is up to 4 tries per request. The Verify line's expected count
@@ -1011,16 +1011,16 @@ Satisfies: AC-19.
   - FR-003 stays `high`, corroborated by the commit that introduced the
     comment (Task 8);
   - FR-001 cites `src/client/retry-wrapper.ts` as `code` evidence (Task 9).
-- [ ] Regenerate `patterns.md` and `examples/sample-report.md`. Confirm the
+- [x] Regenerate `patterns.md` and `examples/sample-report.md`. Confirm the
   report shows all of these: Not scanned, lead precision, commit subjects,
   the dormant list, suppressed leads (via a fixture profile rule), and the
   retry-layer mention.
-- [ ] Update README ("What you get", the catalog count of 23 patterns, config
+- [x] Update README ("What you get", the catalog count of 23 patterns, config
   scanning) and CLAUDE.md (new commands and "Things that will bite you":
   config ranks only with leads; `score: false` detectors).
-- [ ] Bump the version in `plugin.json`, `marketplace.json`,
+- [x] Bump the version in `plugin.json`, `marketplace.json`,
   `pyproject.toml` and `CHANGELOG.md`.
-- [ ] Final checks:
+- [x] Final checks:
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with markdown-it-py==4.2.0 \
@@ -1030,7 +1030,7 @@ uv run scripts/gen_sample_report.py --check
 claude plugin validate . --strict
 claude plugin marketplace add "$PWD" && claude plugin install thunderstruck@thunderstruck && claude plugin list
 ```
-- [ ] **Commit** `release: lead precision and visible coverage (AC-19)`
+- [x] **Commit** `release: lead precision and visible coverage (AC-19)`
 
 ---
 

@@ -102,7 +102,8 @@ def section_header(hs: dict, data: dict) -> str:
         f"{s['complexity_norm']} x (1 + stability weight {hs['stability']['weight']})",
         f"- **{ch['commits']} commits** by {ch['authors']} author(s) since "
         f"{data['window']['since_date']}; **{ch['fix_commits']} look like fixes** "
-        f"({int(ch['fix_ratio'] * 100)}%), {ch['refactor_commits']} look like refactors",
+        f"({int(ch['fix_ratio'] * 100)}%), {ch.get('resilience_commits', 0)} look like "
+        f"resilience work, {ch['refactor_commits']} look like refactors",
         f"- last changed {(ch['last_modified'] or '')[:10]}",
     ]
     if cx:
@@ -112,8 +113,14 @@ def section_header(hs: dict, data: dict) -> str:
         if top:
             lines.append(f"- most complex function: `{top['name']}` "
                          f"(CCN {top['ccn']}, lines {top['lines']})")
-    else:
+    elif hs.get("dormant"):
+        lines.append("- no commit in the window: listed as a dormant integration point "
+                     "for its leads, not ranked on churn or complexity")
+    elif data.get("degraded", {}).get("complexity"):
         lines.append("- complexity unavailable (lizard not installed); ranked on churn only")
+    else:
+        lines.append("- complexity not measured for this file type (configuration); it "
+                     "ranked because it carries a lead")
     lines.append(f"- content hash: `{hs['content_hash']}`")
     lines.append("")
     return "\n".join(lines)
@@ -238,16 +245,45 @@ def section_source(repo: Path, hs: dict, budget: int) -> str:
     return f"## Source — `{rel}`\n\n_{note}_\n\n```{lang}\n{body}\n```\n\n"
 
 
-def classify_commit(subject: str) -> str:
-    from signals import FIX_KEYWORDS, REFACTOR_KEYWORDS  # single source of truth
-    if FIX_KEYWORDS.search(subject):
-        return "fix"
-    if REFACTOR_KEYWORDS.search(subject):
-        return "refactor"
-    return "feature"
+MAX_RETRY_LAYERS_SHOWN = 15
 
 
-def section_history(repo: Path, hs: dict, since: str, budget: int, k: int) -> str:
+def retry_lead_patterns(catalog: dict) -> set[str]:
+    """Patterns with a detector that marks a retry layer: the catalog decides."""
+    return {p["id"] for p in catalog.get("patterns", [])
+            for dets in (p.get("detectors") or {}).values() for d in dets or []
+            if d.get("inventory") == "retry_layer"}
+
+
+def section_retry_layers(hs: dict, data: dict, catalog: dict) -> str:
+    """Every retry layer in the repository, for a hotspot that retries. R
+    retries at N layers is R^N requests, and the layers rarely share a file:
+    one is in this code, one in the mesh, one a library default. So this
+    file's own layers come first, then configuration and library defaults,
+    which no reading of this file can reveal, then the other code layers."""
+    layers = data.get("retry_layers") or []
+    wanted = retry_lead_patterns(catalog)
+    if not layers or not wanted & {h["pattern_id"] for h in hs["detector_hits"]}:
+        return ""
+    rank = {"config": 1, "library-default": 1, "code": 2}
+    layers = sorted(layers, key=lambda r: (0 if r["file"] == hs["file"] else rank.get(r["kind"], 3),
+                                           r["kind"], r["file"], r["line"]))
+    out = ["## Retry layers in this repository", "",
+           "Retries multiply across layers. These are every retry layer the scan "
+           "found, in code, configuration and library defaults. Count how many sit "
+           "on this file's call path.", ""]
+    for r in layers[:MAX_RETRY_LAYERS_SHOWN]:
+        mine = " (this file)" if r["file"] == hs["file"] else ""
+        out.append(f"- {r['kind']}: `{r['file']}:{r['line']}`{mine} "
+                   f"[{r['detector_id']}] {r.get('note', '')}".rstrip())
+    extra = len(layers) - MAX_RETRY_LAYERS_SHOWN
+    if extra > 0:
+        out.append(f"- +{extra} more in hotspots.json retry_layers")
+    return "\n".join(out) + "\n\n"
+
+
+def section_history(repo: Path, hs: dict, since: str, budget: int, k: int,
+                    extra_fix: tuple[str, ...] = ()) -> str:
     rel = hs["file"]
     # --literal-pathspecs: `src/[id].ts` names one file, not a character class
     log = c.git(repo, "--literal-pathspecs", "log", f"--since={since}", "-n", str(k),
@@ -255,12 +291,21 @@ def section_history(repo: Path, hs: dict, since: str, budget: int, k: int) -> st
                 check=False)
     entries = [ln.split("\x00") for ln in log.split("\n") if ln.strip()]
     if not entries:
-        return "## Change history\n\nNo commits in the window.\n\n"
+        last = ""
+        shas = hs["churn"].get("recent_shas") or []
+        if hs.get("dormant") and shas:
+            # a dormant file: name its last change, which predates the window
+            info = c.git(repo, "log", "-1", "--format=%aI%x00%s", shas[0], "--",
+                         check=False).strip().split("\x00")
+            if len(info) == 2:
+                last = f" Last change: {info[0][:10]} `{shas[0][:7]}` {info[1]}"
+        return f"## Change history\n\nNo commits in the window.{last}\n\n"
 
     counts: dict[str, int] = {}
     for e in entries:
         if len(e) >= 4:
-            counts[classify_commit(e[3])] = counts.get(classify_commit(e[3]), 0) + 1
+            kind = c.classify_commit(e[3], extra_fix)
+            counts[kind] = counts.get(kind, 0) + 1
     summary = ", ".join(f"{n} {k2}" for k2, n in sorted(counts.items()))
 
     out = [f"## Change history — last {len(entries)} commits touching this file", "",
@@ -272,7 +317,7 @@ def section_history(repo: Path, hs: dict, since: str, budget: int, k: int) -> st
         if len(e) < 4:
             continue
         sha, when, author, subject = e[0], e[1], e[2], e[3]
-        kind = classify_commit(subject)
+        kind = c.classify_commit(subject, extra_fix)
         out.append(f"### `{sha[:7]}` {when[:10]} [{kind}] {subject}")
         diff = c.git(repo, "-c", "core.quotePath=false", "--literal-pathspecs", "show",
                      "--no-color", "--unified=3", "--format=", sha, "--", rel,
@@ -382,9 +427,11 @@ def build_bundle(repo: Path, hs: dict, data: dict, catalog: dict, profile: dict,
         service,
         section_boundaries(text, hs["file"]),
         section_detectors(hs, catalog),
+        section_retry_layers(hs, data, catalog),
         section_source(repo, hs, int(rest * SHARE["source"])),
         section_history(repo, hs, data["window"]["since_date"],
-                        int(rest * SHARE["history"]), commits),
+                        int(rest * SHARE["history"]), commits,
+                        c.profile_fix_keywords(profile)),
         section_related(repo, hs, all_hotspots, int(rest * SHARE["context"])),
     ]
     return "\n".join(p for p in parts if p).rstrip() + "\n"
@@ -468,6 +515,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--budget", type=int, default=DEFAULT_BUDGET_TOKENS,
                     help="approximate token budget per bundle")
     ap.add_argument("--commits", type=int, default=DEFAULT_COMMITS)
+    ap.add_argument("--investigate-dormant", type=int, default=0, metavar="N",
+                    help="also brief the first N dormant integration points (D bundles)")
     args = ap.parse_args(argv)
 
     try:
@@ -486,12 +535,15 @@ def main(argv: list[str] | None = None) -> int:
     dest_dir = c.out_dir(repo) / "bundles"
     dest_dir.mkdir(parents=True, exist_ok=True)
     hotspots = data["hotspots"]
+    # Opt-in: dormant files are listed for free, and investigated only on
+    # request, inside the same parallel cap as the hotspots (#19 AC-7).
+    dormant = (data.get("dormant") or [])[:max(0, args.investigate_dormant)]
 
     findings_dir = c.out_dir(repo) / "findings"
     index = []
     requeued = 0
     validator = None  # built once, only if some cached file needs a re-check
-    for hs in hotspots:
+    for hs in hotspots + dormant:
         body = build_bundle(repo, hs, data, catalog, profile,
                             args.budget, args.commits, hotspots, ctx)
         path = dest_dir / f"{hs['id']}.md"
@@ -510,7 +562,9 @@ def main(argv: list[str] | None = None) -> int:
                 from validate import Validator
                 ctx_hash = ctx["context_hash"] if ctx else None
                 validator = Validator(repo, data, catalog, context=ctx,
-                                      bundle_context={h["id"]: ctx_hash for h in hotspots})
+                                      bundle_context={h["id"]: ctx_hash
+                                                      for h in hotspots + dormant},
+                                      extra_fix=c.profile_fix_keywords(profile))
             cached = _still_valid(validator, cached_doc)
             requeued += not cached
 

@@ -42,11 +42,12 @@ claude plugin marketplace add "$PWD" && claude plugin install thunderstruck@thun
 claude plugin list          # must say "enabled", not "failed to load"
 
 # Run the deterministic pipeline by hand against any repo
-uv run scripts/signals.py --repo /path/to/repo --top 10 --since 12m
-uv run scripts/bundle.py  --repo /path/to/repo
+uv run scripts/signals.py --repo /path/to/repo --top 10 --since 12m   # --dormant N, --dormant-limit L
+uv run scripts/bundle.py  --repo /path/to/repo      # --investigate-dormant N adds D bundles
 uv run scripts/validate.py --repo /path/to/repo    # exit 1 == repair round needed
 uv run scripts/report.py  --repo /path/to/repo
 uv run scripts/calibrate.py --repo /path/to/repo --lang java --patterns S01,S27   # every hit, every tracked file
+uv run scripts/calibrate.py --repo /path/to/repo --lang all --patterns all --summary   # counts only, safe to share
 
 # Build the fixture repo to poke at by hand
 python3 tests/fixtures/build_fixture.py /tmp/fixture
@@ -96,6 +97,24 @@ the tool is worth anything; do not add a path that bypasses it.
 **`id` vs `key`.** Display ids (`FR-001`) renumber whenever ranking changes.
 `key` is a hash of file + failure mode and is stable across runs. Prediction
 tracking will match on `key`; nothing should ever match on `id`.
+
+**Config ranks only with a lead.** `yaml` and `properties` carry
+`rank_only_with_leads` in the catalog: a config file with no detector hit is
+dropped *before* normalising, so `values.yaml` deploy churn neither takes an
+investigator slot nor compresses every other file's score. lizard is never
+run on config.
+
+**`score: false` detectors never weigh.** The library-default retry
+detectors (boto3, Feign, AWS SDK v3) exist for the repo-wide retry-layer
+inventory (`inventory: retry_layer`); they add no stability weight and never
+qualify a dormant file on their own. The inventory reads raw, unsuppressed
+hits: a suppressed lead is still a retry layer.
+
+**`high` needs a corroborating commit.** A cited commit must touch a cited
+file *and* classify as `fix` (`_common.classify_commit`, the one definition
+every stage uses), or, for an `OTHER`-only finding, have written a cited line
+per `git blame`. Resilience work ("add retry with backoff") is its own class,
+not a fix. Tightening a validator rule means bumping `VALIDATION_RULES`.
 
 **The plugin must not exhibit the patterns it hunts.** At most 4 investigators
 in parallel, exactly one repair round and no retry loops, `--top` caps scope,

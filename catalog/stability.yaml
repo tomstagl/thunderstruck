@@ -11,7 +11,9 @@
 # Detector kinds
 #   regex        `pattern` matches a line. Optional `absent_within` (regex that
 #                must NOT appear in the `window` lines from the match) and
-#                `present_within` (regex that MUST appear there).
+#                `present_within` (regex that MUST appear there). Optional
+#                `require` means the same as for file_absent: the file must
+#                match it somewhere, or the detector is skipped.
 #   file_absent  `anchor` matches somewhere in the file AND `absent` matches
 #                nowhere in it. Optional `require` must ALSO match somewhere
 #                in the file — use it to scope a whole-file absence to files
@@ -36,6 +38,15 @@ languages:
     extensions: [".py", ".pyi"]
   java:
     extensions: [".java"]
+  # Configuration: timeouts, retries and probes often live here, not in code.
+  # A config file ranks only when it carries a lead: values.yaml churns with
+  # every deploy, and that measures release activity, not fragility.
+  yaml:
+    extensions: [".yml", ".yaml"]
+    rank_only_with_leads: true
+  properties:
+    extensions: [".properties"]
+    rank_only_with_leads: true
 
 # Language aliases: a detector written for `typescript` also runs on javascript.
 aliases:
@@ -46,6 +57,7 @@ patterns:
   - id: S01
     name: Timeouts on every external call
     tier: A
+    dormant: true
     weight: 1.0
     metastable_role: amplifier
     failure_if_absent: >-
@@ -58,8 +70,11 @@ patterns:
       typescript:
         - id: S01-ts-fetch-no-signal
           kind: regex
-          pattern: '\bfetch\s*\('
-          absent_within: '\b(signal|AbortSignal|timeout|AbortController)\b|\bfetch\s*\([^,()]*(?:\([^()]*\))?[^,()]*,\s*[A-Za-z_$][\w$.]*\s*\)'
+          # The global fetch, bare or as globalThis/window/self.fetch. Not a
+          # method of some other object (`queue.fetch()`) and not a method
+          # definition (`async fetch(): Promise<T> {`).
+          pattern: '(?:^|[^\w$.\n]|\b(?:globalThis|window|self)\s*\.\s*)fetch\s*\((?![^()]*\)\s*(?::[^{};=]*)?\{)'
+          absent_within: '\b(signal|AbortSignal|timeout|AbortController)\b|\bfetch\s*\([^,()]*(?:\([^()]*\)[^,()]*)?,\s*[A-Za-z_$][\w$.]*\s*\)'
           window: 8
           window_before: 6
           confidence: medium
@@ -83,8 +98,12 @@ patterns:
       python:
         - id: S01-py-requests-no-timeout
           kind: regex
-          pattern: '\brequests\s*\.\s*(get|post|put|patch|delete|head|request)\s*\('
-          absent_within: '\btimeout\s*=|\*\*\w+\s*\)'
+          # Only a call outside a string literal on its line: a debug message
+          # that prints `requests.request(**kwargs)` makes no request.
+          pattern: '^(?:[^''"\n]|''[^''\n]*''|"[^"\n]*")*?\brequests\s*\.\s*(get|post|put|patch|delete|head|request)\s*\('
+          # A `with Timeout(5):` / `async with asyncio.timeout(5):` block
+          # bounds the call as surely as a timeout= argument.
+          absent_within: '\btimeout\s*=|\*\*\w+\s*\)|\bwith\s+[\w.]*[Tt]imeout\s*\('
           window: 6
           window_before: 4
           confidence: high
@@ -99,7 +118,8 @@ patterns:
           note: "httpx call with no explicit timeout= (httpx does default to 5s)"
         - id: S01-py-urlopen-no-timeout
           kind: regex
-          pattern: '\burlopen\s*\('
+          # Not a function that is merely *named* urlopen.
+          pattern: '(?<!def )\burlopen\s*\('
           absent_within: '\btimeout\s*=|\*\*\w+\s*\)'
           window: 4
           window_before: 4
@@ -108,7 +128,8 @@ patterns:
         - id: S01-py-socket-no-timeout
           kind: regex
           pattern: '\bsocket\s*\.\s*socket\s*\('
-          absent_within: '\b(settimeout|setdefaulttimeout)\b'
+          # A socket that binds is a listener, not an outbound call.
+          absent_within: '\b(settimeout|setdefaulttimeout)\b|\.\s*bind\s*\('
           window: 10
           confidence: medium
           note: "raw socket with no settimeout()"
@@ -177,9 +198,18 @@ patterns:
           confidence: low
           note: "JMS receive() with no timeout — blocks the thread until a message arrives, forever if none does"
 
+      yaml:
+        - id: S01-yaml-virtualservice-no-timeout
+          kind: file_absent
+          anchor: '^kind:\s*VirtualService\b'
+          require: '^\s*http:\s*$'
+          absent: '^\s*timeout:\s*\S'
+          confidence: low
+          note: "Istio VirtualService with HTTP routes and no route timeout — the mesh default is to wait indefinitely"
   - id: S02
     name: Capped exponential backoff with full jitter
     tier: A
+    dormant: true
     weight: 1.0
     metastable_role: sustaining
     failure_if_absent: >-
@@ -195,18 +225,21 @@ patterns:
           handler: s02_backoff
           confidence: medium
           note: "retry backoff missing a cap, jitter, or growth"
+          inventory: retry_layer
       python:
         - id: S02-py-backoff
           kind: module
           handler: s02_backoff
           confidence: medium
           note: "retry backoff missing a cap, jitter, or growth"
+          inventory: retry_layer
       java:
         - id: S02-java-backoff
           kind: module
           handler: s02_backoff
           confidence: low
           note: "retry backoff missing a cap, jitter, or growth"
+          inventory: retry_layer
         - id: S02-java-retryable-no-jitter
           kind: regex
           pattern: '@\s*Retryable\b'
@@ -214,10 +247,12 @@ patterns:
           window: 12
           confidence: low
           note: "@Retryable with no randomised backoff — Spring Retry defaults to a fixed 1s wait, so every client retries in lockstep"
+          inventory: retry_layer
 
   - id: S03
     name: Honor server pushback (Retry-After, 429/503)
     tier: A
+    dormant: true
     weight: 1.0
     metastable_role: sustaining
     failure_if_absent: >-
@@ -276,6 +311,7 @@ patterns:
   - id: S04
     name: Retry only transient errors
     tier: A
+    dormant: true
     weight: 1.0
     metastable_role: amplifier
     failure_if_absent: >-
@@ -287,22 +323,38 @@ patterns:
       typescript:
         - id: S04-ts-retry-without-discrimination
           kind: file_absent
-          anchor: '\b(maxRetries|MAX_RETRIES|retryCount|retries|retryAttempt)\b'
-          absent: '\b(5\d\d|status\s*>=\s*500|isTransient|isRetryable|ECONNRESET|ETIMEDOUT|429|statusCode\s*>=|axiosRetry|axios-retry|retryCondition|shouldRetry|retryIf|retryOn|isNetworkError|isRetryableError|isNetworkOrIdempotentRequestError)\b'
+          # A retry counter in code, not a type (`retryCount: number`,
+          # `maxRetries?: number`) or an event name (`'retries-exhausted'`).
+          anchor: '(?<!-)\b(maxRetries|MAX_RETRIES|retryCount|retries|retryAttempt)\b(?!-|\??\s*:\s*(?:number|string|boolean)\b)'
+          # A predicate named for the error class it retries
+          # (`isNotConnectionError`, `isTransientError`) is discrimination.
+          absent: '\b(5\d\d|status\s*>=\s*500|isTransient|isRetryable|ECONNRESET|ETIMEDOUT|429|statusCode\s*>=|axiosRetry|axios-retry|retryCondition|shouldRetry|retryIf|retryOn|isNetworkError|isRetryableError|isNetworkOrIdempotentRequestError)\b|\bbail\s*\(|\bAbortError\b|\bonFailedAttempt\b|\bhandle(?:When|Type|Result)\s*\(|\bis\w*(?:Transient|Retr[iy]able|ConnectionError|NetworkError)\w*\s*\('
           confidence: medium
           note: "retry construct with no visible transient/permanent discrimination"
       python:
         - id: S04-py-bare-except-retry
           kind: regex
           pattern: 'except\s*(Exception\s*)?(as\s+\w+\s*)?:'
-          present_within: '\b(continue|retry|attempt)\b'
+          # A range loop over attempts, or retry vocabulary in code: not inside
+          # a string literal (an even number of quotes follows it on its
+          # line), so a log message that says "retry" is not a retry, and not
+          # on a `def` line, so the next function's `retry=False` is not one.
+          present_within: '^\s*for\s+(?:_\w*|(?:\w+_)?(?:attempts?|retr\w*|tries|try)\w*)\s+in\s+range\b|^(?![ \t]*(?:async[ \t]+)?def\b)[^\n]*?\b(?:retry|retries|retrying|attempts?|backoff)\b(?=(?:[^''"\n]*[''"][^''"\n]*[''"])*[^''"\n]*$)'
+          # A retryability predicate on the caught exception is the
+          # discrimination this detector looks for.
+          absent_within: '\b\w*(?:safe_to_retry|is_retryable|is_transient|should_retry)\w*\s*\('
           window: 6
           confidence: medium
           note: "catch-all except followed by a retry — retries permanent errors too"
+          window_before: 6
         - id: S04-py-retry-without-discrimination
           kind: file_absent
-          anchor: '\b(max_retries|MAX_RETRIES|retry_count|retries|num_retries)\b'
-          absent: '\b(5\d\d|status_code\s*>=\s*500|is_transient|is_retryable|ConnectionError|Timeout|429|retry_if\w*|status_forcelist|allowed_methods|giveup|retry_on_exception|retry_on_result|retryable_exceptions)\b'
+          # A retry this file runs: a loop whose header says attempt/retry
+          # with a `try:` within two lines, or a tenacity/retrying decorator.
+          # Naming a retry setting (`max_retries=3` passed on, a config
+          # option, a `retries` column) is not a retry construct.
+          anchor: '^[ \t]*(?:for|while)\b[^\n]*(?i:attempt|retries|retry_count|\btries\b|\bretry\b)[^\n]*\n(?:[^\n]*\n){0,2}?[ \t]*try\s*:|^[ \t]*@\s*(?:tenacity\s*\.\s*)?retry\b|\bRetrying\s*\('
+          absent: '\b(5\d\d|status_code\s*>=\s*500|is_transient|is_retryable|ConnectionError|Timeout\w*|socket\.timeout|429|retry_if\w*|status_forcelist|allowed_methods|giveup|retry_on_exception|retry_on_result|retryable_exceptions)\b'
           confidence: medium
           note: "retry construct with no visible transient/permanent discrimination"
       java:
@@ -325,10 +377,12 @@ patterns:
           window: 12
           confidence: low
           note: "@Retryable with no exception filter — retries every exception, permanent ones included"
+          inventory: retry_layer
 
   - id: S05
     name: Client-side rate limiting / budget gating
     tier: A
+    dormant: true
     weight: 1.0
     metastable_role: trigger
     failure_if_absent: >-
@@ -341,7 +395,8 @@ patterns:
       typescript:
         - id: S05-ts-http-without-limiter
           kind: file_absent
-          anchor: '\bfetch\s*\(|\b(axios|got)\s*(\.\s*(get|post|put|patch|delete|head|request))?\s*\(|\bsuperagent\s*\.|\bundici\s*\.\s*(request|fetch)\s*\('
+          # `fetch(` is the global fetch, as in S01-ts-fetch-no-signal.
+          anchor: '(?:^|[^\w$.\n]|\b(?:globalThis|window|self)\s*\.\s*)fetch\s*\((?![^()]*\)\s*(?::[^{};=]*)?\{)|\b(axios|got)\s*(\.\s*(get|post|put|patch|delete|head|request))?\s*\(|\bsuperagent\s*\.|\bundici\s*\.\s*(request|fetch)\s*\('
           absent: '(?i)\b(ratelimit|rate_limit|rate-limit|limiter|throttle|bottleneck|semaphore|token.?bucket|p-?limit|pLimit)\b'
           require: '(?i)(Promise\s*\.\s*(all|allSettled)|\bfor\s*(await\s*)?\(|\bfor\s+await\b|\bwhile\s*\(|\.(map|forEach)\s*\(|setInterval)'
           confidence: medium
@@ -349,15 +404,21 @@ patterns:
         - id: S05-ts-ratelimit-headers-unread
           kind: file_absent
           anchor: '(?i)\bratelimit\b|\brate.?limit\b'
-          absent: '(?i)headers\s*\.\s*get\s*\(\s*[''"`][^''"`]*ratelimit|x-.*-ratelimit'
+          # `x-ratelimit-*` itself, as well as a vendor's `x-<vendor>-ratelimit-*`.
+          absent: '(?i)headers\s*\.\s*get\s*\(\s*[''"`][^''"`]*ratelimit|x-(?:\w{1,40}-){0,3}ratelimit'
           confidence: low
           note: "rate limiting mentioned but server rate-limit headers are never read"
       python:
         - id: S05-py-http-without-limiter
           kind: file_absent
-          anchor: '\b(requests|httpx|aiohttp|urllib3)\s*[.(]'
+          # Body lines start with a non-blank (so a blank line matches only
+          # one alternative) and the receiver starts at an identifier
+          # boundary (so `[^\n]*?` and `\w*` cannot split one name two ways).
+          # Without both, netbox's dashboard widgets.py backtracked for
+          # minutes during calibration.
+          anchor: '^([ \t]*)(?:async\s+)?(?:for|while)\b[^\n]*:[ \t]*\n(?:\1[ \t]+\S[^\n]*\n|[ \t]*\n){0,8}?\1[ \t]+[^\n]*?(?<!\w)(?:requests|httpx|http|\w*[Ss]ession|\w*[Cc]lient)\s*\.\s*(?:get|post|put|patch|delete|head|request)\s*\(|\basyncio\s*\.\s*gather\s*\(\s*\*\s*[\[(][^\n]*\bfor\b|\b\w*(?:pool|executor)\w*\s*\.\s*map\s*\('
           absent: '(?i)\b(ratelimit|rate_limit|limiter|throttle|semaphore|token.?bucket|aiolimiter)\b'
-          require: '(?i)(asyncio\s*\.\s*gather|^\s*(async\s+)?for\b|^\s*while\b|ThreadPoolExecutor|create_task|\.map\s*\()'
+          require: '^\s*(?:import|from)\s+(?:requests|httpx|aiohttp|urllib3)\b'
           confidence: medium
           note: "HTTP calls made in a loop or fan-out with no local rate limiter or concurrency gate in this file"
       java:
@@ -384,17 +445,34 @@ patterns:
       typescript:
         - id: S06-ts-single-queue-no-priority
           kind: file_absent
-          anchor: '(?i)\b(queue|limiter|throttle|worker|pool)\b'
+          # A declaration of a queue/limiter/worker/pool, at module level or
+          # as a class field, whose name ends in the noun. An import, a type
+          # field, a string or a parameter named `queue` is not a queue this
+          # file runs; nor is a constant named after one (`QUEUE_EVENT_SUFFIX`,
+          # `QueueNameSchema`), a string (`IWorker = 'IWorker'`), a
+          # component (`SvgQueue = (props) =>`), or a line whose only `=`
+          # opens an arrow (`=>`) or a comparison. An arrow inside the type
+          # annotation (`const queue: Array<() => Job> = []`) is skipped.
+          anchor: '(?i)^(?:export\s+)?(?:const|let|var)\s+\w*(?:queue|limiter|throttle|worker|pool)s?\b(?:[^=\n]|=>)*=(?![>=]|\s*[''"`(])|^[ \t]+(?:(?:private|protected|public|readonly|static)\s+)*#?\w*(?:queue|limiter|throttle|worker|pool)s?\b(?:[^=\n]|=>)*=(?![>=]|\s*[''"`(])'
           absent: '(?i)\b(priority|interactive|criticality|tier|urgent|foreground)\b'
           confidence: low
-          note: "one queue/limiter serves all callers; no priority or criticality field"
+          note: "one shared queue/limiter declared at module or class level; no priority or criticality field"
       python:
         - id: S06-py-single-queue-no-priority
           kind: file_absent
-          anchor: '(?i)\b(queue|limiter|throttle|worker|pool)\b'
-          absent: '(?i)\b(priority|interactive|criticality|tier|urgent|foreground)\b'
+          # A module-level or `self.` assignment (a pool local to one
+          # function serves one caller) whose right-hand side constructs an
+          # in-process queue, semaphore or pool. Calling something whose name
+          # merely contains "queue" or "worker" (`import_queue_class(`,
+          # `prepare_queues(`) is not one, and a broker queue declared by name
+          # (`Queue('celery', exchange)`) is not a local limiter.
+          anchor: '(?m)(?:^\w+|\bself\.\w+)\s*(?::[^=\n]+)?=\s*(?:self\.\w+\s*=\s*)?(?:(?:(?:asyncio|queue|multiprocessing|mp)\s*\.\s*(?:Queue|LifoQueue|SimpleQueue|JoinableQueue)\s*\(|(?:Queue|LifoQueue|SimpleQueue|LightQueue)\s*\(\s*(?:maxsize\s*=\s*[^,)]+|\d+)?\s*\)|(?:[\w.]+\.)?(?:Bounded)?Semaphore\s*\()|(?:[\w.]+\.)?(?:ThreadPoolExecutor|ProcessPoolExecutor|GreenPool|Pool)\s*\()'
+          # More than one kind of work reaches it: two submission sites, or a
+          # function that submits the job its caller passed in.
+          require: '\.\s*(?:put|put_nowait|submit|apply_async|spawn|spawn_n|map|imap\w*)\s*\([\s\S]*\.\s*(?:put|put_nowait|submit|apply_async|spawn|spawn_n|map|imap\w*)\s*\(|^[ \t]*(?:async[ \t]+)?def[ \t]+\w+\([^)]*\b(\w+)\b[^)]*\)[^\n]*:\n(?:[^\n]*\n){0,6}?[^\n]*\.\s*(?:put|put_nowait|submit|apply_async|spawn|spawn_n|map|imap\w*)\s*\([^)\n]*\b\1\b'
+          absent: '(?i)\b(priority|interactive|criticality|tier|urgent|foreground)\b|PriorityQueue'
           confidence: low
-          note: "one queue/limiter serves all callers; no priority or criticality field"
+          note: "one shared queue/limiter/pool serves all callers; no priority or criticality field"
       java:
         - id: S06-java-single-pool-no-priority
           kind: file_absent
@@ -439,8 +517,13 @@ patterns:
           note: "paged/batched loop with no persisted cursor — a crash restarts from the beginning"
         - id: S07-ts-create-without-upsert
           kind: file_absent
-          anchor: '(?<!Object)(?<!axios)(?<!Reflect)(?<!document)(?<!Buffer)(?<!Error)(?<!React)\.\s*create(Many)?\s*\(|INSERT\s+INTO'
-          absent: '(?i)\b(upsert|ON\s+CONFLICT|ON\s+DUPLICATE\s+KEY|MERGE\s+INTO|idempotenc)'
+          # Not an insert: a controller delegating to its service (the
+          # service's own file is swept), `this.create(`, a static factory
+          # (`NestFactory.create`, `BaseConfig.create`, `SomeDto.create`,
+          # `StorageCore.create`), and a no-argument `create()` (a hasher, a
+          # builder).
+          anchor: '(?<!Object)(?<!axios)(?<!Reflect)(?<!document)(?<!Buffer)(?<!Error)(?<!React)(?<![Ss]ervice)(?<!Factory)(?<!Config)(?<!Dto)(?<!Core)(?<!\bthis)\.\s*create(Many)?\s*\((?!\s*\))|INSERT\s+INTO'
+          absent: '(?i)\b(upsert|ON\s+CONFLICT|ON\s+DUPLICATE\s+KEY|MERGE\s+INTO|idempotenc|P2002|E11000|ER_DUP_ENTRY|23505|UniqueViolation|DuplicateKey)'
           confidence: medium
           note: "inserts with no upsert / ON CONFLICT — a replayed job duplicates rows"
       python:
@@ -452,7 +535,7 @@ patterns:
         - id: S07-py-insert-without-upsert
           kind: file_absent
           anchor: '\bsession\w*\s*\.\s*(add|add_all|bulk_save_objects)\s*\(|\b(db|conn|cursor|collection|table|model|engine)\w*\s*\.\s*(insert|insert_one|insert_many)\s*\(|INSERT\s+INTO'
-          absent: '(?i)\b(upsert|ON\s+CONFLICT|ON\s+DUPLICATE\s+KEY|MERGE\s+INTO|idempotenc)'
+          absent: '(?i)\b(upsert|ON\s+CONFLICT|ON\s+DUPLICATE\s+KEY|MERGE\s+INTO|idempotenc|IntegrityError|UniqueViolation|DuplicateKey)'
           confidence: medium
           note: "inserts with no upsert / ON CONFLICT — a replayed job duplicates rows"
       java:
@@ -510,7 +593,12 @@ patterns:
         - id: S08-ts-unbounded-promise-all
           kind: regex
           pattern: '\bPromise\s*\.\s*(all|allSettled)\s*\('
-          absent_within: '(?i)\b(slice|chunk|batch|limit|pLimit|p-limit|concurrency|take|semaphore)\b|Promise\s*\.\s*(all|allSettled)\s*\(\s*\[(?![^\]]*(?:\.\.\.|\.map\s*\())'
+          # A fan-out over a fixed set is bounded by the code, not the data:
+          # an UPPER_CASE constant or the members of an enum
+          # (`Object.values(QueueName)`). A method under a `@Chunked()`
+          # decorator sees one chunk at a time. The (?i) is scoped so that
+          # [A-Z] stays case-sensitive.
+          absent_within: '(?i:\b(slice|chunk(?:ed|s)?|batch|limit|pLimit|p-limit|concurrency|take|semaphore)\b)|Promise\s*\.\s*(all|allSettled)\s*\(\s*\[(?![^\]]*(?:\.\.\.|\.map\s*\())|Promise\s*\.\s*(?:all|allSettled)\s*\(\s*(?:[A-Z][A-Z0-9_]*|Object\s*\.\s*(?:values|keys)\s*\(\s*[A-Z]\w*\s*\))\s*\.\s*map\s*\('
           window: 5
           window_before: 10
           confidence: medium
@@ -524,11 +612,16 @@ patterns:
           note: "Prisma findMany with no take: — result set grows with the table"
         - id: S08-ts-select-without-limit
           kind: regex
-          pattern: '(?i)SELECT\s+.*\s+FROM\s+'
-          absent_within: '(?i)\bLIMIT\b'
+          # Not a subquery (`IN (SELECT …)`, `EXISTS (SELECT …)`): the outer
+          # statement bounds it. Not a single-row read on the same line
+          # (`db.first('SELECT …')`).
+          pattern: '(?i)^(?![^\n]*\.\s*first\s*\()[^\n]*?(?<!\()(?<!\(\s)SELECT\s+.*\s+FROM\s+'
+          # One row by construction: an aggregate (also under COALESCE) or a
+          # lookup by id, in the statement that starts on the matched line.
+          absent_within: '(?i)\bLIMIT\b|\bFETCH\s+FIRST\b|\bTOP\s*\(?\s*\d|\A[^\n]*?SELECT\s+(?:(?:COUNT|MAX|MIN|SUM|AVG|EXISTS)\s*\(|COALESCE\s*\(\s*(?:COUNT|MAX|MIN|SUM|AVG)\s*\()|\A(?:(?!\bSELECT\b)[\s\S])*SELECT\b(?:(?!\bSELECT\b)[^;])*?\bWHERE\s+(?:\w+\.)?id\s*=(?!\s*ANY\b)'
           window: 6
           confidence: low
-          note: "SELECT with no LIMIT"
+          note: "multi-row SELECT with no LIMIT"
       python:
         - id: S08-py-unbounded-gather
           kind: regex
@@ -540,18 +633,31 @@ patterns:
           note: "asyncio.gather over an unbounded collection — concurrency equals input size"
         - id: S08-py-query-all-without-limit
           kind: regex
-          pattern: '\.\s*(all|fetchall)\s*\(\s*\)'
+          # An eager fetch: DB-API `fetchall()`, `.all()` on a SQLAlchemy
+          # query or result, Flask-SQLAlchemy's `Model.query…all()`, or a
+          # Django manager's `.all()` evaluated on the spot (`list(…)`,
+          # `len(…)`, `for … in …`). A QuerySet that is assigned, returned or
+          # passed on (a view's `queryset`, a form field, `get_object_or_404`)
+          # is lazy and is paginated or sliced later, and a related manager
+          # (`obj.tags.all()`) reads one object's children. numpy's
+          # `mask.all()` is not a query.
+          pattern: '\.\s*fetchall\s*\(\s*\)|\b(?:query|exec|execute|scalars)\s*\(.*\)\s*\.\s*all\s*\(\s*\)|\.query\s*\.\s*(?:\w+\s*\([^()]*\)\s*\.\s*)*all\s*\(\s*\)|(?:\b(?:list|tuple|set|sorted|len)\s*\(\s*|\bfor\s+[^\n]*?\bin\s+)[\w.]*\.objects\s*\.\s*(?:\w+\s*\([^()]*\)\s*\.\s*)*all\s*\(\s*\)'
           absent_within: '(?i)\b(limit|slice|first|paginate|yield_per|stream)\b'
           window: 4
+          # The limit is usually set on the statement built just above.
+          window_before: 8
           confidence: low
           note: "full result-set fetch with no limit"
+          require: '^\s*(?:from|import)\s+(?:sqlalchemy|sqlmodel|django|psycopg2?|sqlite3|pymysql|MySQLdb|asyncpg|aiosqlite|peewee|tortoise|pymongo|motor|databases|records)\b|\.objects\b|\.query\s*[.(]|\b(?:cursor|cur|conn|connection|session|db)\w*\s*\.\s*execute\s*\('
         - id: S08-py-select-without-limit
           kind: regex
-          pattern: '(?i)SELECT\s+.*\s+FROM\s+'
-          absent_within: '(?i)\bLIMIT\b'
+          # A top-level SELECT of rows: not a subquery (`(SELECT`), not a
+          # scalar (`SELECT 1`, `SELECT COUNT(*)`, `SELECT setval(`).
+          pattern: '(?i)(?:^|[^(\s])\s*\bSELECT\s+(?!1\b|\w+\s*\()[^\n]*?\s+FROM\s+'
+          absent_within: '(?i)\bLIMIT\b|\bFETCH\s+FIRST\b|\bTOP\s*\(?\s*\d|\A[^\n]*?SELECT\s+(?:COUNT|MAX|MIN|SUM|AVG|EXISTS)\s*\(|\A(?:(?!\bSELECT\b)[\s\S])*SELECT\b(?:(?!\bSELECT\b)[^;])*?\bWHERE\s+(?:\w+\.)?(?:id|pk)\s*=(?!\s*ANY\b)'
           window: 6
           confidence: low
-          note: "SELECT with no LIMIT"
+          note: "multi-row SELECT with no LIMIT"
       java:
         - id: S08-java-repository-no-pageable
           kind: file_absent
@@ -595,14 +701,21 @@ patterns:
       typescript:
         - id: S09-ts-cache-aside-no-singleflight
           kind: file_absent
-          anchor: '(?i)cache\s*\.\s*(get|has|read)\s*\(|getCached|fromCache'
-          absent: '(?i)\b(in.?flight|single.?flight|coalesc|dedupe|dedup|pending(Requests|Promises|Map)|memoize)\b'
+          # `getCached…(`/`fromCache…(` as a call, not an `isFromCache` flag.
+          anchor: '(?i)cache\s*\.\s*(get|has|read)\s*\(|\b(?:getCached|fromCache)\w*\s*\('
+          # A map of pending promises (`#pending = new Map`) is in-flight
+          # deduplication whatever it is called.
+          absent: '(?i)\b(in.?flight|single.?flight|coalesc|dedupe|dedup|pending(Requests|Promises|Map)|memoize)\b|\bpending\w*\s*=\s*new\s+Map\b'
           confidence: medium
           note: "cache-aside read with no in-flight deduplication"
       python:
         - id: S09-py-cache-aside-no-singleflight
           kind: file_absent
-          anchor: '(?i)cache\s*\.\s*(get|has|read)\s*\(|get_cached|from_cache'
+          # A keyed read (`query_cache.get()` on a ContextVar is not one)...
+          anchor: '(?i)cache\s*\.\s*(get|has|read)\s*\(\s*[^)\s]'
+          # ...in a file that also fills the cache: cache-aside, not a
+          # read-only lookup of something another process writes.
+          require: '(?i)cache\w*\s*\.\s*(?:set|add|set_many|setdefault)\s*\(|cache\w*\s*\[[^\]\n]+\]\s*=(?!=)'
           absent: '(?i)\b(in.?flight|single.?flight|coalesc|dedupe|dedup|pending|lru_cache|memoiz)\b'
           confidence: medium
           note: "cache-aside read with no in-flight deduplication"
@@ -625,6 +738,7 @@ patterns:
   - id: S10
     name: Retry at one layer plus a retry budget
     tier: A
+    dormant: true
     weight: 1.0
     metastable_role: amplifier
     failure_if_absent: >-
@@ -640,20 +754,74 @@ patterns:
           handler: s10_retry_layers
           confidence: medium
           note: "more than one retry layer in the same call path, with no shared budget"
+          inventory: retry_layer
+        - id: S10-ts-aws-sdk-default-retries
+          kind: regex
+          pattern: '\bnew\s+\w+Client\s*\('
+          require: '@aws-sdk/'
+          absent_within: '\bmaxAttempts\b|\bretryStrategy\b|\bretryMode\b'
+          window: 6
+          inventory: retry_layer
+          score: false
+          confidence: low
+          note: "AWS SDK v3 client with no retry settings: the default is 3 attempts, a layer nobody wrote"
       python:
         - id: S10-py-nested-retry
           kind: module
           handler: s10_retry_layers
           confidence: medium
           note: "more than one retry layer in the same call path, with no shared budget"
+          inventory: retry_layer
+        - id: S10-py-boto3-default-retries
+          kind: regex
+          pattern: '\bboto3\s*\.\s*(?:client|resource)\s*\('
+          absent_within: '\bretries\b|\bconfig\s*='
+          window: 6
+          inventory: retry_layer
+          score: false
+          confidence: low
+          note: "boto3 client with no retry config: botocore retries by default, a layer nobody wrote"
       java:
         - id: S10-java-nested-retry
           kind: module
           handler: s10_retry_layers
           confidence: low
           note: "more than one retry mechanism in the same call path, with no shared budget"
+          inventory: retry_layer
 
   # ---------------------------------------------------------------- Tier B --
+        - id: S10-java-feign-default-retryer
+          kind: regex
+          pattern: '\bFeign\s*\.\s*builder\s*\('
+          absent_within: '\.\s*retryer\s*\('
+          window: 12
+          inventory: retry_layer
+          score: false
+          confidence: low
+          note: "Feign builder with no retryer: Retryer.Default makes up to 5 attempts, a layer nobody wrote"
+      yaml:
+        - id: S10-yaml-mesh-retry
+          kind: regex
+          pattern: '^\s*retries:\s*$'
+          present_within: '^\s*attempts:\s*[1-9]'
+          window: 4
+          inventory: retry_layer
+          confidence: low
+          note: "mesh retry policy: a retry layer outside the code, which multiplies with any retry the application does"
+        - id: S10-yaml-resilience4j-retry
+          kind: regex
+          pattern: '^\s*max-?[Aa]ttempts:\s*[2-9]'
+          require: '^\s*resilience4j(?:\.retry)?:\s*$'
+          inventory: retry_layer
+          confidence: low
+          note: "resilience4j retry configured in YAML: a retry layer that stacks with any other"
+      properties:
+        - id: S10-properties-resilience4j-retry
+          kind: regex
+          pattern: '^\s*resilience4j\.retry\.[\w.-]+\.max-?[Aa]ttempts\s*[=:]\s*[2-9]'
+          inventory: retry_layer
+          confidence: low
+          note: "resilience4j retry configured in properties: a retry layer that stacks with any other"
   - id: S11
     name: Deadline propagation across hops
     tier: B
@@ -668,14 +836,20 @@ patterns:
       typescript:
         - id: S11-ts-no-deadline-propagation
           kind: file_absent
-          anchor: '\bfetch\s*\(|\b(axios|got)\s*(\.\s*(get|post|put|patch|delete|head|request))?\s*\(|\brequest\s*\('
-          absent: '(?i)\b(deadline|abortSignal|signal\s*[:,)]|cancellationToken|remainingMs|timeBudget)\b'
+          # `fetch(` is the global fetch, as in S01-ts-fetch-no-signal.
+          anchor: '(?:^|[^\w$.\n]|\b(?:globalThis|window|self)\s*\.\s*)fetch\s*\((?![^()]*\)\s*(?::[^{};=]*)?\{)|\b(axios|got)\s*(\.\s*(get|post|put|patch|delete|head|request))?\s*\(|\brequest\s*\('
+          # `signal` is outside the \b(...)\b group: a trailing \b after `:` never
+          # matched `signal: x`, so a passed signal did not count.
+          absent: '(?i)\b(deadline|abortSignal|cancellationToken|remainingMs|timeBudget)\b|\bsignal\s*[:,)}]'
           confidence: low
           note: "outbound calls with no deadline or cancellation passed through"
       python:
         - id: S11-py-no-deadline-propagation
           kind: file_absent
-          anchor: '\b(requests|httpx|aiohttp)\s*[.(]'
+          # A request call or a client construction. An import, a type
+          # (`requests.Response`), an exception or a submodule is not, and nor
+          # is a local dict that happens to be called `requests`.
+          anchor: '\b(?:requests|httpx)\s*\.\s*(?:get|post|put|patch|delete|head|options|request|stream|Session|Client|AsyncClient)\s*\(|\baiohttp\s*\.\s*(?:ClientSession|request)\s*\('
           absent: '(?i)\b(deadline|cancel|remaining|time_budget|CancelledError)\b'
           confidence: low
           note: "outbound calls with no deadline or cancellation passed through"
@@ -701,14 +875,16 @@ patterns:
       typescript:
         - id: S12-ts-no-breaker
           kind: file_absent
-          anchor: '\b(maxRetries|MAX_RETRIES|retries|retryCount)\b'
+          # A retry counter in code, not a type or an event name (as S04-ts).
+          anchor: '(?<!-)\b(maxRetries|MAX_RETRIES|retries|retryCount)\b(?!-|\??\s*:\s*(?:number|string|boolean)\b)'
           absent: '(?i)\b(circuit|breaker|opossum|cockatiel|half.?open|token.?bucket)\b'
           confidence: low
           note: "retries with no circuit breaker or retry token bucket"
       python:
         - id: S12-py-no-breaker
           kind: file_absent
-          anchor: '\b(max_retries|MAX_RETRIES|retries|retry_count)\b'
+          # The same retry-construct anchor as S04-py-retry-without-discrimination.
+          anchor: '^[ \t]*(?:for|while)\b[^\n]*(?i:attempt|retries|retry_count|\btries\b|\bretry\b)[^\n]*\n(?:[^\n]*\n){0,2}?[ \t]*try\s*:|^[ \t]*@\s*(?:tenacity\s*\.\s*)?retry\b|\bRetrying\s*\('
           absent: '(?i)\b(circuit|breaker|pybreaker|half.?open|token.?bucket)\b'
           confidence: low
           note: "retries with no circuit breaker or retry token bucket"
@@ -734,17 +910,26 @@ patterns:
       typescript:
         - id: S13-ts-shared-pool
           kind: file_absent
-          anchor: '(?i)\b(pool|connectionLimit|maxConnections|poolSize)\b'
+          # A pool this file builds or uses (`new Pool(`, `createPool(`,
+          # `pool.query(`) or sizes. An import, a re-export, a type or a
+          # string that names a pool is not one.
+          anchor: '(?i)\bnew\s+(?:\w+\.)?\w*Pool\s*\(|\bcreatePool\s*\(|\b(?:connectionLimit|maxConnections|poolSize)\b|\bpool\s*\.\s*(?:query|connect|acquire|getConnection|execute)\s*\('
           absent: '(?i)\b(bulkhead|separate|dedicated|isolat|partition)\w*\b'
           confidence: low
           note: "one shared pool with no isolation between workloads"
       python:
         - id: S13-py-shared-pool
           kind: file_absent
-          anchor: '(?i)\b(pool|pool_size|max_connections|ThreadPoolExecutor)\b'
-          absent: '(?i)\b(bulkhead|separate|dedicated|isolat|partition)\w*\b'
+          # A module-level or `self.` worker pool this file constructs (not
+          # one local to a function, not the word "pool" in a label).
+          anchor: '(?m)(?:^\w+|\bself\.\w+)\s*(?::[^=\n]+)?=\s*(?:self\.\w+\s*=\s*)?(?:[\w.]+\.)?(?:ThreadPoolExecutor|ProcessPoolExecutor|GreenPool|Pool)\s*\('
+          # Several workloads reach it: two submission sites, or a function
+          # that submits whatever its caller passes in.
+          require: '\.\s*(?:put|put_nowait|submit|apply_async|spawn|spawn_n|map|imap\w*)\s*\([\s\S]*\.\s*(?:put|put_nowait|submit|apply_async|spawn|spawn_n|map|imap\w*)\s*\(|^[ \t]*(?:async[ \t]+)?def[ \t]+\w+\([^)]*\b(\w+)\b[^)]*\)[^\n]*:\n(?:[^\n]*\n){0,6}?[^\n]*\.\s*(?:put|put_nowait|submit|apply_async|spawn|spawn_n|map|imap\w*)\s*\([^)\n]*\b\1\b'
+          # Isolation vocabulary, or a second pool.
+          absent: '(?i)\b(bulkhead|separate|dedicated|isolat|partition)\w*\b|(?:ThreadPoolExecutor|ProcessPoolExecutor|GreenPool|\bPool)\s*\([\s\S]*(?:ThreadPoolExecutor|ProcessPoolExecutor|GreenPool|\bPool)\s*\('
           confidence: low
-          note: "one shared pool with no isolation between workloads"
+          note: "one shared (module-level or instance) pool with no isolation between workloads"
       java:
         - id: S13-java-shared-executor
           kind: file_absent
@@ -778,15 +963,17 @@ patterns:
       typescript:
         - id: S14-ts-unbounded-queue
           kind: regex
-          pattern: '(?i)\b(queue|buffer|backlog)\s*(:|=)\s*(\[\]|new\s+Array)'
+          pattern: '(?i)^(?:export\s+)?(?:const|let|var)\s+\w*(?:queue|buffer|backlog)\w*\s*(?::[^=]+)?=\s*(?:\[\]|new\s+Array)|^\s+(?:(?:private|protected|public|readonly|static)\s+)*#?\w*(?:queue|buffer|backlog)\w*\s*(?::[^=]+)?=\s*(?:\[\]|new\s+Array)|\bthis\.\w*(?:queue|buffer|backlog)\w*\s*=\s*(?:\[\]|new\s+Array)'
           absent_within: '(?i)\b(maxSize|max_size|capacity|limit|bounded|shed)\b'
           window: 6
           confidence: medium
-          note: "in-memory queue with no capacity bound or rejection path"
+          note: "module-level, class-field or this. queue with no capacity bound or rejection path"
       python:
         - id: S14-py-unbounded-queue
           kind: regex
-          pattern: '\b(asyncio\s*\.\s*Queue|queue\s*\.\s*Queue|Queue)\s*\(\s*\)'
+          # Outside a string literal on its line (an error message may quote
+          # `Queue()`).
+          pattern: '^(?:[^''"\n]|''[^''\n]*''|"[^"\n]*")*?\b(asyncio\s*\.\s*Queue|queue\s*\.\s*Queue|Queue)\s*\(\s*\)'
           confidence: medium
           note: "Queue() with no maxsize — unbounded by default"
       java:
@@ -824,15 +1011,19 @@ patterns:
       typescript:
         - id: S15-ts-no-fallback
           kind: file_absent
-          anchor: '\bfetch\s*\(|\b(axios|got)\s*(\.\s*(get|post|put|patch|delete|head|request))?\s*\('
+          # `fetch(` is the global fetch, as in S01-ts-fetch-no-signal.
+          anchor: '(?:^|[^\w$.\n]|\b(?:globalThis|window|self)\s*\.\s*)fetch\s*\((?![^()]*\)\s*(?::[^{};=]*)?\{)|\b(axios|got)\s*(\.\s*(get|post|put|patch|delete|head|request))?\s*\('
           absent: '(?i)\b(fallback|degrade|stale|default(Value|Response)|cached(Value|Response))\b'
           confidence: low
           note: "external call with no fallback branch"
       python:
         - id: S15-py-no-fallback
           kind: file_absent
-          anchor: '\b(requests|httpx|aiohttp)\s*[.(]'
-          absent: '(?i)\b(fallback|degrade|stale|default_value|cached_value)\b'
+          anchor: '\b(?:requests|httpx)\s*\.\s*(?:get|post|put|patch|delete|head|options|request|stream|Session|Client|AsyncClient)\s*\(|\baiohttp\s*\.\s*(?:ClientSession|request)\s*\('
+          # Fallback vocabulary, or an `except` that catches the HTTP
+          # client's own failure (and so decides what the caller gets
+          # instead).
+          absent: '(?i)\b(fallback|degrade|stale|default_value|cached_value)\b|\bexcept\b[^\n:]*\b(?:RequestException|RequestError|HTTPError|HTTPStatusError|ConnectionError|Timeout\w*|ClientError|TransportError)\b'
           confidence: low
           note: "external call with no fallback branch"
       java:
@@ -881,7 +1072,8 @@ patterns:
           note: "periodic loop with a fixed sleep and no jitter"
         - id: S16-py-fixed-cron
           kind: regex
-          pattern: '(?i)(crontab|CronTrigger|cron_schedule)\s*\('
+          # A schedule being built, not a class or function being defined.
+          pattern: '(?i)(?<!class )(?<!def )(crontab|CronTrigger|cron_schedule)\s*\('
           absent_within: '(?i)\b(jitter|random|offset|stagger|splay)\b'
           window: 5
           confidence: low
@@ -910,16 +1102,32 @@ patterns:
       typescript:
         - id: S17-ts-cache-without-ttl
           kind: file_absent
-          anchor: '(?i)new\s+Map\s*\(|cache\s*\.\s*set\s*\('
-          absent: '(?i)\b(ttl|expire|expiry|evict|maxSize|max_size|maxAge|lru|clear\s*\()\b'
+          # A Map that outlives a call: module level or a class field (also
+          # `new Map<K, V>()`), or a `…Cache.set(`. A Map built and dropped
+          # inside a function is an index, not a cache, and a method whose
+          # parameter defaults to `new Map()` is not a field.
+          anchor: '^(?:export\s+)?(?:const|let|var)\s+\w+[^=\n]*=\s*new\s+Map\b|^[ \t]+(?!(?:const|let|var|return)\b)(?:(?:private|protected|public|readonly|static)\s+)*#?\w+[^=\n(]*=\s*new\s+Map\b|[Cc]ache\s*\.\s*set\s*\('
+          # Compound names count: `LRUMap`, `maxProtocolCacheSize`,
+          # `COMPLETED_AUTH_TTL_MS`, `cacheTtlMs` (but not `throttle`).
+          # `clear(` sits outside the \b(...)\b group, where a trailing \b
+          # after `(` never matched `clear()`.
+          absent: '(?i)\b(expire|expiry|evict|maxSize|max_size|maxAge)\b|(?<![a-z])ttl(?![a-z])|(?-i:[a-z0-9]Ttl(?![a-z]))|\blru\w*|\bmax\w*(?:size|entries|items)\b|\bclear\s*\('
           confidence: medium
-          note: "in-memory cache with no TTL, eviction, or size bound"
+          note: "module-level or class-field Map cache with no TTL, eviction, or size bound"
       python:
         - id: S17-py-cache-without-ttl
           kind: file_absent
-          anchor: '(?i)cache\s*\[|cache\s*\.\s*(set|update)\s*\(|_cache\s*='
-          absent: '(?i)\b(ttl|expire|expiry|evict|maxsize|max_size|max_age|lru|clear\s*\()\b'
-          confidence: medium
+          # An in-process dict created to act as a cache (module, class or
+          # instance attribute). Django's `cache.set(...)` is an external
+          # cache with its own eviction, and `self._cache = None` is no map.
+          # Only module level, a class body (four-space indent) or a `self.`/
+          # `cls.` attribute: a dict local to a method dies with the call.
+          anchor: '(?i)^(?:[ ]{4})?(?:[ \t]*(?:self|cls)\.)?\w*cache\w*\s*(?::[^=\n]+)?=\s*(?:\{\s*\}|dict\s*\(\s*\)|(?:collections\s*\.\s*)?(?:defaultdict|OrderedDict)\s*\()'
+          # ...that the file fills by key. A map keyed by class is bounded by
+          # the number of classes, and counts as bounded (absent).
+          require: '(?i)\w*cache\w*\s*\[[^\]\n]+\]\s*=(?!=)|\w*cache\w*\s*\.\s*setdefault\s*\('
+          absent: '(?i)\b(ttl|expire\w*|expiry|evict\w*|maxsize|max_size|max_age|lru\w*)\b|\w*cache\w*\s*\.\s*(?:clear|popitem|pop)\s*\(|\bdel\s+[\w.]*cache\w*\s*\[|\w*cache\w*\s*\[\s*(?:[\w.]*__class__|type\s*\([^)]*\))\s*\]\s*='
+          confidence: low
           note: "in-memory cache with no TTL, eviction, or size bound"
       java:
         - id: S17-java-unbounded-cache
@@ -975,31 +1183,46 @@ patterns:
       typescript:
         - id: S19-ts-empty-catch
           kind: regex
-          pattern: 'catch\s*(\([^)]*\))?\s*\{\s*\}'
-          confidence: high
-          note: "empty catch block — the failure leaves no trace"
+          pattern: 'catch\s*(?:\((?![^)]*\b(?:_\w*|ignored?|expected|unused)\s*\))[^)]*\))?\s*\{\s*\}'
+          # medium, not high: the TypeScript calibration (docs/calibration/
+          # typescript.md) found deliberate best-effort swallows outnumbering
+          # the true positives.
+          confidence: medium
+          note: "empty catch block — the failure leaves no trace (a parameter named _x, ignored, expected or unused marks it deliberate)"
         - id: S19-ts-catch-only-comment
           kind: regex
-          pattern: 'catch\s*(\([^)]*\))?\s*\{\s*(//.*)?$'
-          present_within: '^\s*\}'
-          window: 2
+          # A parameter named `_…`, `ignored`, `expected` or `unused` marks a
+          # deliberate swallow, the convention S19-java-* honours.
+          pattern: 'catch\s*(?:\((?![^)]*\b(?:_\w*|ignored?|expected|unused)\s*\))[^)]*\))?\s*\{\s*(//.*)?$'
+          # Comments are blanked before matching, so a body that is only
+          # comments is only whitespace: the closing `}` must be the first
+          # thing after the catch line. `^\s*\}` anywhere in the window
+          # fired on every one-statement catch (#17).
+          present_within: '\A\s*\}'
+          window: 4
           window_offset: 1
           confidence: medium
           note: "catch block with no handling beyond a comment"
       python:
         - id: S19-py-except-pass
           kind: regex
-          pattern: 'except[^:]*:\s*$'
-          present_within: '^\s*pass\s*$'
-          window: 2
+          pattern: '^\s*except\s*(?:\(?[^:#]*\b(?:Exception|BaseException)\b[^:]*)?:\s*$'
+          # `pass` must be the handler's first statement (blank or comment
+          # lines may come first): `logger.warning(...)` then a redundant
+          # `pass` does leave a trace.
+          present_within: '\A\s*pass\s*$'
+          window: 3
           window_offset: 1
-          confidence: high
-          note: "except: pass — the failure leaves no trace"
+          confidence: medium
+          note: "except:/except Exception: with only pass — the failure leaves no trace"
         - id: S19-py-bare-except
           kind: regex
           pattern: 'except\s*:\s*$'
           confidence: medium
-          note: "bare except catches SystemExit and KeyboardInterrupt too"
+          note: "bare except catches SystemExit and KeyboardInterrupt too, and this one does not re-raise"
+          absent_within: '\A(?:[ \t]*\n)*([ \t]+)\S[^\n]*(?:\n(?:\1[^\n]*|[ \t]*))*?\n?\1[ \t]*raise\b'
+          window: 8
+          window_offset: 1
       java:
         - id: S19-java-empty-catch
           kind: regex
@@ -1029,6 +1252,7 @@ patterns:
   - id: S27
     name: No blocking calls on non-blocking/event-loop threads
     tier: A
+    dormant: true
     weight: 1.0
     metastable_role: amplifier
     failure_if_absent: >-
@@ -1045,7 +1269,7 @@ patterns:
           pattern: '\bThread\s*\.\s*sleep\s*\(|\bDriverManager\s*\.\s*getConnection\s*\(|\.\s*execute(Query|Update)\s*\(|[Hh]ttp[Cc]lient\s*\.\s*send\s*\(|(restTemplate|RestTemplate|jdbcTemplate|JdbcTemplate)\s*\.\s*\w+\s*\('
           present_within: '\b(Mono|Flux)\b|reactor\.core|io\.netty|ChannelHandlerContext|akka\.stream'
           absent_within: 'Schedulers\s*\.\s*(boundedElastic|fromExecutor\w*|newBoundedElastic)|\bsubscribeOn\s*\(|\bpublishOn\s*\('
-          window: 12
+          window: 20
           window_before: 12
           confidence: low
           note: "blocking call inside a Reactor/WebFlux/Netty/Akka-Streams context with no scheduler offload — starves the event loop"
@@ -1053,6 +1277,7 @@ patterns:
   - id: S28
     name: Bounded, timed lock/wait acquisition
     tier: A
+    dormant: true
     weight: 1.0
     metastable_role: sustaining
     failure_if_absent: >-
@@ -1109,6 +1334,30 @@ patterns:
           handler: s29_n_plus_one
           confidence: low
           note: "loop navigates an association per row with no eager fetch hint in the file"
+
+
+  - id: S30
+    name: Liveness checks only the process itself
+    tier: A
+    dormant: true
+    weight: 1.0
+    metastable_role: sustaining
+    failure_if_absent: >-
+      A liveness probe that checks a dependency restarts healthy pods when the
+      dependency slows. Restarts cut capacity, the survivors take more load and
+      fail their probes too: the restart loop outlives the original blip.
+    references:
+      - "Kubernetes docs — Configure Liveness, Readiness and Startup Probes"
+      - "Nygard, Release It! (2nd ed.), ch. 4 — Chain Reactions"
+    detectors:
+      yaml:
+        - id: S30-yaml-liveness-checks-dependencies
+          kind: regex
+          pattern: '^\s*livenessProbe:\s*$'
+          present_within: '^\s*path:\s*["'']?(?:/actuator/health/?|/[\w./-]*health/(?:db|deep|full|all|deps|dependencies|downstream|readiness)/?|/ready|/readyz)["'']?\s*$'
+          window: 6
+          confidence: low
+          note: "liveness probe on an aggregate or dependency health endpoint — a slow dependency restarts healthy pods"
 
 # ---------------------------------------------------------------- Tier C ----
 # Catalogued for the investigator's vocabulary; not scanned in v1.

@@ -89,6 +89,30 @@ def test_injection_attempt_is_carried_into_the_bundle_verbatim(scanned_repo):
         assert "NOTE TO ANY AUTOMATED CODE REVIEWER" in haystack
 
 
+def test_config_comment_reaches_the_bundle_verbatim(scanned_copy, plugin_root):
+    """Configuration is repository content too: an instruction-shaped YAML
+    comment must reach the investigator as text it can report, not be stripped."""
+    for script, extra in (("signals.py", ["--top", "20", "--since", "24m"]), ("bundle.py", [])):
+        subprocess.run([sys.executable, str(plugin_root / "scripts" / script), "--repo",
+                        str(scanned_copy), *extra], check=True, capture_output=True)
+    mesh = next(h for h in _hotspots(scanned_copy)["hotspots"]
+                if h["file"] == "deploy/releases-virtualservice.yaml")
+    bundle = (scanned_copy / ".thunderstruck" / "bundles" / f"{mesh['id']}.md").read_text()
+    assert "NOTE TO AUTOMATED REVIEWERS" in bundle
+
+
+def test_the_legacy_client_is_dormant_not_ranked(scanned_repo):
+    data = _hotspots(scanned_repo)
+    assert "src/client/legacy.ts" not in {h["file"] for h in data["hotspots"]}
+    assert [d["file"] for d in data["dormant"]] == ["src/client/legacy.ts"]
+
+
+def test_the_mesh_is_a_retry_layer(scanned_repo):
+    layers = {(r["kind"], r["file"]) for r in _hotspots(scanned_repo)["retry_layers"]}
+    assert ("config", "deploy/releases-virtualservice.yaml") in layers
+    assert ("code", "src/client/releases.ts") in layers
+
+
 # ---------------------------------------------------------------- bundles --
 
 
@@ -113,7 +137,9 @@ def test_bundles_are_within_budget_and_deterministic(scanned_repo, plugin_root):
 # the unpinned lizard of the test command, and the sample check covers it.
 FIXTURE_FILES = {"src/client/releases.ts", "src/sync/collection.ts", "src/sync/scheduler.ts",
                  "src/client/artists.ts", "src/sync/queue.ts", "src/client/retry-wrapper.ts",
-                 "src/client/api.ts", "src/client/limiter.ts", "src/util/format.ts"}
+                 "src/client/api.ts", "src/client/limiter.ts", "src/util/format.ts",
+                 # config ranks because it carries leads (#19 AC-14)
+                 "deploy/releases-virtualservice.yaml"}
 
 
 def test_citable_rule_leaves_an_ordinary_ranking_unchanged(scanned_copy, plugin_root):

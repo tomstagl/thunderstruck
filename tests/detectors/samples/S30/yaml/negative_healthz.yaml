@@ -1,0 +1,7 @@
+spec:
+  containers:
+    - name: app
+      livenessProbe:
+        httpGet:
+          path: /healthz
+          port: 8080
