@@ -1052,7 +1052,7 @@ patterns:
           pattern: '\bThread\s*\.\s*sleep\s*\(|\bDriverManager\s*\.\s*getConnection\s*\(|\.\s*execute(Query|Update)\s*\(|[Hh]ttp[Cc]lient\s*\.\s*send\s*\(|(restTemplate|RestTemplate|jdbcTemplate|JdbcTemplate)\s*\.\s*\w+\s*\('
           present_within: '\b(Mono|Flux)\b|reactor\.core|io\.netty|ChannelHandlerContext|akka\.stream'
           absent_within: 'Schedulers\s*\.\s*(boundedElastic|fromExecutor\w*|newBoundedElastic)|\bsubscribeOn\s*\(|\bpublishOn\s*\('
-          window: 12
+          window: 20
           window_before: 12
           confidence: low
           note: "blocking call inside a Reactor/WebFlux/Netty/Akka-Streams context with no scheduler offload — starves the event loop"

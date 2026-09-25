@@ -566,7 +566,7 @@ Plus the S08-ts-select `absent_within` from Task 3.
 
 Satisfies: AC-11.
 
-- [ ] Create `S27/java/negative_long_chain_offload.java`:
+- [x] Create `S27/java/negative_long_chain_offload.java`:
 
 ```java
 class UserService {
@@ -587,12 +587,12 @@ class UserService {
     }
 }
 ```
-- [ ] Run it and watch it fail. Set `S27-java-blocking-in-reactive.window: 20`,
+- [x] Run it and watch it fail. Set `S27-java-blocking-in-reactive.window: 20`,
   then rerun `pytest tests/detectors -k "S27 or java" -q`.
-- [ ] Recalibrate: rerun the batch-1 repositories from `docs/calibration/java.md`
+- [x] Recalibrate: rerun the batch-1 repositories from `docs/calibration/java.md`
   with `calibrate.py --lang java --patterns S27`. Record the delta (expected
   0 new hits) in a "Batch 7" section.
-- [ ] **Commit** `S27: widen offload window to 20 lines (AC-11)`
+- [x] **Commit** `S27: widen offload window to 20 lines (AC-11)`
 
 ---
 
