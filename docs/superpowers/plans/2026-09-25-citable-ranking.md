@@ -18,7 +18,7 @@ uv run --with pytest --with pyyaml --with lizard --with markdown-it-py==4.2.0 --
 
 **Files:** none committed. Output goes to the scratchpad and, in the end, the PR description.
 
-- [ ] On `main`, before any change, build the fixture and scan it and this repository:
+- [x] On `main`, before any change, build the fixture and scan it and this repository:
 
 ```bash
 B=$SCRATCH/baseline; mkdir -p $B
@@ -46,7 +46,7 @@ EOF
 
 **Files:** `scripts/_common.py`, `scripts/signals.py`; new `tests/test_signals_citable.py`.
 
-- [ ] Write failing unit tests for the parser (spec §8, "History parser"). Stub `c.git_paths` with `monkeypatch` and feed hand-built `-z` output:
+- [x] Write failing unit tests for the parser (spec §8, "History parser"). Stub `c.git_paths` with `monkeypatch` and feed hand-built `-z` output:
 
 ```python
 RS = signals._RECORD_SEP
@@ -76,7 +76,7 @@ def test_history_reads_names_exactly(monkeypatch):
     assert h["total_commits"] == 3
 ```
 
-- [ ] Add `git_paths` to `_common.py`, next to `git` (spec §2):
+- [x] Add `git_paths` to `_common.py`, next to `git` (spec §2):
 
 ```python
 def git_paths(repo_root: Path, *args: str, timeout: int = 180) -> str:
@@ -94,7 +94,7 @@ def git_paths(repo_root: Path, *args: str, timeout: int = 180) -> str:
     return proc.stdout.decode("utf-8", "surrogateescape")
 ```
 
-- [ ] In `signals.collect_history`, run `c.git_paths(repo, "log", f"--since={since}", "--numstat", "-z", "--no-merges", f"--pretty=format:{fmt}", "--", ".")`, and replace the body loop with the token walk:
+- [x] In `signals.collect_history`, run `c.git_paths(repo, "log", f"--since={since}", "--numstat", "-z", "--no-merges", f"--pretty=format:{fmt}", "--", ".")`, and replace the body loop with the token walk:
 
 ```python
         touched: list[str] = []
@@ -115,14 +115,14 @@ def git_paths(repo_root: Path, *args: str, timeout: int = 180) -> str:
 
   The header split (`record.strip("\n")`, `partition("\n")`, `split("\x00")`) stays as it is. Delete `_unrename`.
 
-- [ ] Run the parser tests, then the full suite. `test_bundles_are_within_budget_and_deterministic` and `test_sample_report.py` must pass without regenerating anything.
-- [ ] Commit: `Read churn history with -z so file names arrive exactly as git stores them`.
+- [x] Run the parser tests, then the full suite. `test_bundles_are_within_budget_and_deterministic` and `test_sample_report.py` must pass without regenerating anything.
+- [x] Commit: `Read churn history with -z so file names arrive exactly as git stores them`.
 
 ### Task 2: Rank only citable files and count the rest (AC-1, AC-2, AC-4)
 
 **Files:** `scripts/_common.py`, `scripts/validate.py`, `scripts/signals.py`, `tests/test_signals_citable.py`.
 
-- [ ] Write the repository fixture and failing tests (spec §8). A module-scoped fixture builds the repository with `isolated_git_env()` from `build_fixture`, and at least 20 commits so no churn warning muddies the `warnings` assertion:
+- [x] Write the repository fixture and failing tests (spec §8). A module-scoped fixture builds the repository with `isolated_git_env()` from `build_fixture`, and at least 20 commits so no churn warning muddies the `warnings` assertion:
 
 ```python
 @pytest.fixture(scope="module")
@@ -153,7 +153,7 @@ def citable_repo(tmp_path_factory) -> Path:
   - **AC-2:** `src/módulo/b.ts` is ranked, and its `churn.commits` is 1: the rename commit. The 20 earlier commits stay with `src/módulo/a.ts`, since history doesn't follow renames;
   - **AC-4:** `counts.files_not_citable` is 4 on Linux and 3 elsewhere, and no entry of `warnings` mentions "citable", "symbolic" or "submodule".
 
-- [ ] Move the working-tree checks out of `Validator._resolve` into `_common.tracked_file_problem(repo_root, rel, mode)` (spec §3), with the messages copied verbatim and `_resolves_to_itself` moved alongside it. `_common` gains `import errno` and `import stat`. `_resolve` becomes:
+- [x] Move the working-tree checks out of `Validator._resolve` into `_common.tracked_file_problem(repo_root, rel, mode)` (spec §3), with the messages copied verbatim and `_resolves_to_itself` moved alongside it. `_common` gains `import errno` and `import stat`. `_resolve` becomes:
 
 ```python
         elif (error := c.tracked_file_problem(self.repo, rel, mode)) is None:
@@ -163,7 +163,7 @@ def citable_repo(tmp_path_factory) -> Path:
 
   Run `tests/test_validate_paths.py` **unmodified**: it proves the move changed no behaviour.
 
-- [ ] In `signals.build`, replace the `ls-files` set and the candidate comprehension with the loop in spec §3, and add `"files_not_citable": not_citable` to `counts`. `is_utf8` lives in `_common`, since `bundle.py` needs it too (Task 3):
+- [x] In `signals.build`, replace the `ls-files` set and the candidate comprehension with the loop in spec §3, and add `"files_not_citable": not_citable` to `counts`. `is_utf8` lives in `_common`, since `bundle.py` needs it too (Task 3):
 
 ```python
 def is_utf8(text: str) -> bool:
@@ -175,7 +175,7 @@ def is_utf8(text: str) -> bool:
     return True
 ```
 
-- [ ] Add the AC-3 fixture test to `tests/test_pipeline.py`: on `scanned_repo`, `counts.files_not_citable == 0` and the set of ranked files equals the nine files the fixture ranks today (spec §8):
+- [x] Add the AC-3 fixture test to `tests/test_pipeline.py`: on `scanned_repo`, `counts.files_not_citable == 0` and the set of ranked files equals the nine files the fixture ranks today (spec §8):
 
 ```python
 FIXTURE_FILES = {"src/client/releases.ts", "src/sync/collection.ts", "src/sync/scheduler.ts",
@@ -185,16 +185,16 @@ FIXTURE_FILES = {"src/client/releases.ts", "src/sync/collection.ts", "src/sync/s
 
   `scanned_repo` runs with `--top 8`, so this test runs `signals.py --top 0` on a copy (`scanned_copy`) to see all nine.
 
-- [ ] Run the full suite, then commit: `Rank only files a finding can cite, and count the tracked entries skipped`.
+- [x] Run the full suite, then commit: `Rank only files a finding can cite, and count the tracked entries skipped`.
 
 ### Task 3: Look up bundle history by exact file name (AC-5, AC-2, AC-3)
 
 **Files:** `scripts/bundle.py`, `tests/test_signals_citable.py`.
 
-- [ ] Write failing tests on `citable_repo` (spec §8):
+- [x] Write failing tests on `citable_repo` (spec §8):
   - the bundle for `src/[id].ts` doesn't contain the subject `feat: only i`, and no diff header in it names `src/i.ts`;
   - the bundle for `src/módulo/b.ts` contains `diff --git a/src/módulo/b.ts` and no `\303`, and its callers section doesn't list `src/módulo/b.ts`.
-- [ ] In `section_history`, prefix both calls with the literal-pathspec option, and the `show` call also with unquoted names (spec §5):
+- [x] In `section_history`, prefix both calls with the literal-pathspec option, and the `show` call also with unquoted names (spec §5):
 
 ```python
     log = c.git(repo, "--literal-pathspecs", "log", f"--since={since}", "-n", str(k), "--no-merges",
@@ -206,19 +206,19 @@ FIXTURE_FILES = {"src/client/releases.ts", "src/sync/collection.ts", "src/sync/s
 ```
 
   In `section_related`, the `git grep` call gains `"-c", "core.quotePath=false"` before `"grep"`, runs through `c.git_paths(..., check=False)` (which gains a `check` flag), and drops hit lines for which `c.is_utf8` is false (spec §5). Its `*.ts`… pathspecs stay globs.
-- [ ] Run the full suite. The determinism test and the sample check must pass unchanged. Commit: `Look up a hotspot's history by its exact file name`.
+- [x] Run the full suite. The determinism test and the sample check must pass unchanged. Commit: `Look up a hotspot's history by its exact file name`.
 
 ### Task 4: Prove rankings and bundles unchanged; changelog and version (AC-3)
 
 **Files:** `CHANGELOG.md`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `pyproject.toml`.
 
-- [ ] Re-run Task 0's scan on the same `$B/fx` and on this repository, write `$B/after.txt` with the same script, and `diff $B/before.txt $B/after.txt`. It must be empty. Paste both into the PR description.
-- [ ] Run `uv run scripts/gen_sample_report.py --check` and `uv run scripts/gen_catalog_docs.py --check`. Both must pass with nothing regenerated.
-- [ ] Add a CHANGELOG entry under the next minor version (0.7.0 at the time of writing; use whatever follows the top heading when this lands):
+- [x] Re-run Task 0's scan on the same `$B/fx` and on this repository, write `$B/after.txt` with the same script, and `diff $B/before.txt $B/after.txt`. It must be empty. Paste both into the PR description.
+- [x] Run `uv run scripts/gen_sample_report.py --check` and `uv run scripts/gen_catalog_docs.py --check`. Both must pass with nothing regenerated.
+- [x] Add a CHANGELOG entry under the next minor version (0.7.0 at the time of writing; use whatever follows the top heading when this lands):
   - **Fixed:** tracked symlinks and submodules no longer rank as hotspots; files with non-ASCII names are ranked; a file name containing glob characters such as `[id].ts` is briefed with its own history only; a non-UTF-8 file or author name no longer crashes ranking.
   - **Added:** `hotspots.json` `counts.files_not_citable`.
-- [ ] Bump the version in all four places (`test_versions_agree`).
-- [ ] Run the full suite, `claude plugin validate . --strict`, and install the plugin from this checkout (`claude plugin list` says "enabled"). Commit: `Record the citable-ranking fixes; bump to 0.7.0`.
+- [x] Bump the version in all four places (`test_versions_agree`).
+- [x] Run the full suite, `claude plugin validate . --strict`, and install the plugin from this checkout (`claude plugin list` says "enabled"). Commit: `Record the citable-ranking fixes; bump to 0.7.0`.
 - [ ] Tick the ticket's task checklist as each task merges.
 
 ## AC coverage

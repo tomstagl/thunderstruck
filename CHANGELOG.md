@@ -4,6 +4,21 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.7.0
+
+### Fixed
+
+- **The scan ranks only files a finding can cite** (#30). Ranking and validation now share one rule for "a file".
+  - Tracked symbolic links and submodules no longer rank as hotspots, so they no longer spend a `--top` slot and always land under *Incomplete*.
+  - Files whose names contain non-ASCII characters, such as `src/módulo/a.ts`, are ranked. Git's quoting used to hide them from the scan.
+  - A file whose name contains glob characters, such as `pages/[id].tsx`, is briefed with its own history only. Commits that touched only `pages/i.tsx` no longer appear in its briefing.
+  - A non-ASCII hotspot's briefing names it unquoted in diff headers, and no longer lists the hotspot as its own caller.
+  - A file or author name that isn't valid UTF-8 no longer crashes ranking. Such a file is skipped and counted.
+
+### Added
+
+- `hotspots.json` `counts.files_not_citable`: how many changed, tracked entries in a supported language were skipped because no finding could cite them. Nothing is added to the report's warnings.
+
 ## 0.6.0
 
 ### Added
