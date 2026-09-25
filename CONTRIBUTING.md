@@ -136,3 +136,16 @@ higher-priority bug than a missed detection: leads that cannot be trusted get
 ignored wholesale, and then the true positives go with them.
 
 The best fix is usually a new negative sample plus a tightened detector.
+
+### Noise on a repository you cannot share
+
+Found noise on a private repository? Paste the output of
+
+```bash
+uv run scripts/calibrate.py --repo /path/to/repo --lang all --patterns all --summary
+```
+
+into an issue. It prints hit counts per detector and files swept per
+language, and nothing else: no path, snippet, identifier, SHA or repository
+name. A test enforces that. Counts from repositories we never see are how a
+noisy detector gets noticed.

@@ -954,7 +954,7 @@ TS: `import { S3Client } from '@aws-sdk/client-s3'; new S3Client({})` → positi
 
 Satisfies: AC-17.
 
-- [ ] **Failing test:** in a temp repo, plant the file
+- [x] **Failing test:** in a temp repo, plant the file
   `src/acme_secret_pricing/engine.py`, containing
   `requests.get(ACME_INTERNAL_URL)`. Then:
   - `calibrate.py --repo R --lang all --patterns all --summary` → valid JSON
@@ -962,11 +962,11 @@ Satisfies: AC-17.
   - `detectors["S01-py-requests-no-timeout"]["hits"] == 1`;
   - none of `acme`, `secret_pricing`, `engine.py`, `ACME_INTERNAL_URL`, the
     repo's path, or any commit SHA appear in the output.
-- [ ] **Implement** per spec §9. `--lang all` iterates the catalog
+- [x] **Implement** per spec §9. `--lang all` iterates the catalog
   languages, and `--patterns all` uses every scanned pattern.
-- [ ] Add to CONTRIBUTING.md: "Found noise on a private repo? Paste
+- [x] Add to CONTRIBUTING.md: "Found noise on a private repo? Paste
   `calibrate.py --summary` into an issue."
-- [ ] **Commit** `calibrate: --summary, counts only, safe to share (AC-17)`
+- [x] **Commit** `calibrate: --summary, counts only, safe to share (AC-17)`
 
 ---
 
