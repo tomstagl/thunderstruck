@@ -199,7 +199,7 @@ Coordinate with #14, which covers JVM source sets (`integrationTest`,
 `testFixtures`, `jmh`). Do not duplicate them here. If #14 has merged,
 rebase and keep its entries.
 
-- [ ] **Step 1: Failing test**, table-driven:
+- [x] **Step 1: Failing test**, table-driven:
 
 ```python
 import pytest
@@ -225,7 +225,7 @@ def test_exclusion_reason(path, reason):
     assert F.excludes_path(path) == (reason is not None)
 ```
 
-- [ ] **Step 2: Implement.** Split the default lists into
+- [x] **Step 2: Implement.** Split the default lists into
   `(reason, entries)` groups. Additions:
   - test: globs `tests.py`, `*_tests.py`, `*.cy.*`; dirs `cypress`,
     `benchmarks`, `bench`;
@@ -239,9 +239,9 @@ def test_exclusion_reason(path, reason):
   Profile additions report `profile`, and `--path` reports `path`.
   `excludes_path` becomes `return self.exclusion_reason(rel_path) is not None`.
 
-- [ ] **Step 3:** Full suite. `test_pipeline` fixture paths are unaffected.
+- [x] **Step 3:** Full suite. `test_pipeline` fixture paths are unaffected.
 
-- [ ] **Step 4: Commit** `filters: tests.py, cypress, tooling configs, generated dirs; exclusion reasons (AC-12)`
+- [x] **Step 4: Commit** `filters: tests.py, cypress, tooling configs, generated dirs; exclusion reasons (AC-12)`
 
 ---
 

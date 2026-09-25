@@ -31,14 +31,31 @@ CONTEXT_USABLE = ("fresh", "cached", "stale")
 MAX_NEIGHBOURS_PER_DIRECTION = 25
 
 # Files that are churn-heavy or complexity-heavy for reasons that say nothing
-# about fragility. Scanning them wastes subagents on noise.
-DEFAULT_EXCLUDE_GLOBS = [
-    "*.lock", "*.lockb", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
-    "poetry.lock", "uv.lock", "Cargo.lock", "composer.lock", "Gemfile.lock",
-    "*.min.js", "*.min.css", "*.map", "*.snap",
-    "*.generated.*", "*_pb2.py", "*_pb2_grpc.py", "*.pb.go", "*.g.dart",
-    "*.svg", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.ico", "*.pdf",
-    "*.woff", "*.woff2", "*.ttf", "*.eot",
+# about fragility. Scanning them wastes subagents on noise. Each entry carries
+# the reason the report's "Not scanned" section gives for it; an entry a
+# profile adds reports "profile".
+_EXCLUDE_GLOB_GROUPS: list[tuple[str, list[str]]] = [
+    ("asset", ["*.lock", "*.lockb", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
+               "poetry.lock", "uv.lock", "Cargo.lock", "composer.lock", "Gemfile.lock",
+               "*.map", "*.snap",
+               "*.svg", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.ico", "*.pdf",
+               "*.woff", "*.woff2", "*.ttf", "*.eot"]),
+    ("build", ["*.min.js", "*.min.css"]),
+    ("generated", ["*.generated.*", "*_pb2.py", "*_pb2_grpc.py", "*.pb.go", "*.g.dart",
+                   "*.d.ts", "*.pyi", "openapi*.yaml", "openapi*.yml",
+                   "swagger*.yaml", "swagger*.yml"]),
+    # CI and tooling configuration fails builds, not production.
+    ("tooling", ["*.config.ts", "*.config.js", "*.config.mjs", "*.config.cjs",
+                 "*.config.mts", ".gitlab-ci.yml", "docker-compose*.yml",
+                 "docker-compose*.yaml", "mkdocs.yml", ".pre-commit-config.yaml"]),
+]
+_EXCLUDE_DIR_GROUPS: list[tuple[str, list[str]]] = [
+    ("vendored", ["node_modules", "vendor", "third_party", ".venv", "venv"]),
+    ("build", ["dist", "build", "out", ".next", ".nuxt", "target", "__pycache__",
+               ".mypy_cache", ".pytest_cache", "coverage"]),
+    ("generated", ["generated", "__generated__"]),
+    ("migration", ["migrations"]),
+    ("tooling", [".git", ".thunderstruck", ".github", ".circleci", ".gitlab"]),
 ]
 # Test code churns and branches as much as production code, but its failure
 # modes are CI failures, not outages. Ranking it spends investigators on the
@@ -46,17 +63,20 @@ DEFAULT_EXCLUDE_GLOBS = [
 DEFAULT_EXCLUDE_TEST_GLOBS = [
     "*.test.*", "*.spec.*", "test_*.py", "*_test.py", "*_test.go",
     "conftest.py", "*.fixture.*", "*.stories.*",
+    "tests.py", "*_tests.py", "*.cy.*",
 ]
 DEFAULT_EXCLUDE_TEST_DIRS = [
     "tests", "test", "__tests__", "spec", "specs", "e2e", "fixtures",
-    "testdata", "__mocks__",
+    "testdata", "__mocks__", "cypress", "benchmarks", "bench",
 ]
-DEFAULT_EXCLUDE_DIRS = [
-    "node_modules", "vendor", "third_party", "dist", "build", "out",
-    ".next", ".nuxt", "target", "__pycache__", ".venv", "venv",
-    ".git", ".mypy_cache", ".pytest_cache", "coverage", "migrations",
-    ".thunderstruck",
-]
+DEFAULT_EXCLUDE_GLOBS = [g for _, group in _EXCLUDE_GLOB_GROUPS for g in group]
+DEFAULT_EXCLUDE_DIRS = [d for _, group in _EXCLUDE_DIR_GROUPS for d in group]
+_DEFAULT_REASON = {
+    **{("glob", g): r for r, group in _EXCLUDE_GLOB_GROUPS for g in group},
+    **{("dir", d): r for r, group in _EXCLUDE_DIR_GROUPS for d in group},
+    **{("glob", g): "test" for g in DEFAULT_EXCLUDE_TEST_GLOBS},
+    **{("dir", d): "test" for d in DEFAULT_EXCLUDE_TEST_DIRS},
+}
 DEFAULT_EXCLUDE_AUTHORS = [
     "dependabot", "renovate", "github-actions", "greenkeeper",
     "snyk-bot", "imgbot", "pre-commit-ci",
@@ -345,6 +365,7 @@ class Filters:
                 # that wants to ignore one more directory should not silently
                 # start scanning node_modules.
                 getattr(f, attr).extend(str(x) for x in extra)
+        f.__post_init__()  # recompile with the profile's additions
         return f
 
     def __post_init__(self) -> None:
@@ -353,22 +374,37 @@ class Filters:
         if not self.include_tests:
             globs += DEFAULT_EXCLUDE_TEST_GLOBS
             dirs += DEFAULT_EXCLUDE_TEST_DIRS
-        self._glob_res = [_glob_to_re(g) for g in globs]
-        self._dirs = set(dirs)
+        # First entry wins, so a profile repeating a default keeps its reason.
+        self._globs: list[tuple[re.Pattern, str]] = []
+        for g in dict.fromkeys(globs):
+            self._globs.append((_glob_to_re(g), _DEFAULT_REASON.get(("glob", g), "profile")))
+        self._dirs: dict[str, str] = {}
+        for d in dirs:
+            self._dirs.setdefault(d, _DEFAULT_REASON.get(("dir", d), "profile"))
         self._authors = [a.lower() for a in self.exclude_authors]
 
-    def excludes_path(self, rel_path: str) -> bool:
-        parts = Path(rel_path).parts
-        if any(p in self._dirs for p in parts):
-            return True
+    def exclusion_reason(self, rel_path: str) -> str | None:
+        """Why a path is not scanned, or None if it is.
+
+        One of test, generated, vendored, build, migration, asset, tooling,
+        profile or path. `excludes_path` is defined by this, so the ranking
+        and the report's "Not scanned" counts can never disagree.
+        """
+        for part in Path(rel_path).parts:
+            if part in self._dirs:
+                return self._dirs[part]
         name = Path(rel_path).name
-        if any(r.match(name) for r in self._glob_res):
-            return True
+        for rx, reason in self._globs:
+            if rx.match(name):
+                return reason
         if self.path_prefix:
             prefix = self.path_prefix.strip("/")
             if prefix and not (rel_path == prefix or rel_path.startswith(prefix + "/")):
-                return True
-        return False
+                return "path"
+        return None
+
+    def excludes_path(self, rel_path: str) -> bool:
+        return self.exclusion_reason(rel_path) is not None
 
     def excludes_author(self, author: str) -> bool:
         a = (author or "").lower()
