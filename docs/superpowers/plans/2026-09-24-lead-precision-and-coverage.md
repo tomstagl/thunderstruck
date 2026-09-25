@@ -449,7 +449,7 @@ Satisfies: AC-10.
 Coordinate with #17 (S19-ts catch-only-comment firing on a *logged* catch).
 Do not overlap: this task touches `S19-ts-empty-catch` only.
 
-- [ ] **Step 1: Negatives.**
+- [x] **Step 1: Negatives.**
 
 `S19/typescript/negative_ignored_param.ts`
 ```ts
@@ -514,7 +514,7 @@ export function useScroll(cb: () => void) {
 }
 ```
 
-- [ ] **Step 2: Positives.**
+- [x] **Step 2: Positives.**
 
 `S17/typescript/positive.ts`
 ```ts
@@ -529,7 +529,7 @@ class Svc {
 ```
 The existing S06, S08 and S19 TS positives must keep firing.
 
-- [ ] **Step 3: Catalog edits** (verified).
+- [x] **Step 3: Catalog edits** (verified).
 
 ```yaml
 # S19-ts-empty-catch — same deliberate-swallow convention as Java
@@ -549,7 +549,7 @@ anchor: '(?i)^(?:export\s+)?(?:const|let|var)\s+\w*(?:queue|limiter|throttle|wor
 ```
 Plus the S08-ts-select `absent_within` from Task 3.
 
-- [ ] **Step 4:** The fixture still produces FR-004's `S06@src/sync/scheduler.ts:1`
+- [x] **Step 4:** The fixture still produces FR-004's `S06@src/sync/scheduler.ts:1`
   (`const queue:` at column 0). The sample report changes, as intended:
   S06 leads go from 4 files to 2. `collection.ts` loses S06, because its
   only anchor was an `import { enqueue }`, and `artists.ts` loses it too,
@@ -558,7 +558,7 @@ Plus the S08-ts-select `absent_within` from Task 3.
   `uv run scripts/gen_sample_report.py`, check that the diff is only that,
   commit the regenerated sample in this task (CI checks freshness), then
   run the full suite.
-- [ ] **Step 5: Commit** `typescript detectors: silence reproduced false positives; S17 now sees generic Maps (AC-10)`
+- [x] **Step 5: Commit** `typescript detectors: silence reproduced false positives; S17 now sees generic Maps (AC-10)`
 
 ---
 

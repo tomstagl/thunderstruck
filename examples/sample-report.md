@@ -45,7 +45,7 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 | `S03` | Honor server pushback (Retry-After, 429/503) | A | 1 | 1 |
 | `S04` | Retry only transient errors | A | 1 | 0 |
 | `S05` | Client-side rate limiting / budget gating | A | 1 | 0 |
-| `S06` | Request prioritization (interactive over background) | A | 4 | 1 |
+| `S06` | Request prioritization (interactive over background) | A | 2 | 1 |
 | `S07` | Idempotent, resumable jobs | A | 1 | 1 |
 | `S08` | Bounded result sets and pagination | A | 1 | 0 |
 | `S09` | Single-flight / request coalescing plus caching | A | 0 | 0 |
@@ -96,7 +96,7 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 
 ### FR-002 · An interrupted collection sync restarts at page 1 and re-creates every row it already wrote
 
-**high confidence** · [`src/sync/collection.ts:4-16`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/sync/collection.ts#L4-L16) · `syncCollection` · hotspot H02 (score 0.7111)
+**high confidence** · [`src/sync/collection.ts:4-16`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/sync/collection.ts#L4-L16) · `syncCollection` · hotspot H02 (score 0.615)
 
 | | |
 |---|---|
@@ -209,9 +209,9 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 | # | File | Score | Commits | Fixes | Max CCN | Leads |
 |---|---|---|---|---|---|---|
 | H01 | [`src/client/releases.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/releases.ts) · [history](https://github.example.com/acme/fixture/commits/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/releases.ts) | 1.86 | 6 | 5 | 4 | S01, S02, S05, S10, S11, S15, S19 |
-| H02 | [`src/sync/collection.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/sync/collection.ts) · [history](https://github.example.com/acme/fixture/commits/446de9bccb6e39809a99850dffec58ff0bf49b15/src/sync/collection.ts) | 0.7111 | 4 | 3 | 4 | S06, S07 |
+| H02 | [`src/sync/collection.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/sync/collection.ts) · [history](https://github.example.com/acme/fixture/commits/446de9bccb6e39809a99850dffec58ff0bf49b15/src/sync/collection.ts) | 0.615 | 4 | 3 | 4 | S07 |
 | H03 | [`src/sync/scheduler.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/sync/scheduler.ts) · [history](https://github.example.com/acme/fixture/commits/446de9bccb6e39809a99850dffec58ff0bf49b15/src/sync/scheduler.ts) | 0.3421 | 3 | 1 | 3 | S06, S08 |
-| H04 | [`src/client/artists.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/artists.ts) · [history](https://github.example.com/acme/fixture/commits/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/artists.ts) | 0.0663 | 1 | 0 | 6 | S06, S15 |
+| H04 | [`src/client/artists.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/artists.ts) · [history](https://github.example.com/acme/fixture/commits/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/artists.ts) | 0.0537 | 1 | 0 | 6 | S15 |
 | H05 | [`src/sync/queue.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/sync/queue.ts) · [history](https://github.example.com/acme/fixture/commits/446de9bccb6e39809a99850dffec58ff0bf49b15/src/sync/queue.ts) | 0.031 | 4 | 3 | 1 | — |
 | H06 | [`src/client/retry-wrapper.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/retry-wrapper.ts) · [history](https://github.example.com/acme/fixture/commits/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/retry-wrapper.ts) | 0.0273 | 2 | 1 | 1 | S02, S04, S12 |
 | H07 | [`src/client/api.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/api.ts) · [history](https://github.example.com/acme/fixture/commits/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/api.ts) | 0.0249 | 1 | 0 | 2 | S03, S15 |

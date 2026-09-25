@@ -290,7 +290,7 @@ patterns:
         - id: S04-ts-retry-without-discrimination
           kind: file_absent
           anchor: '\b(maxRetries|MAX_RETRIES|retryCount|retries|retryAttempt)\b'
-          absent: '\b(5\d\d|status\s*>=\s*500|isTransient|isRetryable|ECONNRESET|ETIMEDOUT|429|statusCode\s*>=|axiosRetry|axios-retry|retryCondition|shouldRetry|retryIf|retryOn|isNetworkError|isRetryableError|isNetworkOrIdempotentRequestError)\b'
+          absent: '\b(5\d\d|status\s*>=\s*500|isTransient|isRetryable|ECONNRESET|ETIMEDOUT|429|statusCode\s*>=|axiosRetry|axios-retry|retryCondition|shouldRetry|retryIf|retryOn|isNetworkError|isRetryableError|isNetworkOrIdempotentRequestError)\b|\bbail\s*\(|\bAbortError\b|\bonFailedAttempt\b|\bhandle(?:When|Type|Result)\s*\('
           confidence: medium
           note: "retry construct with no visible transient/permanent discrimination"
       python:
@@ -387,10 +387,10 @@ patterns:
       typescript:
         - id: S06-ts-single-queue-no-priority
           kind: file_absent
-          anchor: '(?i)\b(queue|limiter|throttle|worker|pool)\b'
+          anchor: '(?i)^(?:export\s+)?(?:const|let|var)\s+\w*(?:queue|limiter|throttle|worker|pool)\w*\b[^=\n]*=|^[ \t]+(?:(?:private|protected|public|readonly|static)\s+)+#?\w*(?:queue|limiter|throttle|worker|pool)\w*\b[^=\n]*='
           absent: '(?i)\b(priority|interactive|criticality|tier|urgent|foreground)\b'
           confidence: low
-          note: "one queue/limiter serves all callers; no priority or criticality field"
+          note: "one shared queue/limiter declared at module or class level; no priority or criticality field"
       python:
         - id: S06-py-single-queue-no-priority
           kind: file_absent
@@ -443,7 +443,7 @@ patterns:
         - id: S07-ts-create-without-upsert
           kind: file_absent
           anchor: '(?<!Object)(?<!axios)(?<!Reflect)(?<!document)(?<!Buffer)(?<!Error)(?<!React)\.\s*create(Many)?\s*\(|INSERT\s+INTO'
-          absent: '(?i)\b(upsert|ON\s+CONFLICT|ON\s+DUPLICATE\s+KEY|MERGE\s+INTO|idempotenc)'
+          absent: '(?i)\b(upsert|ON\s+CONFLICT|ON\s+DUPLICATE\s+KEY|MERGE\s+INTO|idempotenc|P2002|E11000|ER_DUP_ENTRY|23505|UniqueViolation|DuplicateKey)'
           confidence: medium
           note: "inserts with no upsert / ON CONFLICT — a replayed job duplicates rows"
       python:
@@ -513,7 +513,7 @@ patterns:
         - id: S08-ts-unbounded-promise-all
           kind: regex
           pattern: '\bPromise\s*\.\s*(all|allSettled)\s*\('
-          absent_within: '(?i)\b(slice|chunk|batch|limit|pLimit|p-limit|concurrency|take|semaphore)\b|Promise\s*\.\s*(all|allSettled)\s*\(\s*\[(?![^\]]*(?:\.\.\.|\.map\s*\())'
+          absent_within: '(?i:\b(slice|chunk|batch|limit|pLimit|p-limit|concurrency|take|semaphore)\b)|Promise\s*\.\s*(all|allSettled)\s*\(\s*\[(?![^\]]*(?:\.\.\.|\.map\s*\())|Promise\s*\.\s*(?:all|allSettled)\s*\(\s*[A-Z][A-Z0-9_]*\s*\.\s*map\s*\('
           window: 5
           window_before: 10
           confidence: medium
@@ -528,10 +528,10 @@ patterns:
         - id: S08-ts-select-without-limit
           kind: regex
           pattern: '(?i)SELECT\s+.*\s+FROM\s+'
-          absent_within: '(?i)\bLIMIT\b'
+          absent_within: '(?i)\bLIMIT\b|\bFETCH\s+FIRST\b|\bTOP\s*\(?\s*\d|SELECT\s+(?:COUNT|MAX|MIN|SUM|AVG|EXISTS)\s*\(|\bWHERE\s+(?:\w+\.)?id\s*='
           window: 6
           confidence: low
-          note: "SELECT with no LIMIT"
+          note: "multi-row SELECT with no LIMIT"
       python:
         - id: S08-py-unbounded-gather
           kind: regex
@@ -782,11 +782,11 @@ patterns:
       typescript:
         - id: S14-ts-unbounded-queue
           kind: regex
-          pattern: '(?i)\b(queue|buffer|backlog)\s*(:|=)\s*(\[\]|new\s+Array)'
+          pattern: '(?i)^(?:export\s+)?(?:const|let|var)\s+\w*(?:queue|buffer|backlog)\w*\s*(?::[^=]+)?=\s*(?:\[\]|new\s+Array)|^\s+(?:(?:private|protected|public|readonly|static)\s+)*#?\w*(?:queue|buffer|backlog)\w*\s*(?::[^=]+)?=\s*(?:\[\]|new\s+Array)|\bthis\.\w*(?:queue|buffer|backlog)\w*\s*=\s*(?:\[\]|new\s+Array)'
           absent_within: '(?i)\b(maxSize|max_size|capacity|limit|bounded|shed)\b'
           window: 6
           confidence: medium
-          note: "in-memory queue with no capacity bound or rejection path"
+          note: "module-level, class-field or this. queue with no capacity bound or rejection path"
       python:
         - id: S14-py-unbounded-queue
           kind: regex
@@ -914,10 +914,10 @@ patterns:
       typescript:
         - id: S17-ts-cache-without-ttl
           kind: file_absent
-          anchor: '(?i)new\s+Map\s*\(|cache\s*\.\s*set\s*\('
+          anchor: '^(?:export\s+)?(?:const|let|var)\s+\w+[^=\n]*=\s*new\s+Map\b|^[ \t]+(?:(?:private|protected|public|readonly|static)\s+)+#?\w+[^=\n]*=\s*new\s+Map\b|\b[Cc]ache\s*\.\s*set\s*\('
           absent: '(?i)\b(ttl|expire|expiry|evict|maxSize|max_size|maxAge|lru|clear\s*\()\b'
           confidence: medium
-          note: "in-memory cache with no TTL, eviction, or size bound"
+          note: "module-level or class-field Map cache with no TTL, eviction, or size bound"
       python:
         - id: S17-py-cache-without-ttl
           kind: file_absent
@@ -979,9 +979,9 @@ patterns:
       typescript:
         - id: S19-ts-empty-catch
           kind: regex
-          pattern: 'catch\s*(\([^)]*\))?\s*\{\s*\}'
+          pattern: 'catch\s*(?:\((?![^)]*\b(?:_\w*|ignored?|expected|unused)\s*\))[^)]*\))?\s*\{\s*\}'
           confidence: high
-          note: "empty catch block — the failure leaves no trace"
+          note: "empty catch block — the failure leaves no trace (a parameter named _x, ignored, expected or unused marks it deliberate)"
         - id: S19-ts-catch-only-comment
           kind: regex
           pattern: 'catch\s*(\([^)]*\))?\s*\{\s*(//.*)?$'

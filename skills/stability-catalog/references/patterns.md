@@ -97,7 +97,7 @@ Scanned and reasoned about by default, at full weight.
 
 **What the detectors look for.**
 
-- one queue/limiter serves all callers; no priority or criticality field
+- one shared queue/limiter declared at module or class level; no priority or criticality field
 - one shared queue/limiter/pool serves all callers; no priority or criticality field
 - one executor serves every caller; no priority or criticality separation
 
@@ -128,10 +128,9 @@ Scanned and reasoned about by default, at full weight.
 
 - Promise.all over an unbounded collection — concurrency equals input size
 - Prisma findMany with no take: — result set grows with the table
-- SELECT with no LIMIT
+- multi-row SELECT with no LIMIT
 - asyncio.gather over an unbounded collection — concurrency equals input size
 - full result-set fetch with no limit
-- multi-row SELECT with no LIMIT
 - Spring Data repository with collection finders and no Pageable/Slice/Top-N form — every call returns the whole match set
 - Kafka poll loop with no max.poll.records — a slow batch overruns max.poll.interval.ms and triggers a rebalance storm
 
@@ -255,7 +254,7 @@ Scanned and reasoned about by default, at lower weight.
 
 **What the detectors look for.**
 
-- in-memory queue with no capacity bound or rejection path
+- module-level, class-field or this. queue with no capacity bound or rejection path
 - Queue() with no maxsize — unbounded by default
 - LinkedBlockingQueue() with no capacity — unbounded by default, absorbs overload instead of shedding it
 - Executors.newFixedThreadPool/newSingleThreadExecutor queue on an unbounded LinkedBlockingQueue
@@ -298,6 +297,7 @@ Scanned and reasoned about by default, at lower weight.
 
 **What the detectors look for.**
 
+- module-level or class-field Map cache with no TTL, eviction, or size bound
 - in-memory cache with no TTL, eviction, or size bound
 
 **References.** Nygard, Release It! (2nd ed.), ch. 5 — Steady State
@@ -322,10 +322,11 @@ Scanned and reasoned about by default, at lower weight.
 
 **What the detectors look for.**
 
-- empty catch block — the failure leaves no trace
+- empty catch block — the failure leaves no trace (a parameter named _x, ignored, expected or unused marks it deliberate)
 - catch block with no handling beyond a comment
 - except:/except Exception: with only pass — the failure leaves no trace
 - bare except catches SystemExit and KeyboardInterrupt too, and this one does not re-raise
+- empty catch block — the failure leaves no trace
 
 **References.** Nygard, Release It! (2nd ed.), ch. 17 — Transparency; Google SRE Book, ch. 6 — Monitoring Distributed Systems
 
