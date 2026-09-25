@@ -414,6 +414,18 @@ def canonicalise(finding: dict) -> None:
                 ev["ref"] = f"{c.ref_path(m['path'])}:{rng}"
 
 
+def evidence_hashes(repo: Path, finding: dict) -> dict[str, str]:
+    """Content hash of every file cited as code evidence, so the guardrail can
+    tell when that file, and not only the finding's own, has changed."""
+    out: dict[str, str] = {}
+    for ev in finding.get("evidence") or []:
+        if isinstance(ev, dict) and ev.get("type") == "code":
+            m = CODE_REF.match(str(ev.get("ref") or "").strip())
+            if m and m.group("path") not in out:
+                out[m.group("path")] = c.sha256_file(repo / m.group("path"))
+    return dict(sorted(out.items()))
+
+
 def stable_key(file: str, failure_mode: str) -> str:
     """Identity that survives re-ranking, so a later run can tell whether a
     finding is the same one. Display IDs renumber; this does not."""
@@ -491,6 +503,7 @@ def main(argv: list[str] | None = None) -> int:
                 f["content_hash"] = c.sha256_file(
                     repo / c.ref_path(f.get("location", {}).get("file", "")))
                 f["catalog_evidence"] = catalog_evidence(f, validator.catalog_edges)
+                f["evidence_hashes"] = evidence_hashes(repo, f)
             doc["validated_with"] = c.VALIDATION_RULES
             path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
         results.append({"path": str(path), "hotspot_id": doc.get("hotspot_id", path.stem)

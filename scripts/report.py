@@ -148,6 +148,16 @@ def _context_warnings(raw: Any) -> list[str]:
 # --------------------------------------------------------------------------
 
 
+def _cited_code_files(f: dict) -> list[str]:
+    """Files a finding cites as code evidence, in citation order, once each."""
+    out: list[str] = []
+    for ev in _evidence(f):
+        if ev.get("type") == "code" and (m := CODE_REF.match(str(ev.get("ref") or "").strip())):
+            if m["path"] not in out:
+                out.append(m["path"])
+    return out
+
+
 def link_refs(repo: Path, head: str, findings: list[dict], hotspots: list[dict] | None = None,
               listed: list[dict] | None = None) -> tuple[dict | None, list[str], dict]:
     """Set a `url` on every finding location and evidence item, and on every
@@ -429,8 +439,16 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
 
     if data["clean"]:
         L += ["## Hotspots investigated with no finding", ""]
+        cited_by: dict[str, list[str]] = {}
+        for f in findings:
+            for cited in _cited_code_files(f):
+                if cited != (f.get("location") or {}).get("file"):
+                    cited_by.setdefault(cited, []).append(f["id"])
         for entry in data["clean"]:
             note = f" — {md.text(entry['notes'])}" if entry.get("notes") else ""
+            if entry["file"] in cited_by:
+                note = (" — no finding of its own; cited as evidence by "
+                        + ", ".join(cited_by[entry["file"]]) + note)
             L.append(f"- **{entry['hotspot_id']}** {_linked(entry['file'], entry.get('url'))}{note}")
         L.append("")
 
@@ -510,6 +528,7 @@ def render_json(data: dict) -> dict:
 
 def render_index(data: dict) -> dict:
     files: dict[str, dict] = {}
+    secondary: list[tuple[str, dict, str]] = []
     for f in data["findings"]:
         loc = f.get("location") or {}
         path = loc.get("file")
@@ -528,6 +547,16 @@ def render_index(data: dict) -> dict:
         if f.get("catalog_evidence"):
             item["catalog_evidence"] = f["catalog_evidence"]
         entry["findings"].append(item)
+        for cited in _cited_code_files(f):
+            if cited != path:
+                secondary.append((cited, item, path))
+    # A finding also warns on every other file it cites as code evidence. Paths
+    # are canonical (#25), so one file never gets two entries.
+    hashes = {cited: h for f in data["findings"]
+              for cited, h in (f.get("evidence_hashes") or {}).items()}
+    for cited, item, anchor in secondary:
+        entry = files.setdefault(cited, {"content_hash": hashes.get(cited), "findings": []})
+        entry["findings"].append({**item, "via": "evidence", "anchor": anchor})
     return {"schema": "thunderstruck.index/v1",
             "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "head": data["hotspots"]["repo"]["head"],

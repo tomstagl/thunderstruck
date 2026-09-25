@@ -82,6 +82,7 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 **Evidence**
 
 - _code_ [`src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/releases.ts#L16) — setTimeout(resolve, SLEEP\_MS)
+- _code_ [`src/client/retry-wrapper.ts:1`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/retry-wrapper.ts#L1) — the inner retry layer: 3 attempts per call
 - _commit_ [`cab143e`](https://github.example.com/acme/fixture/commit/cab143e2bb7f28e6e32db82f10846070ff48fff0) — “fix: release fetch still times out under load” (fix) — most recent fix to this file
 - _detector_ [`S02@src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/releases.ts#L16) — lead confirmed against the code
 - _catalog_ `dependencyOf component:default/web-frontend` — listed in the service catalog as depending on this component
@@ -201,7 +202,7 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 
 - **H04** [`src/client/artists.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/artists.ts) — no credible production failure mode found
 - **H05** [`src/sync/queue.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/sync/queue.ts) — no credible production failure mode found
-- **H06** [`src/client/retry-wrapper.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/retry-wrapper.ts) — no credible production failure mode found
+- **H06** [`src/client/retry-wrapper.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/retry-wrapper.ts) — no finding of its own; cited as evidence by FR-001 — no credible production failure mode found
 - **H08** [`src/client/limiter.ts`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/limiter.ts) — no credible production failure mode found
 
 ## Ranked hotspots

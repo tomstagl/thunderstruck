@@ -131,6 +131,8 @@ def build_context(entry: dict, rel: str, stale: bool) -> str | None:
     for f in shown:
         pats = ", ".join(f.get("missing_patterns") or []) or "—"
         where = f" (lines {f['lines']})" if f.get("lines") else ""
+        if f.get("via") == "evidence":
+            where = f" (cited as evidence; finding is on {f.get('anchor', '?')})"
         lines.append(f"- {f.get('id', '?')}{where}: {f.get('failure_mode', '')}")
         lines.append(f"  missing patterns: {pats}; confidence: {f.get('confidence')}")
         if f.get("sustaining_effect"):

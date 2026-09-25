@@ -736,7 +736,7 @@ Satisfies: AC-4.
 investigated with no finding*), `scripts/guardrail.py` (`build_context`),
 `tests/test_guardrail.py`, `tests/test_pipeline.py`.
 
-- [ ] **Failing tests:**
+- [x] **Failing tests:**
   - after the fixture pipeline, `index.json.files["src/client/retry-wrapper.ts"]`
     holds FR-001 with `via == "evidence"`. For that, FR-001 in
     `gen_sample_report.py` must cite `src/client/retry-wrapper.ts:<withRetry line>`
@@ -750,10 +750,10 @@ investigated with no finding*), `scripts/guardrail.py` (`build_context`),
     `releases.ts` marks only the primary entry stale;
   - `save_finding.py` strips a model-supplied `evidence_hashes`;
   - the guardrail latency test still passes.
-- [ ] **Implement** per spec §2.4. Paths are already canonical (#31), so
+- [x] **Implement** per spec §2.4. Paths are already canonical (#31), so
   there is no normalisation in `render_index`. The guardrail change is one
   conditional in the line format, still stdlib-only.
-- [ ] **Commit** `index: file findings under every file cited as code evidence (AC-4)`
+- [x] **Commit** `index: file findings under every file cited as code evidence (AC-4)`
 
 ---
 

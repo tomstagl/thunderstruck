@@ -89,6 +89,10 @@ CANNED: dict[str, list[dict]] = {
                         "user-facing lookups; the catalog lists web-frontend "
                         "as depending on this component",
         "catalog": ["dependencyOf component:default/web-frontend"],
+        # the inner retry layer lives in another file; citing it files FR-001
+        # under that file too (#19 AC-4)
+        "also_cite": [("src/client/retry-wrapper.ts", "export async function withRetry",
+                       "the inner retry layer: 3 attempts per call")],
         "confidence": "high",
         "confidence_rationale": "Both retry layers are visible in the code, and "
                                 "five separate 'fix timeout' commits on this file "
@@ -262,6 +266,10 @@ def generate() -> str:
                 line = _line_of(repo, hs["file"], spec["anchor"])
                 evidence = [{"type": "code", "ref": f"{hs['file']}:{line}",
                              "note": spec["anchor"]}]
+                for rel, anchor, note in spec.get("also_cite", []):
+                    evidence.append({"type": "code",
+                                     "ref": f"{rel}:{_line_of(repo, rel, anchor)}",
+                                     "note": note})
                 sha, note = _corroborating_commit(repo, hs, spec, line, env)
                 if sha:
                     evidence.append({"type": "commit", "ref": sha, "note": note})
@@ -275,7 +283,7 @@ def generate() -> str:
                                      "note": "listed in the service catalog as "
                                              "depending on this component"})
                 item = {k: v for k, v in spec.items()
-                        if k not in ("symbol", "anchor", "catalog")}
+                        if k not in ("symbol", "anchor", "catalog", "also_cite")}
                 # the symbol's span, clamped to the file: a range past the end
                 # of the file is rejected by the validator (#25)
                 total = len((repo / hs["file"]).read_text(encoding="utf-8").splitlines())

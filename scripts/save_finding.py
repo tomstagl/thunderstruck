@@ -74,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
         findings = doc.get("findings")
         for f in findings if isinstance(findings, list) else []:
             if isinstance(f, dict):
-                for owned in ("key", "content_hash", "catalog_evidence"):
+                for owned in ("key", "content_hash", "catalog_evidence", "evidence_hashes"):
                     f.pop(owned, None)
 
     doc["bundle_hash"] = entry["bundle_hash"]
