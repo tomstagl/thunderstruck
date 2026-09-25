@@ -98,7 +98,7 @@ with no reason, because a draft is not *meant* to be ready (AC-3 covers non-draf
 | # | Rule | Reason string |
 |---|---|---|
 | 1 | `state == "open"` | not reported (closed issues are filtered out before this point) |
-| 2 | title does not match `^\s*draft\b` (case-insensitive). This covers `DRAFT:`, `Draft:`, `DRAFT -` and `Draft -` | → `ignored_drafts` |
+| 2 | title does not contain `draft` anywhere, case-insensitively. This covers `DRAFT:`, `Draft:`, `DRAFT -`, and also `… (draft)` | → `ignored_drafts` |
 | 3 | `author in writers` | `author <login> has no write access` |
 | 4 | body names exactly one spec path matching `docs/superpowers/specs/\d{4}-\d{2}-\d{2}-[a-z0-9-]+-design\.md` | `no spec path in ticket` / `more than one spec path in ticket` |
 | 5 | same for the plan: `docs/superpowers/plans/\d{4}-\d{2}-\d{2}-[a-z0-9-]+\.md` | `no plan path …` / `more than one plan path …` |
@@ -282,7 +282,7 @@ built in `tmp_path`. There is one test per rule row in §2, plus these:
 - lowest number wins among several ready tickets;
 - a `#390` in the spec does not satisfy `#39`;
 - a placeholder spec path (`YYYY-MM-DD-…`) reports `no spec path in ticket`;
-- all four draft spellings land in `ignored_drafts`;
+- every draft spelling, including `draft` in the middle of a title, lands in `ignored_drafts`;
 - a claim older than 24 h reports `stale claim since …`;
 - malformed input exits 2, and every other outcome exits 0.
 

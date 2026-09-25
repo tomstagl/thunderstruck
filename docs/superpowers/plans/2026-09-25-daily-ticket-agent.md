@@ -22,7 +22,7 @@ Nothing under the plugin changes (`skills/`, `agents/`, `hooks/`, `scripts/`, `c
 
 - [ ] Write `tests/test_pick_ticket.py`. A `repo` fixture runs `git init` in `tmp_path`, commits a spec and a plan that reference `#39`, and a spec for `#390`. A helper writes `candidates.json` and runs the script with `subprocess` (bare `python3`, `--ref HEAD`, fixed `--now`), returning the parsed stdout and exit code. Tests, all failing at first because the script does not exist:
   - one test per rule row in spec §2 (rules 2 to 12), each asserting the exact reason string;
-  - `DRAFT:`, `Draft:`, `DRAFT -` and `draft -` all land in `ignored_drafts` and nowhere else;
+  - `DRAFT:`, `Draft:`, `DRAFT -` and `Fix x (draft)` all land in `ignored_drafts` and nowhere else;
   - two ready tickets → the lower number is `picked`, and the other is not in `skipped` (it was not skipped, just not first);
   - a spec that says `#390` does not satisfy ticket `#39`;
   - a body with `docs/superpowers/specs/YYYY-MM-DD-x-design.md` → `no spec path in ticket`;
