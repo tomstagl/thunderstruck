@@ -974,22 +974,22 @@ Satisfies: AC-17.
 
 Satisfies: AC-18.
 
-- [ ] Follow the protocol in `docs/calibration/java.md`. Per language, pick
+- [x] Follow the protocol in `docs/calibration/java.md`. Per language, pick
   3–5 public repositories: ≥1 web service, ≥1 worker/ETL, ≥1 HTTP-client
   library. Pin their SHAs.
   - Python candidates: `netbox-community/netbox`, `fastapi/full-stack-fastapi-template`, `httpie/cli`, `celery/celery`.
   - TS candidates: `immich-app/immich` (server), `actualbudget/actual`, `sindresorhus/got`, `bullmq`'s examples.
 
   Record the final choice in the log.
-- [ ] Run `calibrate.py --lang {typescript,python} --patterns all` and judge
+- [x] Run `calibrate.py --lang {typescript,python} --patterns all` and judge
   every hit. Each false positive becomes a `negative_<shape>` sample and a
   fix, or is logged with a reason.
-- [ ] A detector at `confidence: high` whose log shows any unexplained
+- [x] A detector at `confidence: high` whose log shows any unexplained
   false positive drops to `medium`. Today that means S19-py-except-pass,
   S19-ts-empty-catch, S01-py-requests-no-timeout, S01-py-urlopen-no-timeout
   and the S03 429 detectors.
-- [ ] Write `docs/calibration/typescript.md` and `docs/calibration/python.md`.
-- [ ] **Commit** per language: `calibration: typescript (AC-18)`, `calibration: python (AC-18)`
+- [x] Write `docs/calibration/typescript.md` and `docs/calibration/python.md`.
+- [x] **Commit** per language: `calibration: typescript (AC-18)`, `calibration: python (AC-18)`
 
 ---
 
