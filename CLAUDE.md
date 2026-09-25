@@ -225,3 +225,23 @@ written in two of them.
 - The repo and its tickets are public. Keep organisation-specific names,
   internal hosts and credentials out of all three artefacts. Examples use
   generic names such as `component:default/checkout` and `catalogctl`.
+
+### The ticket agent
+
+A scheduled Routine runs `.claude/skills/implement-ticket/` on weekday nights
+(#39). It builds the lowest-numbered **ready** ticket: no "draft" anywhere in
+the title, opened by a writer, spec and plan on `main` and both naming the
+ticket back, and no open PR for it. `pick_ticket.py` decides that, and
+the rules are in the spec (`2026-09-25-daily-ticket-agent-design.md` §2). So a
+plan is only ready to build once it has merged.
+
+- `agent:in-progress`: the agent has claimed the ticket. A claim that
+  outlives its run is reported as stale every night and never cleared
+  automatically.
+- `agent:blocked`: the agent stopped, and its comment on the ticket names the
+  task and the gap. Fix the spec or plan, then **remove the label** to release
+  the ticket for the next run.
+
+The agent never merges, and never edits a spec, plan or ticket body.
+`.claude/` is session configuration for this checkout, not plugin content;
+nothing in it ships to plugin users.
