@@ -54,6 +54,7 @@ REQUIRED_FIELDS = [
 CODE_REF = re.compile(r"^(?P<path>[^:]+):(?P<start>[0-9]+)(?:-(?P<end>[0-9]+))?\Z")
 DETECTOR_REF = re.compile(r"^(?P<pid>[A-Z]+\d+)@(?P<path>[^:]+):(?P<line>\d+)$")
 SHA_REF = re.compile(r"^[0-9a-fA-F]{4,40}$")
+BLAME_LINE = re.compile(r"^([0-9a-f]{40}) \d+ \d+", re.MULTILINE)
 LINE_RANGE = re.compile(r"^(?P<start>[0-9]+)(?:-(?P<end>[0-9]+))?\Z")
 RANGE_FORM = 'a line ("42") or a range ("42-118") with start ≤ end'
 
@@ -91,8 +92,10 @@ def _count_lines(path: Path) -> int | None:
 class Validator:
     def __init__(self, repo: Path, hotspots: dict, catalog: dict,
                  context: dict | None = None,
-                 bundle_context: dict[str, str | None] | None = None) -> None:
+                 bundle_context: dict[str, str | None] | None = None,
+                 extra_fix: tuple[str, ...] = ()) -> None:
         self.repo = repo
+        self.extra_fix = tuple(extra_fix)
         self.valid_ids = c.catalog_ids(catalog)
         self.detector_refs: set[str] = set()
         for hs in hotspots.get("hotspots", []):
@@ -105,6 +108,8 @@ class Validator:
         self._pinned: str | None = None
         self._line_cache: dict[str, int | None] = {}
         self._sha_cache: dict[str, bool] = {}
+        self._subject_cache: dict[str, str | None] = {}
+        self._blame_cache: dict[tuple[str, int, int], set[str]] = {}
         self._index: dict[str, str] | None = None
         self._resolved: dict[str, tuple[str, int | None, str | None]] = {}
 
@@ -158,6 +163,31 @@ class Validator:
                 error = "could not be read"
         self._resolved[key] = (rel, total, error)
         return self._resolved[key]
+
+    def _subject(self, sha: str) -> str | None:
+        """The commit's subject line, read once per SHA."""
+        if sha not in self._subject_cache:
+            try:
+                out = c.git_paths(self.repo, "log", "-1", "--format=%s", sha, "--")
+                self._subject_cache[sha] = out.strip("\n")
+            except c.ThunderstruckError:
+                self._subject_cache[sha] = None
+        return self._subject_cache[sha]
+
+    def _introduced(self, rel: str, start: int, end: int) -> set[str]:
+        """Full SHAs of the commits that wrote lines start..end of the working
+        tree file. An uncommitted line blames to the all-zero SHA, which is
+        dropped, so it is introduced by no commit."""
+        key = (rel, start, end)
+        if key not in self._blame_cache:
+            try:
+                out = c.git_paths(self.repo, "blame", "--porcelain", "-L",
+                                  f"{start},{end}", "--", rel)
+            except c.ThunderstruckError:
+                out = ""
+            shas = {m.group(1) for m in BLAME_LINE.finditer(out)}
+            self._blame_cache[key] = {s for s in shas if s.strip("0")}
+        return self._blame_cache[key]
 
     def _sha_ok(self, sha: str) -> bool:
         if sha not in self._sha_cache:
@@ -269,7 +299,7 @@ class Validator:
             return
         types = [self.check_evidence(ev, f"{where}.evidence[{i}]", errors)
                  for i, ev in enumerate(evidence)]
-        self.check_commits_touch(f, evidence, types, where, errors)
+        touching = self.check_commits_touch(f, evidence, types, where, errors)
         if "code" not in types:
             errors.append(
                 f"{where}.evidence has no item of type 'code'. A detector hit on "
@@ -278,9 +308,41 @@ class Validator:
             errors.append(
                 f"{where}.confidence is 'high' but there is no 'commit' evidence. "
                 f"High confidence needs both code and history; otherwise use 'medium'.")
+        elif conf == "high" and touching and not self._corroborates(f, evidence, touching):
+            other_only = f.get("missing_patterns") == ["OTHER"]
+            errors.append(
+                f"{where}.confidence is 'high' but no cited commit is a fix. The most "
+                f"recent change to a file is not corroboration; cite the fix commits "
+                f"from the bundle's history"
+                + (", or the commit that introduced the cited lines" if other_only else "")
+                + ", or use 'medium'.")
+
+    def _corroborates(self, f: dict, evidence: list, touching: list[str]) -> bool:
+        """A commit corroborates when it is a fix, or, for a finding whose only
+        pattern is OTHER, when it wrote a line inside a cited code range."""
+        for sha in touching:
+            subject = self._subject(sha)
+            if subject is not None and c.classify_commit(subject, self.extra_fix) == "fix":
+                return True
+        if f.get("missing_patterns") != ["OTHER"]:
+            return False
+        for ev in evidence:
+            if not isinstance(ev, dict) or ev.get("type") != "code":
+                continue
+            m = CODE_REF.match(str(ev.get("ref") or "").strip())
+            if not m:
+                continue
+            rel, total, err = self._resolve(m.group("path"))
+            start, end = int(m["start"]), int(m["end"] or m["start"])
+            if err or not range_fits((start, end), total or 0):
+                continue
+            written = self._introduced(rel, start, end)
+            if any(full.startswith(sha.lower()) for sha in touching for full in written):
+                return True
+        return False
 
     def check_commits_touch(self, f: dict, evidence: list, types: list,
-                            where: str, errors: list[str]) -> None:
+                            where: str, errors: list[str]) -> list[str]:
         """A commit is evidence only if it changed the code the finding is
         about. Without this, any SHA from the bundle buys 'high' confidence."""
         cited: list[str] = []
@@ -295,18 +357,22 @@ class Validator:
         # only paths that resolved: an invalid one already has its own error
         files = list(dict.fromkeys(rel for rel, _, err in map(self._resolve, cited) if not err))
         if not files:
-            return
+            return []
+        touching: list[str] = []
         for i, (ev, etype) in enumerate(zip(evidence, types)):
             if etype != "commit":
                 continue
             short = str(ev["ref"]).strip().split()[0]
             if not self._sha_ok(short):
                 continue  # already reported as unresolvable
-            if not c.commit_touches(self.repo, short, files):
+            if c.commit_touches(self.repo, short, files):
+                touching.append(short)
+            else:
                 errors.append(
                     f"{where}.evidence[{i}].ref {short!r} does not touch "
                     f"{files[0] if files else 'the finding'} or any file cited as "
                     f"code evidence. Cite a commit from this file's change history.")
+        return touching
 
     def check_document(self, doc: Any) -> list[str]:
         errors: list[str] = []
@@ -399,9 +465,13 @@ def main(argv: list[str] | None = None) -> int:
         c.die(f"no findings files in {findings_dir}. Run the investigators first.")
         return 2
 
+    try:
+        extra_fix = c.profile_fix_keywords(c.load_profile(repo))
+    except c.ThunderstruckError:
+        extra_fix = ()  # an unreadable profile fails signals.py loudly; not here
     validator = Validator(repo, hotspots, catalog,
                           context=c.load_service_context(repo),
-                          bundle_context=_bundle_context(repo))
+                          bundle_context=_bundle_context(repo), extra_fix=extra_fix)
     results, all_ok = [], True
     for path in paths:
         try:

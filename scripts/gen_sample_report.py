@@ -193,6 +193,24 @@ CANNED: dict[str, list[dict]] = {
 }
 
 
+def _corroborating_commit(repo: Path, hs: dict, spec: dict, line: int,
+                          env: dict) -> tuple[str | None, str]:
+    """The commit an investigator should cite (#19 AC-5): for an OTHER-only
+    finding, the one that wrote the cited line; otherwise the most recent fix
+    to the file, or, when there is none, the most recent change."""
+    if spec["missing_patterns"] == ["OTHER"]:
+        blame = _run(["git", "-C", str(repo), "blame", "--porcelain", "-L",
+                      f"{line},{line}", "--", hs["file"]], repo, env).stdout
+        return blame.split(" ", 1)[0], "introduced this text"
+    for sha in hs["churn"]["recent_shas"]:
+        subject = _run(["git", "-C", str(repo), "log", "-1", "--format=%s", sha],
+                       repo, env).stdout.strip()
+        if c.classify_commit(subject) == "fix":
+            return sha, "most recent fix to this file"
+    shas = hs["churn"]["recent_shas"]
+    return (shas[0], "most recent change to this file") if shas else (None, "")
+
+
 def _line_of(repo: Path, rel: str, anchor: str) -> int:
     for n, line in enumerate(repo.joinpath(rel).read_text(encoding="utf-8").split("\n"), 1):
         if anchor in line:
@@ -244,10 +262,9 @@ def generate() -> str:
                 line = _line_of(repo, hs["file"], spec["anchor"])
                 evidence = [{"type": "code", "ref": f"{hs['file']}:{line}",
                              "note": spec["anchor"]}]
-                sha = (hs["churn"]["recent_shas"] or [None])[0]
+                sha, note = _corroborating_commit(repo, hs, spec, line, env)
                 if sha:
-                    evidence.append({"type": "commit", "ref": sha,
-                                     "note": "most recent change to this file"})
+                    evidence.append({"type": "commit", "ref": sha, "note": note})
                 hit = next((h for h in hs["detector_hits"]
                             if h["pattern_id"] in spec["missing_patterns"]), None)
                 if hit:

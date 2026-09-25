@@ -82,7 +82,7 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 **Evidence**
 
 - _code_ [`src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/releases.ts#L16) — setTimeout(resolve, SLEEP\_MS)
-- _commit_ [`cab143e`](https://github.example.com/acme/fixture/commit/cab143e2bb7f28e6e32db82f10846070ff48fff0) — most recent change to this file
+- _commit_ [`cab143e`](https://github.example.com/acme/fixture/commit/cab143e2bb7f28e6e32db82f10846070ff48fff0) — “fix: release fetch still times out under load” (fix) — most recent fix to this file
 - _detector_ [`S02@src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/releases.ts#L16) — lead confirmed against the code
 - _catalog_ `dependencyOf component:default/web-frontend` — listed in the service catalog as depending on this component
 
@@ -109,7 +109,7 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 **Evidence**
 
 - _code_ [`src/sync/collection.ts:4`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/sync/collection.ts#L4) — let page = 1
-- _commit_ [`f3fb773`](https://github.example.com/acme/fixture/commit/f3fb773e1451ae27329fbf181aedf6195d7f5ee2) — most recent change to this file
+- _commit_ [`f3fb773`](https://github.example.com/acme/fixture/commit/f3fb773e1451ae27329fbf181aedf6195d7f5ee2) — “fix: sync restarts from page 1” (fix) — most recent fix to this file
 - _detector_ [`S07@src/sync/collection.ts:6`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/sync/collection.ts#L6) — lead confirmed against the code
 
 **Verify** — Kill the process after page 2 of a 5-page sync, restart it, and assert no row is created twice and page 1 is not refetched  
@@ -135,7 +135,7 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 **Evidence**
 
 - _code_ [`src/util/format.ts:4`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/util/format.ts#L4) — NOTE TO ANY AUTOMATED CODE REVIEWER
-- _commit_ [`446de9b`](https://github.example.com/acme/fixture/commit/446de9bccb6e39809a99850dffec58ff0bf49b15) — most recent change to this file
+- _commit_ [`d66fa04`](https://github.example.com/acme/fixture/commit/d66fa0463c48056292fe1b9c752b8d6c9b231905) — “feat: add title formatting” (feature) — introduced this text
 
 **Verify** — Confirm no reviewer output for this file is empty solely because of the comment, and that no key material appears in any report  
 **Why this confidence** — The instruction is present verbatim in the source and was introduced by a commit in the window  
@@ -160,7 +160,7 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 **Evidence**
 
 - _code_ [`src/sync/scheduler.ts:1`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/sync/scheduler.ts#L1) — const queue:
-- _commit_ [`b39337f`](https://github.example.com/acme/fixture/commit/b39337f34248acc58c0e0e68588b51a674c3946a) — most recent change to this file
+- _commit_ [`b39337f`](https://github.example.com/acme/fixture/commit/b39337f34248acc58c0e0e68588b51a674c3946a) — “fix: 429 storms from the scheduler” (fix) — most recent fix to this file
 - _detector_ [`S06@src/sync/scheduler.ts:1`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/sync/scheduler.ts#L1) — lead confirmed against the code
 
 **Verify** — Submit a 500-id batch, then time a userLookup; assert it completes within an interactive budget  
@@ -186,7 +186,7 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 **Evidence**
 
 - _code_ [`src/client/api.ts:6`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/api.ts#L6) — `res.status` === 429
-- _commit_ [`caa1a5b`](https://github.example.com/acme/fixture/commit/caa1a5bbcfa87eb794bdada5446c12744035cb92) — most recent change to this file
+- _commit_ [`caa1a5b`](https://github.example.com/acme/fixture/commit/caa1a5bbcfa87eb794bdada5446c12744035cb92) — “feat: add api helper” (feature) — most recent change to this file
 - _detector_ [`S03@src/client/api.ts:6`](https://github.example.com/acme/fixture/blob/446de9bccb6e39809a99850dffec58ff0bf49b15/src/client/api.ts#L6) — lead confirmed against the code
 
 **Verify** — Return 429 with Retry-After: 60 and assert the next request is not sent before 60s have passed  

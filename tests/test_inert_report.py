@@ -98,6 +98,10 @@ def test_hostile_repository_names_stay_inert(scanned_copy, plugin_root):
     f.update(confidence="x](https://evil.example)", key="k`<img src=//e.co/>`",
              missing_patterns=["S02", "x`<img src=//e.co/>`"])
     f["evidence"][0]["type"] = "code_ [x](https://evil.example)"
+    commits = [ev for ev in f["evidence"] if ev.get("type") == "commit"]
+    assert commits and all("subject" in ev for ev in commits), "collect() attaches subjects"
+    for ev in commits:  # a commit subject is repository text (#19 AC-3)
+        ev.update(subject=f"subject: {HOSTILE}", kind="fix](https://evil.example)")
     data["context"] = {"entity_ref": "component:default/x](https://evil.example)",
                        "context_hash": "`<img src=//e.co/>`", "fetched_at": "<b>2026</b>",
                        "edges": [{"ref": "dependsOn x|y", "direction": "outbound](https://evil.example)",

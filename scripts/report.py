@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -90,6 +91,7 @@ def collect(repo: Path) -> dict[str, Any]:
     ))
     for n, f in enumerate(findings, 1):
         f["id"] = f"FR-{n:03d}"
+    _attach_commit_subjects(repo, findings)
     context_doc = c.load_json(out / c.CONTEXT_FILENAME, {}) or {}
     if not isinstance(context_doc, dict):
         context_doc = {}
@@ -102,6 +104,32 @@ def collect(repo: Path) -> dict[str, Any]:
             "context_warnings": _context_warnings(raw_warnings),
             "links": link_meta, "link_warnings": link_warnings,
             "hotspot_links": hotspot_links}
+
+
+def _attach_commit_subjects(repo: Path, findings: list[dict]) -> None:
+    """Give every commit evidence item its subject and class, so a reader sees
+    the history itself rather than only the investigator's note on it. The
+    refs were already resolved by validate.py; a failure here renders as
+    unavailable and never fails the report."""
+    try:
+        extra_fix = c.profile_fix_keywords(c.load_profile(repo))
+    except c.ThunderstruckError:
+        extra_fix = ()
+    cache: dict[str, str | None] = {}
+    for f in findings:
+        for ev in _evidence(f):
+            if ev.get("type") != "commit" or not str(ev.get("ref") or "").strip():
+                continue
+            sha = str(ev["ref"]).split()[0]
+            if sha not in cache:
+                try:
+                    cache[sha] = c.git_paths(repo, "log", "-1", "--format=%s", sha,
+                                             "--").strip("\n")
+                except (c.ThunderstruckError, OSError, subprocess.SubprocessError):
+                    cache[sha] = None
+            subject = cache[sha]
+            ev["subject"] = subject
+            ev["kind"] = c.classify_commit(subject, extra_fix) if subject is not None else None
 
 
 def _context_warnings(raw: Any) -> list[str]:
@@ -235,9 +263,16 @@ _linked = md.linked
 def _evidence_ref(ev: dict) -> str:
     ref = str(ev.get("ref") or "").strip()
     url = ev.get("url")
-    if ev.get("type") == "commit" and url and ref:
+    if ev.get("type") == "commit" and ref:
         sha, *rest = ref.split(None, 1)
-        return _linked(sha[:7], url) + (f" {_code(rest[0])}" if rest else "")
+        out = (_linked(sha[:7], url) + (f" {_code(rest[0])}" if rest else "")
+               if url else _linked(ref, None))
+        if "subject" in ev:
+            subject = ev.get("subject")
+            # the subject is repository text: inert, like every other value (#28)
+            out += (f" — “{md.text(subject)}” ({md.text(ev.get('kind') or '?')})"
+                    if isinstance(subject, str) else " — (subject unavailable)")
+        return out
     return _linked(str(ev.get("ref")), url)
 
 

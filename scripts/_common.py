@@ -248,7 +248,7 @@ def load_profile(repo_root: Path) -> dict[str, Any]:
     try:
         with path.open("rb") as fh:
             return tomllib.load(fh)
-    except (tomllib.TOMLDecodeError, OSError) as exc:
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError, OSError) as exc:
         raise ThunderstruckError(f"could not read {path}: {exc}")
 
 
@@ -560,7 +560,7 @@ def load_suppressions(profile: dict[str, Any]) -> tuple[list[Suppression], list[
 # Bumped whenever validate.py's rules tighten. A findings file carries the
 # version that validated it; older ones are re-checked before they are reused
 # (bundle.py) and never reported unchecked (report.py).
-VALIDATION_RULES = 2
+VALIDATION_RULES = 3
 
 
 def ref_path(path: Any) -> str:

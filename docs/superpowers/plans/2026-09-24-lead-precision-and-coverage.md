@@ -680,7 +680,7 @@ Satisfies: AC-5, AC-3.
 `scripts/gen_sample_report.py`, `tests/test_pipeline.py`,
 `tests/test_inert_report_text.py` (or wherever #34's renderer tests live).
 
-- [ ] **Failing tests** in `tests/test_pipeline.py`:
+- [x] **Failing tests** in `tests/test_pipeline.py`:
   - a finding with `confidence: high` whose only commit is
     `refactor: tidy imports` (it touches the file) → an error containing
     `no cited commit is a fix`;
@@ -697,10 +697,10 @@ Satisfies: AC-5, AC-3.
     `bundle.py` (it already isn't: assert the bump reaches it);
   - the report for a valid finding contains the commit's subject in quotes
     and `(fix)`.
-- [ ] **Failing test** in #34's inert-text suite: a fixture commit with the
+- [x] **Failing test** in #34's inert-text suite: a fixture commit with the
   subject `[x](https://evil.example) <img src=x> # h` renders as literal
   text under both renderers when cited.
-- [ ] **Implement.**
+- [x] **Implement.**
   - `Validator._subject(sha)` is cached and runs `git log -1 --format=%s`
     through `c.git_paths`.
   - `Validator._introduced(rel, start, end) -> set[str]` is cached, runs
@@ -715,15 +715,15 @@ Satisfies: AC-5, AC-3.
   - `report.py collect()` attaches `subject` and `kind` to each commit
     evidence item. `_evidence_ref` renders `md.text(subject)` and the class
     after the link (spec §2.3).
-- [ ] **Sample report:** FR-003 keeps `high`. Its commit evidence must be
+- [x] **Sample report:** FR-003 keeps `high`. Its commit evidence must be
   the commit that introduced `src/util/format.ts:4-14`. Check that with
   `git blame` on the built fixture, and fix the ref in
   `gen_sample_report.py` if it differs. Check that FR-002, FR-004 and FR-005
   cite a `fix:` commit where they claim `high`.
-- [ ] Investigator prompt: *"The most recent change to a file is not
+- [x] Investigator prompt: *"The most recent change to a file is not
   corroboration. `high` needs a commit the bundle labels `fix`, or, for an
   `OTHER`-only finding, the commit that introduced the cited lines."*
-- [ ] **Commit** `validate: high confidence needs a corroborating commit; report shows commit subjects (AC-5, AC-3)`
+- [x] **Commit** `validate: high confidence needs a corroborating commit; report shows commit subjects (AC-5, AC-3)`
 
 ---
 

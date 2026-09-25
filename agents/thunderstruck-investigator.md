@@ -93,8 +93,11 @@ if any of these fail, and you get exactly one chance to repair it.
 - **Never invent evidence.** A ref you cannot see in the bundle or in a file
   you actually read does not go in. A fabricated SHA fails the run.
 - `missing_patterns` may contain only catalog IDs or `OTHER`.
-- `confidence: "high"` requires **both** a `code` and a `commit` evidence item.
-  Without commit evidence the ceiling is `medium`.
+- `confidence: "high"` requires **both** a `code` and a `commit` evidence item,
+  and the commit must corroborate. The most recent change to a file is not
+  corroboration. `high` needs a commit the bundle labels `fix`, or, for a
+  finding whose only pattern is `OTHER`, the commit that introduced the cited
+  lines. Without such a commit the ceiling is `medium`.
 - `sustaining_effect` may be `null`, but the key must be present.
 - **0 to 3 findings per hotspot.** An empty list is a valid, useful answer —
   well-built code exists. Do not pad.
