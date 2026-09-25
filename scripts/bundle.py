@@ -248,7 +248,15 @@ def section_history(repo: Path, hs: dict, since: str, budget: int, k: int,
                 check=False)
     entries = [ln.split("\x00") for ln in log.split("\n") if ln.strip()]
     if not entries:
-        return "## Change history\n\nNo commits in the window.\n\n"
+        last = ""
+        shas = hs["churn"].get("recent_shas") or []
+        if hs.get("dormant") and shas:
+            # a dormant file: name its last change, which predates the window
+            info = c.git(repo, "log", "-1", "--format=%aI%x00%s", shas[0], "--",
+                         check=False).strip().split("\x00")
+            if len(info) == 2:
+                last = f" Last change: {info[0][:10]} `{shas[0][:7]}` {info[1]}"
+        return f"## Change history\n\nNo commits in the window.{last}\n\n"
 
     counts: dict[str, int] = {}
     for e in entries:
@@ -463,6 +471,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--budget", type=int, default=DEFAULT_BUDGET_TOKENS,
                     help="approximate token budget per bundle")
     ap.add_argument("--commits", type=int, default=DEFAULT_COMMITS)
+    ap.add_argument("--investigate-dormant", type=int, default=0, metavar="N",
+                    help="also brief the first N dormant integration points (D bundles)")
     args = ap.parse_args(argv)
 
     try:
@@ -481,12 +491,15 @@ def main(argv: list[str] | None = None) -> int:
     dest_dir = c.out_dir(repo) / "bundles"
     dest_dir.mkdir(parents=True, exist_ok=True)
     hotspots = data["hotspots"]
+    # Opt-in: dormant files are listed for free, and investigated only on
+    # request, inside the same parallel cap as the hotspots (#19 AC-7).
+    dormant = (data.get("dormant") or [])[:max(0, args.investigate_dormant)]
 
     findings_dir = c.out_dir(repo) / "findings"
     index = []
     requeued = 0
     validator = None  # built once, only if some cached file needs a re-check
-    for hs in hotspots:
+    for hs in hotspots + dormant:
         body = build_bundle(repo, hs, data, catalog, profile,
                             args.budget, args.commits, hotspots, ctx)
         path = dest_dir / f"{hs['id']}.md"
@@ -505,7 +518,8 @@ def main(argv: list[str] | None = None) -> int:
                 from validate import Validator
                 ctx_hash = ctx["context_hash"] if ctx else None
                 validator = Validator(repo, data, catalog, context=ctx,
-                                      bundle_context={h["id"]: ctx_hash for h in hotspots},
+                                      bundle_context={h["id"]: ctx_hash
+                                                      for h in hotspots + dormant},
                                       extra_fix=c.profile_fix_keywords(profile))
             cached = _still_valid(validator, cached_doc)
             requeued += not cached

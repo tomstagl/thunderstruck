@@ -162,7 +162,8 @@ def compute_coverage_gaps(repo: Path, index: dict[str, str], filters: c.Filters,
     """
     excluded: dict[str, int] = defaultdict(int)
     unsupported: dict[str, int] = defaultdict(int)
-    not_citable = unchanged = n_considered = 0
+    not_citable = n_considered = 0
+    unchanged: list[str] = []
     for rel, mode in index.items():
         reason = filters.exclusion_reason(rel)
         if reason is not None:
@@ -175,21 +176,78 @@ def compute_coverage_gaps(repo: Path, index: dict[str, str], filters: c.Filters,
         elif rel in considered:
             n_considered += 1
         else:
-            unchanged += 1
+            unchanged.append(rel)
     ranked = sorted(unsupported.items(), key=lambda kv: (-kv[1], kv[0]))
     shown = dict(sorted(ranked[:UNSUPPORTED_SHOWN]))
     rest = sum(n for _, n in ranked[UNSUPPORTED_SHOWN:])
     if rest:
         shown["other"] = rest
-    return {"tracked": len(index), "considered": n_considered, "unchanged": unchanged,
+    return {"tracked": len(index), "considered": n_considered, "unchanged": len(unchanged),
             "not_citable": not_citable, "excluded": dict(sorted(excluded.items())),
-            "unsupported": shown, "_by_extension": dict(unsupported)}
+            "unsupported": shown, "_by_extension": dict(unsupported),
+            "_unchanged": sorted(unchanged)}
 
 
 def unsupported_language_warnings(by_extension: dict[str, int]) -> list[str]:
     return [f"{n} {UNSUPPORTED_LANGUAGES[ext]} files ({ext}) were not scanned — no "
             f"detectors exist for this language."
             for ext, n in sorted(by_extension.items()) if ext in UNSUPPORTED_LANGUAGES]
+
+
+def _qualifies(hits: list) -> bool:
+    """A dormant file needs one medium/high lead, or low leads from two patterns."""
+    if any(h.confidence in ("medium", "high") for h in hits):
+        return True
+    return len({h.pattern_id for h in hits}) >= 2
+
+
+def dormant_sweep(repo: Path, unchanged: list[str], catalog: dict, patterns: dict,
+                  langmap: dict, suppressions: list, suppressed_hits: list[int],
+                  keep: int, limit: int) -> tuple[list[dict], int]:
+    """Files with no commit in the window that carry integration-point leads
+    (#19 AC-7). Only `dormant: true` patterns run. They are listed, never
+    ranked; returns the rows and how many files the cap skipped."""
+    if keep <= 0:
+        return [], 0
+    wanted = sorted(pid for pid, p in catalog["_by_id"].items() if p.get("dormant"))
+    swept, skipped = unchanged[:max(0, limit)], max(0, len(unchanged) - max(0, limit))
+    qualified: list[tuple[float, str, list, dict]] = []
+    for rel in swept:
+        text = c.read_text(repo / rel)
+        if text is None:
+            continue
+        hits = apply_suppressions(
+            run_detectors(catalog, rel, text, c.detect_language(rel, langmap), pattern_ids=wanted),
+            suppressions, suppressed_hits)
+        if hits and _qualifies(hits):
+            weight, per_pattern = stability_weight(hits, patterns)
+            qualified.append((weight, rel, hits, per_pattern))
+    qualified.sort(key=lambda q: (-q[0], q[1]))
+    last: dict[str, tuple[str, str]] = {}
+    for _, rel, _, _ in qualified[:3 * keep]:
+        out = c.git(repo, "--literal-pathspecs", "log", "-1", "--format=%H%x00%aI",
+                    "--", rel, check=False).strip()
+        sha, _, when = out.partition("\x00")
+        last[rel] = (sha, when)
+    top = sorted(qualified[:3 * keep], key=lambda q: (-q[0], last[q[1]][1], q[1]))[:keep]
+    rows = []
+    for n, (weight, rel, hits, per_pattern) in enumerate(top, 1):
+        sha, when = last[rel]
+        rows.append({
+            "id": f"D{n:02d}", "file": rel, "language": c.detect_language(rel, langmap),
+            "dormant": True, "content_hash": c.sha256_file(repo / rel),
+            "churn": {"commits": 0, "insertions": 0, "deletions": 0, "authors": 0,
+                      "fix_commits": 0, "resilience_commits": 0, "refactor_commits": 0,
+                      "fix_ratio": 0.0, "last_modified": when or None,
+                      "recent_shas": [sha] if sha else []},
+            "complexity": None,
+            "detector_hits": [h.to_dict() for h in hits],
+            "stability": {"weight": round(weight, 3), "per_pattern": per_pattern,
+                          "patterns": sorted({h.pattern_id for h in hits})},
+            "scores": {"churn_norm": 0.0, "complexity_norm": 0.0, "raw": 0.0, "score": 0.0},
+            "coupled_files": [],
+        })
+    return rows, skipped
 
 
 def apply_suppressions(hits: list, rules: list[c.Suppression],
@@ -360,6 +418,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
 
     coverage_gaps = compute_coverage_gaps(repo, index, filters, langmap, set(candidates))
     warnings.extend(unsupported_language_warnings(coverage_gaps.pop("_by_extension")))
+    unchanged_files = coverage_gaps.pop("_unchanged")
 
     complexity, complexity_warning = analyse_complexity(repo, candidates)
     degraded = {"complexity": complexity_warning is not None}
@@ -419,6 +478,15 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
                        "raw": round(raw, 4), "score": round(score, 4)},
         })
 
+    dormant, skipped = dormant_sweep(repo, unchanged_files, catalog, patterns, langmap,
+                                     suppressions, suppressed_hits, args.dormant,
+                                     args.dormant_limit)
+    if skipped:
+        warnings.append(
+            f"{skipped} unchanged file(s) were not swept for dormant integration "
+            f"points (--dormant-limit {args.dormant_limit}); raise the limit to "
+            f"sweep them.")
+
     rows.sort(key=lambda r: (-r["scores"]["score"], r["file"]))
     top = rows[: args.top] if args.top else rows
     for n, row in enumerate(top, 1):
@@ -461,6 +529,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
                    "detector_hits": sum(len(h) for h in hits_by_file.values())},
         "pattern_coverage": coverage,
         "coverage_gaps": coverage_gaps,
+        "dormant": dormant,
         "suppressed": [{"detector": r.detector, "path": r.path, "reason": r.reason,
                         "hits": n} for r, n in zip(suppressions, suppressed_hits)],
         "coupling": coupling[:50],
@@ -477,6 +546,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--path", default=None, help="restrict to a subdirectory")
     ap.add_argument("--include-tests", action="store_true",
                     help="rank test files too (excluded by default)")
+    ap.add_argument("--dormant", type=int, default=5,
+                    help="how many dormant integration points to list (0: none)")
+    ap.add_argument("--dormant-limit", type=int, default=3000,
+                    help="most unchanged files to sweep for them")
     ap.add_argument("--stdout", action="store_true", help="print JSON instead of writing")
     args = ap.parse_args(argv)
 

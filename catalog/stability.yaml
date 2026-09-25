@@ -48,6 +48,7 @@ patterns:
   - id: S01
     name: Timeouts on every external call
     tier: A
+    dormant: true
     weight: 1.0
     metastable_role: amplifier
     failure_if_absent: >-
@@ -182,6 +183,7 @@ patterns:
   - id: S02
     name: Capped exponential backoff with full jitter
     tier: A
+    dormant: true
     weight: 1.0
     metastable_role: sustaining
     failure_if_absent: >-
@@ -220,6 +222,7 @@ patterns:
   - id: S03
     name: Honor server pushback (Retry-After, 429/503)
     tier: A
+    dormant: true
     weight: 1.0
     metastable_role: sustaining
     failure_if_absent: >-
@@ -278,6 +281,7 @@ patterns:
   - id: S04
     name: Retry only transient errors
     tier: A
+    dormant: true
     weight: 1.0
     metastable_role: amplifier
     failure_if_absent: >-
@@ -332,6 +336,7 @@ patterns:
   - id: S05
     name: Client-side rate limiting / budget gating
     tier: A
+    dormant: true
     weight: 1.0
     metastable_role: trigger
     failure_if_absent: >-
@@ -629,6 +634,7 @@ patterns:
   - id: S10
     name: Retry at one layer plus a retry budget
     tier: A
+    dormant: true
     weight: 1.0
     metastable_role: amplifier
     failure_if_absent: >-
@@ -1036,6 +1042,7 @@ patterns:
   - id: S27
     name: No blocking calls on non-blocking/event-loop threads
     tier: A
+    dormant: true
     weight: 1.0
     metastable_role: amplifier
     failure_if_absent: >-
@@ -1060,6 +1067,7 @@ patterns:
   - id: S28
     name: Bounded, timed lock/wait acquisition
     tier: A
+    dormant: true
     weight: 1.0
     metastable_role: sustaining
     failure_if_absent: >-

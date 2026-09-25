@@ -47,12 +47,17 @@ def collect(repo: Path) -> dict[str, Any]:
     validation = c.load_json(out / "validation.json", {}) or {}
     by_hotspot = {r["hotspot_id"]: r for r in validation.get("results", [])}
 
-    scores = {h["id"]: h["scores"]["score"] for h in hotspots["hotspots"]}
+    # dormant files are reported like hotspots only when they were investigated
+    dormant = hotspots.get("dormant") or []
+    briefed = {b.get("id") for b in (c.load_json(out / "bundles" / "index.json", {}) or {})
+               .get("bundles", []) if isinstance(b, dict)}
+    investigated = hotspots["hotspots"] + [d for d in dormant if d["id"] in briefed]
+    scores = {h["id"]: h["scores"]["score"] for h in investigated}
     findings: list[dict] = []
     failed: list[dict] = []
     clean: list[dict] = []
 
-    for hs in hotspots["hotspots"]:
+    for hs in investigated:
         hid = hs["id"]
         result = by_hotspot.get(hid)
         path = out / "findings" / f"{hid}.json"
@@ -97,7 +102,8 @@ def collect(repo: Path) -> dict[str, Any]:
         context_doc = {}
     raw_warnings = context_doc.get("warnings")
     link_meta, link_warnings, hotspot_links = link_refs(
-        repo, hotspots["repo"]["head"], findings, hotspots["hotspots"], clean + failed)
+        repo, hotspots["repo"]["head"], findings, hotspots["hotspots"] + dormant,
+        clean + failed)
     return {"hotspots": hotspots, "findings": findings,
             "failed": failed, "clean": clean, "validation": validation,
             "context": c.load_service_context(repo),
@@ -333,6 +339,26 @@ def render_service_context(ctx: dict | None, now: datetime) -> list[str]:
     return L
 
 
+def render_dormant(data: dict) -> list[str]:
+    """Untouched files that carry integration-point leads (#19 AC-7)."""
+    rows = data["hotspots"].get("dormant") or []
+    if not rows:
+        return []
+    L = ["", "## Dormant integration points", "",
+         "No commit touched these files in the window, so they cannot rank on churn. "
+         "They carry integration-point leads (timeouts, retries, pushback, blocking "
+         "calls), and code nobody changes is often code everything depends on. They "
+         "are investigated only with `--investigate-dormant N`.", "",
+         "| # | File | Last change | Leads |",
+         "|---|---|---|---|"]
+    for d in rows:
+        pats = ", ".join(md.text(p, cell=True) for p in d["stability"]["patterns"]) or "—"
+        file_cell = _linked(d["file"], _hotspot_link(data, d["id"], "url"), cell=True)
+        when = md.text((d["churn"].get("last_modified") or "—")[:10], cell=True)
+        L.append(f"| {d['id']} | {file_cell} | {when} | {pats} |")
+    return L
+
+
 def lead_precision(data: dict) -> dict[str, dict[str, int]]:
     """Per pattern: detector hits inside investigated hotspots (read), and the
     distinct ones a validated finding cites (confirmed). Over many runs this is
@@ -538,6 +564,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
         L.append(f"| {h['id']} | {file_cell} | {h['scores']['score']} | "
                  f"{h['churn']['commits']} | {h['churn']['fix_commits']} | "
                  f"{cx.get('ccn_max', '—')} | {pats} |")
+    L += render_dormant(data)
     L += ["",
           f"<sub>thunderstruck · catalog `{hs.get('schema')}` · "
           f"report `{c.REPORT_SCHEMA_VERSION}`</sub>", ""]
@@ -577,6 +604,11 @@ def render_json(data: dict) -> dict:
                             if data.get("context") else None),
         "pattern_coverage": hs["pattern_coverage"],
         "coverage_gaps": hs.get("coverage_gaps"),
+        "dormant": [{"id": d["id"], "file": d["file"],
+                     "last_modified": d["churn"].get("last_modified"),
+                     "patterns": d["stability"]["patterns"],
+                     "url": _hotspot_link(data, d["id"], "url")}
+                    for d in hs.get("dormant") or []],
         "lead_precision": lead_precision(data),
         "findings": data["findings"],
         "clean": data["clean"],

@@ -98,7 +98,7 @@ class Validator:
         self.extra_fix = tuple(extra_fix)
         self.valid_ids = c.catalog_ids(catalog)
         self.detector_refs: set[str] = set()
-        for hs in hotspots.get("hotspots", []):
+        for hs in hotspots.get("hotspots", []) + (hotspots.get("dormant") or []):
             for hit in hs.get("detector_hits", []):
                 self.detector_refs.add(hit["ref"])
         self.context_hash = context.get("context_hash") if context else None

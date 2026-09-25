@@ -796,7 +796,7 @@ S05, S10, S27, S28, and S30 after Task 13), `scripts/signals.py`
 (D bundles), `scripts/report.py`, `skills/thunderstruck-scan/SKILL.md`
 (`--investigate-dormant N`), `tests/test_dormant.py`.
 
-- [ ] **Failing tests:**
+- [x] **Failing tests:**
   - a temp repo with an old commit adding `src/legacy_client.py`
     (`requests.get(url)`, no timeout), then 5 later commits touching other
     files, run with `--since 30d` (use `GIT_COMMITTER_DATE` and
@@ -810,14 +810,14 @@ S05, S10, S27, S28, and S30 after Task 13), `scripts/signals.py`
     section reads `No commits in the window. Last change:`. Two runs give
     identical bytes;
   - speed guard: 500 generated dormant Python files sweep in < 10 s.
-- [ ] **Implement** per spec §5. Reuse `stability_weight` and apply
+- [x] **Implement** per spec §5. Reuse `stability_weight` and apply
   suppressions (Task 6). Qualification is at least one `medium`/`high`
   hit, or `low` hits from two different patterns.
-- [ ] Report section **Dormant integration points** comes after *Ranked
+- [x] Report section **Dormant integration points** comes after *Ranked
   hotspots*, with one line explaining why these files are here.
-- [ ] Scan skill: document `--investigate-dormant N` (default 0), which
+- [x] Scan skill: document `--investigate-dormant N` (default 0), which
   counts against the ≤4-parallel cap.
-- [ ] **Commit** `signals: list dormant integration points; opt-in investigation (AC-7)`
+- [x] **Commit** `signals: list dormant integration points; opt-in investigation (AC-7)`
 
 ---
 
