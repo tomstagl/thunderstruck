@@ -56,8 +56,8 @@ Nothing under the plugin changes (`skills/`, `agents/`, `hooks/`, `scripts/`, `c
 
 **Files:** `CLAUDE.md`.
 
-- [ ] Under *Tickets, specs and plans*, add a short subsection called *The ticket agent*. It covers what makes a ticket ready (one line, pointing at the spec), the two labels, and that removing `agent:blocked` is how a ticket is released for the next run. Also note that `.claude/` is session configuration, not plugin content.
-- [ ] Run the full suite, then commit: `Describe the ticket agent in CLAUDE.md`.
+- [x] Under *Tickets, specs and plans*, add a short subsection called *The ticket agent*. It covers what makes a ticket ready (one line, pointing at the spec), the two labels, and that removing `agent:blocked` is how a ticket is released for the next run. Also note that `.claude/` is session configuration, not plugin content.
+- [x] Run the full suite, then commit: `Describe the ticket agent in CLAUDE.md`.
 
 ### Task 4: Schedule it, after merge (AC-12)
 
