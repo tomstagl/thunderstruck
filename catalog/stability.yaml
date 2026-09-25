@@ -70,8 +70,11 @@ patterns:
       typescript:
         - id: S01-ts-fetch-no-signal
           kind: regex
-          pattern: '\bfetch\s*\('
-          absent_within: '\b(signal|AbortSignal|timeout|AbortController)\b|\bfetch\s*\([^,()]*(?:\([^()]*\))?[^,()]*,\s*[A-Za-z_$][\w$.]*\s*\)'
+          # The global fetch, bare or as globalThis/window/self.fetch. Not a
+          # method of some other object (`queue.fetch()`) and not a method
+          # definition (`async fetch(): Promise<T> {`).
+          pattern: '(?:^|[^\w$.\n]|\b(?:globalThis|window|self)\s*\.\s*)fetch\s*\((?![^()]*\)\s*(?::[^{};=]*)?\{)'
+          absent_within: '\b(signal|AbortSignal|timeout|AbortController)\b|\bfetch\s*\([^,()]*(?:\([^()]*\)[^,()]*)?,\s*[A-Za-z_$][\w$.]*\s*\)'
           window: 8
           window_before: 6
           confidence: medium
@@ -314,8 +317,12 @@ patterns:
       typescript:
         - id: S04-ts-retry-without-discrimination
           kind: file_absent
-          anchor: '\b(maxRetries|MAX_RETRIES|retryCount|retries|retryAttempt)\b'
-          absent: '\b(5\d\d|status\s*>=\s*500|isTransient|isRetryable|ECONNRESET|ETIMEDOUT|429|statusCode\s*>=|axiosRetry|axios-retry|retryCondition|shouldRetry|retryIf|retryOn|isNetworkError|isRetryableError|isNetworkOrIdempotentRequestError)\b|\bbail\s*\(|\bAbortError\b|\bonFailedAttempt\b|\bhandle(?:When|Type|Result)\s*\('
+          # A retry counter in code, not a type (`retryCount: number`,
+          # `maxRetries?: number`) or an event name (`'retries-exhausted'`).
+          anchor: '(?<!-)\b(maxRetries|MAX_RETRIES|retryCount|retries|retryAttempt)\b(?!-|\??\s*:\s*(?:number|string|boolean)\b)'
+          # A predicate named for the error class it retries
+          # (`isNotConnectionError`, `isTransientError`) is discrimination.
+          absent: '\b(5\d\d|status\s*>=\s*500|isTransient|isRetryable|ECONNRESET|ETIMEDOUT|429|statusCode\s*>=|axiosRetry|axios-retry|retryCondition|shouldRetry|retryIf|retryOn|isNetworkError|isRetryableError|isNetworkOrIdempotentRequestError)\b|\bbail\s*\(|\bAbortError\b|\bonFailedAttempt\b|\bhandle(?:When|Type|Result)\s*\(|\bis\w*(?:Transient|Retr[iy]able|ConnectionError|NetworkError)\w*\s*\('
           confidence: medium
           note: "retry construct with no visible transient/permanent discrimination"
       python:
@@ -371,7 +378,8 @@ patterns:
       typescript:
         - id: S05-ts-http-without-limiter
           kind: file_absent
-          anchor: '\bfetch\s*\(|\b(axios|got)\s*(\.\s*(get|post|put|patch|delete|head|request))?\s*\(|\bsuperagent\s*\.|\bundici\s*\.\s*(request|fetch)\s*\('
+          # `fetch(` is the global fetch, as in S01-ts-fetch-no-signal.
+          anchor: '(?:^|[^\w$.\n]|\b(?:globalThis|window|self)\s*\.\s*)fetch\s*\((?![^()]*\)\s*(?::[^{};=]*)?\{)|\b(axios|got)\s*(\.\s*(get|post|put|patch|delete|head|request))?\s*\(|\bsuperagent\s*\.|\bundici\s*\.\s*(request|fetch)\s*\('
           absent: '(?i)\b(ratelimit|rate_limit|rate-limit|limiter|throttle|bottleneck|semaphore|token.?bucket|p-?limit|pLimit)\b'
           require: '(?i)(Promise\s*\.\s*(all|allSettled)|\bfor\s*(await\s*)?\(|\bfor\s+await\b|\bwhile\s*\(|\.(map|forEach)\s*\(|setInterval)'
           confidence: medium
@@ -379,7 +387,8 @@ patterns:
         - id: S05-ts-ratelimit-headers-unread
           kind: file_absent
           anchor: '(?i)\bratelimit\b|\brate.?limit\b'
-          absent: '(?i)headers\s*\.\s*get\s*\(\s*[''"`][^''"`]*ratelimit|x-.*-ratelimit'
+          # `x-ratelimit-*` itself, as well as a vendor's `x-<vendor>-ratelimit-*`.
+          absent: '(?i)headers\s*\.\s*get\s*\(\s*[''"`][^''"`]*ratelimit|x-(?:\w{1,40}-){0,3}ratelimit'
           confidence: low
           note: "rate limiting mentioned but server rate-limit headers are never read"
       python:
@@ -414,7 +423,15 @@ patterns:
       typescript:
         - id: S06-ts-single-queue-no-priority
           kind: file_absent
-          anchor: '(?i)^(?:export\s+)?(?:const|let|var)\s+\w*(?:queue|limiter|throttle|worker|pool)\w*\b[^=\n]*=|^[ \t]+(?:(?:private|protected|public|readonly|static)\s+)*#?\w*(?:queue|limiter|throttle|worker|pool)\w*\b[^=\n]*='
+          # A declaration of a queue/limiter/worker/pool, at module level or
+          # as a class field, whose name ends in the noun. An import, a type
+          # field, a string or a parameter named `queue` is not a queue this
+          # file runs; nor is a constant named after one (`QUEUE_EVENT_SUFFIX`,
+          # `QueueNameSchema`), a string (`IWorker = 'IWorker'`), a
+          # component (`SvgQueue = (props) =>`), or a line whose only `=`
+          # opens an arrow (`=>`) or a comparison. An arrow inside the type
+          # annotation (`const queue: Array<() => Job> = []`) is skipped.
+          anchor: '(?i)^(?:export\s+)?(?:const|let|var)\s+\w*(?:queue|limiter|throttle|worker|pool)s?\b(?:[^=\n]|=>)*=(?![>=]|\s*[''"`(])|^[ \t]+(?:(?:private|protected|public|readonly|static)\s+)*#?\w*(?:queue|limiter|throttle|worker|pool)s?\b(?:[^=\n]|=>)*=(?![>=]|\s*[''"`(])'
           absent: '(?i)\b(priority|interactive|criticality|tier|urgent|foreground)\b'
           confidence: low
           note: "one shared queue/limiter declared at module or class level; no priority or criticality field"
@@ -469,7 +486,12 @@ patterns:
           note: "paged/batched loop with no persisted cursor — a crash restarts from the beginning"
         - id: S07-ts-create-without-upsert
           kind: file_absent
-          anchor: '(?<!Object)(?<!axios)(?<!Reflect)(?<!document)(?<!Buffer)(?<!Error)(?<!React)\.\s*create(Many)?\s*\(|INSERT\s+INTO'
+          # Not an insert: a controller delegating to its service (the
+          # service's own file is swept), `this.create(`, a static factory
+          # (`NestFactory.create`, `BaseConfig.create`, `SomeDto.create`,
+          # `StorageCore.create`), and a no-argument `create()` (a hasher, a
+          # builder).
+          anchor: '(?<!Object)(?<!axios)(?<!Reflect)(?<!document)(?<!Buffer)(?<!Error)(?<!React)(?<![Ss]ervice)(?<!Factory)(?<!Config)(?<!Dto)(?<!Core)(?<!\bthis)\.\s*create(Many)?\s*\((?!\s*\))|INSERT\s+INTO'
           absent: '(?i)\b(upsert|ON\s+CONFLICT|ON\s+DUPLICATE\s+KEY|MERGE\s+INTO|idempotenc|P2002|E11000|ER_DUP_ENTRY|23505|UniqueViolation|DuplicateKey)'
           confidence: medium
           note: "inserts with no upsert / ON CONFLICT — a replayed job duplicates rows"
@@ -540,7 +562,12 @@ patterns:
         - id: S08-ts-unbounded-promise-all
           kind: regex
           pattern: '\bPromise\s*\.\s*(all|allSettled)\s*\('
-          absent_within: '(?i:\b(slice|chunk|batch|limit|pLimit|p-limit|concurrency|take|semaphore)\b)|Promise\s*\.\s*(all|allSettled)\s*\(\s*\[(?![^\]]*(?:\.\.\.|\.map\s*\())|Promise\s*\.\s*(?:all|allSettled)\s*\(\s*[A-Z][A-Z0-9_]*\s*\.\s*map\s*\('
+          # A fan-out over a fixed set is bounded by the code, not the data:
+          # an UPPER_CASE constant or the members of an enum
+          # (`Object.values(QueueName)`). A method under a `@Chunked()`
+          # decorator sees one chunk at a time. The (?i) is scoped so that
+          # [A-Z] stays case-sensitive.
+          absent_within: '(?i:\b(slice|chunk(?:ed|s)?|batch|limit|pLimit|p-limit|concurrency|take|semaphore)\b)|Promise\s*\.\s*(all|allSettled)\s*\(\s*\[(?![^\]]*(?:\.\.\.|\.map\s*\())|Promise\s*\.\s*(?:all|allSettled)\s*\(\s*(?:[A-Z][A-Z0-9_]*|Object\s*\.\s*(?:values|keys)\s*\(\s*[A-Z]\w*\s*\))\s*\.\s*map\s*\('
           window: 5
           window_before: 10
           confidence: medium
@@ -554,8 +581,13 @@ patterns:
           note: "Prisma findMany with no take: — result set grows with the table"
         - id: S08-ts-select-without-limit
           kind: regex
-          pattern: '(?i)SELECT\s+.*\s+FROM\s+'
-          absent_within: '(?i)\bLIMIT\b|\bFETCH\s+FIRST\b|\bTOP\s*\(?\s*\d|\A[^\n]*?SELECT\s+(?:COUNT|MAX|MIN|SUM|AVG|EXISTS)\s*\(|\A(?:(?!\bSELECT\b)[\s\S])*SELECT\b(?:(?!\bSELECT\b)[^;])*?\bWHERE\s+(?:\w+\.)?id\s*=(?!\s*ANY\b)'
+          # Not a subquery (`IN (SELECT …)`, `EXISTS (SELECT …)`): the outer
+          # statement bounds it. Not a single-row read on the same line
+          # (`db.first('SELECT …')`).
+          pattern: '(?i)^(?![^\n]*\.\s*first\s*\()[^\n]*?(?<!\()(?<!\(\s)SELECT\s+.*\s+FROM\s+'
+          # One row by construction: an aggregate (also under COALESCE) or a
+          # lookup by id, in the statement that starts on the matched line.
+          absent_within: '(?i)\bLIMIT\b|\bFETCH\s+FIRST\b|\bTOP\s*\(?\s*\d|\A[^\n]*?SELECT\s+(?:(?:COUNT|MAX|MIN|SUM|AVG|EXISTS)\s*\(|COALESCE\s*\(\s*(?:COUNT|MAX|MIN|SUM|AVG)\s*\()|\A(?:(?!\bSELECT\b)[\s\S])*SELECT\b(?:(?!\bSELECT\b)[^;])*?\bWHERE\s+(?:\w+\.)?id\s*=(?!\s*ANY\b)'
           window: 6
           confidence: low
           note: "multi-row SELECT with no LIMIT"
@@ -626,8 +658,11 @@ patterns:
       typescript:
         - id: S09-ts-cache-aside-no-singleflight
           kind: file_absent
-          anchor: '(?i)cache\s*\.\s*(get|has|read)\s*\(|getCached|fromCache'
-          absent: '(?i)\b(in.?flight|single.?flight|coalesc|dedupe|dedup|pending(Requests|Promises|Map)|memoize)\b'
+          # `getCached…(`/`fromCache…(` as a call, not an `isFromCache` flag.
+          anchor: '(?i)cache\s*\.\s*(get|has|read)\s*\(|\b(?:getCached|fromCache)\w*\s*\('
+          # A map of pending promises (`#pending = new Map`) is in-flight
+          # deduplication whatever it is called.
+          absent: '(?i)\b(in.?flight|single.?flight|coalesc|dedupe|dedup|pending(Requests|Promises|Map)|memoize)\b|\bpending\w*\s*=\s*new\s+Map\b'
           confidence: medium
           note: "cache-aside read with no in-flight deduplication"
       python:
@@ -754,8 +789,11 @@ patterns:
       typescript:
         - id: S11-ts-no-deadline-propagation
           kind: file_absent
-          anchor: '\bfetch\s*\(|\b(axios|got)\s*(\.\s*(get|post|put|patch|delete|head|request))?\s*\(|\brequest\s*\('
-          absent: '(?i)\b(deadline|abortSignal|signal\s*[:,)]|cancellationToken|remainingMs|timeBudget)\b'
+          # `fetch(` is the global fetch, as in S01-ts-fetch-no-signal.
+          anchor: '(?:^|[^\w$.\n]|\b(?:globalThis|window|self)\s*\.\s*)fetch\s*\((?![^()]*\)\s*(?::[^{};=]*)?\{)|\b(axios|got)\s*(\.\s*(get|post|put|patch|delete|head|request))?\s*\(|\brequest\s*\('
+          # `signal` is outside the \b(...)\b group: a trailing \b after `:` never
+          # matched `signal: x`, so a passed signal did not count.
+          absent: '(?i)\b(deadline|abortSignal|cancellationToken|remainingMs|timeBudget)\b|\bsignal\s*[:,)}]'
           confidence: low
           note: "outbound calls with no deadline or cancellation passed through"
       python:
@@ -787,7 +825,8 @@ patterns:
       typescript:
         - id: S12-ts-no-breaker
           kind: file_absent
-          anchor: '\b(maxRetries|MAX_RETRIES|retries|retryCount)\b'
+          # A retry counter in code, not a type or an event name (as S04-ts).
+          anchor: '(?<!-)\b(maxRetries|MAX_RETRIES|retries|retryCount)\b(?!-|\??\s*:\s*(?:number|string|boolean)\b)'
           absent: '(?i)\b(circuit|breaker|opossum|cockatiel|half.?open|token.?bucket)\b'
           confidence: low
           note: "retries with no circuit breaker or retry token bucket"
@@ -820,7 +859,10 @@ patterns:
       typescript:
         - id: S13-ts-shared-pool
           kind: file_absent
-          anchor: '(?i)\b(pool|connectionLimit|maxConnections|poolSize)\b'
+          # A pool this file builds or uses (`new Pool(`, `createPool(`,
+          # `pool.query(`) or sizes. An import, a re-export, a type or a
+          # string that names a pool is not one.
+          anchor: '(?i)\bnew\s+(?:\w+\.)?\w*Pool\s*\(|\bcreatePool\s*\(|\b(?:connectionLimit|maxConnections|poolSize)\b|\bpool\s*\.\s*(?:query|connect|acquire|getConnection|execute)\s*\('
           absent: '(?i)\b(bulkhead|separate|dedicated|isolat|partition)\w*\b'
           confidence: low
           note: "one shared pool with no isolation between workloads"
@@ -910,7 +952,8 @@ patterns:
       typescript:
         - id: S15-ts-no-fallback
           kind: file_absent
-          anchor: '\bfetch\s*\(|\b(axios|got)\s*(\.\s*(get|post|put|patch|delete|head|request))?\s*\('
+          # `fetch(` is the global fetch, as in S01-ts-fetch-no-signal.
+          anchor: '(?:^|[^\w$.\n]|\b(?:globalThis|window|self)\s*\.\s*)fetch\s*\((?![^()]*\)\s*(?::[^{};=]*)?\{)|\b(axios|got)\s*(\.\s*(get|post|put|patch|delete|head|request))?\s*\('
           absent: '(?i)\b(fallback|degrade|stale|default(Value|Response)|cached(Value|Response))\b'
           confidence: low
           note: "external call with no fallback branch"
@@ -996,8 +1039,16 @@ patterns:
       typescript:
         - id: S17-ts-cache-without-ttl
           kind: file_absent
-          anchor: '^(?:export\s+)?(?:const|let|var)\s+\w+[^=\n]*=\s*new\s+Map\b|^[ \t]+(?!(?:const|let|var|return)\b)(?:(?:private|protected|public|readonly|static)\s+)*#?\w+[^=\n(]*=\s*new\s+Map\b|\w*[Cc]ache\s*\.\s*set\s*\('
-          absent: '(?i)\b(ttl|expire|expiry|evict|maxSize|max_size|maxAge|lru|clear\s*\()\b'
+          # A Map that outlives a call: module level or a class field (also
+          # `new Map<K, V>()`), or a `…Cache.set(`. A Map built and dropped
+          # inside a function is an index, not a cache, and a method whose
+          # parameter defaults to `new Map()` is not a field.
+          anchor: '^(?:export\s+)?(?:const|let|var)\s+\w+[^=\n]*=\s*new\s+Map\b|^[ \t]+(?!(?:const|let|var|return)\b)(?:(?:private|protected|public|readonly|static)\s+)*#?\w+[^=\n(]*=\s*new\s+Map\b|[Cc]ache\s*\.\s*set\s*\('
+          # Compound names count: `LRUMap`, `maxProtocolCacheSize`,
+          # `COMPLETED_AUTH_TTL_MS`, `cacheTtlMs` (but not `throttle`).
+          # `clear(` sits outside the \b(...)\b group, where a trailing \b
+          # after `(` never matched `clear()`.
+          absent: '(?i)\b(expire|expiry|evict|maxSize|max_size|maxAge)\b|(?<![a-z])ttl(?![a-z])|(?-i:[a-z0-9]Ttl(?![a-z]))|\blru\w*|\bmax\w*(?:size|entries|items)\b|\bclear\s*\('
           confidence: medium
           note: "module-level or class-field Map cache with no TTL, eviction, or size bound"
       python:
@@ -1062,13 +1113,22 @@ patterns:
         - id: S19-ts-empty-catch
           kind: regex
           pattern: 'catch\s*(?:\((?![^)]*\b(?:_\w*|ignored?|expected|unused)\s*\))[^)]*\))?\s*\{\s*\}'
-          confidence: high
+          # medium, not high: the TypeScript calibration (docs/calibration/
+          # typescript.md) found deliberate best-effort swallows outnumbering
+          # the true positives.
+          confidence: medium
           note: "empty catch block — the failure leaves no trace (a parameter named _x, ignored, expected or unused marks it deliberate)"
         - id: S19-ts-catch-only-comment
           kind: regex
-          pattern: 'catch\s*(\([^)]*\))?\s*\{\s*(//.*)?$'
-          present_within: '^\s*\}'
-          window: 2
+          # A parameter named `_…`, `ignored`, `expected` or `unused` marks a
+          # deliberate swallow, the convention S19-java-* honours.
+          pattern: 'catch\s*(?:\((?![^)]*\b(?:_\w*|ignored?|expected|unused)\s*\))[^)]*\))?\s*\{\s*(//.*)?$'
+          # Comments are blanked before matching, so a body that is only
+          # comments is only whitespace: the closing `}` must be the first
+          # thing after the catch line. `^\s*\}` anywhere in the window
+          # fired on every one-statement catch (#17).
+          present_within: '\A\s*\}'
+          window: 4
           window_offset: 1
           confidence: medium
           note: "catch block with no handling beyond a comment"
