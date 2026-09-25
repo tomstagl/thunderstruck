@@ -150,7 +150,8 @@ ticket stays skipped. A human decides.
 
 ## 4. Building (step 4)
 
-- **Branch.** The session's designated branch (`claude/…`). The plan's
+- **Branch.** The session's designated branch (`claude/…`), or
+  `agent/<n>-<topic>` when the session designates none. The plan's
   `**Branch:**` line names the branch the maintainer would use by hand, but a
   cloud session pushes to the branch it was given. The PR body names the plan's
   branch so the mapping is visible.
@@ -244,12 +245,15 @@ the skill does not restate those rules. It only says to subscribe.
 
 The Routine is created with `notifications: {push: true, email: true}`. What
 the notification says is the session's final message. The skill therefore ends every
-run with exactly one of three summaries:
+run with exactly one of four summaries:
 
 - `PR opened: #<m> for #<n> — <title>. Checks: <all green | list>.`
 - `Blocked: #<n> at Task <k> — <one-line gap>. Details on the ticket.`
 - `Nothing ready. Skipped: #19 plan not on origin/main, …` plus any stale
   claims (§3).
+- `Run failed: <what failed>.` This covers malformed picker input, or an unexpected
+  error after the claim, which is then handled like *Blocked* so no claim is
+  left behind (AC-5).
 
 ## 9. Schedule
 

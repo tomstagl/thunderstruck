@@ -275,3 +275,16 @@ def test_the_script_is_stdlib_only():
 def test_a_claim_time_without_zone_is_utc(repo, tmp_path):
     t = issue(labels=["agent:in-progress"], claimed_at="2026-09-25T00:52:00")
     assert reason(repo, tmp_path, t) == "stale claim since 2026-09-25T00:52:00"
+
+
+# -- the skill that drives the agent ------------------------------------------------------
+
+def test_the_skill_names_every_step():
+    """Guards against the procedure quietly losing a step in a later edit."""
+    text = (SKILL_DIR / "SKILL.md").read_text()
+    assert text.startswith("---\nname: implement-ticket\n")
+    for needle in ("pick_ticket.py", "agent:in-progress", "agent:blocked", "Closes #",
+                   "THUNDERSTRUCK_REQUIRE_RENDERER=1", "gen_catalog_docs.py --check",
+                   "gen_sample_report.py --check", "claude plugin validate . --strict",
+                   "subscribe_pr_activity", "red:", "Nothing ready", "Blocked:", "PR opened:"):
+        assert needle in text, f"SKILL.md no longer mentions {needle!r}"
