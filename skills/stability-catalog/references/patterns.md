@@ -160,7 +160,10 @@ Scanned and reasoned about by default, at full weight.
 **What the detectors look for.**
 
 - more than one retry layer in the same call path, with no shared budget
+- AWS SDK v3 client with no retry settings: the default is 3 attempts, a layer nobody wrote
+- boto3 client with no retry config: botocore retries by default, a layer nobody wrote
 - more than one retry mechanism in the same call path, with no shared budget
+- Feign builder with no retryer: Retryer.Default makes up to 5 attempts, a layer nobody wrote
 - mesh retry policy: a retry layer outside the code, which multiplies with any retry the application does
 - resilience4j retry configured in YAML: a retry layer that stacks with any other
 - resilience4j retry configured in properties: a retry layer that stacks with any other

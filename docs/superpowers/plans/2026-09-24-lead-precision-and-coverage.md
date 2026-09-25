@@ -920,7 +920,7 @@ and **all** tracked config files), `scripts/bundle.py` (section),
 `tests/test_retry_inventory.py`, and samples for the library-default
 detectors.
 
-- [ ] **Library-default samples:**
+- [x] **Library-default samples:**
 
 `S10/python/positive_boto3_default.py`
 ```python
@@ -936,7 +936,7 @@ s3 = boto3.client("s3", config=Config(retries={"max_attempts": 2, "mode": "stand
 Java: `Feign.builder()` with no `.retryer(` → positive. `.retryer(Retryer.NEVER_RETRY)` → negative.
 TS: `import { S3Client } from '@aws-sdk/client-s3'; new S3Client({})` → positive. `new S3Client({ maxAttempts: 2 })` → negative.
 
-- [ ] **Failing tests:**
+- [x] **Failing tests:**
   - fixture plus `deploy/releases-virtualservice.yaml` (the S01 positive
     above) → `retry_layers` contains `{kind: "config", file:
     "deploy/releases-virtualservice.yaml", detector_id:
@@ -946,7 +946,7 @@ TS: `import { S3Client } from '@aws-sdk/client-s3'; new S3Client({})` → positi
     listing all three;
   - a `score: false` hit does not change a file's `stability.weight`;
   - the bundle determinism test still passes.
-- [ ] **Commit** `signals: repo-wide retry-layer inventory across code, config and library defaults (AC-16)`
+- [x] **Commit** `signals: repo-wide retry-layer inventory across code, config and library defaults (AC-16)`
 
 ---
 

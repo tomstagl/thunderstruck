@@ -216,18 +216,21 @@ patterns:
           handler: s02_backoff
           confidence: medium
           note: "retry backoff missing a cap, jitter, or growth"
+          inventory: retry_layer
       python:
         - id: S02-py-backoff
           kind: module
           handler: s02_backoff
           confidence: medium
           note: "retry backoff missing a cap, jitter, or growth"
+          inventory: retry_layer
       java:
         - id: S02-java-backoff
           kind: module
           handler: s02_backoff
           confidence: low
           note: "retry backoff missing a cap, jitter, or growth"
+          inventory: retry_layer
         - id: S02-java-retryable-no-jitter
           kind: regex
           pattern: '@\s*Retryable\b'
@@ -235,6 +238,7 @@ patterns:
           window: 12
           confidence: low
           note: "@Retryable with no randomised backoff — Spring Retry defaults to a fixed 1s wait, so every client retries in lockstep"
+          inventory: retry_layer
 
   - id: S03
     name: Honor server pushback (Retry-After, 429/503)
@@ -349,6 +353,7 @@ patterns:
           window: 12
           confidence: low
           note: "@Retryable with no exception filter — retries every exception, permanent ones included"
+          inventory: retry_layer
 
   - id: S05
     name: Client-side rate limiting / budget gating
@@ -667,20 +672,51 @@ patterns:
           handler: s10_retry_layers
           confidence: medium
           note: "more than one retry layer in the same call path, with no shared budget"
+          inventory: retry_layer
+        - id: S10-ts-aws-sdk-default-retries
+          kind: regex
+          pattern: '\bnew\s+\w+Client\s*\('
+          require: '@aws-sdk/'
+          absent_within: '\bmaxAttempts\b|\bretryStrategy\b|\bretryMode\b'
+          window: 6
+          inventory: retry_layer
+          score: false
+          confidence: low
+          note: "AWS SDK v3 client with no retry settings: the default is 3 attempts, a layer nobody wrote"
       python:
         - id: S10-py-nested-retry
           kind: module
           handler: s10_retry_layers
           confidence: medium
           note: "more than one retry layer in the same call path, with no shared budget"
+          inventory: retry_layer
+        - id: S10-py-boto3-default-retries
+          kind: regex
+          pattern: '\bboto3\s*\.\s*(?:client|resource)\s*\('
+          absent_within: '\bretries\b|\bconfig\s*='
+          window: 6
+          inventory: retry_layer
+          score: false
+          confidence: low
+          note: "boto3 client with no retry config: botocore retries by default, a layer nobody wrote"
       java:
         - id: S10-java-nested-retry
           kind: module
           handler: s10_retry_layers
           confidence: low
           note: "more than one retry mechanism in the same call path, with no shared budget"
+          inventory: retry_layer
 
   # ---------------------------------------------------------------- Tier B --
+        - id: S10-java-feign-default-retryer
+          kind: regex
+          pattern: '\bFeign\s*\.\s*builder\s*\('
+          absent_within: '\.\s*retryer\s*\('
+          window: 12
+          inventory: retry_layer
+          score: false
+          confidence: low
+          note: "Feign builder with no retryer: Retryer.Default makes up to 5 attempts, a layer nobody wrote"
       yaml:
         - id: S10-yaml-mesh-retry
           kind: regex

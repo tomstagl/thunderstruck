@@ -45,3 +45,11 @@ class TemplateInsideResilience4j {
 
     private String doCall() { return "ok"; }
 }
+
+class DefaultFeignClient {
+    // Feign's Retryer.Default retries up to 5 times: a layer nobody wrote
+    PaymentsApi payments() {
+        return feign.Feign.builder()
+            .target(PaymentsApi.class, "https://payments");
+    }
+}

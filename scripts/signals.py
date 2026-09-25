@@ -194,8 +194,44 @@ def unsupported_language_warnings(by_extension: dict[str, int]) -> list[str]:
             for ext, n in sorted(by_extension.items()) if ext in UNSUPPORTED_LANGUAGES]
 
 
-def _qualifies(hits: list) -> bool:
-    """A dormant file needs one medium/high lead, or low leads from two patterns."""
+def detector_flags(catalog: dict) -> tuple[set[str], set[str]]:
+    """(detectors that never add weight, detectors that mark a retry layer)."""
+    unscored, inventory = set(), set()
+    for pattern in catalog.get("patterns", []):
+        for dets in (pattern.get("detectors") or {}).values():
+            for det in dets or []:
+                if det.get("score") is False:
+                    unscored.add(det["id"])
+                if det.get("inventory") == "retry_layer":
+                    inventory.add(det["id"])
+    return unscored, inventory
+
+
+def build_retry_layers(hits: list, catalog: dict, langmap: dict,
+                       unscored: set[str]) -> list[dict]:
+    """One entry per retry layer per file, repo-wide (#19 AC-16). Retry
+    amplification is R^N over layers that live in different files: code, the
+    mesh, and library defaults nobody configured."""
+    layers: dict[tuple[str, str], dict] = {}
+    for h in hits:
+        if h.detector_id in unscored:
+            kind = "library-default"
+        elif c.rank_only_with_leads(catalog, c.detect_language(h.file, langmap)):
+            kind = "config"
+        else:
+            kind = "code"
+        key = (kind, h.file)
+        if key not in layers or h.line < layers[key]["line"]:
+            layers[key] = {"kind": kind, "file": h.file, "line": h.line,
+                           "detector_id": h.detector_id, "pattern_id": h.pattern_id,
+                           "note": h.note}
+    return sorted(layers.values(), key=lambda r: (r["kind"], r["file"], r["line"]))
+
+
+def _qualifies(hits: list, unscored: set[str] | frozenset = frozenset()) -> bool:
+    """A dormant file needs one medium/high lead, or low leads from two patterns.
+    A library default on its own (score: false) is inventory, not a lead."""
+    hits = [h for h in hits if h.detector_id not in unscored]
     if any(h.confidence in ("medium", "high") for h in hits):
         return True
     return len({h.pattern_id for h in hits}) >= 2
@@ -203,24 +239,29 @@ def _qualifies(hits: list) -> bool:
 
 def dormant_sweep(repo: Path, unchanged: list[str], catalog: dict, patterns: dict,
                   langmap: dict, suppressions: list, suppressed_hits: list[int],
-                  keep: int, limit: int) -> tuple[list[dict], int]:
+                  keep: int, limit: int, unscored: set[str] | frozenset = frozenset(),
+                  inventory_ids: set[str] | frozenset = frozenset()
+                  ) -> tuple[list[dict], int, list]:
     """Files with no commit in the window that carry integration-point leads
     (#19 AC-7). Only `dormant: true` patterns run. They are listed, never
-    ranked; returns the rows and how many files the cap skipped."""
-    if keep <= 0:
-        return [], 0
+    ranked. Returns the rows, how many files the cap skipped, and the retry
+    layers found on the way: an untouched mesh file is still a layer."""
     wanted = sorted(pid for pid, p in catalog["_by_id"].items() if p.get("dormant"))
     swept, skipped = unchanged[:max(0, limit)], max(0, len(unchanged) - max(0, limit))
     qualified: list[tuple[float, str, list, dict]] = []
+    inventory: list = []
     for rel in swept:
         text = c.read_text(repo / rel)
         if text is None:
             continue
-        hits = apply_suppressions(
-            run_detectors(catalog, rel, text, c.detect_language(rel, langmap), pattern_ids=wanted),
-            suppressions, suppressed_hits)
-        if hits and _qualifies(hits):
-            weight, per_pattern = stability_weight(hits, patterns)
+        raw_hits = run_detectors(catalog, rel, text, c.detect_language(rel, langmap),
+                                 pattern_ids=wanted)
+        inventory += [h for h in raw_hits if h.detector_id in inventory_ids]
+        if keep <= 0:
+            continue
+        hits = apply_suppressions(raw_hits, suppressions, suppressed_hits)
+        if hits and _qualifies(hits, unscored):
+            weight, per_pattern = stability_weight(hits, patterns, unscored)
             qualified.append((weight, rel, hits, per_pattern))
     qualified.sort(key=lambda q: (-q[0], q[1]))
     last: dict[str, tuple[str, str]] = {}
@@ -247,7 +288,7 @@ def dormant_sweep(repo: Path, unchanged: list[str], catalog: dict, patterns: dic
             "scores": {"churn_norm": 0.0, "complexity_norm": 0.0, "raw": 0.0, "score": 0.0},
             "coupled_files": [],
         })
-    return rows, skipped
+    return rows, skipped, inventory
 
 
 def apply_suppressions(hits: list, rules: list[c.Suppression],
@@ -338,14 +379,19 @@ def analyse_complexity(repo: Path, paths: list[str]) -> tuple[dict[str, dict], s
 # --------------------------------------------------------------------------
 
 
-def stability_weight(hits: list, patterns: dict[str, dict]) -> tuple[float, dict[str, float]]:
+def stability_weight(hits: list, patterns: dict[str, dict],
+                     unscored: set[str] | frozenset = frozenset()) -> tuple[float, dict[str, float]]:
     """Weight each *pattern* once per file, at its strongest hit.
 
     Five S01 hits in one file is one missing timeout habit, not five. Counting
-    them separately would rank a long file above a fragile one.
+    them separately would rank a long file above a fragile one. A `score:
+    false` detector (a library default, recorded for the retry inventory)
+    never adds weight.
     """
     best: dict[str, float] = {}
     for hit in hits:
+        if hit.detector_id in unscored:
+            continue
         pattern = patterns.get(hit.pattern_id)
         if not pattern:
             continue
@@ -433,14 +479,18 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
     suppressions, suppress_warnings = c.load_suppressions(profile)
     warnings.extend(suppress_warnings)
     suppressed_hits = [0] * len(suppressions)
+    unscored, inventory_ids = detector_flags(catalog)
     hits_by_file: dict[str, list] = {}
+    # The retry inventory reads raw hits: a suppressed lead is still a layer.
+    inventory_hits: list = []
     for rel in candidates:
         text = c.read_text(repo / rel)
         if text is None:
             continue
         lang = c.detect_language(rel, langmap)
-        hits_by_file[rel] = apply_suppressions(
-            run_detectors(catalog, rel, text, lang), suppressions, suppressed_hits)
+        raw_hits = run_detectors(catalog, rel, text, lang)
+        inventory_hits += [h for h in raw_hits if h.detector_id in inventory_ids]
+        hits_by_file[rel] = apply_suppressions(raw_hits, suppressions, suppressed_hits)
 
     # A config file ranks only with a lead, and is dropped before normalising
     # so its deploy churn doesn't compress every other file's score.
@@ -458,7 +508,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
     rows = []
     for i, rel in enumerate(candidates):
         hits = hits_by_file.get(rel, [])
-        weight, per_pattern = stability_weight(hits, patterns)
+        weight, per_pattern = stability_weight(hits, patterns, unscored)
         raw = churn_norm[i] * comp_norm[i]
         score = raw * (1.0 + weight)
         churn = per_file[rel]
@@ -488,9 +538,11 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
                        "raw": round(raw, 4), "score": round(score, 4)},
         })
 
-    dormant, skipped = dormant_sweep(repo, unchanged_files, catalog, patterns, langmap,
-                                     suppressions, suppressed_hits, args.dormant,
-                                     args.dormant_limit)
+    dormant, skipped, swept_inventory = dormant_sweep(
+        repo, unchanged_files, catalog, patterns, langmap, suppressions, suppressed_hits,
+        args.dormant, args.dormant_limit, unscored, inventory_ids)
+    retry_layers = build_retry_layers(inventory_hits + swept_inventory, catalog, langmap,
+                                      unscored)
     if skipped:
         warnings.append(
             f"{skipped} unchanged file(s) were not swept for dormant integration "
@@ -540,6 +592,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         "pattern_coverage": coverage,
         "coverage_gaps": coverage_gaps,
         "dormant": dormant,
+        "retry_layers": retry_layers,
         "suppressed": [{"detector": r.detector, "path": r.path, "reason": r.reason,
                         "hits": n} for r, n in zip(suppressions, suppressed_hits)],
         "coupling": coupling[:50],

@@ -239,6 +239,31 @@ def section_source(repo: Path, hs: dict, budget: int) -> str:
     return f"## Source — `{rel}`\n\n_{note}_\n\n```{lang}\n{body}\n```\n\n"
 
 
+RETRY_LEAD_PATTERNS = {"S02", "S04", "S10"}
+MAX_RETRY_LAYERS_SHOWN = 15
+
+
+def section_retry_layers(hs: dict, data: dict) -> str:
+    """Every retry layer in the repository, for a hotspot that retries. R
+    retries at N layers is R^N requests, and the layers rarely share a file:
+    one is in this code, one in the mesh, one a library default."""
+    layers = data.get("retry_layers") or []
+    if not layers or not RETRY_LEAD_PATTERNS & {h["pattern_id"] for h in hs["detector_hits"]}:
+        return ""
+    out = ["## Retry layers in this repository", "",
+           "Retries multiply across layers. These are every retry layer the scan "
+           "found, in code, configuration and library defaults. Count how many sit "
+           "on this file's call path.", ""]
+    for r in layers[:MAX_RETRY_LAYERS_SHOWN]:
+        mine = " (this file)" if r["file"] == hs["file"] else ""
+        out.append(f"- {r['kind']}: `{r['file']}:{r['line']}`{mine} "
+                   f"[{r['detector_id']}] {r.get('note', '')}".rstrip())
+    extra = len(layers) - MAX_RETRY_LAYERS_SHOWN
+    if extra > 0:
+        out.append(f"- +{extra} more in hotspots.json retry_layers")
+    return "\n".join(out) + "\n\n"
+
+
 def section_history(repo: Path, hs: dict, since: str, budget: int, k: int,
                     extra_fix: tuple[str, ...] = ()) -> str:
     rel = hs["file"]
@@ -384,6 +409,7 @@ def build_bundle(repo: Path, hs: dict, data: dict, catalog: dict, profile: dict,
         service,
         section_boundaries(text, hs["file"]),
         section_detectors(hs, catalog),
+        section_retry_layers(hs, data),
         section_source(repo, hs, int(rest * SHARE["source"])),
         section_history(repo, hs, data["window"]["since_date"],
                         int(rest * SHARE["history"]), commits,
