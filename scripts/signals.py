@@ -82,10 +82,14 @@ def parse_since(spec: str) -> tuple[str, str]:
 
 
 def collect_history(repo: Path, since: str, filters: c.Filters) -> dict[str, Any]:
-    """One `git log --numstat` pass feeds churn, fix-ratio and coupling."""
+    """One `git log --numstat` pass feeds churn, fix-ratio and coupling.
+
+    Read with -z, so file names arrive exactly as git stores them: never
+    C-quoted, and a rename is its old and new name rather than `a => b`.
+    """
     fmt = f"{_RECORD_SEP}%H%x00%an%x00%aI%x00%s"
-    raw = c.git(repo, "log", f"--since={since}", "--numstat", "--no-merges",
-                f"--pretty=format:{fmt}", "--", ".")
+    raw = c.git_paths(repo, "log", f"--since={since}", "--numstat", "-z", "--no-merges",
+                      f"--pretty=format:{fmt}", "--", ".")
 
     per_file: dict[str, dict[str, Any]] = defaultdict(
         lambda: {"commits": 0, "insertions": 0, "deletions": 0,
@@ -112,16 +116,16 @@ def collect_history(repo: Path, since: str, filters: c.Filters) -> dict[str, Any
         is_refactor = bool(REFACTOR_KEYWORDS.search(subject))
 
         touched: list[str] = []
-        for line in body.split("\n"):
-            line = line.strip()
-            if not line:
-                continue
-            cols = line.split("\t")
+        tokens = iter(body.split("\0"))
+        for token in tokens:
+            cols = token.split("\t", 2)          # a name may itself contain a tab
             if len(cols) != 3:
                 continue
             adds, dels, path = cols
-            path = _unrename(path)
-            if filters.excludes_path(path):
+            if not path:                         # rename or copy: old, then new
+                next(tokens, None)
+                path = next(tokens, "")
+            if not path or filters.excludes_path(path):
                 continue
             touched.append(path)
             entry = per_file[path]
@@ -143,16 +147,6 @@ def collect_history(repo: Path, since: str, filters: c.Filters) -> dict[str, Any
         entry["authors"] = len(entry["authors"])
     return {"per_file": dict(per_file), "commit_files": commit_files,
             "total_commits": total_commits, "skipped_bot_commits": skipped_bot}
-
-
-def _unrename(path: str) -> str:
-    """`git log --numstat` renders a rename as `old/{a => b}/file`."""
-    if "=>" not in path:
-        return path
-    m = re.match(r"^(.*)\{(.*) => (.*)\}(.*)$", path)
-    if m:
-        return re.sub(r"//+", "/", f"{m.group(1)}{m.group(3)}{m.group(4)}")
-    return path.split("=>")[-1].strip()
 
 
 # --------------------------------------------------------------------------

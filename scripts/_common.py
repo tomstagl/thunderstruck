@@ -148,6 +148,21 @@ def git(repo_root: Path, *args: str, check: bool = True, timeout: int = 180) -> 
     return proc.stdout
 
 
+
+def git_paths(repo_root: Path, *args: str, timeout: int = 180) -> str:
+    """git output that carries file names, decoded exactly.
+
+    Bytes are decoded as UTF-8 with surrogateescape, so a name that isn't
+    valid UTF-8 survives as a string instead of crashing the run.
+    """
+    proc = subprocess.run(["git", "-C", str(repo_root), *args],
+                          capture_output=True, timeout=timeout)
+    if proc.returncode != 0:
+        raise ThunderstruckError(
+            f"git {' '.join(args)} failed ({proc.returncode}): "
+            f"{proc.stderr.decode('utf-8', 'replace').strip()}")
+    return proc.stdout.decode("utf-8", "surrogateescape")
+
 def commit_touches(repo_root: Path, sha: str, paths: list[str]) -> bool:
     """True when `sha` changed at least one of `paths` (as named today)."""
     if not paths:
