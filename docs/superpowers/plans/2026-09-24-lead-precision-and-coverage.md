@@ -634,7 +634,7 @@ here from `bundle.py`/`signals.py`; spec §4), `scripts/signals.py`,
 `agents/thunderstruck-investigator.md` (one sentence on `resilience`),
 `tests/test_classify.py`.
 
-- [ ] **Failing test:**
+- [x] **Failing test:**
 
 ```python
 import pytest
@@ -660,13 +660,13 @@ def test_classify(subject, expected):
 def test_profile_keywords():
     assert classify_commit("Fehler behoben", extra_fix=("behoben",)) == "fix"
 ```
-- [ ] **Implement** the rules in spec §4. `collect_history` counts `fix` only
+- [x] **Implement** the rules in spec §4. `collect_history` counts `fix` only
   and adds `resilience_commits`. `[history] fix_keywords` is read from the
   profile and compiled once with `re.escape`.
-- [ ] Every fixture commit uses a Conventional Commits prefix, so the
+- [x] Every fixture commit uses a Conventional Commits prefix, so the
   fixture's fix counts do not change. Assert that `gen_sample_report.py`
   output differs only where later tasks intend it to.
-- [ ] **Commit** `history: resilience work is not a fix; profile fix keywords (AC-6)`
+- [x] **Commit** `history: resilience work is not a fix; profile fix keywords (AC-6)`
 
 ---
 

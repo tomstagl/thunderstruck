@@ -8,6 +8,7 @@ needs (paths, hashing) are stdlib-only so the hook can run on bare python3.
 from __future__ import annotations
 
 import errno
+import functools
 import hashlib
 import json
 import os
@@ -416,6 +417,70 @@ class Filters:
     def excludes_author(self, author: str) -> bool:
         a = (author or "").lower()
         return any(bot in a for bot in self._authors)
+
+
+# --------------------------------------------------------------------------
+# commit classification
+# --------------------------------------------------------------------------
+
+# Intent, not vocabulary. "Add retry with backoff" is resilience work, and
+# counting it as a fix makes hardening a file look like fragility.
+_CC_PREFIX = re.compile(r"^\s*([A-Za-z]+)(?:\([^)]*\))?!?:")
+_CC_KIND = {
+    **dict.fromkeys(("fix", "hotfix", "bugfix", "revert"), "fix"),
+    **dict.fromkeys(("refactor", "style", "chore", "build", "ci", "deps"), "refactor"),
+    **dict.fromkeys(("feat", "feature", "perf", "docs", "doc", "test", "tests"), "feature"),
+}
+_REVERT = re.compile(r'^\s*Revert\s+"')
+FIX_INTENT = re.compile(
+    r"(?i)\b(fix(e[ds]|ing)?|bug(s|fix)?|hotfix|revert(ed|s)?|regress\w*|"
+    r"crash(e[ds])?|outage|incident|deadlock\w*|hang(ing|s)?|stall\w*|"
+    r"leak(s|ed|ing)?|oom|broken|repair\w*)\b")
+RESILIENCE_KEYWORDS = re.compile(
+    r"(?i)\b(retry|retries|retrying|backoff|jitter|timeouts?|429|rate.?limit\w*|"
+    r"throttl\w*|circuit.?breaker\w*|idempoten\w*|dedupe?\w*)\b")
+REFACTOR_KEYWORDS = re.compile(
+    r"(?i)\b(refactor\w*|cleanup|clean.?up|rename[ds]?|tidy|reformat|lint|style|"
+    r"move[ds]?|extract\w*|simplif\w*)\b")
+COMMIT_KINDS = ("fix", "resilience", "refactor", "feature")
+
+
+@functools.lru_cache(maxsize=32)
+def _extra_fix_re(words: tuple[str, ...]) -> re.Pattern | None:
+    words = tuple(w.strip() for w in words if isinstance(w, str) and w.strip())
+    if not words:
+        return None
+    return re.compile(r"(?i)(?<!\w)(?:" + "|".join(map(re.escape, words)) + r")(?!\w)")
+
+
+def profile_fix_keywords(profile: dict[str, Any]) -> tuple[str, ...]:
+    """`[history] fix_keywords` from the profile: extra fix words for teams
+    that don't write commit subjects in English."""
+    history = profile.get("history") if isinstance(profile, dict) else None
+    words = history.get("fix_keywords") if isinstance(history, dict) else None
+    if not isinstance(words, list):
+        return ()
+    return tuple(w for w in words if isinstance(w, str) and w.strip())
+
+
+def classify_commit(subject: str, extra_fix: tuple[str, ...] = ()) -> str:
+    """fix, resilience, refactor or feature (spec §4 of the #19 design).
+
+    A Conventional Commits prefix wins. Otherwise fix intent beats resilience
+    vocabulary, which beats refactor vocabulary; anything else is a feature.
+    """
+    subject = subject or ""
+    m = _CC_PREFIX.match(subject)
+    if m and m.group(1).lower() in _CC_KIND:
+        return _CC_KIND[m.group(1).lower()]
+    extra = _extra_fix_re(tuple(extra_fix))
+    if _REVERT.match(subject) or FIX_INTENT.search(subject) or (extra and extra.search(subject)):
+        return "fix"
+    if RESILIENCE_KEYWORDS.search(subject):
+        return "resilience"
+    if REFACTOR_KEYWORDS.search(subject):
+        return "refactor"
+    return "feature"
 
 
 def path_glob_to_re(glob: str) -> re.Pattern:

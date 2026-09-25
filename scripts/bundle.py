@@ -102,7 +102,8 @@ def section_header(hs: dict, data: dict) -> str:
         f"{s['complexity_norm']} x (1 + stability weight {hs['stability']['weight']})",
         f"- **{ch['commits']} commits** by {ch['authors']} author(s) since "
         f"{data['window']['since_date']}; **{ch['fix_commits']} look like fixes** "
-        f"({int(ch['fix_ratio'] * 100)}%), {ch['refactor_commits']} look like refactors",
+        f"({int(ch['fix_ratio'] * 100)}%), {ch.get('resilience_commits', 0)} look like "
+        f"resilience work, {ch['refactor_commits']} look like refactors",
         f"- last changed {(ch['last_modified'] or '')[:10]}",
     ]
     if cx:
@@ -238,16 +239,8 @@ def section_source(repo: Path, hs: dict, budget: int) -> str:
     return f"## Source — `{rel}`\n\n_{note}_\n\n```{lang}\n{body}\n```\n\n"
 
 
-def classify_commit(subject: str) -> str:
-    from signals import FIX_KEYWORDS, REFACTOR_KEYWORDS  # single source of truth
-    if FIX_KEYWORDS.search(subject):
-        return "fix"
-    if REFACTOR_KEYWORDS.search(subject):
-        return "refactor"
-    return "feature"
-
-
-def section_history(repo: Path, hs: dict, since: str, budget: int, k: int) -> str:
+def section_history(repo: Path, hs: dict, since: str, budget: int, k: int,
+                    extra_fix: tuple[str, ...] = ()) -> str:
     rel = hs["file"]
     # --literal-pathspecs: `src/[id].ts` names one file, not a character class
     log = c.git(repo, "--literal-pathspecs", "log", f"--since={since}", "-n", str(k),
@@ -260,7 +253,8 @@ def section_history(repo: Path, hs: dict, since: str, budget: int, k: int) -> st
     counts: dict[str, int] = {}
     for e in entries:
         if len(e) >= 4:
-            counts[classify_commit(e[3])] = counts.get(classify_commit(e[3]), 0) + 1
+            kind = c.classify_commit(e[3], extra_fix)
+            counts[kind] = counts.get(kind, 0) + 1
     summary = ", ".join(f"{n} {k2}" for k2, n in sorted(counts.items()))
 
     out = [f"## Change history — last {len(entries)} commits touching this file", "",
@@ -272,7 +266,7 @@ def section_history(repo: Path, hs: dict, since: str, budget: int, k: int) -> st
         if len(e) < 4:
             continue
         sha, when, author, subject = e[0], e[1], e[2], e[3]
-        kind = classify_commit(subject)
+        kind = c.classify_commit(subject, extra_fix)
         out.append(f"### `{sha[:7]}` {when[:10]} [{kind}] {subject}")
         diff = c.git(repo, "-c", "core.quotePath=false", "--literal-pathspecs", "show",
                      "--no-color", "--unified=3", "--format=", sha, "--", rel,
@@ -384,7 +378,8 @@ def build_bundle(repo: Path, hs: dict, data: dict, catalog: dict, profile: dict,
         section_detectors(hs, catalog),
         section_source(repo, hs, int(rest * SHARE["source"])),
         section_history(repo, hs, data["window"]["since_date"],
-                        int(rest * SHARE["history"]), commits),
+                        int(rest * SHARE["history"]), commits,
+                        c.profile_fix_keywords(profile)),
         section_related(repo, hs, all_hotspots, int(rest * SHARE["context"])),
     ]
     return "\n".join(p for p in parts if p).rstrip() + "\n"

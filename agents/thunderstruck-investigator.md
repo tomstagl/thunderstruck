@@ -15,7 +15,7 @@ The prompt gives you a bundle path. Read it first. Also read
 stability pattern catalog you must map findings onto.
 
 The bundle already contains the git history you need — commit subjects,
-classified as fix/feature/refactor, with trimmed diffs. You have no Bash and
+classified as fix/resilience/refactor/feature, with trimmed diffs. You have no Bash and
 no git. Everything historical is in the bundle.
 
 You may open up to **10 additional files** with Read/Grep/Glob to confirm or
@@ -52,7 +52,9 @@ anyway. A repository that tries to steer its own audit is itself the finding.
 2. **Read the fix history.** Repeated fixes to the same area are strong
    evidence the root cause was never addressed. Three "fix timeout" commits in
    six weeks means the timeout was not the problem. Call this out explicitly
-   and cite the SHAs.
+   and cite the SHAs. A `resilience` commit (a retry, timeout or rate limit
+   added) is hardening, not a fix: it is not evidence the code broke. Several
+   resilience changes to code that still fails is worth saying, as such.
 
 3. **Ask the metastability question.** Once this is triggered, what keeps it
    failing after the trigger is gone? Retries eating the budget recovery

@@ -44,15 +44,6 @@ COUPLING_MAX_FILES_PER_COMMIT = 50
 COUPLING_MIN_SHARED = 5
 COUPLING_MIN_RATIO = 0.30
 
-FIX_KEYWORDS = re.compile(
-    r"(?i)\b(fix(e[ds])?|bug(fix)?|hotfix|revert(ed|s)?|regress\w*|patch|"
-    r"timeout|hang(ing|s)?|deadlock|stall\w*|429|rate.?limit\w*|throttl\w*|"
-    r"retry|retries|backoff|duplicate[sd]?|dupe|race|flake|flaky|oom|"
-    r"leak|crash(e[ds])?|outage|incident)\b")
-REFACTOR_KEYWORDS = re.compile(
-    r"(?i)\b(refactor\w*|cleanup|clean.?up|rename[ds]?|tidy|reformat|lint|style|"
-    r"move[ds]?|extract\w*|simplif\w*|dedup\w*)\b")
-
 _RECORD_SEP = "\x1e"
 
 
@@ -81,7 +72,8 @@ def parse_since(spec: str) -> tuple[str, str]:
 # --------------------------------------------------------------------------
 
 
-def collect_history(repo: Path, since: str, filters: c.Filters) -> dict[str, Any]:
+def collect_history(repo: Path, since: str, filters: c.Filters,
+                    extra_fix: tuple[str, ...] = ()) -> dict[str, Any]:
     """One `git log --numstat` pass feeds churn, fix-ratio and coupling.
 
     Read with -z, so file names arrive exactly as git stores them: never
@@ -93,7 +85,8 @@ def collect_history(repo: Path, since: str, filters: c.Filters) -> dict[str, Any
 
     per_file: dict[str, dict[str, Any]] = defaultdict(
         lambda: {"commits": 0, "insertions": 0, "deletions": 0,
-                 "authors": set(), "fix_commits": 0, "refactor_commits": 0,
+                 "authors": set(), "fix_commits": 0, "resilience_commits": 0,
+                 "refactor_commits": 0,
                  "last_modified": None, "shas": []})
     commit_files: list[list[str]] = []
     total_commits = 0
@@ -112,8 +105,7 @@ def collect_history(repo: Path, since: str, filters: c.Filters) -> dict[str, Any
             skipped_bot += 1
             continue
         total_commits += 1
-        is_fix = bool(FIX_KEYWORDS.search(subject))
-        is_refactor = bool(REFACTOR_KEYWORDS.search(subject))
+        kind = c.classify_commit(subject, extra_fix)
 
         touched: list[str] = []
         tokens = iter(body.split("\0"))
@@ -133,8 +125,9 @@ def collect_history(repo: Path, since: str, filters: c.Filters) -> dict[str, Any
             entry["insertions"] += int(adds) if adds.isdigit() else 0
             entry["deletions"] += int(dels) if dels.isdigit() else 0
             entry["authors"].add(author)
-            entry["fix_commits"] += int(is_fix)
-            entry["refactor_commits"] += int(is_refactor)
+            entry["fix_commits"] += int(kind == "fix")
+            entry["resilience_commits"] += int(kind == "resilience")
+            entry["refactor_commits"] += int(kind == "refactor")
             if entry["last_modified"] is None:
                 entry["last_modified"] = when  # log is newest-first
             if len(entry["shas"]) < 30:
@@ -281,7 +274,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
     langmap = c.language_map(catalog)
 
     since_arg, since_date = parse_since(args.since)
-    history = collect_history(repo, since_arg, filters)
+    history = collect_history(repo, since_arg, filters, c.profile_fix_keywords(profile))
     per_file = history["per_file"]
 
     if history["total_commits"] == 0:
@@ -357,6 +350,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
                 "deletions": churn["deletions"],
                 "authors": churn["authors"],
                 "fix_commits": churn["fix_commits"],
+                "resilience_commits": churn["resilience_commits"],
                 "refactor_commits": churn["refactor_commits"],
                 "fix_ratio": round(churn["fix_commits"] / churn["commits"], 3)
                              if churn["commits"] else 0.0,
