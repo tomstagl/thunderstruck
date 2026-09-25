@@ -44,10 +44,17 @@ _EXCLUDE_GLOB_GROUPS: list[tuple[str, list[str]]] = [
     ("generated", ["*.generated.*", "*_pb2.py", "*_pb2_grpc.py", "*.pb.go", "*.g.dart",
                    "*.d.ts", "*.pyi", "openapi*.yaml", "openapi*.yml",
                    "swagger*.yaml", "swagger*.yml"]),
-    # CI and tooling configuration fails builds, not production.
-    ("tooling", ["*.config.ts", "*.config.js", "*.config.mjs", "*.config.cjs",
-                 "*.config.mts", ".gitlab-ci.yml", "docker-compose*.yml",
-                 "docker-compose*.yaml", "mkdocs.yml", ".pre-commit-config.yaml"]),
+    # CI and tooling configuration fails builds, not production. Named tools
+    # only: `database.config.ts` or Angular's `app.config.ts` is runtime
+    # configuration, and exactly where timeouts and pool sizes live.
+    ("tooling", [f"{tool}.config.*" for tool in (
+                    "playwright", "vitest", "vite", "jest", "webpack", "rollup",
+                    "next", "nuxt", "tailwind", "postcss", "babel", "eslint",
+                    "prettier", "cypress", "karma", "svelte", "astro", "tsup",
+                    "esbuild", "commitlint", "lint-staged", "stylelint", "metro",
+                    "docusaurus", "vue", "remix", "turbo", "wrangler")]
+                + ["karma.conf.*", ".gitlab-ci.yml", "docker-compose*.yml",
+                   "docker-compose*.yaml", "mkdocs.yml", ".pre-commit-config.yaml"]),
 ]
 _EXCLUDE_DIR_GROUPS: list[tuple[str, list[str]]] = [
     ("vendored", ["node_modules", "vendor", "third_party", ".venv", "venv"]),

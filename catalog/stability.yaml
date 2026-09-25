@@ -297,7 +297,7 @@ patterns:
         - id: S04-py-bare-except-retry
           kind: regex
           pattern: 'except\s*(Exception\s*)?(as\s+\w+\s*)?:'
-          present_within: '^\s*for\s+(?:_\w*|\w*(?:attempt|retr|tries|try)\w*)\s+in\s+range\b|^\s*while\b|\b(?:retry|retries|retrying|attempts?|backoff)\b'
+          present_within: '^\s*for\s+(?:_\w*|(?:\w+_)?(?:attempts?|retr\w*|tries|try)\w*)\s+in\s+range\b|\b(?:retry|retries|retrying|attempts?|backoff)\b'
           window: 6
           confidence: medium
           note: "catch-all except followed by a retry — retries permanent errors too"
@@ -358,9 +358,9 @@ patterns:
       python:
         - id: S05-py-http-without-limiter
           kind: file_absent
-          anchor: '^([ \t]*)(?:async\s+)?(?:for|while)\b[^\n]*:[ \t]*\n(?:\1[ \t]+[^\n]*\n|[ \t]*\n){0,8}?\1[ \t]+[^\n]*\b(?:requests|httpx|session|client|http)\w*\s*\.\s*(?:get|post|put|patch|delete|head|request)\s*\(|\b(?:asyncio\s*\.\s*gather|\.map)\s*\([^\n]*\b(?:requests|httpx|session|client)\w*\s*\.\s*(?:get|post|put|patch|delete|head|request)\b'
+          anchor: '^([ \t]*)(?:async\s+)?(?:for|while)\b[^\n]*:[ \t]*\n(?:\1[ \t]+[^\n]*\n|[ \t]*\n){0,8}?\1[ \t]+[^\n]*\b(?:requests|httpx|http|\w*[Ss]ession|\w*[Cc]lient)\s*\.\s*(?:get|post|put|patch|delete|head|request)\s*\(|\basyncio\s*\.\s*gather\s*\(\s*\*\s*[\[(][^\n]*\bfor\b|\b\w*(?:pool|executor)\w*\s*\.\s*map\s*\('
           absent: '(?i)\b(ratelimit|rate_limit|limiter|throttle|semaphore|token.?bucket|aiolimiter)\b'
-          require: '(?i)(asyncio\s*\.\s*gather|^\s*(async\s+)?for\b|^\s*while\b|ThreadPoolExecutor|create_task|\.map\s*\()'
+          require: '^\s*(?:import|from)\s+(?:requests|httpx|aiohttp|urllib3)\b'
           confidence: medium
           note: "HTTP calls made in a loop or fan-out with no local rate limiter or concurrency gate in this file"
       java:
@@ -387,7 +387,7 @@ patterns:
       typescript:
         - id: S06-ts-single-queue-no-priority
           kind: file_absent
-          anchor: '(?i)^(?:export\s+)?(?:const|let|var)\s+\w*(?:queue|limiter|throttle|worker|pool)\w*\b[^=\n]*=|^[ \t]+(?:(?:private|protected|public|readonly|static)\s+)+#?\w*(?:queue|limiter|throttle|worker|pool)\w*\b[^=\n]*='
+          anchor: '(?i)^(?:export\s+)?(?:const|let|var)\s+\w*(?:queue|limiter|throttle|worker|pool)\w*\b[^=\n]*=|^[ \t]+(?:(?:private|protected|public|readonly|static)\s+)*#?\w*(?:queue|limiter|throttle|worker|pool)\w*\b[^=\n]*='
           absent: '(?i)\b(priority|interactive|criticality|tier|urgent|foreground)\b'
           confidence: low
           note: "one shared queue/limiter declared at module or class level; no priority or criticality field"
@@ -528,7 +528,7 @@ patterns:
         - id: S08-ts-select-without-limit
           kind: regex
           pattern: '(?i)SELECT\s+.*\s+FROM\s+'
-          absent_within: '(?i)\bLIMIT\b|\bFETCH\s+FIRST\b|\bTOP\s*\(?\s*\d|SELECT\s+(?:COUNT|MAX|MIN|SUM|AVG|EXISTS)\s*\(|\bWHERE\s+(?:\w+\.)?id\s*='
+          absent_within: '(?i)\bLIMIT\b|\bFETCH\s+FIRST\b|\bTOP\s*\(?\s*\d|\A[^\n]*?SELECT\s+(?:COUNT|MAX|MIN|SUM|AVG|EXISTS)\s*\(|\A(?:(?!\bSELECT\b)[\s\S])*SELECT\b(?:(?!\bSELECT\b)[^;])*?\bWHERE\s+(?:\w+\.)?id\s*=(?!\s*ANY\b)'
           window: 6
           confidence: low
           note: "multi-row SELECT with no LIMIT"
@@ -548,11 +548,11 @@ patterns:
           window: 4
           confidence: low
           note: "full result-set fetch with no limit"
-          require: '^\s*(?:from|import)\s+(?:sqlalchemy|sqlmodel|django|psycopg2?|sqlite3|pymysql|MySQLdb|asyncpg|aiosqlite|peewee|tortoise|pymongo|motor|databases|records)\b|\.objects\b|\b(?:cursor|cur|conn|connection|session|db)\w*\s*\.\s*execute\s*\('
+          require: '^\s*(?:from|import)\s+(?:sqlalchemy|sqlmodel|django|psycopg2?|sqlite3|pymysql|MySQLdb|asyncpg|aiosqlite|peewee|tortoise|pymongo|motor|databases|records)\b|\.objects\b|\.query\s*[.(]|\b(?:cursor|cur|conn|connection|session|db)\w*\s*\.\s*execute\s*\('
         - id: S08-py-select-without-limit
           kind: regex
           pattern: '(?i)SELECT\s+.*\s+FROM\s+'
-          absent_within: '(?i)\bLIMIT\b|\bFETCH\s+FIRST\b|\bTOP\s*\(?\s*\d|SELECT\s+(?:COUNT|MAX|MIN|SUM|AVG|EXISTS)\s*\(|\bWHERE\s+(?:\w+\.)?id\s*='
+          absent_within: '(?i)\bLIMIT\b|\bFETCH\s+FIRST\b|\bTOP\s*\(?\s*\d|\A[^\n]*?SELECT\s+(?:COUNT|MAX|MIN|SUM|AVG|EXISTS)\s*\(|\A(?:(?!\bSELECT\b)[\s\S])*SELECT\b(?:(?!\bSELECT\b)[^;])*?\bWHERE\s+(?:\w+\.)?id\s*=(?!\s*ANY\b)'
           window: 6
           confidence: low
           note: "multi-row SELECT with no LIMIT"
@@ -914,7 +914,7 @@ patterns:
       typescript:
         - id: S17-ts-cache-without-ttl
           kind: file_absent
-          anchor: '^(?:export\s+)?(?:const|let|var)\s+\w+[^=\n]*=\s*new\s+Map\b|^[ \t]+(?:(?:private|protected|public|readonly|static)\s+)+#?\w+[^=\n]*=\s*new\s+Map\b|\b[Cc]ache\s*\.\s*set\s*\('
+          anchor: '^(?:export\s+)?(?:const|let|var)\s+\w+[^=\n]*=\s*new\s+Map\b|^[ \t]+(?!(?:const|let|var|return)\b)(?:(?:private|protected|public|readonly|static)\s+)*#?\w+[^=\n(]*=\s*new\s+Map\b|\w*[Cc]ache\s*\.\s*set\s*\('
           absent: '(?i)\b(ttl|expire|expiry|evict|maxSize|max_size|maxAge|lru|clear\s*\()\b'
           confidence: medium
           note: "module-level or class-field Map cache with no TTL, eviction, or size bound"
@@ -993,7 +993,7 @@ patterns:
       python:
         - id: S19-py-except-pass
           kind: regex
-          pattern: '^\s*except\s*(?:\(?\s*(?:Exception|BaseException)\b[^:]*)?:\s*$'
+          pattern: '^\s*except\s*(?:\(?[^:#]*\b(?:Exception|BaseException)\b[^:]*)?:\s*$'
           present_within: '^\s*pass\s*$'
           window: 2
           window_offset: 1
@@ -1004,7 +1004,7 @@ patterns:
           pattern: 'except\s*:\s*$'
           confidence: medium
           note: "bare except catches SystemExit and KeyboardInterrupt too, and this one does not re-raise"
-          absent_within: '^\s*raise\s*$'
+          absent_within: '\A(?:[ \t]*\n)*([ \t]+)\S[^\n]*(?:\n(?:\1[^\n]*|[ \t]*))*?\n?\1[ \t]*raise\b'
           window: 8
           window_offset: 1
       java:

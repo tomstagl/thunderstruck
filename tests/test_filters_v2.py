@@ -19,6 +19,10 @@ F = c.Filters()
     ("db/migrations/001.py", "migration"), ("node_modules/x/index.js", "vendored"),
     ("dist/app.js", "build"), ("yarn.lock", "asset"),
     ("src/client/releases.ts", None), ("src/app.config/loader.ts", None),
+    ("jest.config.js", "tooling"), ("next.config.mjs", "tooling"),
+    ("webpack.config.cjs", "tooling"), ("vite.config.ts", "tooling"),
+    # runtime configuration is production code (NestJS, Angular)
+    ("src/config/database.config.ts", None), ("src/app/app.config.ts", None),
 ])
 def test_exclusion_reason(path, reason):
     assert F.exclusion_reason(path) == reason

@@ -229,8 +229,8 @@ def test_exclusion_reason(path, reason):
   `(reason, entries)` groups. Additions:
   - test: globs `tests.py`, `*_tests.py`, `*.cy.*`; dirs `cypress`,
     `benchmarks`, `bench`;
-  - tooling: globs `*.config.ts`, `*.config.js`, `*.config.mjs`,
-    `*.config.cjs`, `*.config.mts`, `.gitlab-ci.yml`, `docker-compose*.yml`,
+  - tooling: globs `<tool>.config.*` for named tools (spec §7.1; not a
+    blanket `*.config.*`, which drops runtime config), `.gitlab-ci.yml`, `docker-compose*.yml`,
     `docker-compose*.yaml`, `mkdocs.yml`, `.pre-commit-config.yaml`; dirs
     `.github`, `.circleci`, `.gitlab`;
   - generated: globs `*.d.ts`, `*.pyi`, `openapi*.yaml`, `openapi*.yml`,
