@@ -297,10 +297,11 @@ patterns:
         - id: S04-py-bare-except-retry
           kind: regex
           pattern: 'except\s*(Exception\s*)?(as\s+\w+\s*)?:'
-          present_within: '\b(continue|retry|attempt)\b'
+          present_within: '^\s*for\s+(?:_\w*|\w*(?:attempt|retr|tries|try)\w*)\s+in\s+range\b|^\s*while\b|\b(?:retry|retries|retrying|attempts?|backoff)\b'
           window: 6
           confidence: medium
           note: "catch-all except followed by a retry — retries permanent errors too"
+          window_before: 6
         - id: S04-py-retry-without-discrimination
           kind: file_absent
           anchor: '\b(max_retries|MAX_RETRIES|retry_count|retries|num_retries)\b'
@@ -357,7 +358,7 @@ patterns:
       python:
         - id: S05-py-http-without-limiter
           kind: file_absent
-          anchor: '\b(requests|httpx|aiohttp|urllib3)\s*[.(]'
+          anchor: '^([ \t]*)(?:async\s+)?(?:for|while)\b[^\n]*:[ \t]*\n(?:\1[ \t]+[^\n]*\n|[ \t]*\n){0,8}?\1[ \t]+[^\n]*\b(?:requests|httpx|session|client|http)\w*\s*\.\s*(?:get|post|put|patch|delete|head|request)\s*\(|\b(?:asyncio\s*\.\s*gather|\.map)\s*\([^\n]*\b(?:requests|httpx|session|client)\w*\s*\.\s*(?:get|post|put|patch|delete|head|request)\b'
           absent: '(?i)\b(ratelimit|rate_limit|limiter|throttle|semaphore|token.?bucket|aiolimiter)\b'
           require: '(?i)(asyncio\s*\.\s*gather|^\s*(async\s+)?for\b|^\s*while\b|ThreadPoolExecutor|create_task|\.map\s*\()'
           confidence: medium
@@ -393,10 +394,10 @@ patterns:
       python:
         - id: S06-py-single-queue-no-priority
           kind: file_absent
-          anchor: '(?i)\b(queue|limiter|throttle|worker|pool)\b'
+          anchor: '(?im)^\w+\s*(?::[^=\n]+)?=\s*[\w.]*(?:queue|limiter|throttle|worker|pool|executor|semaphore)\w*\s*\(|\bself\.\w+\s*(?::[^=\n]+)?=\s*[\w.]*(?:queue|limiter|throttle|worker|pool|executor|semaphore)\w*\s*\('
           absent: '(?i)\b(priority|interactive|criticality|tier|urgent|foreground)\b'
           confidence: low
-          note: "one queue/limiter serves all callers; no priority or criticality field"
+          note: "one shared queue/limiter/pool serves all callers; no priority or criticality field"
       java:
         - id: S06-java-single-pool-no-priority
           kind: file_absent
@@ -454,7 +455,7 @@ patterns:
         - id: S07-py-insert-without-upsert
           kind: file_absent
           anchor: '\bsession\w*\s*\.\s*(add|add_all|bulk_save_objects)\s*\(|\b(db|conn|cursor|collection|table|model|engine)\w*\s*\.\s*(insert|insert_one|insert_many)\s*\(|INSERT\s+INTO'
-          absent: '(?i)\b(upsert|ON\s+CONFLICT|ON\s+DUPLICATE\s+KEY|MERGE\s+INTO|idempotenc)'
+          absent: '(?i)\b(upsert|ON\s+CONFLICT|ON\s+DUPLICATE\s+KEY|MERGE\s+INTO|idempotenc|IntegrityError|UniqueViolation|DuplicateKey)'
           confidence: medium
           note: "inserts with no upsert / ON CONFLICT — a replayed job duplicates rows"
       java:
@@ -547,13 +548,14 @@ patterns:
           window: 4
           confidence: low
           note: "full result-set fetch with no limit"
+          require: '^\s*(?:from|import)\s+(?:sqlalchemy|sqlmodel|django|psycopg2?|sqlite3|pymysql|MySQLdb|asyncpg|aiosqlite|peewee|tortoise|pymongo|motor|databases|records)\b|\.objects\b|\b(?:cursor|cur|conn|connection|session|db)\w*\s*\.\s*execute\s*\('
         - id: S08-py-select-without-limit
           kind: regex
           pattern: '(?i)SELECT\s+.*\s+FROM\s+'
-          absent_within: '(?i)\bLIMIT\b'
+          absent_within: '(?i)\bLIMIT\b|\bFETCH\s+FIRST\b|\bTOP\s*\(?\s*\d|SELECT\s+(?:COUNT|MAX|MIN|SUM|AVG|EXISTS)\s*\(|\bWHERE\s+(?:\w+\.)?id\s*='
           window: 6
           confidence: low
-          note: "SELECT with no LIMIT"
+          note: "multi-row SELECT with no LIMIT"
       java:
         - id: S08-java-repository-no-pageable
           kind: file_absent
@@ -677,7 +679,7 @@ patterns:
       python:
         - id: S11-py-no-deadline-propagation
           kind: file_absent
-          anchor: '\b(requests|httpx|aiohttp)\s*[.(]'
+          anchor: '\b(?:requests|httpx|aiohttp)\s*\.\s*(?!(?:exceptions|adapters|codes|status_codes|structures|utils|auth|HTTPError|RequestException|Timeout|TimeoutException|ConnectionError|HTTPStatusError|ClientError|ClientTimeout)\b)\w+'
           absent: '(?i)\b(deadline|cancel|remaining|time_budget|CancelledError)\b'
           confidence: low
           note: "outbound calls with no deadline or cancellation passed through"
@@ -743,10 +745,10 @@ patterns:
       python:
         - id: S13-py-shared-pool
           kind: file_absent
-          anchor: '(?i)\b(pool|pool_size|max_connections|ThreadPoolExecutor)\b'
+          anchor: '(?im)^\w+\s*(?::[^=\n]+)?=\s*[\w.]*(?:pool|executor)\w*\s*\(|\bself\.\w+\s*(?::[^=\n]+)?=\s*[\w.]*(?:pool|executor)\w*\s*\('
           absent: '(?i)\b(bulkhead|separate|dedicated|isolat|partition)\w*\b'
           confidence: low
-          note: "one shared pool with no isolation between workloads"
+          note: "one shared (module-level or instance) pool with no isolation between workloads"
       java:
         - id: S13-java-shared-executor
           kind: file_absent
@@ -833,7 +835,7 @@ patterns:
       python:
         - id: S15-py-no-fallback
           kind: file_absent
-          anchor: '\b(requests|httpx|aiohttp)\s*[.(]'
+          anchor: '\b(?:requests|httpx|aiohttp)\s*\.\s*(?!(?:exceptions|adapters|codes|status_codes|structures|utils|auth|HTTPError|RequestException|Timeout|TimeoutException|ConnectionError|HTTPStatusError|ClientError|ClientTimeout)\b)\w+'
           absent: '(?i)\b(fallback|degrade|stale|default_value|cached_value)\b'
           confidence: low
           note: "external call with no fallback branch"
@@ -921,7 +923,7 @@ patterns:
           kind: file_absent
           anchor: '(?i)cache\s*\[|cache\s*\.\s*(set|update)\s*\(|_cache\s*='
           absent: '(?i)\b(ttl|expire|expiry|evict|maxsize|max_size|max_age|lru|clear\s*\()\b'
-          confidence: medium
+          confidence: low
           note: "in-memory cache with no TTL, eviction, or size bound"
       java:
         - id: S17-java-unbounded-cache
@@ -991,17 +993,20 @@ patterns:
       python:
         - id: S19-py-except-pass
           kind: regex
-          pattern: 'except[^:]*:\s*$'
+          pattern: '^\s*except\s*(?:\(?\s*(?:Exception|BaseException)\b[^:]*)?:\s*$'
           present_within: '^\s*pass\s*$'
           window: 2
           window_offset: 1
           confidence: high
-          note: "except: pass — the failure leaves no trace"
+          note: "except:/except Exception: with only pass — the failure leaves no trace"
         - id: S19-py-bare-except
           kind: regex
           pattern: 'except\s*:\s*$'
           confidence: medium
-          note: "bare except catches SystemExit and KeyboardInterrupt too"
+          note: "bare except catches SystemExit and KeyboardInterrupt too, and this one does not re-raise"
+          absent_within: '^\s*raise\s*$'
+          window: 8
+          window_offset: 1
       java:
         - id: S19-java-empty-catch
           kind: regex

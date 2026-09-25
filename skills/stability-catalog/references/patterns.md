@@ -98,6 +98,7 @@ Scanned and reasoned about by default, at full weight.
 **What the detectors look for.**
 
 - one queue/limiter serves all callers; no priority or criticality field
+- one shared queue/limiter/pool serves all callers; no priority or criticality field
 - one executor serves every caller; no priority or criticality separation
 
 **References.** Google SRE Book, ch. 21 — Criticality; Nygard, Release It! (2nd ed.), ch. 5 — Shed Load
@@ -130,6 +131,7 @@ Scanned and reasoned about by default, at full weight.
 - SELECT with no LIMIT
 - asyncio.gather over an unbounded collection — concurrency equals input size
 - full result-set fetch with no limit
+- multi-row SELECT with no LIMIT
 - Spring Data repository with collection finders and no Pageable/Slice/Top-N form — every call returns the whole match set
 - Kafka poll loop with no max.poll.records — a slow batch overruns max.poll.interval.ms and triggers a rebalance storm
 
@@ -239,6 +241,7 @@ Scanned and reasoned about by default, at lower weight.
 **What the detectors look for.**
 
 - one shared pool with no isolation between workloads
+- one shared (module-level or instance) pool with no isolation between workloads
 - one executor serves several submission sites with no second pool — every workload competes for the same threads
 - actor makes blocking calls on the default dispatcher — it starves every other actor sharing it
 
@@ -321,8 +324,8 @@ Scanned and reasoned about by default, at lower weight.
 
 - empty catch block — the failure leaves no trace
 - catch block with no handling beyond a comment
-- except: pass — the failure leaves no trace
-- bare except catches SystemExit and KeyboardInterrupt too
+- except:/except Exception: with only pass — the failure leaves no trace
+- bare except catches SystemExit and KeyboardInterrupt too, and this one does not re-raise
 
 **References.** Nygard, Release It! (2nd ed.), ch. 17 — Transparency; Google SRE Book, ch. 6 — Monitoring Distributed Systems
 

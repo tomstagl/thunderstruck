@@ -257,7 +257,7 @@ Satisfies: AC-9.
   needs the plain `positive`/`negative` files.
 - Create: samples below under `tests/detectors/samples/<ID>/python/`
 
-- [ ] **Step 1: Negative samples (the reproduced false positives).**
+- [x] **Step 1: Negative samples (the reproduced false positives).**
 
 `S19/python/negative_optional_import.py`
 ```python
@@ -362,7 +362,7 @@ def render_thumbnails(paths):
         return list(pool.map(make_thumb, paths))
 ```
 
-- [ ] **Step 2: Positives that guard against over-correction.**
+- [x] **Step 2: Positives that guard against over-correction.**
 
 `S04/python/positive_while_attempts.py`
 ```python
@@ -394,13 +394,13 @@ def submit(fn, *a):
 The existing `positive.py` files for S04, S05, S06, S07, S08 and S19 must
 keep firing.
 
-- [ ] **Step 3: Run. The negatives fail.**
+- [x] **Step 3: Run. The negatives fail.**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard pytest tests/detectors -k "python" -q
 ```
 
-- [ ] **Step 4: Catalog edits** (verified; see "Verification already done").
+- [x] **Step 4: Catalog edits** (verified; see "Verification already done").
 
 ```yaml
 # S19-py-except-pass — narrow typed swallows are deliberate
@@ -434,9 +434,9 @@ Update each detector's `note` where its meaning narrowed (for example,
 S19-py-except-pass: "`except:`/`except Exception:` with only `pass` — the
 failure leaves no trace").
 
-- [ ] **Step 5:** Samples green, then the full suite, then
+- [x] **Step 5:** Samples green, then the full suite, then
   `gen_catalog_docs.py`.
-- [ ] **Step 6: Commit** `python detectors: silence reproduced false positives (AC-9)`
+- [x] **Step 6: Commit** `python detectors: silence reproduced false positives (AC-9)`
 
 ---
 
