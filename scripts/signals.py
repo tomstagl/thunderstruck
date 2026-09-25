@@ -149,6 +149,22 @@ def collect_history(repo: Path, since: str, filters: c.Filters) -> dict[str, Any
             "total_commits": total_commits, "skipped_bot_commits": skipped_bot}
 
 
+def apply_suppressions(hits: list, rules: list[c.Suppression],
+                       counts: list[int]) -> list:
+    """Drop hits a profile rule suppresses, counting each rule's matches."""
+    if not rules:
+        return hits
+    kept = []
+    for h in hits:
+        for n, rule in enumerate(rules):
+            if rule.matches(h.detector_id, h.pattern_id, h.file):
+                counts[n] += 1
+                break
+        else:
+            kept.append(h)
+    return kept
+
+
 # --------------------------------------------------------------------------
 # coupling
 # --------------------------------------------------------------------------
@@ -304,14 +320,19 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
     if complexity_warning:
         warnings.append(complexity_warning)
 
-    # detector pass
+    # detector pass. Profile suppressions apply here, before scoring, so a
+    # suppressed hit neither ranks a file nor reaches a bundle.
+    suppressions, suppress_warnings = c.load_suppressions(profile)
+    warnings.extend(suppress_warnings)
+    suppressed_hits = [0] * len(suppressions)
     hits_by_file: dict[str, list] = {}
     for rel in candidates:
         text = c.read_text(repo / rel)
         if text is None:
             continue
         lang = c.detect_language(rel, langmap)
-        hits_by_file[rel] = run_detectors(catalog, rel, text, lang)
+        hits_by_file[rel] = apply_suppressions(
+            run_detectors(catalog, rel, text, lang), suppressions, suppressed_hits)
 
     churn_raw = [float(per_file[p]["commits"]) for p in candidates]
     comp_raw = [float(complexity.get(p, {}).get("ccn_max", 1) or 1) for p in candidates]
@@ -392,6 +413,8 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
                    "hotspots": len(top),
                    "detector_hits": sum(len(h) for h in hits_by_file.values())},
         "pattern_coverage": coverage,
+        "suppressed": [{"detector": r.detector, "path": r.path, "reason": r.reason,
+                        "hits": n} for r, n in zip(suppressions, suppressed_hits)],
         "coupling": coupling[:50],
         "hotspots": top,
     }

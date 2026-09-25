@@ -604,7 +604,7 @@ Satisfies: AC-13.
 `scripts/signals.py`, `scripts/report.py`, `examples/thunderstruck.toml.example`,
 `tests/test_suppress.py`.
 
-- [ ] **Failing tests:**
+- [x] **Failing tests:**
   - `path_glob_to_re("src/**/batch/*.java")` matches
     `src/main/java/a/batch/X.java` and not `src/batch/sub/X.java`;
   - `load_suppressions({"suppress": [{"detector": "S16", "path": "*.java"}]})`
@@ -613,14 +613,14 @@ Satisfies: AC-13.
     `S14-py-unbounded-queue` on `jobs.py`, `hotspots.json` has no S14 hit on
     that file, `suppressed == [{"detector": …, "path": …, "reason": …,
     "hits": 1}]`, and the report contains `Suppressed leads`.
-- [ ] **Implement.** A `Suppression(detector, path_re, reason)` dataclass.
+- [x] **Implement.** A `Suppression(detector, path_re, reason)` dataclass.
   A rule matches a hit when `rule.detector in (hit.detector_id,
   hit.pattern_id)` and `path_re` matches `hit.file`. Apply it in `build()`
   right after `run_detectors`, in the dormant sweep too (Task 11), and
   never in `calibrate.py`. Warnings go to `payload["warnings"]`.
-- [ ] Document it in `thunderstruck.toml.example`, including why there are
+- [x] Document it in `thunderstruck.toml.example`, including why there are
   no inline markers (spec §8).
-- [ ] **Commit** `profile [[suppress]]: reasoned, visible lead suppression (AC-13)`
+- [x] **Commit** `profile [[suppress]]: reasoned, visible lead suppression (AC-13)`
 
 ---
 

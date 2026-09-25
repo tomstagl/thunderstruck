@@ -418,6 +418,75 @@ class Filters:
         return any(bot in a for bot in self._authors)
 
 
+def path_glob_to_re(glob: str) -> re.Pattern:
+    """A repo-relative path glob: `*` and `?` stay inside one directory,
+    `**` crosses directories (`src/**/batch/*.java` matches `src/batch/X.java`
+    and `src/a/b/batch/X.java`)."""
+    out, i = [], 0
+    while i < len(glob):
+        if glob.startswith("**/", i):
+            out.append("(?:.*/)?")
+            i += 3
+        elif glob.startswith("**", i):
+            out.append(".*")
+            i += 2
+        elif glob[i] == "*":
+            out.append("[^/]*")
+            i += 1
+        elif glob[i] == "?":
+            out.append("[^/]")
+            i += 1
+        else:
+            out.append(re.escape(glob[i]))
+            i += 1
+    return re.compile("^" + "".join(out) + "$")
+
+
+@dataclass(frozen=True)
+class Suppression:
+    """A profile `[[suppress]]` rule. It silences a detector (or every
+    detector of a pattern) on matching paths, and always carries a reason,
+    which the report prints. There are no inline suppression comments: a
+    marker in the code would be the repository steering its own audit."""
+    detector: str
+    path: str
+    reason: str
+    path_re: re.Pattern
+
+    def matches(self, detector_id: str, pattern_id: str, file: str) -> bool:
+        return self.detector in (detector_id, pattern_id) and bool(self.path_re.match(file))
+
+
+def load_suppressions(profile: dict[str, Any]) -> tuple[list[Suppression], list[str]]:
+    """The profile's `[[suppress]]` rules, plus a warning for each one that is
+    ignored. A malformed rule never aborts the run."""
+    raw = profile.get("suppress") if isinstance(profile, dict) else None
+    if raw is None:
+        return [], []
+    if not isinstance(raw, list):
+        return [], [f"{PROFILE_FILENAME}: `suppress` must be an array of tables "
+                    f"([[suppress]]); ignored."]
+    rules: list[Suppression] = []
+    warnings: list[str] = []
+    for n, entry in enumerate(raw, 1):
+        where = f"{PROFILE_FILENAME}: [[suppress]] rule {n}"
+        if not isinstance(entry, dict):
+            warnings.append(f"{where} is not a table; ignored.")
+            continue
+        detector, path, reason = (entry.get(k) for k in ("detector", "path", "reason"))
+        if not isinstance(detector, str) or not detector.strip():
+            warnings.append(f"{where} has no detector; ignored.")
+        elif not isinstance(path, str) or not path.strip():
+            warnings.append(f"{where} ({detector}) has no path; ignored.")
+        elif not isinstance(reason, str) or not reason.strip():
+            warnings.append(f"{where} ({detector} on {path}) has no reason; ignored. "
+                            f"A suppression must say why.")
+        else:
+            rules.append(Suppression(detector.strip(), path.strip(), reason.strip(),
+                                     path_glob_to_re(path.strip())))
+    return rules, warnings
+
+
 # --------------------------------------------------------------------------
 # text handling
 # --------------------------------------------------------------------------

@@ -87,6 +87,8 @@ def test_hostile_repository_names_stay_inert(scanned_copy, plugin_root):
     hs["repo"]["branch"] = "feat/`x`](https://evil.example)"
     hs["window"]["since"] = "12m](https://evil.example)"
     hs["warnings"] = [f"warning: {HOSTILE}"]
+    hs["suppressed"] = [{"detector": "S06`](https://evil.example)", "path": "src/**|`x`",
+                         "reason": f"reason: {HOSTILE}", "hits": 1}]
     hs["hotspots"][0]["file"] = "src/`a`|b](https://evil.example).ts"
     data["clean"] = [{"hotspot_id": "H98", "file": "c|d.ts", "notes": HOSTILE}]
     data["failed"] = [{"hotspot_id": "H99", "file": "e.ts", "reason": HOSTILE,

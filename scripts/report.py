@@ -318,9 +318,15 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
 
     warnings = (list(hs.get("warnings") or []) + list(data.get("context_warnings") or [])
                 + list(data.get("link_warnings") or []))
-    if warnings:
+    suppressed = hs.get("suppressed") or []
+    if warnings or suppressed:
         L += ["## Run warnings", ""]
         L += [f"- {md.text(w)}" for w in warnings]
+        if suppressed:
+            L.append(f"- **Suppressed leads** — {len(suppressed)} rule(s) in "
+                     f"{md.code(c.PROFILE_FILENAME)} silence detector hits before ranking:")
+            L += [f"  - {md.code(r['detector'])} on {md.code(r['path'])}: "
+                  f"{r['hits']} hit(s) — {md.text(r['reason'])}" for r in suppressed]
         L.append("")
     L += render_service_context(data.get("context"), now or datetime.now(timezone.utc))
 
