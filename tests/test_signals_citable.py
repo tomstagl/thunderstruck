@@ -146,7 +146,7 @@ def test_ranked_set_is_the_citable_set(citable_repo, scanned):
     validator = Validator(citable_repo, {"hotspots": []}, c.load_catalog())
     citable = {p for p in c.tracked_index(citable_repo)
                if p in changed and c.detect_language(p, langmap)
-               and signals._utf8(p)                # the one deliberate narrowing (spec §3)
+               and c.is_utf8(p)                # the one deliberate narrowing (spec §3)
                and validator._resolve(p)[2] is None}
     assert _ranked(scanned) == citable
     assert citable == {"src/plain.ts", "src/módulo/b.ts", "src/[id].ts", "src/i.ts"}
@@ -169,3 +169,20 @@ def test_skipped_entries_are_counted_not_warned(scanned):
     assert scanned["counts"]["files_not_citable"] == (4 if LINUX else 3)
     for w in scanned["warnings"]:
         assert not any(word in w.lower() for word in ("citable", "symbolic", "submodule"))
+
+
+def test_glob_names_are_briefed_with_their_own_history(citable_repo, scanned):
+    """AC-5: `[id]` is a name, not a character class matching `i` or `d`."""
+    text = _bundle(citable_repo, "src/[id].ts")
+    assert "feat: only i" not in text
+    assert "src/i.ts b/" not in text and "+++ b/src/i.ts" not in text
+
+
+def test_non_ascii_names_are_briefed_unquoted(citable_repo, scanned):
+    """AC-2: diff headers and caller lines name the file as the bundle does."""
+    text = _bundle(citable_repo, "src/módulo/b.ts")
+    assert "diff --git a/src/módulo/b.ts" in text
+    assert "\\303" not in text
+    callers = text.partition("## Call sites elsewhere in the repo")[2].partition("\n## ")[0]
+    assert callers.strip(), "the fixture's shared export should have callers"
+    assert "src/módulo/b.ts" not in callers

@@ -247,16 +247,6 @@ def stability_weight(hits: list, patterns: dict[str, dict]) -> tuple[float, dict
 # --------------------------------------------------------------------------
 
 
-def _utf8(path: str) -> bool:
-    """False for a name git stored in bytes that aren't UTF-8 (surrogate-escaped).
-    The bundle can't be written with it, and no finding can spell it."""
-    try:
-        path.encode("utf-8")
-    except UnicodeEncodeError:
-        return False
-    return True
-
-
 def build(args: argparse.Namespace) -> dict[str, Any]:
     repo = c.find_repo_root(args.repo)
     warnings: list[str] = []
@@ -300,7 +290,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         mode = index.get(p)
         if mode is None:
             continue
-        if not _utf8(p) or c.path_problem(p) or c.tracked_file_problem(repo, p, mode):
+        if not c.is_utf8(p) or c.path_problem(p) or c.tracked_file_problem(repo, p, mode):
             not_citable += 1
             continue
         candidates.append(p)

@@ -148,7 +148,7 @@ def citable_repo(tmp_path_factory) -> Path:
 
   `_ts(n)` returns a small TypeScript function whose body varies with `n`. Run `signals.py --top 0 --since 24m` and `bundle.py` once in a second module fixture, and assert:
 
-  - **success measure:** `{h["file"] for h in hotspots}` equals `{p for p, _ in c.tracked_index(repo).items() if p in changed and c.detect_language(p, langmap) and _utf8(p) and Validator(...)._resolve(p)[2] is None}`, where `changed` is the `per_file` of `collect_history` on the same window;
+  - **success measure:** `{h["file"] for h in hotspots}` equals `{p for p, _ in c.tracked_index(repo).items() if p in changed and c.detect_language(p, langmap) and c.is_utf8(p) and Validator(...)._resolve(p)[2] is None}`, where `changed` is the `per_file` of `collect_history` on the same window;
   - **AC-1:** none of `src/link.ts`, `libs/sub.ts`, `src/gone.ts` is ranked;
   - **AC-2:** `src/módulo/b.ts` is ranked, and its `churn.commits` is 1: the rename commit. The 20 earlier commits stay with `src/módulo/a.ts`, since history doesn't follow renames;
   - **AC-4:** `counts.files_not_citable` is 4 on Linux and 3 elsewhere, and no entry of `warnings` mentions "citable", "symbolic" or "submodule".
@@ -163,13 +163,13 @@ def citable_repo(tmp_path_factory) -> Path:
 
   Run `tests/test_validate_paths.py` **unmodified**: it proves the move changed no behaviour.
 
-- [ ] In `signals.build`, replace the `ls-files` set and the candidate comprehension with the loop in spec §3, and add `"files_not_citable": not_citable` to `counts`. `_utf8` is a module-level helper:
+- [ ] In `signals.build`, replace the `ls-files` set and the candidate comprehension with the loop in spec §3, and add `"files_not_citable": not_citable` to `counts`. `is_utf8` lives in `_common`, since `bundle.py` needs it too (Task 3):
 
 ```python
-def _utf8(path: str) -> bool:
+def is_utf8(text: str) -> bool:
     """False for a name git stored in bytes that aren't UTF-8 (surrogate-escaped)."""
     try:
-        path.encode("utf-8")
+        text.encode("utf-8")
     except UnicodeEncodeError:
         return False
     return True
@@ -205,7 +205,7 @@ FIXTURE_FILES = {"src/client/releases.ts", "src/sync/collection.ts", "src/sync/s
                      check=False, timeout=60)
 ```
 
-  In `section_related`, the `git grep` call gains `"-c", "core.quotePath=false"` before `"grep"`. Its `*.ts`… pathspecs stay globs.
+  In `section_related`, the `git grep` call gains `"-c", "core.quotePath=false"` before `"grep"`, runs through `c.git_paths(..., check=False)` (which gains a `check` flag), and drops hit lines for which `c.is_utf8` is false (spec §5). Its `*.ts`… pathspecs stay globs.
 - [ ] Run the full suite. The determinism test and the sample check must pass unchanged. Commit: `Look up a hotspot's history by its exact file name`.
 
 ### Task 4: Prove rankings and bundles unchanged; changelog and version (AC-3)

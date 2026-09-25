@@ -151,7 +151,7 @@ def git(repo_root: Path, *args: str, check: bool = True, timeout: int = 180) -> 
 
 
 
-def git_paths(repo_root: Path, *args: str, timeout: int = 180) -> str:
+def git_paths(repo_root: Path, *args: str, check: bool = True, timeout: int = 180) -> str:
     """git output that carries file names, decoded exactly.
 
     Bytes are decoded as UTF-8 with surrogateescape, so a name that isn't
@@ -159,7 +159,7 @@ def git_paths(repo_root: Path, *args: str, timeout: int = 180) -> str:
     """
     proc = subprocess.run(["git", "-C", str(repo_root), *args],
                           capture_output=True, timeout=timeout)
-    if proc.returncode != 0:
+    if check and proc.returncode != 0:
         raise ThunderstruckError(
             f"git {' '.join(args)} failed ({proc.returncode}): "
             f"{proc.stderr.decode('utf-8', 'replace').strip()}")
@@ -438,6 +438,17 @@ def tracked_index(repo_root: Path) -> dict[str, str]:
     return index
 
 
+
+
+def is_utf8(text: str) -> bool:
+    """False for a string holding bytes that weren't UTF-8 (surrogate-escaped
+    by git_paths). No output file can be written with it, and no finding can
+    spell such a file name."""
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
 
 def _resolves_to_itself(repo_root: Path, rel: str) -> bool:
     try:

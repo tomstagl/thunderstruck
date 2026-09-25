@@ -68,7 +68,7 @@ for p in per_file:                              # same order as today
     mode = index.get(p)
     if mode is None:                            # deleted or renamed away since
         continue
-    if (not _utf8(p) or c.path_problem(p)
+    if (not c.is_utf8(p) or c.path_problem(p)
             or c.tracked_file_problem(repo, p, mode)):
         not_citable += 1
         continue
@@ -78,7 +78,7 @@ for p in per_file:                              # same order as today
 - **Order.** Candidates keep `per_file`'s insertion order, as today. Scores don't depend on order, and ties already sort by file name, but keeping the order removes any doubt for AC-3.
 - **Not in the index.** A path that changed in the window but is no longer tracked is history, not a skipped file. It isn't counted. This is what happens to it today.
 - **`path_problem`.** Index paths can't be absolute or contain `..`, but on Linux they can contain a backslash, which the validator rejects. Applying the same check keeps the ranked set equal to the citable set.
-- **Not valid UTF-8.** `_utf8(p)` is `p.encode("utf-8")` succeeding. The validator itself would accept a surrogate-escaped path. But `bundle.py` writes the bundle with `encoding="utf-8"` and would crash on it, and no model can reproduce such a name in its findings. Such names are skipped and counted, never ranked. This is the one place the ranked set is narrower than what the validator accepts. The success-measure test states it explicitly.
+- **Not valid UTF-8.** `_common.is_utf8(p)` is `p.encode("utf-8")` succeeding. The validator itself would accept a surrogate-escaped path. But `bundle.py` writes the bundle with `encoding="utf-8"` and would crash on it, and no model can reproduce such a name in its findings. Such names are skipped and counted, never ranked. This is the one place the ranked set is narrower than what the validator accepts. The success-measure test states it explicitly.
 - **Cost.** One `ls-files -s -z` call, which the run did before in another form, plus one `resolve` and one `lstat` per changed file in a supported language. Nothing is opened.
 
 ## 4. Counting what was skipped (AC-4)
@@ -96,6 +96,7 @@ In `bundle.py`:
 
 - `section_history`'s `git log -- <rel>` and `git show <sha> -- <rel>` run with `--literal-pathspecs`, as `commit_touches` and `links.py` already do. `src/[id].ts` then matches only itself.
 - `git show` and `git grep` also run with `-c core.quotePath=false`, so a diff header and a caller line name a non-ASCII file the way the bundle does, and `section_related`'s `path == rel` test excludes the hotspot from its own callers.
+- With `core.quotePath=false`, `git grep` prints a name that isn't valid UTF-8 as raw bytes, which `_common.git`'s strict decode can't read. The grep is read through `git_paths` (which gains `check=False`, since grep exits 1 on no match), and a hit line that doesn't encode as UTF-8 is dropped: it names a file no finding can cite, and the bundle writer couldn't encode it. `_common.is_utf8` is the one test, shared with §3's candidate rule.
 
 Neither option changes git's output for a name without glob characters or bytes above `0x7F`. `core.quotePath=false` still quotes names containing `"`, `\` or control characters. For those, a caller line may show the quoted form and the self-match may be missed. That is cosmetic, deterministic, and such names are rare in source trees.
 
@@ -154,6 +155,7 @@ For a repository with no symlink, submodule, non-ASCII, non-UTF-8 or glob-charac
 | Only paths still in the index are counted as skipped | A deleted file is history, not a file the scan failed to rank. Counting it would make the number noisy on every repository. |
 | The count lives only in `hotspots.json` | The ticket's decision: no warning, so no report change. `hotspots.json` already holds the run's counts. |
 | `--literal-pathspecs` and `core.quotePath=false` on the per-file git calls in `bundle.py` | Byte-identical for ordinary names, so AC-3 holds and checkpointing is unaffected. |
+| Drop `git grep` hit lines that aren't valid UTF-8 | Unquoted output carries raw bytes. Such a line names a file nobody can cite and can't be written to the bundle; decoding it with replacement characters would put a name in the briefing that matches no file. |
 
 ## 10. Open design questions
 
