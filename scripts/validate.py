@@ -28,11 +28,9 @@ recorded as analysis_failed. No retry loops.
 from __future__ import annotations
 
 import argparse
-import errno
 import json
 import os
 import re
-import stat
 import sys
 from pathlib import Path
 from typing import Any
@@ -123,12 +121,6 @@ class Validator:
             self._index = c.tracked_index(self.repo)
         return self._index
 
-    def _resolves_to_itself(self, path: Path, rel: str) -> bool:
-        try:
-            return path.resolve() == self.repo.resolve() / rel
-        except (OSError, RuntimeError):  # a symlink loop raises on Python 3.11
-            return False
-
     def _spelling_hint(self, rel: str) -> str:
         lowered = rel.lower()
         match = next((p for p in self._tracked() if p.lower() == lowered), None)
@@ -161,29 +153,8 @@ class Validator:
                 error = "is not tracked by git; untracked and ignored files can't be cited"
             else:
                 error = "no such file in the repository"
-        elif mode == "120000":
-            error = "is a symbolic link; cite the file it points to"
-        elif mode == "160000":
-            error = "is a submodule, not a file"
-        elif not self._resolves_to_itself(path, rel):
-            # a tracked path replaced locally by a link, even to a file inside
-            # the repository such as an ignored .env, is not what git tracks
-            error = "passes through a symbolic link in the working tree"
-        else:
-            try:
-                st = os.lstat(path)
-            except OSError as exc:
-                st = None
-                if exc.errno == errno.ELOOP:   # Python 3.13+ resolves loops without raising
-                    error = "passes through a symbolic link in the working tree"
-            if error:
-                pass
-            elif st is None:
-                error = ("is tracked but missing from the working tree (deleted locally, "
-                         "or outside a sparse checkout)")
-            elif not stat.S_ISREG(st.st_mode):
-                error = "is not a regular file in the working tree"
-            elif (total := self._lines_in(rel)) is None:
+        elif (error := c.tracked_file_problem(self.repo, rel, mode)) is None:
+            if (total := self._lines_in(rel)) is None:
                 error = "could not be read"
         self._resolved[key] = (rel, total, error)
         return self._resolved[key]

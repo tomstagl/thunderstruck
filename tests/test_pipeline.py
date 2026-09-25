@@ -109,6 +109,23 @@ def test_bundles_are_within_budget_and_deterministic(scanned_repo, plugin_root):
     assert before == after, "bundles are not reproducible across runs"
 
 
+# Every file the fixture ranked before #30. The order isn't pinned: it depends on
+# the unpinned lizard of the test command, and the sample check covers it.
+FIXTURE_FILES = {"src/client/releases.ts", "src/sync/collection.ts", "src/sync/scheduler.ts",
+                 "src/client/artists.ts", "src/sync/queue.ts", "src/client/retry-wrapper.ts",
+                 "src/client/api.ts", "src/client/limiter.ts", "src/util/format.ts"}
+
+
+def test_citable_rule_leaves_an_ordinary_ranking_unchanged(scanned_copy, plugin_root):
+    """#30 AC-3: with no symlink, submodule or unusual name, nothing is skipped."""
+    subprocess.run([sys.executable, str(plugin_root / "scripts" / "signals.py"),
+                    "--repo", str(scanned_copy), "--top", "0", "--since", "24m"],
+                   check=True, capture_output=True, text=True, cwd=str(scanned_copy))
+    hotspots = json.loads((scanned_copy / ".thunderstruck" / "hotspots.json").read_text())
+    assert hotspots["counts"]["files_not_citable"] == 0
+    assert {h["file"] for h in hotspots["hotspots"]} == FIXTURE_FILES
+
+
 def test_bundle_contains_the_sections_the_investigator_needs(scanned_repo):
     path = sorted((scanned_repo / ".thunderstruck" / "bundles").glob("H*.md"))[0]
     body = path.read_text()

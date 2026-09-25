@@ -7,10 +7,12 @@ needs (paths, hashing) are stdlib-only so the hook can run on bare python3.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 from dataclasses import dataclass, field, asdict
@@ -147,6 +149,21 @@ def git(repo_root: Path, *args: str, check: bool = True, timeout: int = 180) -> 
         )
     return proc.stdout
 
+
+
+def git_paths(repo_root: Path, *args: str, check: bool = True, timeout: int = 180) -> str:
+    """git output that carries file names, decoded exactly.
+
+    Bytes are decoded as UTF-8 with surrogateescape, so a name that isn't
+    valid UTF-8 survives as a string instead of crashing the run.
+    """
+    proc = subprocess.run(["git", "-C", str(repo_root), *args],
+                          capture_output=True, timeout=timeout)
+    if check and proc.returncode != 0:
+        raise ThunderstruckError(
+            f"git {' '.join(args)} failed ({proc.returncode}): "
+            f"{proc.stderr.decode('utf-8', 'replace').strip()}")
+    return proc.stdout.decode("utf-8", "surrogateescape")
 
 def commit_touches(repo_root: Path, sha: str, paths: list[str]) -> bool:
     """True when `sha` changed at least one of `paths` (as named today)."""
@@ -420,6 +437,51 @@ def tracked_index(repo_root: Path) -> dict[str, str]:
             index.setdefault(path, meta.split(" ", 1)[0])   # unmerged: first stage wins
     return index
 
+
+
+
+def is_utf8(text: str) -> bool:
+    """False for a string holding bytes that weren't UTF-8 (surrogate-escaped
+    by git_paths). No output file can be written with it, and no finding can
+    spell such a file name."""
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+def _resolves_to_itself(repo_root: Path, rel: str) -> bool:
+    try:
+        return (repo_root / rel).resolve() == repo_root.resolve() / rel
+    except (OSError, RuntimeError):  # a symlink loop raises on Python 3.11
+        return False
+
+
+def tracked_file_problem(repo_root: Path, rel: str, mode: str) -> str | None:
+    """Why the index entry `rel` (with its git mode) isn't a regular file in
+    the working tree, or None. Opens nothing: lstat and readlink only.
+
+    The one rule for "a file": the validator applies it to every cited path
+    and the ranking to every candidate, so a hotspot is always citable.
+    """
+    if mode == "120000":
+        return "is a symbolic link; cite the file it points to"
+    if mode == "160000":
+        return "is a submodule, not a file"
+    if not _resolves_to_itself(repo_root, rel):
+        # a tracked path replaced locally by a link, even to a file inside
+        # the repository such as an ignored .env, is not what git tracks
+        return "passes through a symbolic link in the working tree"
+    try:
+        st = os.lstat(repo_root / rel)
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:   # Python 3.13+ resolves loops without raising
+            return "passes through a symbolic link in the working tree"
+        return ("is tracked but missing from the working tree (deleted locally, "
+                "or outside a sparse checkout)")
+    if not stat.S_ISREG(st.st_mode):
+        return "is not a regular file in the working tree"
+    return None
 
 def read_text(path: Path) -> str | None:
     try:

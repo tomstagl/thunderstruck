@@ -249,8 +249,10 @@ def classify_commit(subject: str) -> str:
 
 def section_history(repo: Path, hs: dict, since: str, budget: int, k: int) -> str:
     rel = hs["file"]
-    log = c.git(repo, "log", f"--since={since}", "-n", str(k), "--no-merges",
-                "--pretty=format:%H%x00%aI%x00%an%x00%s", "--", rel, check=False)
+    # --literal-pathspecs: `src/[id].ts` names one file, not a character class
+    log = c.git(repo, "--literal-pathspecs", "log", f"--since={since}", "-n", str(k),
+                "--no-merges", "--pretty=format:%H%x00%aI%x00%an%x00%s", "--", rel,
+                check=False)
     entries = [ln.split("\x00") for ln in log.split("\n") if ln.strip()]
     if not entries:
         return "## Change history\n\nNo commits in the window.\n\n"
@@ -272,8 +274,9 @@ def section_history(repo: Path, hs: dict, since: str, budget: int, k: int) -> st
         sha, when, author, subject = e[0], e[1], e[2], e[3]
         kind = classify_commit(subject)
         out.append(f"### `{sha[:7]}` {when[:10]} [{kind}] {subject}")
-        diff = c.git(repo, "show", "--no-color", "--unified=3", "--format=",
-                     sha, "--", rel, check=False, timeout=60)
+        diff = c.git(repo, "-c", "core.quotePath=false", "--literal-pathspecs", "show",
+                     "--no-color", "--unified=3", "--format=", sha, "--", rel,
+                     check=False, timeout=60)
         if diff.strip():
             out.append("")
             out.append("```diff")
@@ -331,11 +334,14 @@ def section_related(repo: Path, hs: dict, all_hotspots: list[dict], budget: int)
     callers: list[str] = []
     if symbols:
         pattern = r"\b(" + "|".join(re.escape(s) for s in symbols[:12]) + r")\b"
-        hits = c.git(repo, "grep", "-n", "-I", "-E", pattern, "--", "*.ts", "*.tsx",
-                     "*.js", "*.jsx", "*.mjs", "*.py", check=False, timeout=60)
+        # unquoted names, so a non-ASCII hotspot matches itself below; the
+        # pathspecs stay globs on purpose
+        hits = c.git_paths(repo, "-c", "core.quotePath=false", "grep", "-n", "-I", "-E",
+                           pattern, "--", "*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.py",
+                           check=False, timeout=60)
         for line in hits.split("\n"):
-            if not line.strip():
-                continue
+            if not line.strip() or not c.is_utf8(line):
+                continue   # a name or line that isn't UTF-8 can't be written or cited
             path = line.split(":", 1)[0]
             if path == rel:
                 continue
