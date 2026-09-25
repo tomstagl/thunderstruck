@@ -130,3 +130,72 @@ def test_sweep_is_fast(tmp_path):
     data = _signals(repo)
     assert time.monotonic() - start < 10
     assert len(data["dormant"]) == 5
+
+
+def test_recency_is_chronological_across_timezones(tmp_path):
+    """Equal weight, so the older last change wins the one slot. B is older in
+    UTC though its local date string sorts later."""
+    repo = tmp_path / "tz"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True,
+                   env=isolated_git_env())
+    body = "import requests\n\ndef fetch(url):\n    return requests.get(url).json()\n"
+    for rel, when in (("src/a.py", "2024-01-01T23:00:00-08:00"),
+                      ("src/b.py", "2024-01-02T01:00:00+02:00")):
+        (repo / "src").mkdir(exist_ok=True)
+        (repo / rel).write_text(body)
+        env = isolated_git_env()
+        env.update(GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.com", GIT_COMMITTER_NAME="t",
+                   GIT_COMMITTER_EMAIL="t@example.com", GIT_AUTHOR_DATE=when,
+                   GIT_COMMITTER_DATE=when)
+        subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True, env=env)
+        subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", f"feat: {rel}"],
+                       check=True, env=env)
+    _commit(repo, {"src/app.py": "x = 1\n"}, "feat: app", days_ago=1)
+    assert [d["file"] for d in _signals(repo, "--dormant", "1")["dormant"]] == ["src/b.py"]
+
+
+def test_a_pattern_the_profile_demotes_to_tier_c_never_qualifies(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / ".thunderstruck.toml").write_text('[patterns]\nS01 = "C"\n')
+    assert _signals(repo)["dormant"] == []
+
+
+def test_a_d_bundle_does_not_blame_lizard(tmp_path):
+    repo = _repo(tmp_path)
+    _signals(repo)
+    subprocess.run([sys.executable, str(ROOT / "scripts" / "bundle.py"), "--repo", str(repo),
+                    "--investigate-dormant", "1"], check=True, capture_output=True)
+    bundle = (repo / ".thunderstruck" / "bundles" / "D01.md").read_text()
+    assert "lizard not installed" not in bundle
+    assert "no commit in the window" in bundle.lower()
+
+
+def test_lead_precision_counts_what_was_read(tmp_path):
+    repo = _repo(tmp_path)
+    data = _signals(repo)
+    subprocess.run([sys.executable, str(ROOT / "scripts" / "bundle.py"), "--repo", str(repo),
+                    "--investigate-dormant", "1"], check=True, capture_output=True)
+    d = data["dormant"][0]
+    hit = next(h for h in d["detector_hits"] if h["pattern_id"] == "S01")
+    sha = d["churn"]["recent_shas"][0]
+    finding = {"hotspot_id": "D01", "file": LEGACY, "findings": [{
+        "location": {"file": LEGACY, "symbol": "fetch", "lines": "3-4"},
+        "missing_patterns": ["S01"], "failure_mode": "A hung upstream holds the worker",
+        "trigger_condition": "legacy host stalls", "amplifier": "no bound",
+        "sustaining_effect": None, "blast_radius": "every caller",
+        "evidence": [{"type": "code", "ref": f"{LEGACY}:4", "note": "no timeout"},
+                     {"type": "commit", "ref": sha, "note": "added"},
+                     {"type": "detector", "ref": hit["ref"], "note": "lead"}],
+        "confidence": "medium", "confidence_rationale": "plain in code",
+        "how_to_verify": "stall the host", "prediction": "a hang"}]}
+    out = repo / ".thunderstruck" / "findings"
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "D01.json").write_text(json.dumps(finding))
+    for script in ("validate.py", "report.py"):
+        proc = subprocess.run([sys.executable, str(ROOT / "scripts" / script), "--repo", str(repo)],
+                              capture_output=True, text=True)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+    precision = json.loads((repo / ".thunderstruck" / "report.json").read_text())["lead_precision"]
+    assert precision["S01"]["confirmed"] == 1
+    assert precision["S01"]["read"] >= precision["S01"]["confirmed"]

@@ -44,8 +44,9 @@ JITTER = re.compile(r"(?i)(jitter|random|rand\s*\(|uniform\s*\(|splay|stagger)")
 # Python: `**` grows a wait only after an operand (`2 ** attempt`). After `(`,
 # `,` or `{` it unpacks (`f(**kwargs)`, `{**d}`), and nearly every Python file
 # has one, which made every variable wait read as exponential.
+# `lambda **kw` is unpacking after a keyword, not an operand.
 GROWTH_PY = re.compile(
-    r"([\w)\]]\s*\*\*|\bpow\s*\(|<<|\*\s*2\b|\bexponential\b)", re.I)
+    r"((?:\b(?!lambda\b)\w+|[)\]])\s*\*\*|\bpow\s*\(|<<|\*\s*2\b|\bexponential\b)", re.I)
 
 _LITERAL_MS = re.compile(r"^\s*[\d_]+(\.\d+)?(\s*[*]\s*[\d_]+(\.\d+)?)*\s*$")
 # `const SLEEP_MS = 2000;` then `setTimeout(resolve, SLEEP_MS)` is how a fixed
@@ -69,7 +70,7 @@ SLEEP_RES: dict[str, list[re.Pattern]] = {
         re.compile(r"\b(?:sleep|delay|wait|pause)\s*\(\s*(?P<arg>[^),]*)"),
     ],
     "python": [
-        re.compile(r"\b(?:time|asyncio|gevent|eventlet)\s*\.\s*sleep\s*\(\s*(?P<arg>[^),]*)"),
+        re.compile(r"\b(?:time|asyncio|gevent|eventlet|trio|anyio)\s*\.\s*sleep\s*\(\s*(?P<arg>[^),]*)"),
         # A bare `sleep(…)`/`delay(…)` call. Not `task.delay(…)`, which is
         # Celery sending a task, and not `def delay(…)`, which defines one.
         re.compile(r"(?<![.\w])(?<!def )(?:sleep|delay)\s*\(\s*(?P<arg>[^),]*)"),
@@ -255,7 +256,8 @@ PERSIST_JAVA = re.compile(
 # argument on its own line (`access_token=data["token"],`) does not.
 PAGE_ADVANCE_PY = re.compile(
     r"(?im)(^\s*(?:\w+_)?page(?:_?(?:num|number|no|idx|index))?\s*(\+=|\s=\s*[^=])"
-    r"|^\s*\w*(cursor|token|marker)\w*\s+=\s*[^=\n]*"
+    # a paging token (next_token, page_token), never an auth token
+    r"|^\s*(?:\w*(?:cursor|marker)\w*|\w*(?:next|page|continuation|resume)\w*token\w*)\s+=\s*[^=\n]*"
     r"\b(next(?:_?(?:page|cursor|token|url|link|marker|offset)\w*)?|resp\w*|results?|data|body"
     r"|json|page\w*|meta\w*)\b"
     r"|has_?more|has_?next|next_?(page|cursor|token|url)|is_?last_?page"

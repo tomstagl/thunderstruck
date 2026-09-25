@@ -106,6 +106,8 @@ def test_coverage_table_shows_leads_read_and_confirmed(scanned_copy, plugin_root
     files = data["pattern_coverage"]["S02"]["files"]
     assert row.split("|")[4].strip() == str(files - 1), "the confirmed file is not unconfirmed"
     payload = json.loads((scanned_copy / ".thunderstruck" / "report.json").read_text())
-    read = sum(1 for h in data["hotspots"] for hit in h["detector_hits"]
-               if hit["pattern_id"] == "S02")
+    # only hotspots an investigator read count; the rest have no findings file
+    # and are Incomplete
+    read = sum(1 for h in data["hotspots"] if h["id"] == hid
+               for hit in h["detector_hits"] if hit["pattern_id"] == "S02")
     assert payload["lead_precision"]["S02"] == {"read": read, "confirmed": 1}

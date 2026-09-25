@@ -155,7 +155,9 @@ def compute_coverage_gaps(repo: Path, index: dict[str, str], filters: c.Filters,
                           langmap: dict, considered: set[str]) -> dict[str, Any]:
     """Every tracked file in exactly one bucket, first match wins: excluded
     (by reason), unsupported (by extension), not citable, considered, or
-    unchanged in the window. Opens no file; the citability test is an lstat.
+    unchanged in the window. Opens no file. Candidates were already checked
+    for citability; every other supported file gets the same check (lstat and
+    a symlink-free resolve), so `not_citable` covers unchanged files too.
 
     The result carries `_by_extension`, the unfolded unsupported counts, for
     the caller to pop.
@@ -170,11 +172,11 @@ def compute_coverage_gaps(repo: Path, index: dict[str, str], filters: c.Filters,
             excluded[reason] += 1
         elif c.detect_language(rel, langmap) is None:
             unsupported[Path(rel).suffix.lower() or "(no extension)"] += 1
+        elif rel in considered:
+            n_considered += 1
         elif (not c.is_utf8(rel) or c.path_problem(rel)
               or c.tracked_file_problem(repo, rel, mode)):
             not_citable += 1
-        elif rel in considered:
-            n_considered += 1
         else:
             unchanged.append(rel)
     ranked = sorted(unsupported.items(), key=lambda kv: (-kv[1], kv[0]))
@@ -262,18 +264,21 @@ def dormant_sweep(repo: Path, unchanged: list[str], catalog: dict, patterns: dic
         hits = apply_suppressions(raw_hits, suppressions, suppressed_hits)
         if hits and _qualifies(hits, unscored):
             weight, per_pattern = stability_weight(hits, patterns, unscored)
+            if weight <= 0:
+                continue  # every lead is of a pattern the profile tiered out
             qualified.append((weight, rel, hits, per_pattern))
     qualified.sort(key=lambda q: (-q[0], q[1]))
     last: dict[str, tuple[str, str]] = {}
     for _, rel, _, _ in qualified[:3 * keep]:
-        out = c.git(repo, "--literal-pathspecs", "log", "-1", "--format=%H%x00%aI",
+        out = c.git(repo, "--literal-pathspecs", "log", "-1", "--format=%H%x00%aI%x00%at",
                     "--", rel, check=False).strip()
-        sha, _, when = out.partition("\x00")
-        last[rel] = (sha, when)
-    top = sorted(qualified[:3 * keep], key=lambda q: (-q[0], last[q[1]][1], q[1]))[:keep]
+        sha, when, epoch = (out.split("\x00") + ["", "", ""])[:3]
+        last[rel] = (sha, when, int(epoch) if epoch.isdigit() else 0)
+    # chronological: the epoch, not the ISO string, whose offsets vary per commit
+    top = sorted(qualified[:3 * keep], key=lambda q: (-q[0], last[q[1]][2], q[1]))[:keep]
     rows = []
     for n, (weight, rel, hits, per_pattern) in enumerate(top, 1):
-        sha, when = last[rel]
+        sha, when, _ = last[rel]
         rows.append({
             "id": f"D{n:02d}", "file": rel, "language": c.detect_language(rel, langmap),
             "dormant": True, "content_hash": c.sha256_file(repo / rel),

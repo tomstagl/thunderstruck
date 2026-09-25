@@ -104,8 +104,11 @@ def collect(repo: Path) -> dict[str, Any]:
     link_meta, link_warnings, hotspot_links = link_refs(
         repo, hotspots["repo"]["head"], findings, hotspots["hotspots"] + dormant,
         clean + failed)
+    failed_ids = {e["hotspot_id"] for e in failed}
     return {"hotspots": hotspots, "findings": findings,
             "failed": failed, "clean": clean, "validation": validation,
+            # what an investigator actually read: briefed, and not incomplete
+            "read": [h for h in investigated if h["id"] not in failed_ids],
             "context": c.load_service_context(repo),
             "context_warnings": _context_warnings(raw_warnings),
             "links": link_meta, "link_warnings": link_warnings,
@@ -360,11 +363,13 @@ def render_dormant(data: dict) -> list[str]:
 
 
 def lead_precision(data: dict) -> dict[str, dict[str, int]]:
-    """Per pattern: detector hits inside investigated hotspots (read), and the
-    distinct ones a validated finding cites (confirmed). Over many runs this is
+    """Per pattern: detector hits in the files an investigator read (hotspots
+    and investigated dormant files, not incomplete ones), and the distinct
+    ones a validated finding cites (confirmed). Over many runs this is
     the detector's precision on code we never see (#19 AC-2)."""
     out: dict[str, dict[str, int]] = {}
-    for h in data["hotspots"]["hotspots"]:
+    read = data.get("read")
+    for h in data["hotspots"]["hotspots"] if read is None else read:
         for hit in h.get("detector_hits") or []:
             out.setdefault(hit["pattern_id"], {"read": 0, "confirmed": 0})["read"] += 1
     confirmed: set[str] = set()
@@ -459,10 +464,12 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
             per_pattern[pid] = per_pattern.get(pid, 0) + 1
     precision = lead_precision(data)
     confirmed_files: dict[str, set[str]] = {}
+    ranked_files = {h["file"] for h in hs["hotspots"]}  # lead_files counts ranked candidates
     for f in findings:
         for ev in _evidence(f):
             if ev.get("type") == "detector" and (m := DETECTOR_REF.match(str(ev.get("ref") or ""))):
-                confirmed_files.setdefault(m["pid"], set()).add(m["path"])
+                if m["path"] in ranked_files:
+                    confirmed_files.setdefault(m["pid"], set()).add(m["path"])
     L += ["## Pattern coverage", "",
           "Leads are detector hits — mechanical, noisy, and never a finding on "
           "their own. Findings are what survived an investigator reading the code. "

@@ -18,3 +18,10 @@ def test_s05_loop_body_with_long_identifier_lines_is_fast():
     start = time.monotonic()
     run_detectors(catalog, "src/a.py", body, "python", pattern_ids=["S05"])
     assert time.monotonic() - start < 0.5
+
+
+def test_kwargs_after_a_keyword_is_not_growth():
+    from detectors import modules
+    assert modules.GROWTH_PY.search("on_err = lambda **kw: log(kw)") is None
+    assert modules.GROWTH_PY.search("return f(x, **kw)") is None
+    assert modules.GROWTH_PY.search("delay = base * 2 ** attempt")

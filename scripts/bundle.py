@@ -113,8 +113,14 @@ def section_header(hs: dict, data: dict) -> str:
         if top:
             lines.append(f"- most complex function: `{top['name']}` "
                          f"(CCN {top['ccn']}, lines {top['lines']})")
-    else:
+    elif hs.get("dormant"):
+        lines.append("- no commit in the window: listed as a dormant integration point "
+                     "for its leads, not ranked on churn or complexity")
+    elif data.get("degraded", {}).get("complexity"):
         lines.append("- complexity unavailable (lizard not installed); ranked on churn only")
+    else:
+        lines.append("- complexity not measured for this file type (configuration); it "
+                     "ranked because it carries a lead")
     lines.append(f"- content hash: `{hs['content_hash']}`")
     lines.append("")
     return "\n".join(lines)
@@ -239,17 +245,29 @@ def section_source(repo: Path, hs: dict, budget: int) -> str:
     return f"## Source — `{rel}`\n\n_{note}_\n\n```{lang}\n{body}\n```\n\n"
 
 
-RETRY_LEAD_PATTERNS = {"S02", "S04", "S10"}
 MAX_RETRY_LAYERS_SHOWN = 15
 
 
-def section_retry_layers(hs: dict, data: dict) -> str:
+def retry_lead_patterns(catalog: dict) -> set[str]:
+    """Patterns with a detector that marks a retry layer: the catalog decides."""
+    return {p["id"] for p in catalog.get("patterns", [])
+            for dets in (p.get("detectors") or {}).values() for d in dets or []
+            if d.get("inventory") == "retry_layer"}
+
+
+def section_retry_layers(hs: dict, data: dict, catalog: dict) -> str:
     """Every retry layer in the repository, for a hotspot that retries. R
     retries at N layers is R^N requests, and the layers rarely share a file:
-    one is in this code, one in the mesh, one a library default."""
+    one is in this code, one in the mesh, one a library default. So this
+    file's own layers come first, then configuration and library defaults,
+    which no reading of this file can reveal, then the other code layers."""
     layers = data.get("retry_layers") or []
-    if not layers or not RETRY_LEAD_PATTERNS & {h["pattern_id"] for h in hs["detector_hits"]}:
+    wanted = retry_lead_patterns(catalog)
+    if not layers or not wanted & {h["pattern_id"] for h in hs["detector_hits"]}:
         return ""
+    rank = {"config": 1, "library-default": 1, "code": 2}
+    layers = sorted(layers, key=lambda r: (0 if r["file"] == hs["file"] else rank.get(r["kind"], 3),
+                                           r["kind"], r["file"], r["line"]))
     out = ["## Retry layers in this repository", "",
            "Retries multiply across layers. These are every retry layer the scan "
            "found, in code, configuration and library defaults. Count how many sit "
@@ -409,7 +427,7 @@ def build_bundle(repo: Path, hs: dict, data: dict, catalog: dict, profile: dict,
         service,
         section_boundaries(text, hs["file"]),
         section_detectors(hs, catalog),
-        section_retry_layers(hs, data),
+        section_retry_layers(hs, data, catalog),
         section_source(repo, hs, int(rest * SHARE["source"])),
         section_history(repo, hs, data["window"]["since_date"],
                         int(rest * SHARE["history"]), commits,
