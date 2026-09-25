@@ -247,6 +247,16 @@ def stability_weight(hits: list, patterns: dict[str, dict]) -> tuple[float, dict
 # --------------------------------------------------------------------------
 
 
+def _utf8(path: str) -> bool:
+    """False for a name git stored in bytes that aren't UTF-8 (surrogate-escaped).
+    The bundle can't be written with it, and no finding can spell it."""
+    try:
+        path.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def build(args: argparse.Namespace) -> dict[str, Any]:
     repo = c.find_repo_root(args.repo)
     warnings: list[str] = []
@@ -278,12 +288,22 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
             f"ranking is weak on this little history. Widen the window with a "
             f"longer --since than {args.since!r}, if the repository has one.")
 
-    tracked = {p for p in c.git(repo, "ls-files").split("\n") if p}
-    candidates = [
-        p for p in per_file
-        if p in tracked and (repo / p).is_file()
-        and c.detect_language(p, langmap) is not None
-    ]
+    # A candidate is a file a finding can cite: the validator's own rule. A
+    # changed entry that fails it (a symlink, a submodule, a name that isn't
+    # UTF-8) is counted, never warned about; one no longer tracked is history.
+    index = c.tracked_index(repo)
+    candidates: list[str] = []
+    not_citable = 0
+    for p in per_file:
+        if c.detect_language(p, langmap) is None:
+            continue
+        mode = index.get(p)
+        if mode is None:
+            continue
+        if not _utf8(p) or c.path_problem(p) or c.tracked_file_problem(repo, p, mode):
+            not_citable += 1
+            continue
+        candidates.append(p)
     if not candidates:
         raise c.ThunderstruckError(
             "no files in a supported language changed in this window. "
@@ -378,6 +398,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         "degraded": degraded,
         "warnings": warnings,
         "counts": {"files_considered": len(candidates), "files_ranked": len(rows),
+                   "files_not_citable": not_citable,
                    "hotspots": len(top),
                    "detector_hits": sum(len(h) for h in hits_by_file.values())},
         "pattern_coverage": coverage,

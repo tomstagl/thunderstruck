@@ -7,10 +7,12 @@ needs (paths, hashing) are stdlib-only so the hook can run on bare python3.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 from dataclasses import dataclass, field, asdict
@@ -435,6 +437,40 @@ def tracked_index(repo_root: Path) -> dict[str, str]:
             index.setdefault(path, meta.split(" ", 1)[0])   # unmerged: first stage wins
     return index
 
+
+
+def _resolves_to_itself(repo_root: Path, rel: str) -> bool:
+    try:
+        return (repo_root / rel).resolve() == repo_root.resolve() / rel
+    except (OSError, RuntimeError):  # a symlink loop raises on Python 3.11
+        return False
+
+
+def tracked_file_problem(repo_root: Path, rel: str, mode: str) -> str | None:
+    """Why the index entry `rel` (with its git mode) isn't a regular file in
+    the working tree, or None. Opens nothing: lstat and readlink only.
+
+    The one rule for "a file": the validator applies it to every cited path
+    and the ranking to every candidate, so a hotspot is always citable.
+    """
+    if mode == "120000":
+        return "is a symbolic link; cite the file it points to"
+    if mode == "160000":
+        return "is a submodule, not a file"
+    if not _resolves_to_itself(repo_root, rel):
+        # a tracked path replaced locally by a link, even to a file inside
+        # the repository such as an ignored .env, is not what git tracks
+        return "passes through a symbolic link in the working tree"
+    try:
+        st = os.lstat(repo_root / rel)
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:   # Python 3.13+ resolves loops without raising
+            return "passes through a symbolic link in the working tree"
+        return ("is tracked but missing from the working tree (deleted locally, "
+                "or outside a sparse checkout)")
+    if not stat.S_ISREG(st.st_mode):
+        return "is not a regular file in the working tree"
+    return None
 
 def read_text(path: Path) -> str | None:
     try:
