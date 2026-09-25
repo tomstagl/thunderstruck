@@ -420,7 +420,10 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
     warnings.extend(unsupported_language_warnings(coverage_gaps.pop("_by_extension")))
     unchanged_files = coverage_gaps.pop("_unchanged")
 
-    complexity, complexity_warning = analyse_complexity(repo, candidates)
+    # lizard has no parser for configuration; config sits at the complexity floor
+    complexity, complexity_warning = analyse_complexity(
+        repo, [p for p in candidates
+               if not c.rank_only_with_leads(catalog, c.detect_language(p, langmap))])
     degraded = {"complexity": complexity_warning is not None}
     if complexity_warning:
         warnings.append(complexity_warning)
@@ -438,6 +441,13 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         lang = c.detect_language(rel, langmap)
         hits_by_file[rel] = apply_suppressions(
             run_detectors(catalog, rel, text, lang), suppressions, suppressed_hits)
+
+    # A config file ranks only with a lead, and is dropped before normalising
+    # so its deploy churn doesn't compress every other file's score.
+    considered = candidates
+    candidates = [p for p in candidates
+                  if hits_by_file.get(p)
+                  or not c.rank_only_with_leads(catalog, c.detect_language(p, langmap))]
 
     churn_raw = [float(per_file[p]["commits"]) for p in candidates]
     comp_raw = [float(complexity.get(p, {}).get("ccn_max", 1) or 1) for p in candidates]
@@ -523,7 +533,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
                    "profile": bool(profile), "profile_file": c.PROFILE_FILENAME if profile else None},
         "degraded": degraded,
         "warnings": warnings,
-        "counts": {"files_considered": len(candidates), "files_ranked": len(rows),
+        "counts": {"files_considered": len(considered), "files_ranked": len(rows),
                    "files_not_citable": not_citable,
                    "hotspots": len(top),
                    "detector_hits": sum(len(h) for h in hits_by_file.values())},

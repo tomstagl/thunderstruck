@@ -38,6 +38,15 @@ languages:
     extensions: [".py", ".pyi"]
   java:
     extensions: [".java"]
+  # Configuration: timeouts, retries and probes often live here, not in code.
+  # A config file ranks only when it carries a lead: values.yaml churns with
+  # every deploy, and that measures release activity, not fragility.
+  yaml:
+    extensions: [".yml", ".yaml"]
+    rank_only_with_leads: true
+  properties:
+    extensions: [".properties"]
+    rank_only_with_leads: true
 
 # Language aliases: a detector written for `typescript` also runs on javascript.
 aliases:

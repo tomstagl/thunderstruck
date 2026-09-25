@@ -16,7 +16,8 @@ import _common
 from detectors import run_detectors
 
 SAMPLES = Path(__file__).parent / "samples"
-EXT_LANG = {".ts": "typescript", ".py": "python", ".java": "java"}
+EXT_LANG = {".ts": "typescript", ".py": "python", ".java": "java",
+            ".yaml": "yaml", ".yml": "yaml", ".properties": "properties"}
 
 
 def _cases() -> list[tuple[str, str, str, Path]]:

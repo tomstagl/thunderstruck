@@ -330,6 +330,12 @@ def detect_language(path: str | Path, langmap: dict[str, str]) -> str | None:
     return langmap.get(Path(path).suffix.lower())
 
 
+def rank_only_with_leads(catalog: dict[str, Any], lang: str | None) -> bool:
+    """Languages (config) whose files rank only when a detector hit them."""
+    spec = (catalog.get("languages") or {}).get(lang or "") or {}
+    return bool(spec.get("rank_only_with_leads"))
+
+
 def detector_language(catalog: dict[str, Any], lang: str) -> str:
     """Resolve a language to the one its detectors are written under."""
     return (catalog.get("aliases") or {}).get(lang, lang)
@@ -684,7 +690,39 @@ def strip_comments(text: str, lang: str) -> str:
     """
     if lang == "python":
         return _strip_python(text)
+    if lang == "yaml":
+        return "\n".join(_strip_yaml_line(line) for line in text.split("\n"))
+    if lang == "properties":
+        return "\n".join(_blank(line) if line.lstrip()[:1] in ("#", "!") else line
+                         for line in text.split("\n"))
     return _strip_cstyle(text)
+
+
+def _strip_yaml_line(line: str) -> str:
+    """A YAML `#` starts a comment at the line start or after whitespace, and
+    only outside a quoted scalar; `c#d` is part of the value."""
+    quote = None
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if quote == "'":
+            if ch == "'":
+                if line[i + 1:i + 2] == "'":  # '' is an escaped quote
+                    i += 2
+                    continue
+                quote = None
+        elif quote == '"':
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == '"':
+                quote = None
+        elif ch in "'\"" and (i == 0 or line[i - 1] in " \t:-[{,"):
+            quote = ch
+        elif ch == "#" and (i == 0 or line[i - 1] in " \t"):
+            return line[:i] + _blank(line[i:])
+        i += 1
+    return line
 
 
 def _blank(segment: str) -> str:

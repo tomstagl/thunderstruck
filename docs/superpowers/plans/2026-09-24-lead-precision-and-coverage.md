@@ -830,7 +830,7 @@ Satisfies: AC-14.
 `yaml`/`properties`), `scripts/signals.py` (rank gate),
 `tests/detectors/test_detectors.py` (`EXT_LANG`), `tests/test_config_langs.py`.
 
-- [ ] **Failing tests:**
+- [x] **Failing tests:**
   - `detect_language("k8s/deploy.yaml") == "yaml"` and
     `detect_language("src/main/resources/application.properties") == "properties"`;
   - YAML: `a: "x # y"  # comment` → `# comment` is blanked, the quoted `#` is
@@ -840,12 +840,12 @@ Satisfies: AC-14.
   - in a temp repo, a `values.yaml` changed 10 times with no detector hit is
     **not** in `hotspots`, while a churned `.py` file is;
   - a YAML file lizard cannot parse produces no warning.
-- [ ] **Implement.** Add `_strip_hash(text, lang)`. Apply the rank gate in
+- [x] **Implement.** Add `_strip_hash(text, lang)`. Apply the rank gate in
   `build()` before sorting: drop rows whose language has
   `rank_only_with_leads` and `detector_hits == []`. Set
   `EXT_LANG[".yaml"] = EXT_LANG[".yml"] = "yaml"` and
   `EXT_LANG[".properties"] = "properties"`.
-- [ ] **Commit** `catalog: yaml and properties as scanned languages, ranked only with leads (AC-14)`
+- [x] **Commit** `catalog: yaml and properties as scanned languages, ranked only with leads (AC-14)`
 
 ---
 
