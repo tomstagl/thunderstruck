@@ -21,6 +21,12 @@ Scanned 2025-07-29 (dates fixed for this sample) · window `2020-01-01` (since 2
 - only 18 commits since 2020-01-01 — churn ranking is weak on this little history. Widen the window with a longer --since than '2020-01-01', if the repository has one.
 - attribute value rejected (not a short label): component:default/mobile-bff tier
 
+## Not scanned
+
+Of 11 tracked files, 9 changed in the window in a supported language and were considered for ranking.
+
+- no detectors for their language or format: 1 `.json`, 1 `.md`
+
 ## Service context
 
 `component:default/fixture-app` · 4 edge(s), 1 hop · fetched 2025-07-29 (0 days ago) · context `sha256:d6d341f7aa4f`
@@ -36,33 +42,35 @@ Component-level context from the service catalog: it describes the whole compone
 
 ## Pattern coverage
 
-Leads are detector hits — mechanical, noisy, and never a finding on their own. Findings are what survived an investigator reading the code.
+Leads are detector hits — mechanical, noisy, and never a finding on their own. Findings are what survived an investigator reading the code. *Leads read* counts the hits inside investigated hotspots; *Leads confirmed* counts those a validated finding cites.
 
-| ID | Pattern | Tier | Files with a lead | Findings |
-|---|---|---|---|---|
-| `S01` | Timeouts on every external call | A | 1 | 0 |
-| `S02` | Capped exponential backoff with full jitter | A | 2 | 1 |
-| `S03` | Honor server pushback (Retry-After, 429/503) | A | 1 | 1 |
-| `S04` | Retry only transient errors | A | 1 | 0 |
-| `S05` | Client-side rate limiting / budget gating | A | 1 | 0 |
-| `S06` | Request prioritization (interactive over background) | A | 2 | 1 |
-| `S07` | Idempotent, resumable jobs | A | 1 | 1 |
-| `S08` | Bounded result sets and pagination | A | 1 | 0 |
-| `S09` | Single-flight / request coalescing plus caching | A | 0 | 0 |
-| `S10` | Retry at one layer plus a retry budget | A | 1 | 1 |
-| `S11` | Deadline propagation across hops | B | 1 | 0 |
-| `S12` | Circuit breaker or retry token bucket | B | 1 | 0 |
-| `S13` | Bulkheads (separate pools, queues, workers) | B | 0 | 0 |
-| `S14` | Bounded queues with backpressure or load shedding | B | 0 | 0 |
-| `S15` | Graceful degradation and fallbacks | B | 3 | 0 |
-| `S16` | Jitter on periodic work | B | 0 | 0 |
-| `S17` | Steady state (TTLs, cleanup, growth bounds) | B | 0 | 0 |
-| `S18` | Fail fast (validate before expensive work) | B | 0 | 0 |
-| `S19` | No error swallowing; failures stay observable | B | 1 | 0 |
-| `S27` | No blocking calls on non-blocking/event-loop threads | A | 0 | 0 |
-| `S28` | Bounded, timed lock/wait acquisition | A | 0 | 0 |
-| `S29` | Bounded query fan-out (no N+1 lazy-loading amplification) | A | 0 | 0 |
-| `OTHER` | Not in the catalog | — | — | 1 |
+| ID | Pattern | Tier | Files with an unconfirmed lead | Leads read | Leads confirmed | Findings |
+|---|---|---|---|---|---|---|
+| `S01` | Timeouts on every external call | A | 1 | 1 | 0 | 0 |
+| `S02` | Capped exponential backoff with full jitter | A | 1 | 2 | 1 | 1 |
+| `S03` | Honor server pushback (Retry-After, 429/503) | A | 0 | 1 | 1 | 1 |
+| `S04` | Retry only transient errors | A | 1 | 1 | 0 | 0 |
+| `S05` | Client-side rate limiting / budget gating | A | 1 | 1 | 0 | 0 |
+| `S06` | Request prioritization (interactive over background) | A | 1 | 2 | 1 | 1 |
+| `S07` | Idempotent, resumable jobs | A | 0 | 2 | 1 | 1 |
+| `S08` | Bounded result sets and pagination | A | 1 | 1 | 0 | 0 |
+| `S09` | Single-flight / request coalescing plus caching | A | 0 | 0 | 0 | 0 |
+| `S10` | Retry at one layer plus a retry budget | A | 1 | 1 | 0 | 1 |
+| `S11` | Deadline propagation across hops | B | 1 | 1 | 0 | 0 |
+| `S12` | Circuit breaker or retry token bucket | B | 1 | 1 | 0 | 0 |
+| `S13` | Bulkheads (separate pools, queues, workers) | B | 0 | 0 | 0 | 0 |
+| `S14` | Bounded queues with backpressure or load shedding | B | 0 | 0 | 0 | 0 |
+| `S15` | Graceful degradation and fallbacks | B | 3 | 3 | 0 | 0 |
+| `S16` | Jitter on periodic work | B | 0 | 0 | 0 | 0 |
+| `S17` | Steady state (TTLs, cleanup, growth bounds) | B | 0 | 0 | 0 | 0 |
+| `S18` | Fail fast (validate before expensive work) | B | 0 | 0 | 0 | 0 |
+| `S19` | No error swallowing; failures stay observable | B | 1 | 1 | 0 | 0 |
+| `S27` | No blocking calls on non-blocking/event-loop threads | A | 0 | 0 | 0 | 0 |
+| `S28` | Bounded, timed lock/wait acquisition | A | 0 | 0 | 0 | 0 |
+| `S29` | Bounded query fan-out (no N+1 lazy-loading amplification) | A | 0 | 0 | 0 | 0 |
+| `OTHER` | Not in the catalog | — | — | — | — | 1 |
+
+<sub>“0” leads means no file matched the detector's anchor. It does not mean the pattern is present.</sub>
 
 ## Findings
 

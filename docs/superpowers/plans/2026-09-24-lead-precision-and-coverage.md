@@ -764,7 +764,7 @@ Satisfies: AC-1, AC-2.
 **Files:** `scripts/signals.py` (`coverage_gaps`), `scripts/report.py`,
 `tests/test_pipeline.py`.
 
-- [ ] **Failing tests** (fixture plus two planted files: `mobile/App.kt` and
+- [x] **Failing tests** (fixture plus two planted files: `mobile/App.kt` and
   `db/migrations/001.py`):
   - `hotspots.json.coverage_gaps` has `unsupported[".kt"] == 1`,
     `excluded["migration"] == 1`, and
@@ -777,12 +777,12 @@ Satisfies: AC-1, AC-2.
     `| ID | Pattern | Tier | Files with an unconfirmed lead | Leads read | Leads confirmed | Findings |`,
     followed by the footnote;
   - `report.json.lead_precision["S02"] == {"read": n, "confirmed": 1}`.
-- [ ] **Implement** per spec §2.1–2.2. `coverage_gaps` is computed from the
+- [x] **Implement** per spec §2.1–2.2. `coverage_gaps` is computed from the
   `c.tracked_index(repo)` that `build()` already loads (#36), with the same
   `is_utf8`/`path_problem`/`tracked_file_problem` test for `not_citable`.
   Render through `md.text`/`md.code`, as with every value in the report. Keep `unsupported` to 8 keys plus
   `other`. Sort all keys for determinism.
-- [ ] **Commit** `report: Not scanned section and per-pattern lead precision (AC-1, AC-2)`
+- [x] **Commit** `report: Not scanned section and per-pattern lead precision (AC-1, AC-2)`
 
 ---
 

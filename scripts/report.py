@@ -333,6 +333,55 @@ def render_service_context(ctx: dict | None, now: datetime) -> list[str]:
     return L
 
 
+def lead_precision(data: dict) -> dict[str, dict[str, int]]:
+    """Per pattern: detector hits inside investigated hotspots (read), and the
+    distinct ones a validated finding cites (confirmed). Over many runs this is
+    the detector's precision on code we never see (#19 AC-2)."""
+    out: dict[str, dict[str, int]] = {}
+    for h in data["hotspots"]["hotspots"]:
+        for hit in h.get("detector_hits") or []:
+            out.setdefault(hit["pattern_id"], {"read": 0, "confirmed": 0})["read"] += 1
+    confirmed: set[str] = set()
+    for f in data["findings"]:
+        for ev in _evidence(f):
+            if ev.get("type") == "detector" and (m := DETECTOR_REF.match(str(ev.get("ref") or ""))):
+                confirmed.add(m.group(0))
+    for ref in confirmed:
+        pid = DETECTOR_REF.match(ref)["pid"]
+        out.setdefault(pid, {"read": 0, "confirmed": 0})["confirmed"] += 1
+    return dict(sorted(out.items()))
+
+
+GAP_LABELS = {"test": "test code", "generated": "generated code", "vendored": "vendored code",
+              "build": "build output", "migration": "database migrations",
+              "asset": "lock files and assets", "tooling": "CI and tooling configuration",
+              "profile": "excluded by the repo profile", "path": "outside --path"}
+
+
+def render_not_scanned(gaps: dict | None) -> list[str]:
+    """What the scan did not look at, and why. Degradation is visible (#19 AC-1)."""
+    if not isinstance(gaps, dict):
+        return []
+    L = ["## Not scanned", "",
+         f"Of {gaps.get('tracked', 0)} tracked files, {gaps.get('considered', 0)} changed in "
+         f"the window in a supported language and were considered for ranking.", ""]
+    if gaps.get("unchanged"):
+        L.append(f"- {gaps['unchanged']} in a supported language had no commit in the "
+                 f"window, so they could not rank on churn")
+    if gaps.get("not_citable"):
+        L.append(f"- {gaps['not_citable']} are not citable (symbolic links, submodules, "
+                 f"or names that are not UTF-8)")
+    for reason, n in (gaps.get("excluded") or {}).items():
+        L.append(f"- {n} excluded: {md.text(GAP_LABELS.get(reason, reason))}")
+    unsupported = gaps.get("unsupported") or {}
+    if unsupported:
+        kinds = ", ".join(f"{n} {md.code(ext) if ext != 'other' else 'other'}"
+                          for ext, n in sorted(unsupported.items(), key=lambda kv: (-kv[1], kv[0])))
+        L.append(f"- no detectors for their language or format: {kinds}")
+    L.append("")
+    return L
+
+
 def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
     hs, findings = data["hotspots"], data["findings"]
     repo_name = Path(hs["repo"]["root"]).name
@@ -373,6 +422,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
             L += [f"  - {md.code(r['detector'])} on {md.code(r['path'])}: "
                   f"{r['hits']} hit(s) — {md.text(r['reason'])}" for r in suppressed]
         L.append("")
+    L += render_not_scanned(hs.get("coverage_gaps"))
     L += render_service_context(data.get("context"), now or datetime.now(timezone.utc))
 
     # ---- coverage table
@@ -381,21 +431,34 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
     for f in findings:
         for pid in f.get("missing_patterns") or []:
             per_pattern[pid] = per_pattern.get(pid, 0) + 1
+    precision = lead_precision(data)
+    confirmed_files: dict[str, set[str]] = {}
+    for f in findings:
+        for ev in _evidence(f):
+            if ev.get("type") == "detector" and (m := DETECTOR_REF.match(str(ev.get("ref") or ""))):
+                confirmed_files.setdefault(m["pid"], set()).add(m["path"])
     L += ["## Pattern coverage", "",
           "Leads are detector hits — mechanical, noisy, and never a finding on "
-          "their own. Findings are what survived an investigator reading the code.",
+          "their own. Findings are what survived an investigator reading the code. "
+          "*Leads read* counts the hits inside investigated hotspots; *Leads "
+          "confirmed* counts those a validated finding cites.",
           "",
-          "| ID | Pattern | Tier | Files with a lead | Findings |",
-          "|---|---|---|---|---|"]
+          "| ID | Pattern | Tier | Files with an unconfirmed lead | Leads read "
+          "| Leads confirmed | Findings |",
+          "|---|---|---|---|---|---|---|"]
     for pid, cov in sorted(hs["pattern_coverage"].items()):
         if not cov.get("scanned"):
             continue
+        p = precision.get(pid, {"read": 0, "confirmed": 0})
         L.append(f"| {md.code(pid, cell=True)} | {md.text(cov['name'], cell=True)} | {md.text(cov['tier'], cell=True)} | "
-                 f"{lead_files.get(pid, 0)} | {per_pattern.get(pid, 0)} |")
+                 f"{max(0, lead_files.get(pid, 0) - len(confirmed_files.get(pid, ())))} | "
+                 f"{p['read']} | {p['confirmed']} | "
+                 f"{per_pattern.get(pid, 0)} |")
     other = per_pattern.get("OTHER", 0)
     if other:
-        L.append(f"| `OTHER` | Not in the catalog | — | — | {other} |")
-    L.append("")
+        L.append(f"| `OTHER` | Not in the catalog | — | — | — | — | {other} |")
+    L += ["", "<sub>“0” leads means no file matched the detector's anchor. It "
+          "does not mean the pattern is present.</sub>", ""]
 
     # ---- findings
     if findings:
@@ -513,6 +576,8 @@ def render_json(data: dict) -> dict:
                               "edges", "truncated")}
                             if data.get("context") else None),
         "pattern_coverage": hs["pattern_coverage"],
+        "coverage_gaps": hs.get("coverage_gaps"),
+        "lead_precision": lead_precision(data),
         "findings": data["findings"],
         "clean": data["clean"],
         "incomplete": data["failed"],

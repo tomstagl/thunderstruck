@@ -142,6 +142,56 @@ def collect_history(repo: Path, since: str, filters: c.Filters,
             "total_commits": total_commits, "skipped_bot_commits": skipped_bot}
 
 
+# Extensions of programming languages with no detectors, so a run can say by
+# name what it could not read (#19 AC-1). Data formats are not listed.
+UNSUPPORTED_LANGUAGES = {
+    ".kt": "Kotlin", ".kts": "Kotlin", ".scala": "Scala", ".go": "Go", ".rb": "Ruby",
+    ".cs": "C#", ".rs": "Rust", ".php": "PHP", ".swift": "Swift", ".groovy": "Groovy",
+}
+UNSUPPORTED_SHOWN = 8
+
+
+def compute_coverage_gaps(repo: Path, index: dict[str, str], filters: c.Filters,
+                          langmap: dict, considered: set[str]) -> dict[str, Any]:
+    """Every tracked file in exactly one bucket, first match wins: excluded
+    (by reason), unsupported (by extension), not citable, considered, or
+    unchanged in the window. Opens no file; the citability test is an lstat.
+
+    The result carries `_by_extension`, the unfolded unsupported counts, for
+    the caller to pop.
+    """
+    excluded: dict[str, int] = defaultdict(int)
+    unsupported: dict[str, int] = defaultdict(int)
+    not_citable = unchanged = n_considered = 0
+    for rel, mode in index.items():
+        reason = filters.exclusion_reason(rel)
+        if reason is not None:
+            excluded[reason] += 1
+        elif c.detect_language(rel, langmap) is None:
+            unsupported[Path(rel).suffix.lower() or "(no extension)"] += 1
+        elif (not c.is_utf8(rel) or c.path_problem(rel)
+              or c.tracked_file_problem(repo, rel, mode)):
+            not_citable += 1
+        elif rel in considered:
+            n_considered += 1
+        else:
+            unchanged += 1
+    ranked = sorted(unsupported.items(), key=lambda kv: (-kv[1], kv[0]))
+    shown = dict(sorted(ranked[:UNSUPPORTED_SHOWN]))
+    rest = sum(n for _, n in ranked[UNSUPPORTED_SHOWN:])
+    if rest:
+        shown["other"] = rest
+    return {"tracked": len(index), "considered": n_considered, "unchanged": unchanged,
+            "not_citable": not_citable, "excluded": dict(sorted(excluded.items())),
+            "unsupported": shown, "_by_extension": dict(unsupported)}
+
+
+def unsupported_language_warnings(by_extension: dict[str, int]) -> list[str]:
+    return [f"{n} {UNSUPPORTED_LANGUAGES[ext]} files ({ext}) were not scanned — no "
+            f"detectors exist for this language."
+            for ext, n in sorted(by_extension.items()) if ext in UNSUPPORTED_LANGUAGES]
+
+
 def apply_suppressions(hits: list, rules: list[c.Suppression],
                        counts: list[int]) -> list:
     """Drop hits a profile rule suppresses, counting each rule's matches."""
@@ -308,6 +358,9 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
             "no files in a supported language changed in this window. "
             f"Supported: {', '.join(sorted(catalog['languages']))}.")
 
+    coverage_gaps = compute_coverage_gaps(repo, index, filters, langmap, set(candidates))
+    warnings.extend(unsupported_language_warnings(coverage_gaps.pop("_by_extension")))
+
     complexity, complexity_warning = analyse_complexity(repo, candidates)
     degraded = {"complexity": complexity_warning is not None}
     if complexity_warning:
@@ -407,6 +460,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
                    "hotspots": len(top),
                    "detector_hits": sum(len(h) for h in hits_by_file.values())},
         "pattern_coverage": coverage,
+        "coverage_gaps": coverage_gaps,
         "suppressed": [{"detector": r.detector, "path": r.path, "reason": r.reason,
                         "hits": n} for r, n in zip(suppressions, suppressed_hits)],
         "coupling": coupling[:50],
