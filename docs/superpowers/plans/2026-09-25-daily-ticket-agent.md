@@ -1,6 +1,6 @@
 # Daily Ticket Agent Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** A scheduled agent picks the lowest-numbered ready ticket, builds its plan test-first, verifies it, opens a ready PR, and notifies the maintainer, or stops and says exactly why.
 
@@ -20,7 +20,7 @@ Nothing under the plugin changes (`skills/`, `agents/`, `hooks/`, `scripts/`, `c
 
 **Files:** new `.claude/skills/implement-ticket/pick_ticket.py`; new `tests/test_pick_ticket.py`.
 
-- [ ] Write `tests/test_pick_ticket.py`. A `repo` fixture runs `git init` in `tmp_path`, commits a spec and a plan that reference `#39`, and a spec for `#390`. A helper writes `candidates.json` and runs the script with `subprocess` (bare `python3`, `--ref HEAD`, fixed `--now`), returning the parsed stdout and exit code. Tests, all failing at first because the script does not exist:
+- [x] Write `tests/test_pick_ticket.py`. A `repo` fixture runs `git init` in `tmp_path`, commits a spec and a plan that reference `#39`, and a spec for `#390`. A helper writes `candidates.json` and runs the script with `subprocess` (bare `python3`, `--ref HEAD`, fixed `--now`), returning the parsed stdout and exit code. Tests, all failing at first because the script does not exist:
   - one test per rule row in spec §2 (rules 2 to 12), each asserting the exact reason string;
   - `DRAFT:`, `Draft:`, `DRAFT -` and `Fix x (draft)` all land in `ignored_drafts` and nowhere else;
   - two ready tickets → the lower number is `picked`, and the other is not in `skipped` (it was not skipped, just not first);
@@ -30,9 +30,9 @@ Nothing under the plugin changes (`skills/`, `agents/`, `hooks/`, `scripts/`, `c
   - an open PR whose body says `Closes #39` → `open PR #<m> references it`; `#390` does not match;
   - malformed JSON, or a missing `issues` key → exit 2; nothing ready → exit 0 with `"picked": null`;
   - the script imports stdlib only (AST check, as CI does for `guardrail.py`).
-- [ ] Run the new tests and see them fail.
-- [ ] Implement `pick_ticket.py` to spec §2: `argparse` (`candidates`, `--ref`, `--now`), the rules in order, first failure wins, `git cat-file -e <ref>:<path>` and `git show <ref>:<path>` via `subprocess` (object names, not pathspecs, so glob characters in a path are literal), whole-token matching via `(?<![\w#])#39(?!\d)`, and output sorted by issue number so it is byte-stable.
-- [ ] Run the full suite, then commit: `Decide ticket readiness with a deterministic check`.
+- [x] Run the new tests and see them fail.
+- [x] Implement `pick_ticket.py` to spec §2: `argparse` (`candidates`, `--ref`, `--now`), the rules in order, first failure wins, `git cat-file -e <ref>:<path>` and `git show <ref>:<path>` via `subprocess` (object names, not pathspecs, so glob characters in a path are literal), whole-token matching via `(?<![\w#])#39(?!\d)`, and output sorted by issue number so it is byte-stable.
+- [x] Run the full suite, then commit: `Decide ticket readiness with a deterministic check`.
 
 ### Task 2: The skill (AC-5 … AC-12)
 
