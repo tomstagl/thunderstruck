@@ -1020,7 +1020,7 @@ Satisfies: AC-19.
   config ranks only with leads; `score: false` detectors).
 - [x] Bump the version in `plugin.json`, `marketplace.json`,
   `pyproject.toml` and `CHANGELOG.md`.
-- [ ] Final checks:
+- [x] Final checks:
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with markdown-it-py==4.2.0 \
@@ -1030,7 +1030,7 @@ uv run scripts/gen_sample_report.py --check
 claude plugin validate . --strict
 claude plugin marketplace add "$PWD" && claude plugin install thunderstruck@thunderstruck && claude plugin list
 ```
-- [ ] **Commit** `release: lead precision and visible coverage (AC-19)`
+- [x] **Commit** `release: lead precision and visible coverage (AC-19)`
 
 ---
 
