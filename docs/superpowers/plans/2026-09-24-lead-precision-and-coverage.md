@@ -53,18 +53,35 @@ uv run scripts/gen_sample_report.py --check   # once a task changes the sample
 
 ## Verification already done
 
-A scratch copy of the repository at the plan's base commit had the Task 1
-engine change and the Task 3, 4 and 5 catalog edits applied, exactly as
-written below. Results:
+Twice, on a scratch copy with the Task 1 engine change and the Task 3, 4 and
+5 catalog edits applied as written below. The second run was on `67736da`
+(after #36):
 
-- all 436 existing tests pass;
-- every "negative" sample in Tasks 3–5 is silent;
-- every added "positive" fires, except the Django case in Task 3.
-  `from myapp.models import Order` has no DB import, so the `require` below
-  adds `\.objects\b`. Re-verify that one.
+- the baseline is `803 passed, 222 skipped`. After the edits it is
+  `830 passed, 222 skipped` (4 engine tests and 23 sample cases added, 0
+  failures). `tests/detectors` goes from 237 to 260 passed.
+  `gen_catalog_docs.py --check` passes once `patterns.md` is regenerated;
+- all 18 new negative samples fired before the edits and are silent after;
+- all 5 added positives fire, including `positive_django_all.py` (the
+  `\.objects\b` in S08's `require`) and `positive_while_attempts.py`, which
+  didn't fire before;
+- S27 `negative_long_chain_offload.java` fires at `window: 12` and is silent
+  at 20;
+- `gen_sample_report.py` still validates, but the sample changes (Task 4,
+  Step 4).
 
-Treat these as starting points that are known to work, not as untested
-suggestions. Rerun them anyway: the base may have moved.
+The second run found three things the first missed. Each is now part of the
+task it belongs to:
+
+1. `tests/detectors/test_detectors.py` reads polarity from the file stem and
+   compares it with `== "positive"`, so `positive_<shape>.py` ran as a
+   negative. That is fixed in Task 3.
+2. The first docstring rule missed multi-line signatures and attribute
+   docstrings. Spec §6.1 changed, and so did Task 1.
+3. The Task 4 S06 anchor changes the sample report. Task 4 regenerates it.
+
+Treat the snippets as known to work, not as untested suggestions. Rerun them
+anyway if the base moves again.
 
 ---
 
@@ -111,6 +128,22 @@ def test_function_and_module_docstrings_are_still_blanked():
     assert "Retry-After" not in out and "return 1" in out
 
 
+def test_docstring_after_multiline_signature_is_blanked():
+    src = 'def f(\n    a,\n) -> int:\n    """Honours Retry-After."""\n    return a\n'
+    out = _common.strip_comments(src, "python")
+    assert "Retry-After" not in out and "return a" in out
+
+
+def test_attribute_docstring_is_blanked():
+    src = 'TIMEOUT = 5\n"""Retry-After is read elsewhere."""\n'
+    assert "Retry-After" not in _common.strip_comments(src, "python")
+
+
+def test_string_after_assignment_operator_is_kept():
+    src = 'Q = \\\n    """\nSELECT id FROM t\n"""\n'
+    assert "SELECT id FROM t" in _common.strip_comments(src, "python")
+
+
 def test_hash_inside_multiline_string_is_kept():
     src = 'Q = """\nSELECT 1 # not a comment\n"""\n'
     assert "# not a comment" in _common.strip_comments(src, "python")
@@ -131,18 +164,21 @@ uv run --with pytest --with pyyaml --with lizard pytest tests/test_engine_v2.py 
         return []  # the file never does the thing the pattern guards
 ```
 
-- [ ] **Step 4: Docstring rule in `_strip_python`.** Track `prev_code` (the
-  last non-blank line after stripping) and `seen_statement`. At a line
-  matching `_PY_DOCSTRING_START`:
-  - if `not seen_statement`, or `prev_code` matches
-    `^\s*(async\s+def|def|class)\b.*:\s*$`: treat it as a docstring (current
-    behaviour);
-  - otherwise: copy lines verbatim until the closing quote, set
-    `in_string = quote` and skip `#` stripping while inside.
+- [ ] **Step 4: Docstring rule in `_strip_python`** (spec §6.1). Track
+  `depth` (open brackets outside strings and comments), `prev_code` (the
+  last non-blank line after stripping) and `in_string`. At a line matching
+  `_PY_DOCSTRING_START`:
+  - if `depth > 0`, or `prev_code` ends (after trailing whitespace) with
+    `=`, `,`, `\` or a binary operator (`+ - * / % | & ^ < >`, including
+    `and`/`or`): it is a string. Copy lines verbatim until the closing quote,
+    set `in_string = quote`, and skip `#` stripping while inside;
+  - otherwise: it is a docstring (current behaviour). This covers the first
+    statement, `) -> int:` and `x = 1`.
 
-  Also handle a triple quote opening mid-line (`Q = """`): after the per-line
-  quote scan, if a triple quote is left open, set `in_string`, and copy the
-  following lines verbatim until it closes.
+  A helper `_py_scan_line(line, in_string) -> (depth_delta, open_quote)`
+  scans one line for brackets and triple quotes. It also handles a triple
+  quote opening mid-line (`Q = """`), which then copies the following lines
+  verbatim until it closes.
 
 - [ ] **Step 5:** Tests green, then the full suite. S08-py samples must not
   change.
@@ -215,6 +251,10 @@ Satisfies: AC-9.
 
 **Files:**
 - Modify: `catalog/stability.yaml`
+- Modify: `tests/detectors/test_detectors.py`: polarity is
+  `"positive" if stem.startswith("positive") else "negative"`, so
+  `positive_<shape>` files run as positives. The Tier A pair check still
+  needs the plain `positive`/`negative` files.
 - Create: samples below under `tests/detectors/samples/<ID>/python/`
 
 - [ ] **Step 1: Negative samples (the reproduced false positives).**
@@ -510,8 +550,14 @@ anchor: '(?i)^(?:export\s+)?(?:const|let|var)\s+\w*(?:queue|limiter|throttle|wor
 Plus the S08-ts-select `absent_within` from Task 3.
 
 - [ ] **Step 4:** The fixture still produces FR-004's `S06@src/sync/scheduler.ts:1`
-  (`const queue:` at column 0). Check that with
-  `uv run scripts/gen_sample_report.py`, then the full suite.
+  (`const queue:` at column 0). The sample report changes, as intended:
+  S06 leads go from 4 files to 2. `collection.ts` loses S06, because its
+  only anchor was an `import { enqueue }`, and `artists.ts` loses it too,
+  because its only anchor was a `limiter.acquire()` call. H02's score goes
+  from 0.7111 to 0.615, and H04's from 0.0663 to 0.0537. Run
+  `uv run scripts/gen_sample_report.py`, check that the diff is only that,
+  commit the regenerated sample in this task (CI checks freshness), then
+  run the full suite.
 - [ ] **Step 5: Commit** `typescript detectors: silence reproduced false positives; S17 now sees generic Maps (AC-10)`
 
 ---

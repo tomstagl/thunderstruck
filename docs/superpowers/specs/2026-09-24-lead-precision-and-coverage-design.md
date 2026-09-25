@@ -261,12 +261,22 @@ still does not exhibit S05.
 - **Python docstrings.** `_PY_DOCSTRING_START` currently blanks *any*
   triple-quoted string that opens a line. So the SQL in
   `cur.execute(\n    """\n    SELECT …\n    """)` is invisible (verified:
-  S08-select stays silent on it). A triple quote is a docstring only when
-  the previous code line ends with `:` and opens `def`, `async def` or
-  `class`, or when it is the file's first statement. Any other
-  triple-quoted string is copied verbatim to its closing quote, including
-  any `#` inside it (today a `#` inside a multi-line string blanks the rest
-  of that line).
+  S08-select stays silent on it). The rule inverts: a triple quote that
+  opens a line is a **string** only when it continues an expression, and a
+  docstring otherwise. It continues an expression when, at that point,
+  - the bracket depth is above 0 (an open `(`, `[` or `{` outside strings
+    and comments), or
+  - the previous code line ends with `=`, `,`, `\`, or a binary operator.
+
+  Everything else stays a docstring: the first statement, a docstring after
+  `def f(\n    a,\n) -> int:`, and an attribute docstring after `x = 1`.
+  A first draft keyed on "the previous line is a `def`/`class` header"
+  failed on multi-line signatures. The re-verification on the current base
+  caught that, and it would have let prose satisfy absence detectors such
+  as S03. A string is copied verbatim to its closing quote, including any
+  `#` inside it (today a `#` inside a multi-line string blanks the rest of
+  that line). The same applies to a triple quote that opens mid-line
+  (`Q = """`).
 - **Config languages** (§7) strip `#` comments. For YAML, a `#` counts at
   line start or after whitespace, outside quotes. For `.properties`, a `#`
   or `!` counts as the first non-blank character.
