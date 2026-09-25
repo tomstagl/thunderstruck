@@ -1,0 +1,7 @@
+spec:
+  containers:
+    - name: app
+      livenessProbe:
+        httpGet:
+          path: /health/db
+          port: 8080

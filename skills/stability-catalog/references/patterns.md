@@ -31,6 +31,7 @@ Scanned and reasoned about by default, at full weight.
 - RestTemplate with no connect/read timeout — its default request factory waits forever
 - WebClient built with no responseTimeout(), configured connector or per-call timeout() anywhere in the file
 - JMS receive() with no timeout — blocks the thread until a message arrives, forever if none does
+- Istio VirtualService with HTTP routes and no route timeout — the mesh default is to wait indefinitely
 
 **References.** Nygard, Release It! (2nd ed.), ch. 5 — Timeouts; Amazon Builders' Library — Timeouts, retries and backoff with jitter
 
@@ -160,6 +161,9 @@ Scanned and reasoned about by default, at full weight.
 
 - more than one retry layer in the same call path, with no shared budget
 - more than one retry mechanism in the same call path, with no shared budget
+- mesh retry policy: a retry layer outside the code, which multiplies with any retry the application does
+- resilience4j retry configured in YAML: a retry layer that stacks with any other
+- resilience4j retry configured in properties: a retry layer that stacks with any other
 
 **References.** Google SRE Book, ch. 22 — Addressing Cascading Failures; Amazon Builders' Library — Timeouts, retries and backoff with jitter
 
@@ -200,6 +204,18 @@ Scanned and reasoned about by default, at full weight.
 - loop navigates an association per row with no eager fetch hint in the file
 
 **References.** Hibernate ORM user guide — Fetching; Nygard, Release It! (2nd ed.), ch. 4 — Unbounded Result Sets
+
+### S30 — Liveness checks only the process itself
+
+**Failure if absent.** A liveness probe that checks a dependency restarts healthy pods when the dependency slows. Restarts cut capacity, the survivors take more load and fail their probes too: the restart loop outlives the original blip.
+
+**Role in a metastable failure.** Usually the *sustaining*.
+
+**What the detectors look for.**
+
+- liveness probe on an aggregate or dependency health endpoint — a slow dependency restarts healthy pods
+
+**References.** Kubernetes docs — Configure Liveness, Readiness and Startup Probes; Nygard, Release It! (2nd ed.), ch. 4 — Chain Reactions
 
 ## Tier B
 

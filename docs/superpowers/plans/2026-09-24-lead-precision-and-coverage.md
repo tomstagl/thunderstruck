@@ -858,7 +858,7 @@ Satisfies: AC-15.
 `tests/detectors/test_detectors.py` if Tier A discovery needs the new
 languages.
 
-- [ ] **Samples** (the regexes were checked by hand against these):
+- [x] **Samples** (the regexes were checked by hand against these):
 
 `S01/yaml/positive.yaml`
 ```yaml
@@ -896,16 +896,16 @@ spec:
 `S10/properties/positive.properties`: `resilience4j.retry.instances.payments.maxAttempts=3`.
 `S10/properties/negative.properties`: `resilience4j.retry.instances.payments.maxAttempts=1`.
 
-- [ ] **Catalog:** add the detectors from spec §7.2 and pattern S30 from spec
+- [x] **Catalog:** add the detectors from spec §7.2 and pattern S30 from spec
   §7.3, placed after S29. Mark the S10 config detectors `inventory:
   retry_layer`.
-- [ ] **Calibrate** (a new log `docs/calibration/config.md`) against 3 public
+- [x] **Calibrate** (a new log `docs/calibration/config.md`) against 3 public
   repositories with Kubernetes, Istio or Spring config, for example
   `GoogleCloudPlatform/microservices-demo`, `istio/istio` samples, and
   `spring-petclinic/spring-petclinic-microservices`. Pin SHAs and judge every
   hit.
-- [ ] `gen_catalog_docs.py` → `patterns.md` gains S30.
-- [ ] **Commit** `catalog: S30 liveness probes; mesh and resilience4j retry layers; VirtualService timeouts (AC-15)`
+- [x] `gen_catalog_docs.py` → `patterns.md` gains S30.
+- [x] **Commit** `catalog: S30 liveness probes; mesh and resilience4j retry layers; VirtualService timeouts (AC-15)`
 
 ---
 

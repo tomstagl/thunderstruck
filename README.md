@@ -152,7 +152,7 @@ incomplete. A partial report that says so beats a retry loop.
 
 ## The catalog
 
-22 stability patterns drawn from Nygard's *Release It!*, the Amazon Builders'
+23 stability patterns drawn from Nygard's *Release It!*, the Amazon Builders'
 Library, the Google SRE book, and the metastable-failure literature.
 [Full list](skills/stability-catalog/references/patterns.md).
 
@@ -167,6 +167,8 @@ no error swallowing.
 
 Tier A, JVM-specific: no blocking calls on event-loop threads · locks and
 waits with a bound · bounded query fan-out (no N+1 lazy loading).
+
+Tier A, configuration: liveness probes that check only the process itself.
 
 ### The metastability lens
 

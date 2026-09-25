@@ -189,6 +189,14 @@ patterns:
           confidence: low
           note: "JMS receive() with no timeout — blocks the thread until a message arrives, forever if none does"
 
+      yaml:
+        - id: S01-yaml-virtualservice-no-timeout
+          kind: file_absent
+          anchor: '^kind:\s*VirtualService\b'
+          require: '^\s*http:\s*$'
+          absent: '^\s*timeout:\s*\S'
+          confidence: low
+          note: "Istio VirtualService with HTTP routes and no route timeout — the mesh default is to wait indefinitely"
   - id: S02
     name: Capped exponential backoff with full jitter
     tier: A
@@ -673,6 +681,29 @@ patterns:
           note: "more than one retry mechanism in the same call path, with no shared budget"
 
   # ---------------------------------------------------------------- Tier B --
+      yaml:
+        - id: S10-yaml-mesh-retry
+          kind: regex
+          pattern: '^\s*retries:\s*$'
+          present_within: '^\s*attempts:\s*[1-9]'
+          window: 4
+          inventory: retry_layer
+          confidence: low
+          note: "mesh retry policy: a retry layer outside the code, which multiplies with any retry the application does"
+        - id: S10-yaml-resilience4j-retry
+          kind: regex
+          pattern: '^\s*max-?[Aa]ttempts:\s*[2-9]'
+          require: '^\s*resilience4j(?:\.retry)?:\s*$'
+          inventory: retry_layer
+          confidence: low
+          note: "resilience4j retry configured in YAML: a retry layer that stacks with any other"
+      properties:
+        - id: S10-properties-resilience4j-retry
+          kind: regex
+          pattern: '^\s*resilience4j\.retry\.[\w.-]+\.max-?[Aa]ttempts\s*[=:]\s*[2-9]'
+          inventory: retry_layer
+          confidence: low
+          note: "resilience4j retry configured in properties: a retry layer that stacks with any other"
   - id: S11
     name: Deadline propagation across hops
     tier: B
@@ -1133,6 +1164,30 @@ patterns:
           handler: s29_n_plus_one
           confidence: low
           note: "loop navigates an association per row with no eager fetch hint in the file"
+
+
+  - id: S30
+    name: Liveness checks only the process itself
+    tier: A
+    dormant: true
+    weight: 1.0
+    metastable_role: sustaining
+    failure_if_absent: >-
+      A liveness probe that checks a dependency restarts healthy pods when the
+      dependency slows. Restarts cut capacity, the survivors take more load and
+      fail their probes too: the restart loop outlives the original blip.
+    references:
+      - "Kubernetes docs — Configure Liveness, Readiness and Startup Probes"
+      - "Nygard, Release It! (2nd ed.), ch. 4 — Chain Reactions"
+    detectors:
+      yaml:
+        - id: S30-yaml-liveness-checks-dependencies
+          kind: regex
+          pattern: '^\s*livenessProbe:\s*$'
+          present_within: '^\s*path:\s*["'']?(?:/actuator/health/?|/[\w./-]*health/(?:db|deep|full|all|deps|dependencies|downstream|readiness)/?|/ready|/readyz)["'']?\s*$'
+          window: 6
+          confidence: low
+          note: "liveness probe on an aggregate or dependency health endpoint — a slow dependency restarts healthy pods"
 
 # ---------------------------------------------------------------- Tier C ----
 # Catalogued for the investigator's vocabulary; not scanned in v1.

@@ -68,6 +68,7 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 | `S27` | No blocking calls on non-blocking/event-loop threads | A | 0 | 0 | 0 | 0 |
 | `S28` | Bounded, timed lock/wait acquisition | A | 0 | 0 | 0 | 0 |
 | `S29` | Bounded query fan-out (no N+1 lazy-loading amplification) | A | 0 | 0 | 0 | 0 |
+| `S30` | Liveness checks only the process itself | A | 0 | 0 | 0 | 0 |
 | `OTHER` | Not in the catalog | — | — | — | — | 1 |
 
 <sub>“0” leads means no file matched the detector's anchor. It does not mean the pattern is present.</sub>

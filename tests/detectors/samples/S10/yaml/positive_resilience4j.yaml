@@ -1,0 +1,6 @@
+resilience4j:
+  retry:
+    instances:
+      payments:
+        maxAttempts: 3
+        waitDuration: 500ms
