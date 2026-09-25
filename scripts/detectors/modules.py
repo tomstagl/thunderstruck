@@ -41,6 +41,11 @@ CAP = re.compile(
     r"(Math\s*\.\s*min|\bmin\s*\(|\bcap(ped)?\b|MAX_[A-Z_]*|[A-Z_]*_MAX\b"
     r"|max_?(delay|backoff|wait|interval)|ceiling)", re.I)
 JITTER = re.compile(r"(?i)(jitter|random|rand\s*\(|uniform\s*\(|splay|stagger)")
+# Python: `**` grows a wait only after an operand (`2 ** attempt`). After `(`,
+# `,` or `{` it unpacks (`f(**kwargs)`, `{**d}`), and nearly every Python file
+# has one, which made every variable wait read as exponential.
+GROWTH_PY = re.compile(
+    r"([\w)\]]\s*\*\*|\bpow\s*\(|<<|\*\s*2\b|\bexponential\b)", re.I)
 
 _LITERAL_MS = re.compile(r"^\s*[\d_]+(\.\d+)?(\s*[*]\s*[\d_]+(\.\d+)?)*\s*$")
 # `const SLEEP_MS = 2000;` then `setTimeout(resolve, SLEEP_MS)` is how a fixed
@@ -64,8 +69,10 @@ SLEEP_RES: dict[str, list[re.Pattern]] = {
         re.compile(r"\b(?:sleep|delay|wait|pause)\s*\(\s*(?P<arg>[^),]*)"),
     ],
     "python": [
-        re.compile(r"\b(?:time|asyncio)\s*\.\s*sleep\s*\(\s*(?P<arg>[^),]*)"),
-        re.compile(r"\b(?:sleep|delay)\s*\(\s*(?P<arg>[^),]*)"),
+        re.compile(r"\b(?:time|asyncio|gevent|eventlet)\s*\.\s*sleep\s*\(\s*(?P<arg>[^),]*)"),
+        # A bare `sleep(…)`/`delay(…)` call. Not `task.delay(…)`, which is
+        # Celery sending a task, and not `def delay(…)`, which defines one.
+        re.compile(r"(?<![.\w])(?<!def )(?:sleep|delay)\s*\(\s*(?P<arg>[^),]*)"),
     ],
     "java": [
         # Any sleep-named call: Thread.sleep(ms), TimeUnit.SECONDS.sleep(n), a
@@ -138,7 +145,8 @@ def s02_backoff(ctx) -> Result:
     if not _has_retry_context(ctx):
         return []  # a sleep outside any retry construct is not a backoff
 
-    file_growth = bool(GROWTH.search(ctx.code_text))
+    growth_re = GROWTH_PY if _lang_key(ctx) == "python" else GROWTH
+    file_growth = bool(growth_re.search(ctx.code_text))
     file_cap = bool(CAP.search(ctx.code_text))
     file_jitter = bool(JITTER.search(ctx.code_text))
     constants = _numeric_constants(ctx.code_lines)
@@ -163,6 +171,9 @@ def s02_backoff(ctx) -> Result:
                 break  # not a wait between attempts
 
             literal = arg if _LITERAL_MS.match(arg) else constants.get(arg)
+            if (literal is not None and _lang_key(ctx) == "python"
+                    and not re.search(r"[1-9]", literal)):
+                break  # `sleep(0)` yields to other greenlets/tasks; it waits for nothing
             if literal is not None:
                 if not file_growth and "constant" not in reported:
                     reported.add("constant")
@@ -172,7 +183,7 @@ def s02_backoff(ctx) -> Result:
                         f"so every client retries on the same schedule")))
                 break
 
-            inline_growth = bool(GROWTH.search(arg))
+            inline_growth = bool(growth_re.search(arg))
             if not (inline_growth or file_growth):
                 break  # cannot tell what this wait is; say nothing
 
@@ -234,6 +245,21 @@ PAGE_ADVANCE_JAVA = re.compile(
 # setter that builds the next request (`request.setPageToken(t)`) does not.
 PERSIST_JAVA = re.compile(
     PERSIST.pattern + r"|(?i:\bset_?(last|resume|checkpoint|committed|saved)\w*\s*\()")
+# Python variants. A drawing or parsing position is called `cursor` or
+# `offset` too (`cursor += LINE_HEIGHT`, `y_offset = ru * unit_height`,
+# `cursor += 1` over a string). So a cursor counts as advanced only when it is
+# assigned from a response or a next-page value, an offset only when it steps
+# by a page or batch size, and a page variable (`page`, `next_page`,
+# `page_num`; not `homepage_url=`) when it is reassigned or incremented at the
+# start of a statement. An assignment has a space before `=`; a keyword
+# argument on its own line (`access_token=data["token"],`) does not.
+PAGE_ADVANCE_PY = re.compile(
+    r"(?im)(^\s*(?:\w+_)?page(?:_?(?:num|number|no|idx|index))?\s*(\+=|\s=\s*[^=])"
+    r"|^\s*\w*(cursor|token|marker)\w*\s+=\s*[^=\n]*"
+    r"\b(next(?:_?(?:page|cursor|token|url|link|marker|offset)\w*)?|resp\w*|results?|data|body"
+    r"|json|page\w*|meta\w*)\b"
+    r"|has_?more|has_?next|next_?(page|cursor|token|url)|is_?last_?page"
+    r"|\boffset\s*\+=\s*[\w.]*(limit|page_?size|batch_?size|per_?page|chunk_?size))")
 LOOP_TS = re.compile(r"^\s*(?:\}\s*)?(?:do\b|while\s*\(|for\s*(?:await\s*)?\()")
 LOOP_PY = re.compile(r"^\s*(?:while|for)\b.*:")
 
@@ -285,6 +311,8 @@ def s07_checkpoint(ctx) -> Result:
     end_of = _py_block_end if is_py else _ts_block_end
     if _lang_key(ctx) == "java":
         paging, advance, persist = PAGING_JAVA, PAGE_ADVANCE_JAVA, PERSIST_JAVA
+    elif is_py:
+        paging, advance, persist = PAGING, PAGE_ADVANCE_PY, PERSIST
     else:
         paging, advance, persist = PAGING, PAGE_ADVANCE, PERSIST
 
@@ -448,6 +476,17 @@ FUNC_TS = re.compile(
     r"^\s*(export\s+)?(default\s+)?(async\s+)?(function\s+\w+|const\s+\w+\s*=|"
     r"(public|private|protected)?\s*\w+\s*\([^)]*\)\s*[:{])")
 FUNC_PY = re.compile(r"^\s*(async\s+)?def\s+\w+")
+# Python: a request is a call (`requests.get(`), not a type reference
+# (`isinstance(m, requests.Response)`). An `assert` is an internal invariant
+# (stripped under -O), and `.parse(` reads data (`version.parse(tag)`,
+# `feedparser.parse(response.content)`): neither is validating input.
+EXTERNAL_CALL_PY = re.compile(
+    r"\b(?:requests|httpx)\s*\.\s*(?:get|post|put|patch|delete|head|options|request|stream)\s*\("
+    r"|(?<!\.)\bfetch\s*\(|\baiohttp\b|\burlopen\s*\(|\.query\s*\(|\.execute\s*\(|generateContent"
+    r"|\.send\s*\(|\.invoke\s*\(", re.I)
+VALIDATION_PY = re.compile(
+    r"(?i)(\bvalidate\w*\s*\(|\bis_?valid\b|\bschema\b"
+    r"|raise (ValueError|TypeError|ValidationError))")
 # A Java member boundary: a method or constructor declaration (METHOD_JAVA,
 # which also takes package-private methods, parameter annotations with their
 # own parentheses and a parameter list continued onto the next line), or any
@@ -544,8 +583,8 @@ def _java_reads_response(lines: list[str], i: int, derived: set[str]) -> bool:
 def s18_fail_fast(ctx) -> Result:
     key = _lang_key(ctx)
     func_re = {"python": FUNC_PY, "java": FUNC_JAVA}.get(key, FUNC_TS)
-    call_re = EXTERNAL_CALL_JAVA if key == "java" else EXTERNAL_CALL
-    valid_re = VALIDATION_JAVA if key == "java" else VALIDATION
+    call_re = {"python": EXTERNAL_CALL_PY, "java": EXTERNAL_CALL_JAVA}.get(key, EXTERNAL_CALL)
+    valid_re = {"python": VALIDATION_PY, "java": VALIDATION_JAVA}.get(key, VALIDATION)
     is_java = key == "java"
     lines = ctx.code_lines
 
