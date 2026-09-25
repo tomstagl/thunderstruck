@@ -78,7 +78,7 @@ Written to `.thunderstruck/` in the scanned repository:
 
 | File | What it is |
 |---|---|
-| `report.md` | The human report: run header, pattern coverage, ranked findings |
+| `report.md` | The human report: run header, what was *not* scanned, pattern coverage with leads read and confirmed, ranked findings, dormant integration points |
 | `report.json` | Stable versioned schema, for diffing runs over time |
 | `index.json` | file → findings, read by the edit guardrail |
 | `hotspots.json` | The deterministic layer's output, inspectable |
@@ -87,6 +87,20 @@ Written to `.thunderstruck/` in the scanned repository:
 
 The scan offers to add `.thunderstruck/` to your `.gitignore` on the first
 run. It will not add it without asking.
+
+The report says what it did not look at: files with no commit in the window,
+excluded paths by reason (tests, generated code, migrations, CI config), and
+languages with no detectors, named in a run warning. Files nobody has touched
+in the window but that carry timeout, retry or blocking-call leads are listed
+as **dormant integration points**. They cost nothing to list, and
+`/thunderstruck-scan --investigate-dormant N` investigates the first N.
+
+Configuration is scanned too: Kubernetes probes, Istio routes and
+resilience4j settings in `.yaml`/`.yml` and `.properties`. A config file ranks
+only when it carries a lead, since deploy churn is not fragility. Every retry
+layer the scan finds (code, mesh config, and library defaults such as
+boto3, Feign and the AWS SDK) goes into one repo-wide inventory, and each
+hotspot that retries is briefed with all of them.
 
 ## The edit guardrail
 
@@ -108,7 +122,8 @@ it warns once per file per session, and it measures ~34ms. If it ever gets in
 your way, that is a bug.
 
 If the file has changed since the scan, the warning says so rather than
-pretending the line numbers still hold.
+pretending the line numbers still hold. A finding also warns on every other
+file it cites as code evidence, marked "cited as evidence".
 
 ## How it works
 
@@ -139,8 +154,12 @@ A finding is a hypothesis, and it has to earn its place:
   ref must be a SHA git can resolve that changed the file in question. A
   `detector` ref must match a real hit.
   This is checked mechanically, not trusted.
-- **`high` confidence requires corroborating history.** A hypothesis the
-  change history does not support tops out at `medium`.
+- **`high` confidence requires corroborating history.** A cited commit
+  must be a *fix* to the cited code (resilience work such as "add retry with
+  backoff" is not a fix), or, for a prompt-injection-style `OTHER` finding,
+  the commit that wrote the cited lines. The most recent change to a file is
+  not corroboration, and the report prints each cited commit's subject so a
+  reader can check.
 - **`sustaining_effect` is mandatory**, though it may be `null`. Asking "once
   this is triggered, what keeps it failing?" is the point; a clean "nothing,
   it recovers" is a real answer.
@@ -197,6 +216,23 @@ rate_limit = "60/min per API key; unauthenticated requests are per IP"
 
 Profile facts are *your statements about the system*. They reach the
 investigator as context, and a finding can never cite them as evidence.
+
+A lead that is wrong for your repository in a way the code cannot show can
+be suppressed with a reason, instead of turning off the whole pattern. Every
+rule, its reason and its hit count is printed in every report:
+
+```toml
+[[suppress]]
+detector = "S16-java-scheduled-no-jitter"   # or a pattern id, e.g. "S16"
+path     = "src/main/java/**/batch/*.java"
+reason   = "single-instance batch service (replicas: 1)"
+
+[history]
+fix_keywords = ["behoben", "Fehler"]        # fix words for non-English commit subjects
+```
+
+There are no inline "ignore" comments: code that tells the audit to look
+away is itself reported as a finding.
 
 ### Service context
 

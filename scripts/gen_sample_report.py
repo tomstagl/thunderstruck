@@ -74,13 +74,15 @@ CANNED: dict[str, list[dict]] = {
         "symbol": "fetchRelease",
         "anchor": "setTimeout(resolve, SLEEP_MS)",
         "missing_patterns": ["S02", "S10"],
-        "failure_mode": "Release fetches retry on a fixed 2s schedule through two "
-                        "stacked retry layers, so one upstream blip becomes 15 "
+        "failure_mode": "Release fetches retry on a fixed 2s schedule through three "
+                        "stacked retry layers, so one upstream blip becomes 60 "
                         "requests per caller arriving in lockstep",
         "trigger_condition": "The releases API returns 5xx or times out for more "
                              "than two seconds while several callers are active",
         "amplifier": "withRetry retries 3 times inside a loop that retries 5 "
-                     "times; attempts multiply to 15 rather than adding",
+                     "times, and the mesh route retries each request up to 3 "
+                     "more times; attempts multiply to 5 x 3 x 4 = 60 rather "
+                     "than adding",
         "sustaining_effect": "Every client waits exactly SLEEP_MS and returns "
                              "together, so the upstream is re-saturated the "
                              "moment it starts recovering — the herd re-forms "
@@ -92,14 +94,17 @@ CANNED: dict[str, list[dict]] = {
         # the inner retry layer lives in another file; citing it files FR-001
         # under that file too (#19 AC-4)
         "also_cite": [("src/client/retry-wrapper.ts", "export async function withRetry",
-                       "the inner retry layer: 3 attempts per call")],
+                       "the inner retry layer: 3 attempts per call"),
+                      ("deploy/releases-virtualservice.yaml", "attempts: 3",
+                       "the mesh layer: up to 4 tries per request, outside the code")],
         "confidence": "high",
-        "confidence_rationale": "Both retry layers are visible in the code, and "
-                                "five separate 'fix timeout' commits on this file "
-                                "in the window show the cause was never addressed",
+        "confidence_rationale": "All three retry layers are visible in the code and "
+                                "the mesh configuration, and five separate 'fix "
+                                "timeout' commits on this file in the window show "
+                                "the cause was never addressed",
         "how_to_verify": "Stub the releases endpoint to fail for 3s and call "
                          "fetchRelease from 10 clients at once; count upstream "
-                         "requests (expect 150) and assert the inter-arrival "
+                         "requests (expect 600) and assert the inter-arrival "
                          "times are not identical",
         "prediction": "The next incident on this path is a retry storm after a "
                       "brief upstream degradation, not a slow dependency",
@@ -245,6 +250,10 @@ def generate() -> str:
         add_remote(repo, SAMPLE_REMOTE)
         with (repo / c.PROFILE_FILENAME).open("a", encoding="utf-8") as fh:
             fh.write('\n[links]\nprovider = "github"\n')
+            # a reasoned suppression, so the sample shows how one is reported
+            fh.write('\n[[suppress]]\ndetector = "S15-ts-no-fallback"\n'
+                     'path = "src/client/artists.ts"\n'
+                     'reason = "artist pages fall back to the CDN snapshot at the edge"\n')
         # The whole pipeline runs without user git config, as the fixture was built
         env = isolated_git_env({k: v for k, v in os.environ.items()
                                 if not k.startswith(("FAKE_CATALOG_", "CLAUDE_PLUGIN_"))})

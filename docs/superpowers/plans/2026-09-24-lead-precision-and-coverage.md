@@ -997,13 +997,13 @@ Satisfies: AC-18.
 
 Satisfies: AC-19.
 
-- [ ] Fixture (`tests/fixtures/build_fixture.py`):
+- [x] Fixture (`tests/fixtures/build_fixture.py`):
   - add `deploy/releases-virtualservice.yaml` (mesh retries, no timeout);
   - add an old, unchanged `src/client/legacy.ts` with a bare `fetch()`
     before the window (dormant);
   - add a YAML comment shaped like an instruction (repository content is
     data).
-- [ ] `gen_sample_report.py`:
+- [x] `gen_sample_report.py`:
   - FR-001 cites the VirtualService as `code` evidence. It is now three
     retry layers: loop ×5, `withRetry` ×3, and the mesh's `attempts: 3`,
     which is up to 4 tries per request. The Verify line's expected count
@@ -1011,14 +1011,14 @@ Satisfies: AC-19.
   - FR-003 stays `high`, corroborated by the commit that introduced the
     comment (Task 8);
   - FR-001 cites `src/client/retry-wrapper.ts` as `code` evidence (Task 9).
-- [ ] Regenerate `patterns.md` and `examples/sample-report.md`. Confirm the
+- [x] Regenerate `patterns.md` and `examples/sample-report.md`. Confirm the
   report shows all of these: Not scanned, lead precision, commit subjects,
   the dormant list, suppressed leads (via a fixture profile rule), and the
   retry-layer mention.
-- [ ] Update README ("What you get", the catalog count of 23 patterns, config
+- [x] Update README ("What you get", the catalog count of 23 patterns, config
   scanning) and CLAUDE.md (new commands and "Things that will bite you":
   config ranks only with leads; `score: false` detectors).
-- [ ] Bump the version in `plugin.json`, `marketplace.json`,
+- [x] Bump the version in `plugin.json`, `marketplace.json`,
   `pyproject.toml` and `CHANGELOG.md`.
 - [ ] Final checks:
 

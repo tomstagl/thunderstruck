@@ -10,10 +10,8 @@ from pathlib import Path
 
 import signals
 import _common as c
-from test_coverage_gaps import _git
 from detectors import Hit
 
-VS = Path(__file__).parent / "detectors" / "samples" / "S01" / "yaml" / "positive.yaml"
 MESH = "deploy/releases-virtualservice.yaml"
 
 
@@ -26,10 +24,7 @@ def _scan(repo: Path, plugin_root: Path) -> dict:
 
 
 def _with_mesh(repo: Path) -> Path:
-    (repo / "deploy").mkdir()
-    (repo / MESH).write_text(VS.read_text())
-    _git(repo, "add", MESH)
-    _git(repo, "commit", "-q", "-m", "chore: mesh routing for releases")
+    assert (repo / MESH).is_file(), "the fixture carries the mesh route (#19 AC-19)"
     return repo
 
 

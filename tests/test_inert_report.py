@@ -109,7 +109,7 @@ def test_hostile_repository_names_stay_inert(scanned_copy, plugin_root):
     data["context_warnings"] = ["# fake context heading", f"ctx {HOSTILE}"]
     markdown = report.render_markdown(data, scanned_copy)
     _assert_inert(markdown)
-    ranked = markdown.split("## Ranked hotspots", 1)[1]
+    ranked = markdown.split("## Ranked hotspots", 1)[1].split("\n## ", 1)[0]
     for renderer in RENDERERS:
         rows = renderer(ranked).tags.count("tr")
         assert rows == len(hs["hotspots"]) + 1, "a hostile file name must not split the row"
@@ -157,7 +157,7 @@ def test_hostile_linked_file_names_stay_inert(scanned_copy, plugin_root):
     assert all(v["url"] and v["history_url"] for v in data["hotspot_links"].values())
     markdown = report.render_markdown(data, scanned_copy)
     _assert_inert(markdown)
-    ranked = markdown.split("## Ranked hotspots", 1)[1]
+    ranked = markdown.split("## Ranked hotspots", 1)[1].split("\n## ", 1)[0]
     for renderer in RENDERERS:
         html = renderer(ranked)
         assert html.tags.count("tr") == len(hs["hotspots"]) + 1
