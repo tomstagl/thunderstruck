@@ -75,7 +75,7 @@ DEFAULT_EXCLUDE_TEST_GLOBS = [
 ]
 DEFAULT_EXCLUDE_TEST_DIRS = [
     "tests", "test", "__tests__", "spec", "specs", "e2e", "fixtures",
-    "testdata", "__mocks__", "cypress", "benchmarks", "bench",
+    "testdata", "__mocks__", "cypress", "benchmarks", "bench", "testing",
 ]
 DEFAULT_EXCLUDE_GLOBS = [g for _, group in _EXCLUDE_GLOB_GROUPS for g in group]
 DEFAULT_EXCLUDE_DIRS = [d for _, group in _EXCLUDE_DIR_GROUPS for d in group]
@@ -85,6 +85,16 @@ _DEFAULT_REASON = {
     **{("glob", g): "test" for g in DEFAULT_EXCLUDE_TEST_GLOBS},
     **{("dir", d): "test" for d in DEFAULT_EXCLUDE_TEST_DIRS},
 }
+# Directories of code usually run by hand rather than in production. Still
+# scanned; the dormant list only orders them after application code.
+SCRIPT_DIRS = frozenset({"scripts", "script", "tools", "hack", "examples", "example",
+                         "samples"})
+
+
+def is_script_path(rel_path: str) -> bool:
+    return any(part in SCRIPT_DIRS for part in rel_path.split("/")[:-1])
+
+
 DEFAULT_EXCLUDE_AUTHORS = [
     "dependabot", "renovate", "github-actions", "greenkeeper",
     "snyk-bot", "imgbot", "pre-commit-ci",

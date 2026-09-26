@@ -267,7 +267,8 @@ def dormant_sweep(repo: Path, unchanged: list[str], catalog: dict, patterns: dic
             if weight <= 0:
                 continue  # every lead is of a pattern the profile tiered out
             qualified.append((weight, rel, hits, per_pattern))
-    qualified.sort(key=lambda q: (-q[0], q[1]))
+    # application code first: scripts are usually run by hand, not in production
+    qualified.sort(key=lambda q: (c.is_script_path(q[1]), -q[0], q[1]))
     last: dict[str, tuple[str, str]] = {}
     for _, rel, _, _ in qualified[:3 * keep]:
         out = c.git(repo, "--literal-pathspecs", "log", "-1", "--format=%H%x00%aI%x00%at",
@@ -275,13 +276,14 @@ def dormant_sweep(repo: Path, unchanged: list[str], catalog: dict, patterns: dic
         sha, when, epoch = (out.split("\x00") + ["", "", ""])[:3]
         last[rel] = (sha, when, int(epoch) if epoch.isdigit() else 0)
     # chronological: the epoch, not the ISO string, whose offsets vary per commit
-    top = sorted(qualified[:3 * keep], key=lambda q: (-q[0], last[q[1]][2], q[1]))[:keep]
+    top = sorted(qualified[:3 * keep],
+                 key=lambda q: (c.is_script_path(q[1]), -q[0], last[q[1]][2], q[1]))[:keep]
     rows = []
     for n, (weight, rel, hits, per_pattern) in enumerate(top, 1):
         sha, when, _ = last[rel]
         rows.append({
             "id": f"D{n:02d}", "file": rel, "language": c.detect_language(rel, langmap),
-            "dormant": True, "content_hash": c.sha256_file(repo / rel),
+            "dormant": True, "script": c.is_script_path(rel), "content_hash": c.sha256_file(repo / rel),
             "churn": {"commits": 0, "insertions": 0, "deletions": 0, "authors": 0,
                       "fix_commits": 0, "resilience_commits": 0, "refactor_commits": 0,
                       "fix_ratio": 0.0, "last_modified": when or None,

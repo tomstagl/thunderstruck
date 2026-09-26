@@ -236,7 +236,14 @@ patterns marked `dormant: true` in the catalog run. Those are S01, S02,
 S03, S04, S05, S10, S27, S28 and S30, which describe integration points and
 blocked threads. A file qualifies with at least one hit of confidence
 `medium` or `high`, or two `low` hits from different patterns. Ordering is
-by `(-stability_weight, last_modified ascending, path)`. `last_modified`
+by `(script, -stability_weight, last_modified ascending, path)`, where
+`script` is true for a file with a directory named `scripts`, `script`,
+`tools`, `hack`, `examples`, `example` or `samples` anywhere in its path.
+Those are usually run by hand, not in production, so they are listed after
+application code and marked *script* in the report, never dropped: an ops
+script can still be what takes production down. (Dogfood, 2026-09-26: every
+dormant row on a real repository was a one-off dev script from its initial
+import; `testing/` also became a default test directory then.) `last_modified`
 takes one `git log -1 --format=%aI` per qualifying file, and only for the
 first `3 × --dormant` of them.
 

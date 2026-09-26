@@ -199,3 +199,27 @@ def test_lead_precision_counts_what_was_read(tmp_path):
     precision = json.loads((repo / ".thunderstruck" / "report.json").read_text())["lead_precision"]
     assert precision["S01"]["confirmed"] == 1
     assert precision["S01"]["read"] >= precision["S01"]["confirmed"]
+
+
+def test_scripts_are_listed_after_application_code(tmp_path):
+    """Dogfood: every dormant row on a real repository was a one-off dev
+    script. Scripts sort after application code, marked, never dropped."""
+    repo = _repo(tmp_path)
+    tool = "scripts/data/fetch_images.py"
+    _commit(repo, {tool: "import requests\n\ndef grab(u):\n    return requests.get(u).content\n"
+                          "\ndef more(u):\n    return requests.post(u, json={}).json()\n"},
+            "chore: image script", days_ago=500)
+    for n in range(3):  # back inside the window: the tool stays dormant, the app churns
+        _commit(repo, {"src/app.py": f"def main():\n    return {n + 10}\n"}, f"feat: {n}", days_ago=3)
+    rows = _signals(repo)["dormant"]
+    assert [(d["file"], d["script"]) for d in rows] == [(LEGACY, False), (tool, True)]
+    subprocess.run([sys.executable, str(ROOT / "scripts" / "report.py"), "--repo", str(repo)],
+                   check=True, capture_output=True)
+    section = (repo / ".thunderstruck" / "report.md").read_text().split(
+        "## Dormant integration points", 1)[1].split("\n## ", 1)[0]
+    listed = json.loads((repo / ".thunderstruck" / "report.json").read_text())["dormant"]
+    assert [(d["file"], d["script"]) for d in listed] == [(LEGACY, False), (tool, True)]
+    tool_row = next(line for line in section.splitlines() if tool in line)
+    legacy_row = next(line for line in section.splitlines() if LEGACY in line)
+    assert "script" in tool_row.split("|")[2].replace(tool, "")
+    assert "script" not in legacy_row.split("|")[2].replace(LEGACY, "")

@@ -351,12 +351,17 @@ def render_dormant(data: dict) -> list[str]:
          "No commit touched these files in the window, so they cannot rank on churn. "
          "They carry integration-point leads (timeouts, retries, pushback, blocking "
          "calls), and code nobody changes is often code everything depends on. They "
-         "are investigated only with `--investigate-dormant N`.", "",
+         "are investigated only with `--investigate-dormant N`."
+         + (" Files marked *script* sit in a scripts, tools or examples directory and "
+            "are listed last: they are usually run by hand, not in production."
+            if any(d.get("script") for d in rows) else ""), "",
          "| # | File | Last change | Leads |",
          "|---|---|---|---|"]
     for d in rows:
         pats = ", ".join(md.text(p, cell=True) for p in d["stability"]["patterns"]) or "—"
         file_cell = _linked(d["file"], _hotspot_link(data, d["id"], "url"), cell=True)
+        if d.get("script"):
+            file_cell += " · script"
         when = md.text((d["churn"].get("last_modified") or "—")[:10], cell=True)
         L.append(f"| {d['id']} | {file_cell} | {when} | {pats} |")
     return L
@@ -611,7 +616,7 @@ def render_json(data: dict) -> dict:
                             if data.get("context") else None),
         "pattern_coverage": hs["pattern_coverage"],
         "coverage_gaps": hs.get("coverage_gaps"),
-        "dormant": [{"id": d["id"], "file": d["file"],
+        "dormant": [{"id": d["id"], "file": d["file"], "script": bool(d.get("script")),
                      "last_modified": d["churn"].get("last_modified"),
                      "patterns": d["stability"]["patterns"],
                      "url": _hotspot_link(data, d["id"], "url")}
