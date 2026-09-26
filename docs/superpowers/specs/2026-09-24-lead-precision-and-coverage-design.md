@@ -154,6 +154,33 @@ Its line says *"no finding of its own; cited as evidence by FR-001"*
 instead of the investigator's note alone. The finding id is the tool's own
 text.
 
+### 2.5 Findings that share cited code
+
+Investigators run in parallel, one per hotspot, and none sees another's
+findings. Two hotspots that both call one defective function each report it
+from their own side. (Dogfood, 2026-09-26: a record page's 404 and a stale
+cache dropped on error were two findings. Both cited the same error branch
+of one fetch function.)
+
+`report.py` links such findings mechanically. Two findings **share cited
+code** when they come from different hotspots and a `code` ref of one
+names the same file as a `code` ref of the other with intersecting line
+ranges (a single line is a range of one). Refs are already canonical
+(§2.4), so the comparison is exact. Findings from one hotspot are never
+linked, because one investigator already chose to report them separately.
+
+- `report.json`: each such finding gains `shares_code_with: [{"id", "key",
+  "refs"}]`, ordered by id. `refs` are this finding's own code refs that
+  intersect the other's. `key` is there because ids renumber.
+- `report.md`: a line under the finding's confidence line reads
+  *"Shares cited code with FR-007 (`a.ts:785-795`): one fix may close
+  both."* The ids and refs are the tool's own text, and the refs are code
+  spans.
+
+Findings are linked, never merged. Which one to keep, or whether the two
+failure modes really share a cause, is judgment, and the report does not
+make it. A lead is a lead; so is an overlap.
+
 ## 3. The `high` confidence gate
 
 Today `high` needs any commit that touched the file, so "most recent change
@@ -236,7 +263,14 @@ patterns marked `dormant: true` in the catalog run. Those are S01, S02,
 S03, S04, S05, S10, S27, S28 and S30, which describe integration points and
 blocked threads. A file qualifies with at least one hit of confidence
 `medium` or `high`, or two `low` hits from different patterns. Ordering is
-by `(-stability_weight, last_modified ascending, path)`. `last_modified`
+by `(script, -stability_weight, last_modified ascending, path)`, where
+`script` is true for a file with a directory named `scripts`, `script`,
+`tools`, `hack`, `examples`, `example` or `samples` anywhere in its path.
+Those are usually run by hand, not in production, so they are listed after
+application code and marked *script* in the report, never dropped: an ops
+script can still be what takes production down. (Dogfood, 2026-09-26: every
+dormant row on a real repository was a one-off dev script from its initial
+import; `testing/` also became a default test directory then.) `last_modified`
 takes one `git log -1 --format=%aI` per qualifying file, and only for the
 first `3 × --dormant` of them.
 

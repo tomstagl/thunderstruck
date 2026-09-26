@@ -33,6 +33,11 @@ _LINKISH = re.compile(
     r"|:[+-]1:|:100:|:1234:",                    # ...and GitHub's letterless ones
     re.IGNORECASE)
 
+# Sentence punctuation peeled off a linkish token, so the span wraps only the
+# word: "(x.co)," renders as (`x.co`), not `(x.co),`. None of it can start a
+# link or a shortcode on its own.
+_PEEL = re.compile(r"^([(\[{\"']*)(.*?)([)\]},;:.!?\"']*)$", re.DOTALL)
+
 # ASCII punctuation CommonMark/GFM/GitHub give meaning to inline; each may be
 # backslash-escaped, and then renders as itself.
 _INLINE_SPECIAL = frozenset("\\`*_[]<>|~&$")
@@ -81,10 +86,20 @@ def _escape(chunk: str, heading: bool) -> str:
     return "".join("\\" + ch if ch in special else ch for ch in chunk)
 
 
+def _word(token: str, cell: bool, heading: bool) -> str:
+    if not _LINKISH.search(token):
+        return _escape(token, heading)
+    lead, core, trail = _PEEL.match(token).groups()
+    if not core or not _LINKISH.search(core):
+        lead, core, trail = "", token, ""
+    return _escape(lead, heading) + code(core, cell) + _escape(trail, heading)
+
+
 def text(value: Any, cell: bool = False, heading: bool = False) -> str:
     """Prose that renders as exactly its own characters, on one line.
 
-    Line breaks become spaces; any word that could hold a link becomes a code span; the
+    Line breaks become spaces; any word that could hold a link becomes a code span,
+    with its surrounding sentence punctuation left outside; the
     remaining Markdown punctuation is backslash-escaped; and a leading block
     marker (#, -, +, =, >, "1." / "1)") is escaped, so the text is safe even
     at the start of a line or a list item.
@@ -97,7 +112,7 @@ def text(value: Any, cell: bool = False, heading: bool = False) -> str:
     for m in _TOKEN.finditer(flat):
         out.append(flat[pos:m.start()])
         token = m.group(0)
-        out.append(code(token, cell) if _LINKISH.search(token) else _escape(token, heading))
+        out.append(_word(token, cell, heading))
         pos = m.end()
     rendered = "".join(out)
     if (m := _BLOCK_START.match(rendered)):
