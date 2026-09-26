@@ -154,6 +154,33 @@ Its line says *"no finding of its own; cited as evidence by FR-001"*
 instead of the investigator's note alone. The finding id is the tool's own
 text.
 
+### 2.5 Findings that share cited code
+
+Investigators run in parallel, one per hotspot, and none sees another's
+findings. Two hotspots that both call one defective function each report it
+from their own side. (Dogfood, 2026-09-26: a record page's 404 and a stale
+cache dropped on error were two findings. Both cited the same error branch
+of one fetch function.)
+
+`report.py` links such findings mechanically. Two findings **share cited
+code** when they come from different hotspots and a `code` ref of one
+names the same file as a `code` ref of the other with intersecting line
+ranges (a single line is a range of one). Refs are already canonical
+(§2.4), so the comparison is exact. Findings from one hotspot are never
+linked, because one investigator already chose to report them separately.
+
+- `report.json`: each such finding gains `shares_code_with: [{"id", "key",
+  "refs"}]`, ordered by id. `refs` are this finding's own code refs that
+  intersect the other's. `key` is there because ids renumber.
+- `report.md`: a line under the finding's confidence line reads
+  *"Shares cited code with FR-007 (`a.ts:785-795`): one fix may close
+  both."* The ids and refs are the tool's own text, and the refs are code
+  spans.
+
+Findings are linked, never merged. Which one to keep, or whether the two
+failure modes really share a cause, is judgment, and the report does not
+make it. A lead is a lead; so is an overlap.
+
 ## 3. The `high` confidence gate
 
 Today `high` needs any commit that touched the file, so "most recent change
