@@ -213,6 +213,30 @@ def test_review_payloads_stay_inert(payload, renderer):
     assert _flat("".join(html.text)) == _flat(payload)
 
 
+@pytest.mark.parametrize("value, expected", [
+    ("as <artist>.jpg: audio", "as `<artist>.jpg`: audio"),
+    ("recordings (.ogg/.oga), PDFs", "recordings (`.ogg/.oga`), PDFs"),
+    ("span `record.fetch_error`) fires", "span `` `record.fetch_error` ``) fires"),
+    ("see api.example.com.", "see `api.example.com`."),
+    ("(x.co)", "(`x.co`)"),
+    ("x.co:smile:", "`x.co:smile`:"),
+])
+def test_sentence_punctuation_stays_outside_the_span(value, expected):
+    """Dogfood: whole-token spans swallowed the colon, parentheses and comma
+    around a file name, which read oddly in a finding's heading."""
+    assert mdtext.text(value, heading=True) == expected
+
+
+@pytest.mark.parametrize("renderer", RENDERERS)
+@pytest.mark.parametrize("payload", ["(https://evil.example/x),", "'www.evil.example'.",
+                                     "[a@evil.example]:", "(:smile:)", "{//10.0.0.1:80}?",
+                                     "\"x.io\";", "((x.co))", "x.co.:"])
+def test_peeled_punctuation_stays_inert(payload, renderer):
+    html = renderer(mdtext.text(payload))
+    assert "a" not in html.tags and "img" not in html.tags, (mdtext.text(payload), html.tags)
+    assert _flat("".join(html.text)) == _flat(payload)
+
+
 def test_times_are_not_emoji():
     assert mdtext.text("at 10:30:45") == "at 10:30:45"
 
