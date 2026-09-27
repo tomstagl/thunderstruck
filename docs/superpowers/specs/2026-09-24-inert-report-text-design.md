@@ -45,6 +45,8 @@ Both functions first make the value visible and flat:
    - GitHub links e-mail forms as loose as `_@.h`.
 
    The design review's substring regexes kept missing cases like these. It also removes the fence-merging problem, where two adjacent spans pair up wrongly and leave a URL outside a span. The cost: a few harmless words such as `Node.js` render as code.
+
+   **Sentence punctuation stays outside the span.** Leading `(` `[` `{` `"` `'` and trailing `)` `]` `}` `,` `;` `:` `.` `!` `?` `"` `'` are peeled off the token first, and the span wraps only what is left, provided that still matches. Prose such as `saved as <artist>.jpg: audio (.ogg/.oga),` then renders the file names as code and the colon, parentheses and comma as text. The peeled characters are escaped like any other text (step 3). They hold no letter, digit, `@` or `/`, and sit between whitespace and a code span, so no renderer can build a link or a shortcode from them (dogfood on a real repository, 2026-09-26).
 3. **Backslash-escape** the rest. CommonMark allows escaping any ASCII punctuation. The escaped set is `\ ` * _ [ ] < > | ~ & $`, plus `#` when `heading=True`. The reasons:
    - `[` `]`: links and images (with `[` escaped, a leading `!` is inert);
    - `<` `>`: raw HTML;

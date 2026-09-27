@@ -97,6 +97,9 @@ def collect(repo: Path) -> dict[str, Any]:
     for n, f in enumerate(findings, 1):
         f["id"] = f"FR-{n:03d}"
     _attach_commit_subjects(repo, findings)
+    shared = shared_code(findings)
+    for f in findings:
+        f["shares_code_with"] = shared.get(f["id"], [])
     context_doc = c.load_json(out / c.CONTEXT_FILENAME, {}) or {}
     if not isinstance(context_doc, dict):
         context_doc = {}
@@ -164,6 +167,36 @@ def _cited_code_files(f: dict) -> list[str]:
         if ev.get("type") == "code" and (m := CODE_REF.match(str(ev.get("ref") or "").strip())):
             if m["path"] not in out:
                 out.append(m["path"])
+    return out
+
+
+def _code_ranges(f: dict) -> list[tuple[str, str, int, int]]:
+    out = []
+    for ev in _evidence(f):
+        ref = str(ev.get("ref") or "").strip()
+        if ev.get("type") == "code" and (m := CODE_REF.match(ref)):
+            start = int(m["start"])
+            out.append((ref, m["path"], start, int(m["end"] or start)))
+    return out
+
+
+def shared_code(findings: list[dict]) -> dict[str, list[dict]]:
+    """Findings from different hotspots whose code refs intersect (spec §2.5).
+    Investigators never see each other's findings, so one defect can be
+    reported from both sides. Linked, never merged: that is judgment."""
+    ranges = [(f, _code_ranges(f)) for f in findings]
+    out: dict[str, list[dict]] = {}
+    for f, mine in ranges:
+        for g, theirs in ranges:
+            if g is f or g.get("hotspot_id") == f.get("hotspot_id"):
+                continue
+            refs = [ref for ref, path, a, b in mine
+                    if any(p == path and a <= d and c_ <= b for _, p, c_, d in theirs)]
+            if refs:
+                out.setdefault(f["id"], []).append(
+                    {"id": g["id"], "key": g.get("key"), "refs": list(dict.fromkeys(refs))})
+    for links in out.values():
+        links.sort(key=lambda s: s["id"])
     return out
 
 
@@ -342,6 +375,15 @@ def render_service_context(ctx: dict | None, now: datetime) -> list[str]:
     return L
 
 
+def _shared_line(f: dict) -> list[str]:
+    links = f.get("shares_code_with") or []
+    if not links:
+        return []
+    parts = [f"{s['id']} ({', '.join(md.code(r) for r in s['refs'])})" for s in links]
+    return [f"Shares cited code with {', '.join(parts)}: one fix may close "
+            f"{'both' if len(links) == 1 else 'all of them'}.", ""]
+
+
 def render_dormant(data: dict) -> list[str]:
     """Untouched files that carry integration-point leads (#19 AC-7)."""
     rows = data["hotspots"].get("dormant") or []
@@ -351,12 +393,17 @@ def render_dormant(data: dict) -> list[str]:
          "No commit touched these files in the window, so they cannot rank on churn. "
          "They carry integration-point leads (timeouts, retries, pushback, blocking "
          "calls), and code nobody changes is often code everything depends on. They "
-         "are investigated only with `--investigate-dormant N`.", "",
+         "are investigated only with `--investigate-dormant N`."
+         + (" Files marked *script* sit in a scripts, tools or examples directory and "
+            "are listed last: they are usually run by hand, not in production."
+            if any(d.get("script") for d in rows) else ""), "",
          "| # | File | Last change | Leads |",
          "|---|---|---|---|"]
     for d in rows:
         pats = ", ".join(md.text(p, cell=True) for p in d["stability"]["patterns"]) or "—"
         file_cell = _linked(d["file"], _hotspot_link(data, d["id"], "url"), cell=True)
+        if d.get("script"):
+            file_cell += " · script"
         when = md.text((d["churn"].get("last_modified") or "—")[:10], cell=True)
         L.append(f"| {d['id']} | {file_cell} | {when} | {pats} |")
     return L
@@ -516,6 +563,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
                   f"{where}{symbol} · "
                   f"hotspot {f['hotspot_id']} (score {f.get('hotspot_score')})",
                   "",
+                  *_shared_line(f),
                   *rows,
                   "",
                   "**Evidence**", ""]
@@ -611,7 +659,7 @@ def render_json(data: dict) -> dict:
                             if data.get("context") else None),
         "pattern_coverage": hs["pattern_coverage"],
         "coverage_gaps": hs.get("coverage_gaps"),
-        "dormant": [{"id": d["id"], "file": d["file"],
+        "dormant": [{"id": d["id"], "file": d["file"], "script": bool(d.get("script")),
                      "last_modified": d["churn"].get("last_modified"),
                      "patterns": d["stability"]["patterns"],
                      "url": _hotspot_link(data, d["id"], "url")}

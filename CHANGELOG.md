@@ -4,6 +4,19 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.8.1
+
+Fixes from dogfooding 0.8.0 on a real repository.
+
+### Added
+
+- **Findings that share cited code are linked.** Two findings from different hotspots whose `code` refs overlap each get *"Shares cited code with FR-n (refs): one fix may close both."* in the report. `report.json` gets `shares_code_with`. Parallel investigators can't see each other's findings, so one defect was being reported from both sides. The findings are linked, never merged.
+
+### Changed
+
+- **Dormant scripts come after application code.** In the dormant list, files under `scripts/`, `tools/`, `hack/` or `examples/` sort after application code and are marked *script*. `testing/` is a default test directory. On the dogfood repository, every dormant row had been a one-off dev script.
+- **Sentence punctuation stays outside code spans.** A heading that read `` `<artist>.jpg:` audio `(.ogg/.oga),` `` now reads `` `<artist>.jpg`: audio (`.ogg/.oga`), ``.
+
 ## 0.8.0
 
 Trustworthy leads and visible coverage (#19).

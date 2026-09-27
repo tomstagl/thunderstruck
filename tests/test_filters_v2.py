@@ -14,6 +14,7 @@ F = c.Filters()
     ("src/types/api.d.ts", "generated"), ("stubs/requests.pyi", "generated"),
     ("src/__generated__/graphql.ts", "generated"), ("api/generated/Client.java", "generated"),
     ("benchmarks/load.py", "test"),
+    ("scripts/testing/test-admin-page.js", "test"),
     (".github/workflows/ci.yml", "tooling"), ("docker-compose.dev.yml", "tooling"),
     ("openapi.yaml", "generated"),
     ("db/migrations/001.py", "migration"), ("node_modules/x/index.js", "vendored"),

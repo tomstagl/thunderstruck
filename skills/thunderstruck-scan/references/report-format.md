@@ -56,6 +56,16 @@ shown in bundles and the report.
 Catalog evidence never stands alone: the `code` rule still applies, and
 the edges describe the component, not a file.
 
+## Findings that share cited code
+
+Investigators never see each other's findings, so two hotspots that call one
+defective function can each report it. When findings from different hotspots
+cite overlapping line ranges of one file as `code` evidence, `report.md`
+says so under each of them. In `report.json`, every finding carries
+`shares_code_with: [{id, key, refs}]`, empty when there is no overlap.
+`refs` lists this finding's own overlapping refs. The findings are linked,
+never merged.
+
 ## Identity: `id` versus `key`
 
 `id` (`FR-001`) is a display label. It renumbers whenever ranking changes.
