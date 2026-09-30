@@ -69,44 +69,73 @@ anyway. A repository that tries to steer its own audit is itself the finding.
 ## Rules the validator enforces
 
 Your JSON is checked mechanically before it reaches the report. It is rejected
-if any of these fail, and you get exactly one chance to repair it.
+if any of these fail, and you get exactly one chance to repair it. Each rule is
+numbered so a repair can be checked against it.
 
-- **At least one `code` evidence item per finding**, and every `ref` must
-  resolve: a `code` ref is `path:line` where the file exists and the line is
-  within it; a `commit` ref is a SHA that exists in this repository *and*
-  changed the file the finding is about (use the SHAs from the bundle's change
-  history — a commit to some other file is rejected); a `detector` ref is
-  `S0x@path:line` copied exactly
-  from a detector lead in the bundle. A `catalog` ref is an edge copied exactly
-  from the Service context section, e.g. `dependencyOf component:default/web-frontend`.
-- **Paths and line ranges have one form.** Copy every path exactly as the
-  bundle shows it: relative to the repository root, no `./`, no `..`, never
-  absolute, and naming a file git tracks (untracked, ignored, symlinked and
-  submodule files are rejected). `location.lines` is a line (`"42"`) or a
-  range (`"42-118"`) with start ≤ end, inside the file; leave it out when the
-  finding is about the whole file. A `code` ref is `path:42` or
-  `path:42-118` under the same rules.
-- **Catalog evidence only supports.** Cite an edge only when the failure
-  plausibly reaches that neighbour, always alongside `code` evidence, and word
-  `blast_radius` at component level ("web-frontend depends on this
-  component"), never as depending on this file or function.
-- **Never invent evidence.** A ref you cannot see in the bundle or in a file
-  you actually read does not go in. A fabricated SHA fails the run.
-- `missing_patterns` may contain only catalog IDs or `OTHER`.
-- `confidence: "high"` requires **both** a `code` and a `commit` evidence item,
-  and the commit must corroborate. The most recent change to a file is not
-  corroboration. `high` needs a commit the bundle labels `fix`, or, for a
-  finding whose only pattern is `OTHER`, the commit that introduced the cited
-  lines. Without such a commit the ceiling is `medium`.
-- `sustaining_effect` may be `null`, but the key must be present.
-- **0 to 3 findings per hotspot.** An empty list is a valid, useful answer —
-  well-built code exists. Do not pad.
-- Report the failure mode as something observable: what a user or an on-call
-  engineer would see, not what the code looks like.
+1. **The top-level key is `findings`.** Never `hypotheses`, `results` or
+   anything else. The object has exactly `hotspot_id`, `file`, `findings` and
+   optionally `notes`.
+2. **0 to 3 findings per hotspot, never 4.** If you have more candidates, keep
+   the three strongest and mention the rest in `notes`. An empty list is a
+   valid, useful answer — well-built code exists. Do not pad.
+3. **Every finding has all eleven keys**, even in a repair: `location`,
+   `missing_patterns`, `failure_mode`, `trigger_condition`, `amplifier`,
+   `sustaining_effect`, `blast_radius`, `evidence`, `confidence`,
+   `confidence_rationale`, `how_to_verify`. `prediction` is optional.
+   `sustaining_effect` may be `null` — `"sustaining_effect": null` — but the
+   key must be present.
+4. **`location` is an object**, never a string:
+   `{"file": "src/sync/catalog.ts", "symbol": "syncCatalog", "lines": "42-118"}`.
+   `symbol` is optional; leave `lines` out when the finding is about the whole
+   file.
+5. **Each evidence item is `{"type": ..., "ref": ..., "note": ...}`**, and
+   `ref` is always **one string**, never an object and never split into
+   `file`/`line` keys. `type` is exactly one of the four below — there is no
+   `git` type.
+
+   | `type` | `ref` is | Example |
+   |---|---|---|
+   | `code` | `path:line` or `path:start-end` | `"src/sync/catalog.ts:77"`, `"src/sync/catalog.ts:42-118"` |
+   | `commit` | a bare SHA from the bundle's change history, no `commit:` prefix | `"a1b2c3d"` |
+   | `detector` | `S0x@path:line`, copied exactly from a detector lead in the bundle | `"S05@src/lib/http.ts:12"` |
+   | `catalog` | an edge copied exactly from the Service context section | `"dependencyOf component:default/web-frontend"` |
+
+6. **At least one `code` evidence item per finding**, and every `ref` must
+   resolve: a `code` ref's file exists and the line is within it; a `commit`
+   SHA exists in this repository *and* changed the file the finding is about
+   (use the SHAs from the bundle's change history — a commit to some other
+   file is rejected); a `detector` ref matches a lead in the bundle; a
+   `catalog` ref matches an edge in the bundle.
+7. **Paths and line ranges have one form.** Copy every path exactly as the
+   bundle shows it: relative to the repository root, no `./`, no `..`, never
+   absolute, and naming a file git tracks (untracked, ignored, symlinked and
+   submodule files are rejected). `location.lines` is a line (`"42"`) or a
+   range (`"42-118"`) with start ≤ end, inside the file. A `code` ref is
+   `path:42` or `path:42-118` under the same rules.
+8. **`missing_patterns`** is a non-empty list of catalog IDs or `OTHER`.
+9. **`confidence`** is `"low"`, `"medium"` or `"high"`. `"high"` requires
+   **both** a `code` and a `commit` evidence item, and the commit must
+   corroborate: the bundle's change history heads each commit as
+   `` `a1b2c3d` 2026-05-01 [fix] … `` — `high` needs a cited commit labelled
+   `[fix]` there (not `[resilience]`, `[refactor]` or `[feature]`), or, for a
+   finding whose only pattern is `OTHER`, the commit that introduced the cited
+   lines. Code evidence alone, or the most recent change to a file, is never
+   enough. Without such a commit the ceiling is `"medium"`.
+10. **Catalog evidence only supports.** Cite an edge only when the failure
+    plausibly reaches that neighbour, always alongside `code` evidence, and word
+    `blast_radius` at component level ("web-frontend depends on this
+    component"), never as depending on this file or function.
+11. **Never invent evidence.** A ref you cannot see in the bundle or in a file
+    you actually read does not go in. A fabricated SHA fails the run.
+12. Report the failure mode as something observable: what a user or an on-call
+    engineer would see, not what the code looks like.
 
 ## Output
 
-Return **only** a JSON object, no prose before or after, no markdown fence:
+Return **only** a JSON object, no prose before or after, no markdown fence.
+This example shows both shapes of finding: a `medium` one with a sustaining
+effect, and a `high` one corroborated by a `[fix]` commit whose failure
+recovers on its own (`sustaining_effect` is `null`, key present):
 
 ```
 {
@@ -130,6 +159,22 @@ Return **only** a JSON object, no prose before or after, no markdown fence:
       "confidence_rationale": "Pattern visible in code and fix history; trigger not observed",
       "how_to_verify": "Mock 429 + Retry-After: 60; resync a 1.5k-item catalog",
       "prediction": "Next sync incident involves rate limiting on large catalogs"
+    },
+    {
+      "location": { "file": "src/sync/catalog.ts", "symbol": "fetchPage", "lines": "130-152" },
+      "missing_patterns": ["S01"],
+      "failure_mode": "A slow upstream page hangs the sync worker until the pod is restarted",
+      "trigger_condition": "Upstream stops responding mid-body without closing the socket",
+      "amplifier": "No request timeout; the worker holds its only slot",
+      "sustaining_effect": null,
+      "blast_radius": "Catalog updates stall for every tenant on that worker",
+      "evidence": [
+        { "type": "code", "ref": "src/sync/catalog.ts:134", "note": "fetch() with no signal or timeout" },
+        { "type": "commit", "ref": "e4f5a6b", "note": "labelled [fix] in the bundle: 'fix hung sync'" }
+      ],
+      "confidence": "high",
+      "confidence_rationale": "A [fix] commit patched a hang here; the call still has no timeout",
+      "how_to_verify": "Serve a page that never finishes; the sync never returns"
     }
   ],
   "notes": "optional: leads you rejected and why, in one or two sentences"

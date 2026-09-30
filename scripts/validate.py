@@ -57,6 +57,19 @@ SHA_REF = re.compile(r"^[0-9a-fA-F]{4,40}$")
 BLAME_LINE = re.compile(r"^([0-9a-f]{40}) \d+ \d+", re.MULTILINE)
 LINE_RANGE = re.compile(r"^(?P<start>[0-9]+)(?:-(?P<end>[0-9]+))?\Z")
 RANGE_FORM = 'a line ("42") or a range ("42-118") with start ≤ end'
+REF_FORMS = {
+    "code": '"path/to/file.ts:42" or "path/to/file.ts:42-118"',
+    "commit": 'a bare SHA from the bundle\'s change history, e.g. "a1b2c3d" (no "commit:" prefix)',
+    "detector": '"S05@path/to/file.ts:12", copied from the bundle\'s Detector leads',
+    "catalog": '"dependencyOf component:default/web-frontend", copied from the bundle\'s Service context',
+}
+TYPE_ALIASES = {"git": "commit", "sha": "commit", "file": "code", "source": "code"}
+
+
+def shown(value: Any, limit: int = 80) -> str:
+    """A received value, short enough to quote in an error message."""
+    text = json.dumps(value, ensure_ascii=False) if not isinstance(value, str) else repr(value)
+    return text if len(text) <= limit else text[:limit - 1] + "…"
 
 
 def parse_range(value: Any) -> tuple[int, int] | None:
@@ -196,14 +209,20 @@ class Validator:
 
     def check_evidence(self, ev: Any, where: str, errors: list[str]) -> str | None:
         if not isinstance(ev, dict):
-            errors.append(f"{where} is not an object")
+            errors.append(f"{where} is not an object: got {shown(ev)}. Use "
+                          f'{{"type": "code", "ref": {REF_FORMS["code"].split(" or ")[0]}, "note": "..."}}')
             return None
         etype, ref = ev.get("type"), ev.get("ref")
         if etype not in EVIDENCE_TYPES:
-            errors.append(f"{where}.type {etype!r} is not one of {sorted(EVIDENCE_TYPES)}")
+            alias = TYPE_ALIASES.get(str(etype).strip().lower()) if isinstance(etype, str) else None
+            errors.append(f"{where}.type {etype!r} is not one of {sorted(EVIDENCE_TYPES)}"
+                          + (f" — use {alias!r}" if alias else ""))
             return None
         if not isinstance(ref, str) or not ref.strip():
-            errors.append(f"{where}.ref is missing")
+            got = (f"got {shown(ref)}" if "ref" in ev
+                   else f"no 'ref' key; the item has keys {sorted(ev)}")
+            errors.append(f"{where}.ref is missing or not a string ({got}). A {etype} "
+                          f"ref is one string: {REF_FORMS[etype]}")
             return None
         ref = ref.strip()
 
@@ -211,7 +230,8 @@ class Validator:
             m = CODE_REF.match(ref)
             raw_path = m["path"] if m else ref.rpartition(":")[0]
             if not m and (not raw_path or re.search(r":[0-9]+\Z", raw_path)):
-                errors.append(f"{where}.ref {ref!r} is not path:line or path:start-end")
+                errors.append(f"{where}.ref {ref!r} is not path:line or path:start-end, "
+                              f"e.g. {REF_FORMS['code']}")
                 return etype
             rel, total, problem = self._resolve(raw_path)
             if problem:
@@ -221,7 +241,8 @@ class Validator:
         elif etype == "commit":
             short = ref.split()[0]
             if not SHA_REF.match(short):
-                errors.append(f"{where}.ref {ref!r} is not a commit SHA")
+                errors.append(f"{where}.ref {ref!r} is not a commit SHA; use "
+                              f"{REF_FORMS['commit']}")
             elif not self._sha_ok(short):
                 errors.append(
                     f"{where}.ref {ref!r} — no such commit in this repository. "
@@ -229,7 +250,8 @@ class Validator:
         elif etype == "detector":
             m = DETECTOR_REF.match(ref)
             if not m:
-                errors.append(f"{where}.ref {ref!r} is not S0x@path:line")
+                errors.append(f"{where}.ref {ref!r} is not S0x@path:line, e.g. "
+                              f"{REF_FORMS['detector']}")
             elif ref not in self.detector_refs:
                 errors.append(
                     f"{where}.ref {ref!r} — no detector produced that hit. Copy a "
@@ -265,7 +287,12 @@ class Validator:
 
         loc = f.get("location")
         if not isinstance(loc, dict) or not loc.get("file"):
-            errors.append(f"{where}.location.file is missing")
+            got = ("" if "location" not in f
+                   else f" (location is {shown(loc)})" if not isinstance(loc, dict)
+                   else f" (location has keys {sorted(loc)})")
+            errors.append(f"{where}.location.file is missing{got}. location is an object: "
+                          f'{{"file": "path/to/file.ts", "lines": "42-118"}}, '
+                          f'"lines" optional')
         else:
             rel, total, problem = self._resolve(loc["file"])
             if problem:
@@ -276,7 +303,9 @@ class Validator:
 
         pats = f.get("missing_patterns")
         if not isinstance(pats, list) or not pats:
-            errors.append(f"{where}.missing_patterns must be a non-empty list")
+            errors.append(f"{where}.missing_patterns must be a non-empty list, e.g. "
+                          f'["S03", "S05"] or ["OTHER"]'
+                          + (f"; got {shown(pats)}" if "missing_patterns" in f else ""))
         else:
             unknown = [p for p in pats if p not in self.valid_ids]
             if unknown:
@@ -286,16 +315,19 @@ class Validator:
 
         conf = f.get("confidence")
         if conf not in CONFIDENCES:
-            errors.append(f"{where}.confidence {conf!r} is not one of {sorted(CONFIDENCES)}")
+            if "confidence" in f:
+                errors.append(f"{where}.confidence {conf!r} is not one of {sorted(CONFIDENCES)}")
 
         for field in ("failure_mode", "trigger_condition", "how_to_verify"):
             value = f.get(field)
             if field in f and (not isinstance(value, str) or not value.strip()):
-                errors.append(f"{where}.{field} must be a non-empty string")
+                errors.append(f"{where}.{field} must be a non-empty string; got {shown(value)}")
 
         evidence = f.get("evidence")
         if not isinstance(evidence, list) or not evidence:
-            errors.append(f"{where}.evidence must be a non-empty list")
+            errors.append(f"{where}.evidence must be a non-empty list of "
+                          f'{{"type", "ref", "note"}} objects'
+                          + (f"; got {shown(evidence)}" if "evidence" in f else ""))
             return
         types = [self.check_evidence(ev, f"{where}.evidence[{i}]", errors)
                  for i, ev in enumerate(evidence)]
@@ -312,8 +344,8 @@ class Validator:
             other_only = f.get("missing_patterns") == ["OTHER"]
             errors.append(
                 f"{where}.confidence is 'high' but no cited commit is a fix. The most "
-                f"recent change to a file is not corroboration; cite the fix commits "
-                f"from the bundle's history"
+                f"recent change to a file is not corroboration; cite a commit the "
+                f"bundle's change history labels [fix]"
                 + (", or the commit that introduced the cited lines" if other_only else "")
                 + ", or use 'medium'.")
 
@@ -386,10 +418,13 @@ class Validator:
             errors.append(f"hotspot_id {hid!r} must be a string")
         findings = doc.get("findings")
         if findings is None:
-            errors.append("findings is missing (use [] when there is nothing to report)")
+            other = [k for k in doc if isinstance(doc[k], list)]
+            errors.append("findings is missing (use [] when there is nothing to report)"
+                          + (f"; the top-level list is keyed {other[0]!r}, but the key "
+                             f"must be 'findings'" if other else ""))
             return errors
         if not isinstance(findings, list):
-            errors.append("findings must be a list")
+            errors.append(f"findings must be a list; got {shown(findings)}")
             return errors
         if len(findings) > MAX_FINDINGS_PER_HOTSPOT:
             errors.append(
