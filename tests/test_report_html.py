@@ -198,3 +198,73 @@ def test_report_html_is_stdlib_only():
         assert extra - set(sys.stdlib_module_names) <= local, (module, extra)
     header = SCRIPT.read_text(encoding="utf-8").split("# ///", 2)[1]
     assert "dependencies" not in header
+
+
+# ------------------------------------------------------- template lint (T3) --
+
+
+FORBIDDEN = ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(",
+             "new Function", "fetch(", "XMLHttpRequest", "<link", "@import", "url(",
+             "src=", "http://", "https://")
+
+
+def test_template_uses_no_markup_sinks_or_network():
+    template = _template()
+    for needle in FORBIDDEN:
+        assert needle not in template, needle
+
+
+def test_template_opens_links_safely_and_only_from_tool_urls():
+    template = _template()
+    assert 'rel: "noopener noreferrer"' in template
+    assert 'rel: "noopener"' not in template
+    # every href goes through safeUrl(), which admits http(s) only
+    assert template.count("href:") == 1 and "href: u," in template
+    assert r"/^https?:\/\//i.test(u)" in template
+
+
+def test_template_reads_the_repo_name_not_its_path():
+    template = _template()
+    assert "repo.root" not in template and "repo.name" in template
+
+
+# ------------------------------------------------------ inert, end to end --
+
+
+HOSTILE_TEXT = ('</script><script id="pwn">window.pwned=1</script>'
+                '<img src=x onerror="window.pwned=1"><a href="https://evil.example">x</a>')
+MODEL_FIELDS = ("failure_mode", "trigger_condition", "amplifier", "sustaining_effect",
+                "blast_radius", "how_to_verify", "confidence_rationale")
+
+
+def _outside_data(html: str) -> str:
+    return re.sub(r'<script type="application/json" id="thunderstruck-report">.*?</script>',
+                  "", html, flags=re.S)
+
+
+def test_hostile_model_text_stays_inside_the_data_block(scanned_copy, plugin_root):
+    hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
+    for field in MODEL_FIELDS:
+        doc["findings"][0][field] = f"{field}: {HOSTILE_TEXT}"
+    _write_finding(scanned_copy, hid, doc)
+    assert _validate(scanned_copy, plugin_root).returncode == 0
+    subprocess.run([sys.executable, str(plugin_root / "scripts" / "report.py"),
+                    "--repo", str(scanned_copy)], check=True, capture_output=True)
+    assert _run(scanned_copy).returncode == 0
+    html = (scanned_copy / ".thunderstruck" / "report.html").read_text(encoding="utf-8")
+    outside = _outside_data(html)
+    for marker in ("pwn", "pwned", "evil.example", "onerror"):
+        assert marker not in outside, marker
+    assert html.count("<script") == 2 and html.count("</script>") == 2
+    page = _embedded(html)
+    assert page["findings"][0]["failure_mode"] == f"failure_mode: {HOSTILE_TEXT}"
+
+
+def test_page_holds_exactly_the_validated_findings(scanned_copy, plugin_root):
+    """A hotspot whose findings failed validation never reaches the page (AC-3)."""
+    out = _scan(scanned_copy, plugin_root)
+    assert _run(scanned_copy).returncode == 0
+    page = _embedded((out / "report.html").read_text(encoding="utf-8"))
+    report = json.loads((out / "report.json").read_text())
+    assert [f["id"] for f in page["findings"]] == [f["id"] for f in report["findings"]]
+    assert page["incomplete"] == report["incomplete"]

@@ -9,9 +9,9 @@
   thunderstruck HTML report template (reader layout).
   scripts/report_html.py replaces the placeholder in #thunderstruck-report with
   report.json (schema thunderstruck.report/v1). Opened with the placeholder
-  intact, the page tries ./report.json instead (works when served over http).
-  No network requests, no external fonts. Every repository-derived value is
-  inserted with textContent, never as HTML.
+  intact, the page says there is no report data. No network requests, no
+  external fonts. Every repository-derived value is inserted with textContent,
+  never as HTML.
 -->
 <style>
 :root{
@@ -101,6 +101,21 @@ h1{margin:0;font-family:var(--serif);font-size:26px;line-height:1.35;font-weight
 .foot .hint{font-size:12px;color:var(--stone-1);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media (max-width:1100px){.foot .hint .keys{display:none}}
 .empty{padding:48px;max-width:620px;display:flex;flex-direction:column;gap:10px}
+
+/* overview */
+.sec{display:flex;flex-direction:column;gap:10px}
+h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:500;letter-spacing:-.005em}
+.sec p{margin:0;font-size:14px;line-height:1.6;color:var(--ink-3);text-wrap:pretty;overflow-wrap:anywhere}
+.sec ul{margin:0;padding-left:18px;font-size:14px;line-height:1.6;color:var(--ink-3);overflow-wrap:anywhere}
+.sec ul ul{font-size:13px;color:var(--stone-1)}
+.status{font-family:var(--serif);font-size:18px;line-height:1.45;padding:14px 16px;background:var(--amber-tint);border-radius:3px;color:var(--ink-0)}
+.hypo{font-size:13px;color:var(--ink-3);padding:10px 12px;background:var(--paper-2);border-radius:3px}
+.tbl{overflow-x:auto}
+.tbl table{border-collapse:collapse;width:100%;font-size:13px}
+.tbl th{text-align:left;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--stone-1);padding:6px 10px 6px 0;border-bottom:1px solid var(--line-2);white-space:nowrap}
+.tbl td{padding:7px 10px 7px 0;border-bottom:1px solid var(--line-1);vertical-align:top;overflow-wrap:anywhere}
+.tbl td.num{font-variant-numeric:tabular-nums}
+.foot-note{font-size:12px;color:var(--stone-1)}
 .empty h1{font-size:22px}
 @media (max-width:860px){
   .app{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr);height:auto;min-height:100vh}
@@ -154,7 +169,7 @@ h1{margin:0;font-family:var(--serif);font-size:26px;line-height:1.35;font-weight
   function safeUrl(u) { return typeof u === "string" && /^https?:\/\//i.test(u) ? u : null; }
   function link(text, url, cls) {
     var u = safeUrl(url);
-    return u ? h("a", { href: u, target: "_blank", rel: "noopener", class: cls, text: text })
+    return u ? h("a", { href: u, target: "_blank", rel: "noopener noreferrer", class: cls, text: text })
              : h("span", { class: cls, text: text });
   }
   function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
@@ -162,7 +177,7 @@ h1{margin:0;font-family:var(--serif);font-size:26px;line-height:1.35;font-weight
   function load() {
     var raw = document.getElementById("thunderstruck-report").textContent.trim();
     if (raw && raw !== PLACEHOLDER) return Promise.resolve(JSON.parse(raw));
-    return fetch("report.json").then(function (r) { return r.json(); });
+    return Promise.reject(new Error("this page holds no scan"));
   }
 
   load().then(start).catch(function (e) {
@@ -181,10 +196,11 @@ h1{margin:0;font-family:var(--serif);font-size:26px;line-height:1.35;font-weight
     (R.hotspots || []).forEach(function (hs) { hotspots[hs.id] = hs; });
     var coverage = R.pattern_coverage || {};
     var repo = R.repo || {};
-    var repoName = String(repo.root || "repository").split(/[\\/]/).filter(Boolean).pop();
+    var repoName = String(repo.name || "repository");
     var storeKey = "thunderstruck:reviewed:" + repoName;
     var reviewed = {};
     try { reviewed = JSON.parse(localStorage.getItem(storeKey) || "{}"); } catch (e) {}
+    var OVERVIEW = "overview";
     var state = { filter: "all", sel: null };
 
     document.title = "thunderstruck — " + repoName;
@@ -197,9 +213,10 @@ h1{margin:0;font-family:var(--serif);font-size:26px;line-height:1.35;font-weight
       return findings.filter(function (f) { return state.filter === "all" || f.confidence === state.filter; });
     }
     function byId(id) { return findings.filter(function (f) { return f.id === id; })[0]; }
+    function stepIds() { return [OVERVIEW].concat(visible().map(function (f) { return f.id; })); }
 
     var fromHash = decodeURIComponent(location.hash.slice(1));
-    state.sel = byId(fromHash) ? fromHash : (findings[0] && findings[0].id);
+    state.sel = byId(fromHash) ? fromHash : OVERVIEW;
 
     function select(id, focusList) {
       state.sel = id;
@@ -209,7 +226,7 @@ h1{margin:0;font-family:var(--serif);font-size:26px;line-height:1.35;font-weight
       document.getElementById("scroll").scrollTop = 0;
     }
     function step(d) {
-      var ids = visible().map(function (f) { return f.id; });
+      var ids = stepIds();
       var i = ids.indexOf(state.sel);
       var n = ids[Math.max(0, Math.min(ids.length - 1, (i < 0 ? 0 : i + d)))];
       if (n) select(n, true);
@@ -238,7 +255,8 @@ h1{margin:0;font-family:var(--serif);font-size:26px;line-height:1.35;font-weight
       el.appendChild(h("div", { class: "counts" }, [
         h("span", null, [h("b", { text: String(findings.length) }), "findings"]),
         counts.high ? h("span", null, [h("b", { text: String(counts.high) }), "high"]) : null,
-        counts.medium ? h("span", null, [h("b", { text: String(counts.medium) }), "medium"]) : null
+        counts.medium ? h("span", null, [h("b", { text: String(counts.medium) }), "medium"]) : null,
+        counts.low ? h("span", null, [h("b", { text: String(counts.low) }), "low"]) : null
       ]));
       var seg = h("div", { class: "seg", role: "group", "aria-label": "Filter by confidence" });
       [["all", "All"], ["high", "High"], ["medium", "Medium"], ["low", "Low"]].forEach(function (o) {
@@ -247,13 +265,14 @@ h1{margin:0;font-family:var(--serif);font-size:26px;line-height:1.35;font-weight
           onclick: function () {
             state.filter = o[0];
             var v = visible();
-            if (!v.some(function (f) { return f.id === state.sel; }) && v[0]) state.sel = v[0].id;
+            if (state.sel !== OVERVIEW && !v.some(function (f) { return f.id === state.sel; }))
+              state.sel = v[0] ? v[0].id : OVERVIEW;
             renderHead(); renderList(); renderDoc(); renderFoot();
           } }));
       });
       el.appendChild(seg);
       el.appendChild(h("span", { class: "muted", style: "font-size:13px", text: revN + " of " + findings.length + " reviewed" }));
-      var warns = R.warnings || [];
+      var warns = R.run_warnings || R.warnings || [];
       if (warns.length) {
         el.appendChild(h("details", { class: "warn" }, [
           h("summary", { text: warns.length + " run warning" + (warns.length === 1 ? "" : "s") }),
@@ -265,6 +284,14 @@ h1{margin:0;font-family:var(--serif);font-size:26px;line-height:1.35;font-weight
     /* ---------- rail list ---------- */
     function renderList(focus) {
       var el = document.getElementById("list"); clear(el);
+      var onOverview = state.sel === OVERVIEW;
+      var ov = h("button", { type: "button", class: "item", "aria-current": String(onOverview),
+        onclick: function () { select(OVERVIEW); } }, [
+        h("div", { class: "item-top" }, [h("span", { class: "mono", text: "Overview" })]),
+        h("span", { class: "item-text", text: statusLine() || "Run, coverage, hotspots, and what was not analysed" })
+      ]);
+      el.appendChild(ov);
+      if (onOverview && focus) ov.focus({ preventScroll: true });
       var groups = [], seen = {};
       visible().forEach(function (f) {
         var g = seen[f.hotspot_id];
@@ -328,13 +355,7 @@ h1{margin:0;font-family:var(--serif);font-size:26px;line-height:1.35;font-weight
     function renderDoc() {
       var el = document.getElementById("doc"); clear(el);
       var f = byId(state.sel);
-      if (!f) {
-        el.appendChild(h("div", { class: "empty" }, [
-          h("h1", { text: "No findings" }),
-          h("p", { class: "muted", text: "Every investigated hotspot came back clean. See report.md for what each one checked." })
-        ]));
-        return;
-      }
+      if (!f) { renderOverview(el); return; }
       var loc = f.location || {};
       var hs = hotspots[f.hotspot_id] || {};
       var conf = f.confidence || "?";
@@ -389,10 +410,160 @@ h1{margin:0;font-family:var(--serif);font-size:26px;line-height:1.35;font-weight
       if (f.key) el.appendChild(h("span", { class: "key mono", text: "stable key " + f.key }));
     }
 
+    /* ---------- overview: every report.md section ---------- */
+    function statusLine() {
+      if (findings.length) return null;
+      var clean = (R.clean || []).length, inc = (R.incomplete || []).length, n = clean + inc;
+      if (!n) return "No hotspot was investigated. This report says nothing about the code.";
+      if (inc === n) return "No hotspot could be analysed. This report says nothing about the code.";
+      if (inc) return "No findings, but " + inc + " of " + n + " hotspots could not be analysed. See Incomplete.";
+      return "No findings: all " + n + " investigated hotspots came back clean.";
+    }
+    function section(title, kids) {
+      return h("section", { class: "sec" }, [h("h2", { text: title })].concat(kids));
+    }
+    function para(text, cls) { return h("p", { class: cls || null, text: text }); }
+    function list(items) { return h("ul", null, items.map(function (i) { return h("li", null, [].concat(i)); })); }
+    function table(head, rows, numeric) {
+      numeric = numeric || {};
+      return h("div", { class: "tbl" }, [h("table", null, [
+        h("thead", null, [h("tr", null, head.map(function (c) { return h("th", { text: c }); }))]),
+        h("tbody", null, rows.map(function (r) {
+          return h("tr", null, r.map(function (c, i) {
+            return h("td", { class: numeric[i] ? "num" : null }, [].concat(c == null ? "—" : typeof c === "number" ? String(c) : c));
+          }));
+        }))
+      ])]);
+    }
+    function patterns(ps) { return (ps || []).join(", ") || "—"; }
+
+    function renderOverview(el) {
+      var win = R.window || {}, counts = R.counts || {};
+      var byConf = {}; findings.forEach(function (f) { byConf[f.confidence] = (byConf[f.confidence] || 0) + 1; });
+      var breakdown = ["high", "medium", "low"].filter(function (k) { return byConf[k]; })
+        .map(function (k) { return byConf[k] + " " + k; }).join(", ");
+      var legacy = !("coverage_rows" in R);
+
+      el.appendChild(h("div", { style: "display:flex;flex-direction:column;gap:12px" }, [
+        h("span", { class: "eyebrow", text: "Overview" }),
+        h("h1", { text: "thunderstruck — " + repoName }),
+        h("span", { class: "mono muted wrap", text: [
+          repo.branch && (repo.branch + (repo.head ? " @ " + String(repo.head).slice(0, 7) : "")),
+          R.scanned_at && ("scanned " + String(R.scanned_at).slice(0, 10)),
+          win.since && ("window " + win.since + (win.since_date ? " (since " + win.since_date + ")" : "")),
+          win.commits != null && (win.commits + " commits"),
+          counts.files_considered != null && (counts.files_considered + " files considered"),
+          counts.hotspots != null && (counts.hotspots + " hotspots investigated")
+        ].filter(Boolean).join(" · ") }),
+        h("span", { style: "font-size:15px", text: findings.length + " finding(s)" +
+          (R.files_affected != null ? " across " + R.files_affected + " file(s)" : "") +
+          (breakdown ? " — " + breakdown : "") })
+      ]));
+      var status = statusLine();
+      if (status) el.appendChild(h("div", { class: "status", text: status }));
+      el.appendChild(h("div", { class: "hypo", text: "Findings are falsifiable hypotheses, not verified defects. " +
+        "Every claim cites evidence that resolved to a real file:line, commit, detector hit or catalog edge, " +
+        "and every finding names one concrete way to prove it wrong. Check it before you act on one." }));
+      if (legacy) el.appendChild(h("div", { class: "shared", text: "This report predates the HTML view; " +
+        "re-run /thunderstruck-report after a scan for every section." }));
+
+      var warns = R.run_warnings || [], supp = R.suppressed || [];
+      if (warns.length || supp.length) {
+        var items = warns.slice();
+        if (supp.length) items.push(["Suppressed leads — " + supp.length + " rule(s) in .thunderstruck.toml " +
+          "silence detector hits before ranking:", list(supp.map(function (r) {
+            return r.detector + " on " + r.path + ": " + r.hits + " hit(s) — " + r.reason; }))]);
+        el.appendChild(section("Run warnings", [list(items)]));
+      }
+
+      var ns = R.not_scanned;
+      if (ns) el.appendChild(section("Not scanned", [para(ns.intro)].concat(ns.items.length ? [list(ns.items)] : [])));
+
+      var ctx = R.service_context;
+      if (ctx) {
+        var edges = ctx.edges || [];
+        var hidden = Object.keys(ctx.truncated || {}).sort().filter(function (d) { return ctx.truncated[d]; })
+          .map(function (d) { return ctx.truncated[d] + " " + d; });
+        el.appendChild(section("Service context", [
+          h("span", { class: "mono muted wrap", text: ctx.entity_ref + " · " + edges.length + " edge(s), 1 hop · fetched " +
+            String(ctx.fetched_at || "").slice(0, 10) + " · context " + String(ctx.context_hash || "").slice(0, 19) }),
+          para("Component-level context from the service catalog: it describes the whole component, not a file."),
+          table(["Edge", "Direction", "Attributes"], edges.map(function (e) {
+            var a = e.attributes || {};
+            var attrs = Object.keys(a).sort().map(function (k) { return k + ": " + a[k]; }).join("; ");
+            return [h("span", { class: "mono", text: e.ref }), e.direction, attrs || null];
+          }))
+        ].concat(hidden.length ? [para("… and " + hidden.join(", ") + " not listed.", "foot-note")] : [])));
+      }
+
+      if (!legacy) {
+        el.appendChild(section("Pattern coverage", [
+          para("Leads are detector hits — mechanical, noisy, and never a finding on their own. Findings are what " +
+            "survived an investigator reading the code. Leads read counts the hits inside investigated hotspots; " +
+            "leads confirmed counts those a validated finding cites."),
+          table(["ID", "Pattern", "Tier", "Files with an unconfirmed lead", "Leads read", "Leads confirmed", "Findings"],
+            R.coverage_rows.map(function (r) {
+              return [h("span", { class: "mono", text: r.id }), r.name, r.tier, r.unconfirmed_files,
+                      r.leads_read, r.leads_confirmed, r.findings];
+            }), { 3: 1, 4: 1, 5: 1, 6: 1 }),
+          para("“0” leads means no file matched the detector's anchor. It does not mean the pattern is present.", "foot-note")
+        ]));
+      }
+
+      var clean = R.clean || [];
+      if (clean.length) {
+        el.appendChild(section("Hotspots investigated with no finding", [list(clean.map(function (e) {
+          var note = [];
+          if ((e.cited_by || []).length) note.push("no finding of its own; cited as evidence by " + e.cited_by.join(", "));
+          if (e.notes) note.push(e.notes);
+          return [h("span", { class: "mono", text: e.hotspot_id + " " }), link(e.file, e.url, "mono")]
+            .concat(note.length ? [" — " + note.join(" — ")] : []);
+        }))]));
+      }
+
+      var inc = R.incomplete || [];
+      if (inc.length) {
+        el.appendChild(section("Incomplete", [
+          para("These hotspots were ranked but produced no usable analysis. The report is partial."),
+          list(inc.map(function (e) {
+            return [h("span", { class: "mono", text: e.hotspot_id + " " }), link(e.file, e.url, "mono"), " — " + e.reason]
+              .concat((e.errors || []).length ? [list(e.errors.slice(0, 3))] : []);
+          }))
+        ]));
+      }
+
+      el.appendChild(section("Ranked hotspots", [table(["#", "File", "Score", "Commits", "Fixes", "Max CCN", "Leads"],
+        (R.hotspots || []).map(function (hs) {
+          var churn = hs.churn || {}, cx = hs.complexity || {};
+          var file = h("span", null, [link(hs.file, hs.url, "mono")].concat(
+            safeUrl(hs.history_url) ? [" · ", link("history", hs.history_url)] : []));
+          return [hs.id, file, hs.score, churn.commits, churn.fix_commits, cx.ccn_max, patterns(hs.patterns)];
+        }), { 2: 1, 3: 1, 4: 1, 5: 1 })]));
+
+      var dormant = R.dormant || [];
+      if (dormant.length) {
+        var scripts = dormant.some(function (d) { return d.script; });
+        el.appendChild(section("Dormant integration points", [
+          para("No commit touched these files in the window, so they cannot rank on churn. They carry " +
+            "integration-point leads (timeouts, retries, pushback, blocking calls), and code nobody changes is often " +
+            "code everything depends on. They are investigated only with --investigate-dormant N." +
+            (scripts ? " Files marked script sit in a scripts, tools or examples directory and are listed last: " +
+              "they are usually run by hand, not in production." : "")),
+          table(["#", "File", "Last change", "Leads"], dormant.map(function (d) {
+            return [d.id, h("span", null, [link(d.file, d.url, "mono")].concat(d.script ? [" · script"] : [])),
+                    d.last_modified ? String(d.last_modified).slice(0, 10) : null, patterns(d.patterns)];
+          }))
+        ]));
+      }
+
+      el.appendChild(h("span", { class: "key mono", text: "thunderstruck · catalog " + (R.catalog_schema || "—") +
+        " · report " + (R.schema || "—") }));
+    }
+
     /* ---------- footer ---------- */
     function renderFoot() {
       var el = document.getElementById("foot"); clear(el);
-      var ids = visible().map(function (f) { return f.id; });
+      var ids = stepIds();
       var i = ids.indexOf(state.sel);
       var f = byId(state.sel);
       var isRev = f && reviewed[rkey(f)];

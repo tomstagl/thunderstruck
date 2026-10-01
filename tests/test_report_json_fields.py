@@ -102,3 +102,55 @@ def test_helpers_match_the_markdown_with_every_section(scanned_copy, plugin_root
                      "findings": 1}
     assert [_as_md_cells(r) for r in payload["coverage_rows"]] == _md_coverage_rows(markdown)
     assert re.search(rf"across {payload['files_affected']} file\(s\)", markdown)
+
+
+def test_clean_entries_carry_cited_by(scanned_copy, plugin_root):
+    """A clean hotspot another finding cites: report.json names the citing
+    ids, as report.md's "cited as evidence by" note does (spec §2)."""
+    hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
+    _write_finding(scanned_copy, hid, doc)
+    assert _validate(scanned_copy, plugin_root).returncode == 0
+    data = report.collect(scanned_copy)
+    finding = data["findings"][0]
+    other = next(h["file"] for h in data["hotspots"]["hotspots"]
+                 if h["file"] != finding["location"]["file"])
+    finding["evidence"].append({"type": "code", "ref": f"{other}:1"})
+    data["clean"] = [{"hotspot_id": "H98", "file": other, "notes": "fine"},
+                     {"hotspot_id": "H99", "file": "nobody/cites.py", "notes": ""}]
+    markdown = report.render_markdown(data, scanned_copy)
+    payload = report.render_json(data)
+
+    by_file = {e["file"]: e["cited_by"] for e in payload["clean"]}
+    assert by_file == {other: [finding["id"]], "nobody/cites.py": []}
+    assert f"no finding of its own; cited as evidence by {finding['id']}" in markdown
+    assert "cited_by" not in data["clean"][0], "collect()'s data must not be mutated"
+
+
+GAPS = {"tracked": 40, "considered": 12, "unchanged": 9, "not_citable": 1,
+        "excluded": {"test": 6, "weird-reason": 2},
+        "unsupported": {".rb": 3, "other": 4, ".go": 3}}
+
+
+def test_not_scanned_plain_and_markdown_agree():
+    plain = report.not_scanned(GAPS)
+    assert plain["intro"].startswith("Of 40 tracked files, 12 changed")
+    assert plain["items"] == [
+        "9 in a supported language had no commit in the window, so they could not rank on churn",
+        "1 are not citable (symbolic links, submodules, or names that are not UTF-8)",
+        "6 excluded: test code",
+        "2 excluded: weird-reason",
+        "no detectors for their language or format: 4 other, 3 .go, 3 .rb",
+    ]
+    marked = report.not_scanned(GAPS, code=md.code, text=md.text)
+    section = report.render_not_scanned(GAPS)
+    assert section == ["## Not scanned", "", marked["intro"], "",
+                       *[f"- {i}" for i in marked["items"]], ""]
+    assert report.not_scanned(None) is None
+
+
+def test_report_json_carries_not_scanned(scanned_copy, plugin_root):
+    _, payload = _report(scanned_copy, plugin_root)
+    gaps = _hotspots(scanned_copy).get("coverage_gaps")
+    assert payload["not_scanned"] == report.not_scanned(gaps)
+    assert payload["not_scanned"] is not None
+    assert "`" not in json.dumps(payload["not_scanned"])

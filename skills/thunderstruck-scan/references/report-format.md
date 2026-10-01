@@ -34,6 +34,10 @@ were added without a schema bump; existing fields keep their meaning.
   `{id, name, tier, unconfirmed_files, leads_read, leads_confirmed, findings}`.
   The `OTHER` row, when present, has `null` where `report.md` shows `—`.
 - `files_affected`: the number of distinct files the findings are located in.
+- `clean[].cited_by`: per clean hotspot, the ids of findings from other
+  hotspots that cite its file as `code` evidence (empty when none).
+- `not_scanned`: `{intro, items}`, the sentences under **Not scanned** in
+  plain text, or `null` when the scan recorded no coverage gaps.
 
 ## The finding contract
 
