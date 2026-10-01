@@ -230,3 +230,15 @@ def test_check_shows_where_a_long_line_differs(tmp_path):
     ok, message = gen.check(dest, head + "NEWVALUE" + "y" * 5000 + "\n")
     assert not ok and "OLDVALUE" in message and "NEWVALUE" in message
     assert max(len(line) for line in message.splitlines()) < 300
+
+
+def test_git_dates_have_one_spelling_across_git_versions():
+    """git 2.55 writes UTC as Z where 2.43 wrote +00:00; the HTML sample
+    embeds the full timestamp, so it went stale on newer git (#3)."""
+    import _common
+    assert _common.git_iso_date("2019-07-17T09:00:00Z") == "2019-07-17T09:00:00+00:00"
+    assert _common.git_iso_date("2019-07-17T09:00:00+00:00") == "2019-07-17T09:00:00+00:00"
+    assert _common.git_iso_date("2019-07-17T11:00:00+02:00") == "2019-07-17T11:00:00+02:00"
+    assert _common.git_iso_date("") == ""
+    signals = (Path(__file__).resolve().parent.parent / "scripts" / "signals.py").read_text()
+    assert signals.count("c.git_iso_date(") == 2, "every %aI read in signals.py is normalised"
