@@ -389,6 +389,23 @@ DIFF_LINES = 80
 DIFF_WIDTH = 200  # the HTML sample's data is one long line
 
 
+def _clip_long_lines(diff: list[str]) -> list[str]:
+    """Long lines are cut around where a -/+ pair first differs, so a change
+    inside the HTML sample's one-line data block stays visible."""
+    out = list(diff)
+    for i in range(len(out) - 1):
+        old, new = out[i], out[i + 1]
+        if (old.startswith("-") and new.startswith("+") and not old.startswith("---")
+                and max(len(old), len(new)) > DIFF_WIDTH):
+            at = next((n for n, (a, b) in enumerate(zip(old, new)) if n and a != b),
+                      min(len(old), len(new)))
+            start = max(1, at - DIFF_WIDTH // 2)
+            for j, line in ((i, old), (i + 1, new)):
+                out[j] = (line[0] + ("… " if start > 1 else "")
+                          + line[start:start + DIFF_WIDTH] + " …")
+    return [line if len(line) <= DIFF_WIDTH + 4 else line[:DIFF_WIDTH] + " …" for line in out]
+
+
 def check(dest: Path, body: str) -> tuple[bool, str]:
     """Compare the committed sample with a fresh generation."""
     if not dest.is_file():
@@ -399,8 +416,7 @@ def check(dest: Path, body: str) -> tuple[bool, str]:
     diff = list(difflib.unified_diff(current.splitlines(), body.splitlines(),
                                      f"{dest.name} (committed)", f"{dest.name} (generated)",
                                      lineterm=""))
-    shown = [line if len(line) <= DIFF_WIDTH else line[:DIFF_WIDTH] + " …"
-             for line in diff[:DIFF_LINES]]
+    shown = _clip_long_lines(diff[:DIFF_LINES])
     if len(diff) > DIFF_LINES:
         shown.append(f"… {len(diff) - DIFF_LINES} more diff line(s)")
     return False, "\n".join([f"{dest.name} is stale:", *shown, f"regenerate with: {REGENERATE}"])

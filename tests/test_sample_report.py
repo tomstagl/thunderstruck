@@ -220,3 +220,13 @@ def test_html_sample_pins_every_clock_dependent_date():
                       "scanned_at": "2025-01-06T00:00:00+00:00",
                       "service_context": {"fetched_at": "2025-01-06T00:00:00+00:00"}}
     assert "/tmp" not in _sample_html()
+
+
+def test_check_shows_where_a_long_line_differs(tmp_path):
+    """The HTML sample's data is one line: the diff must show the change."""
+    dest = tmp_path / "sample-report.html"
+    head = "x" * 5000
+    dest.write_text(head + "OLDVALUE" + "y" * 5000 + "\n")
+    ok, message = gen.check(dest, head + "NEWVALUE" + "y" * 5000 + "\n")
+    assert not ok and "OLDVALUE" in message and "NEWVALUE" in message
+    assert max(len(line) for line in message.splitlines()) < 300
