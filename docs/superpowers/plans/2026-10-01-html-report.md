@@ -20,7 +20,7 @@ The browser tests run separately, from Task 5 on:
 
 ```bash
 THUNDERSTRUCK_REQUIRE_BROWSER=1 uv run --with pytest --with pyyaml --with lizard \
-  --with playwright==1.55.0 pytest tests/test_report_html_browser.py -q
+  --with playwright==1.56.0 pytest tests/test_report_html_browser.py -q
 ```
 
 (In this cloud environment, Chromium is pre-installed. Do not run `playwright install`; pass `executable_path` from `PLAYWRIGHT_BROWSERS_PATH` if the pinned version does not find it.)
@@ -68,10 +68,10 @@ THUNDERSTRUCK_REQUIRE_BROWSER=1 uv run --with pytest --with pyyaml --with lizard
 
 **Files:** `tests/test_report_html_browser.py` (new), `.github/workflows/ci.yml`.
 
-- [ ] Write the browser tests (spec §7, `test_report_html_browser.py`) against a page rendered from the fixture in `tmp_path`: no console errors and no CSP violations; no network request besides the page; the injection text is shown as text and creates no element; filter, `j`/`k`, `r` and reload persistence; the copy button; Overview sections; the all-incomplete status line, built by rendering a `report.json` with every hotspot moved to `incomplete`.
-- [ ] Skip without Playwright unless `THUNDERSTRUCK_REQUIRE_BROWSER=1`.
-- [ ] CI: one step in the test job installs Chromium for the pinned Playwright and runs the browser tests with `THUNDERSTRUCK_REQUIRE_BROWSER=1`, on one Python version only.
-- [ ] Commit: `Test the HTML report in a real browser`.
+- [x] Write the browser tests (spec §7, `test_report_html_browser.py`) against a page rendered from the fixture in `tmp_path`: no console errors and no CSP violations; no network request besides the page; the injection text is shown as text and creates no element; filter, `j`/`k`, `r` and reload persistence; the copy button; Overview sections; the all-incomplete status line, built by rendering a `report.json` with every hotspot moved to `incomplete`.
+- [x] Skip without Playwright unless `THUNDERSTRUCK_REQUIRE_BROWSER=1`.
+- [x] CI: one step in the test job installs Chromium for the pinned Playwright and runs the browser tests with `THUNDERSTRUCK_REQUIRE_BROWSER=1`, on one Python version only.
+- [x] Commit: `Test the HTML report in a real browser`.
 
 ### Task 6: Sample, CI, version, docs (AC-10)
 
