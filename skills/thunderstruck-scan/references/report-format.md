@@ -16,6 +16,25 @@ All output lives in `.thunderstruck/` in the scanned repository.
 └── findings/          per-hotspot investigator output, keyed by bundle hash
 ```
 
+## Sections of `report.md` in `report.json`
+
+Every section of `report.md` is in `report.json`, computed by `report.py`,
+so nothing that reads the JSON has to derive a number itself. These fields
+were added without a schema bump; existing fields keep their meaning.
+
+- `scanned_at`: when `signals.py` ran (`hotspots.json` `generated_at`), the
+  date `report.md` prints as *Scanned*. `generated_at` is when the report
+  was rendered.
+- `run_warnings`: exactly the list under **Run warnings**: hotspot, context
+  and link warnings, in that order. `warnings` keeps its older content
+  (hotspot and link warnings only).
+- `suppressed`: `[{detector, path, hits, reason}]`, one per suppression rule
+  in `.thunderstruck.toml`.
+- `coverage_rows`: the **Pattern coverage** table, in order:
+  `{id, name, tier, unconfirmed_files, leads_read, leads_confirmed, findings}`.
+  The `OTHER` row, when present, has `null` where `report.md` shows `—`.
+- `files_affected`: the number of distinct files the findings are located in.
+
 ## The finding contract
 
 Enforced mechanically by `validate.py`. A finding that breaks any of these
