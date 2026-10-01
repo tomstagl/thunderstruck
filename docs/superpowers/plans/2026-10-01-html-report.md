@@ -58,11 +58,11 @@ THUNDERSTRUCK_REQUIRE_BROWSER=1 uv run --with pytest --with pyyaml --with lizard
 
 **Files:** `skills/thunderstruck-report/SKILL.md` (new), `skills/thunderstruck-scan/SKILL.md`, `skills/thunderstruck-scan/references/report-format.md`, `tests/test_report_html.py`.
 
-- [ ] Write the failing tests: the new skill and the scan skill reference `report_html.py` only through `${CLAUDE_PLUGIN_ROOT}` (this is covered by `test_plugin_paths` once the files exist; run it); the scan skill's Step 5 runs `report_html.py` after `report.py` and states that a failure never stops the scan; `plugin.json` still declares no `skills` (the existing regression test).
-- [ ] Write `skills/thunderstruck-report/SKILL.md` (spec §5.1).
-- [ ] Patch Step 5 and Step 6 of `thunderstruck-scan/SKILL.md` (spec §5.2), and add `report.html` to the tree in `report-format.md`.
-- [ ] `claude plugin validate . --strict`, then install the plugin from this checkout and confirm `claude plugin list` says `enabled` and lists `thunderstruck-report`.
-- [ ] Commit: `Add /thunderstruck-report and build the HTML report on every scan`.
+- [x] Write the failing tests: the new skill and the scan skill reference `report_html.py` only through `${CLAUDE_PLUGIN_ROOT}` (this is covered by `test_plugin_paths` once the files exist; run it); the scan skill's Step 5 runs `report_html.py` after `report.py` and states that a failure never stops the scan; `plugin.json` still declares no `skills` (the existing regression test).
+- [x] Write `skills/thunderstruck-report/SKILL.md` (spec §5.1).
+- [x] Patch Step 5 and Step 6 of `thunderstruck-scan/SKILL.md` (spec §5.2), and add `report.html` to the tree in `report-format.md`.
+- [x] `claude plugin validate . --strict`, then install the plugin from this checkout and confirm `claude plugin list` says `enabled` and lists `thunderstruck-report`.
+- [x] Commit: `Add /thunderstruck-report and build the HTML report on every scan`.
 
 ### Task 5: Browser test (AC-6, AC-7, AC-9)
 

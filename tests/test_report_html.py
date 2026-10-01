@@ -268,3 +268,32 @@ def test_page_holds_exactly_the_validated_findings(scanned_copy, plugin_root):
     report = json.loads((out / "report.json").read_text())
     assert [f["id"] for f in page["findings"]] == [f["id"] for f in report["findings"]]
     assert page["incomplete"] == report["incomplete"]
+
+
+# ------------------------------------------------------------ skills (T4) --
+
+
+SKILLS = ROOT / "skills"
+RUN = 'uv run "${CLAUDE_PLUGIN_ROOT}/scripts/report_html.py"'
+
+
+def test_report_skill_runs_the_renderer():
+    text = (SKILLS / "thunderstruck-report" / "SKILL.md").read_text(encoding="utf-8")
+    front = text.split("---", 2)[1]
+    assert "name: thunderstruck-report" in front and "description:" in front
+    assert RUN in text
+    assert "report.json" in text and "/thunderstruck-scan" in text
+
+
+def test_scan_step_5_renders_html_after_the_markdown_and_never_fails():
+    text = (SKILLS / "thunderstruck-scan" / "SKILL.md").read_text(encoding="utf-8")
+    step5 = text.split("## Step 5", 1)[1].split("## Step 6", 1)[0]
+    assert step5.index("scripts/report.py") < step5.index(RUN)
+    assert "never stops the scan" in step5
+    step6 = text.split("## Step 6", 1)[1].split("\n## ", 1)[0]
+    assert ".thunderstruck/report.html" in step6
+
+
+def test_plugin_manifest_does_not_declare_skills():
+    manifest = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())
+    assert not {"skills", "hooks", "agents"} & set(manifest)

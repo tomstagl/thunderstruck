@@ -5,6 +5,7 @@ All output lives in `.thunderstruck/` in the scanned repository.
 ```
 .thunderstruck/
 ├── report.md          human report
+├── report.html        the same report as one self-contained page, for a browser
 ├── report.json        thunderstruck.report/v1 — stable, versioned
 ├── index.json         thunderstruck.index/v1 — file → findings, read by the hook
 ├── hotspots.json      thunderstruck.hotspots/v1 — deterministic layer output
