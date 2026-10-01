@@ -185,3 +185,38 @@ def test_sample_links_every_hotspot_and_clean_file():
     for item in items:
         assert re.match(rf"- \*\*H\d+\*\* \[`([^`]+)`\]\({base}/blob/{sha}/\1\) — ", item), item
     assert "not linked" not in sample
+
+
+# ------------------------------------------------------ the HTML sample (#3) --
+
+
+def _sample_html() -> str:
+    return (Path(__file__).resolve().parent.parent / "examples" / "sample-report.html").read_text()
+
+
+def test_html_sample_shows_every_finding_of_the_markdown_sample():
+    import re
+    import report_html
+    html = _sample_html()
+    md_sample = (Path(__file__).resolve().parent.parent / "examples" / "sample-report.md").read_text()
+    md_ids = re.findall(r"^### (FR-\d{3}) ", md_sample, re.M)
+    data = re.search(r'<script type="application/json" id="thunderstruck-report">(.*?)</script>',
+                     html, re.S)[1]
+    import json
+    page = json.loads(data)
+    assert [f["id"] for f in page["findings"]] == md_ids and md_ids
+    assert "root" not in page["repo"] and page["repo"]["name"] == "fixture"
+    for key in ("coverage_rows", "run_warnings", "not_scanned", "service_context"):
+        assert page.get(key), key
+    assert report_html.HASH_PLACEHOLDER not in html
+
+
+def test_html_sample_pins_every_clock_dependent_date():
+    import gen_sample_report as gen
+    pinned = gen.pin_report_dates(
+        {"generated_at": "2031-05-05T10:11:12+00:00", "scanned_at": "2031-05-05T10:11:00+00:00",
+         "service_context": {"fetched_at": "2031-05-05T10:11:01+00:00"}}, "2025-01-06")
+    assert pinned == {"generated_at": "2025-01-06T00:00:00+00:00",
+                      "scanned_at": "2025-01-06T00:00:00+00:00",
+                      "service_context": {"fetched_at": "2025-01-06T00:00:00+00:00"}}
+    assert "/tmp" not in _sample_html()

@@ -77,12 +77,12 @@ THUNDERSTRUCK_REQUIRE_BROWSER=1 uv run --with pytest --with pyyaml --with lizard
 
 **Files:** `scripts/gen_sample_report.py`, `examples/sample-report.html` (generated), `tests/test_sample_report.py`, `.github/workflows/ci.yml` if the check step needs a change, `README.md`, `CHANGELOG.md`, `CLAUDE.md` (Commands and Generated files), and version `0.9.0` in `plugin.json`, `marketplace.json`, `pyproject.toml` and the top `CHANGELOG.md` heading.
 
-- [ ] Write the failing sample test: `examples/sample-report.html` exists, contains every fixture finding id, and contains no path of the temporary fixture checkout.
-- [ ] Extend `gen_sample_report.py`: after `report.py`, pin `generated_at` and `scanned_at` in the loaded `report.json` to the fixture's last commit day, render with `report_html.render`, and write `examples/sample-report.html`. `--check` compares both samples and fails if either is stale.
-- [ ] Regenerate both samples. The Markdown sample must not change.
-- [ ] Run the three-Python suite, the browser tests, `gen_catalog_docs.py --check`, `gen_sample_report.py --check` and `claude plugin validate . --strict`.
-- [ ] Docs: the README mentions `report.html` and `/thunderstruck-report`; CLAUDE.md lists `examples/sample-report.html` under generated files and `report_html.py` in the architecture; CHANGELOG `## 0.9.0`.
-- [ ] Commit: `Publish a sample HTML report; bump to 0.9.0`.
+- [x] Write the failing sample test: `examples/sample-report.html` exists, contains every fixture finding id, and contains no path of the temporary fixture checkout.
+- [x] Extend `gen_sample_report.py`: after `report.py`, pin `generated_at` and `scanned_at` in the loaded `report.json` to the fixture's last commit day, render with `report_html.render`, and write `examples/sample-report.html`. `--check` compares both samples and fails if either is stale.
+- [x] Regenerate both samples. The Markdown sample must not change.
+- [x] Run the three-Python suite, the browser tests, `gen_catalog_docs.py --check`, `gen_sample_report.py --check` and `claude plugin validate . --strict`.
+- [x] Docs: the README mentions `report.html` and `/thunderstruck-report`; CLAUDE.md lists `examples/sample-report.html` under generated files and `report_html.py` in the architecture; CHANGELOG `## 0.9.0`.
+- [x] Commit: `Publish a sample HTML report; bump to 0.9.0`.
 
 ## AC coverage
 
