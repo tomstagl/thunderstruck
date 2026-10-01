@@ -4,6 +4,20 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.8.2
+
+Investigator output that failed validation on shape alone.
+
+### Fixed
+
+- **Repair rounds return the whole finding.** The repair prompt said "fix only these problems", and investigators sent back only the fields they changed, so the repaired finding failed for missing keys and the hotspot was lost. It now asks for the complete object with all eleven keys.
+- **The investigator prompt states the contract as numbered rules.** The top-level key is `findings`, never more than 3; `location` is an object; every `ref` is one string, with a literal form for each evidence type and no `git` type or `commit:` prefix; `high` needs a cited commit the bundle labels `[fix]`. The example now includes a finding with `"sustaining_effect": null`.
+
+### Changed
+
+- **Validation errors show what was received.** An error now quotes the value or keys it got and the form it expected, for example *"no 'ref' key; the item has keys ['file', 'line', 'type']"* or *"— use 'commit'"*. A misnamed top-level list is named. A missing `confidence` is reported once, not twice.
+- **`save_finding.py` repairs unambiguous shapes.** A `hypotheses` key, a `code` ref split into `file`/`line`, a `git` evidence type, a `commit:` prefix and a `location` string are rewritten, and each rewrite is printed and recorded under `normalised`. Nothing is added or dropped, and `validate.py` still resolves every ref.
+
 ## 0.8.1
 
 Fixes from dogfooding 0.8.0 on a real repository.
