@@ -106,6 +106,12 @@ Give each investigator exactly this task, substituting the real values:
 > `<bundle path>` and the catalog at `.thunderstruck/catalog-brief.md`.
 > Follow your system prompt. Return only the JSON object it specifies.
 
+`save_finding.py` repairs a few unambiguous shapes on the way in (a
+`hypotheses` key, a `code` ref split into `file`/`line`, a `git` evidence type,
+a `commit:` prefix, a `location` string) and prints each rewrite as
+`normalised:`. It never adds a missing field or drops anything; `validate.py`
+still resolves every ref.
+
 Save each result immediately — do not batch them up, so an interrupted scan
 keeps what it has:
 
@@ -134,7 +140,10 @@ its errors to the task:
 
 > Your previous output for `<ID>` failed validation:
 > <the errors verbatim>
-> Fix only these problems and return the corrected JSON. Paths are copied
+> Fix these problems and return the **complete** corrected JSON object: the
+> top-level `findings` list with every finding you keep, each with all eleven
+> keys from your system prompt (`sustaining_effect` may be `null` but must be
+> present), not only the parts that changed. At most 3 findings. Paths are copied
 > exactly as the bundle shows them — relative to the repository root, no `./`,
 > no `..`, a file git tracks — and a line range is `"42"` or `"42-118"` with
 > start ≤ end inside the file. Every `ref` must

@@ -17,12 +17,82 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _common as c  # noqa: E402
+
+# "path:42" or "path:42-118"; anything else stays a bare path
+_PATH_LINES = re.compile(r"^(?P<file>.+?):(?P<lines>[0-9]+(?:-[0-9]+)?)\Z")
+_COMMIT_PREFIX = re.compile(r"^(?:commit|sha)\s*[:=]\s*", re.IGNORECASE)
+_TYPE_ALIASES = {"git": "commit", "sha": "commit"}
+
+
+def _lines_of(obj: dict) -> str | None:
+    for k in ("lines", "line"):
+        v = obj.get(k)
+        if isinstance(v, int) and not isinstance(v, bool):
+            return str(v)
+        if isinstance(v, str) and re.fullmatch(r"[0-9]+(?:-[0-9]+)?", v.strip()):
+            return v.strip()
+    return None
+
+
+def normalise(doc: dict) -> list[str]:
+    """Repair shapes whose meaning is unambiguous, and say what was rewritten.
+
+    Only structure moves: a key is renamed, a split ref is joined, a known
+    alias becomes the one type name. Nothing is invented and nothing is
+    dropped, so a missing field or an unknown type still reaches validate.py,
+    which resolves every ref exactly as it would have.
+    """
+    done: list[str] = []
+    if "findings" not in doc and isinstance(doc.get("hypotheses"), list):
+        doc["findings"] = doc.pop("hypotheses")
+        done.append("renamed top-level 'hypotheses' to 'findings'")
+    findings = doc.get("findings")
+    for i, f in enumerate(findings if isinstance(findings, list) else []):
+        if not isinstance(f, dict):
+            continue
+        where = f"findings[{i}]"
+        loc = f.get("location")
+        if isinstance(loc, str) and loc.strip():
+            m = _PATH_LINES.match(loc.strip())
+            f["location"] = ({"file": m["file"], "lines": m["lines"]} if m
+                             else {"file": loc.strip()})
+            done.append(f"{where}.location {loc!r} -> {f['location']}")
+        evidence = f.get("evidence")
+        for j, ev in enumerate(evidence if isinstance(evidence, list) else []):
+            if not isinstance(ev, dict):
+                continue
+            ew = f"{where}.evidence[{j}]"
+            etype = ev.get("type")
+            if isinstance(etype, str) and etype.strip().lower() in _TYPE_ALIASES:
+                ev["type"] = _TYPE_ALIASES[etype.strip().lower()]
+                done.append(f"{ew}.type {etype!r} -> {ev['type']!r}")
+            ref = ev.get("ref")
+            if ev.get("type") == "code":
+                src = ref if isinstance(ref, dict) else ev if ref is None else None
+                if src is not None and isinstance(src.get("file"), str) and src["file"].strip():
+                    lines = _lines_of(src)
+                    if lines is not None:
+                        ev["ref"] = f"{src['file'].strip()}:{lines}"
+                        for k in ("file", "line", "lines"):
+                            if src is ev:
+                                ev.pop(k, None)
+                        done.append(f"{ew}.ref joined into {ev['ref']!r}")
+            elif ev.get("type") == "commit":
+                if ref is None and isinstance(ev.get("sha"), str):
+                    ref = ev.pop("sha")
+                    ev["ref"] = ref
+                    done.append(f"{ew}.sha moved to ref")
+                if isinstance(ref, str) and _COMMIT_PREFIX.match(ref.strip()):
+                    ev["ref"] = _COMMIT_PREFIX.sub("", ref.strip())
+                    done.append(f"{ew}.ref {ref!r} -> {ev['ref']!r}")
+    return done
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -67,6 +137,11 @@ def main(argv: list[str] | None = None) -> int:
         if not isinstance(doc, dict):
             c.die(f"{args.id}: expected a JSON object, got {type(doc).__name__}")
             return 2
+        rewrites = normalise(doc)
+        if rewrites:
+            doc["normalised"] = rewrites
+        else:
+            doc.pop("normalised", None)
         doc.setdefault("hotspot_id", args.id)
         doc.setdefault("file", entry["file"])
         # validate.py owns these; a model echoing them must not pass as validated
@@ -83,6 +158,8 @@ def main(argv: list[str] | None = None) -> int:
     c.write_json(dest, doc)
     n = len(doc["findings"]) if isinstance(doc.get("findings"), list) else 0
     print(f"{args.id}: {n} finding(s) -> {dest}")
+    for line in doc.get("normalised") or []:
+        print(f"  normalised: {line}")
     return 0
 
 
