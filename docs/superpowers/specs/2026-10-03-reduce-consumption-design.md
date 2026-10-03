@@ -10,7 +10,7 @@ signals.py         →  hotspots.json         generated_at marks the scan window
 bundle.py          →  bundles/*.md          unchanged bytes; quieter stdout
 investigator       →  (final message)       model: sonnet; reads less; terser JSON
 capture_finding.py →  findings/<ID>.json    NEW · SubagentStop hook · stdlib only
-                      findings/<ID>.meta.json
+                      agents/<ID>.json       which agents delivered, for usage.py
 save_finding.py    →  --check, and today's --from as the fallback
 validate.py        →  validation.json       quieter stdout
 usage.py           →  usage.json            NEW · deterministic · reads Claude Code transcripts
@@ -33,13 +33,15 @@ Measurement (§2) is what proves them. It is a deterministic script, so CLAUDE.m
 
 Claude Code writes one JSONL transcript per session, `<project dir>/<session id>.jsonl`, and one per subagent, `<project dir>/<session id>/subagents/agent-<agent id>.jsonl` (documented in the sub-agents docs). Every assistant entry carries `message.model`, `message.usage` and a `timestamp`.
 
-`usage.py` never derives the project directory from the repository path. It takes the session transcript path from `findings/*.meta.json` (§3.3), where the hook recorded the `transcript_path` it was given. That is the only way the script learns which session ran the scan.
+`usage.py` never derives the project directory from the repository path. It takes the session transcript path from `agents/*.json` (§3.2), where the hook recorded the `transcript_path` it was given. That is the only way the script learns which session ran the scan.
 
 ### 2.2 What is counted
 
 - **Orchestrator:** entries in the session transcript with `timestamp` ≥ `hotspots.json`'s `generated_at` and ≤ the moment `usage.py` runs. Earlier conversation in the same session is not charged to the scan. The skill's preflight and the step 6 summary fall outside the window; the Consumption line says "signals to report".
-- **Investigators:** every subagent transcript whose `agent_id` appears in a `findings/*.meta.json` of this run. Each `meta.json` lists every agent that delivered for that hotspot, so a hotspot with two agents and no repair round is a re-spawn and is counted as one.
+- **Investigators:** every subagent transcript whose `agent_id` appears in an `agents/<ID>.json` of this run. Each one lists every agent that delivered for that hotspot, and the hook marks every delivery after the first as `repair` or `respawn` (§3.2). An agent whose result never reached the hook leaves no record, so it is not counted; the hook is what removes that case.
 - **Deduplication:** a single API response can appear as several transcript entries (content blocks are written separately with the same usage). Entries are deduplicated by `message.id`, falling back to `requestId`.
+- Entries whose `message.model` is `<synthetic>` (Claude Code's locally generated messages, which made no API call) are skipped.
+- An agent record counts only if its `bundle_hash` equals the current `bundles/index.json` entry's, so records left by an earlier scan in the same directory are ignored.
 - Per entry: `input_tokens`, `cache_creation_input_tokens` (split into `ephemeral_5m_input_tokens` and `ephemeral_1h_input_tokens` when present), `cache_read_input_tokens`, `output_tokens`.
 
 ### 2.3 Input-equivalent tokens
@@ -75,13 +77,13 @@ The ratios are Anthropic's published price ratios and are the same for Haiku, So
 }
 ```
 
-`missing` lists, in words, every part that could not be measured and why: `"orchestrator: session transcript not found at the recorded path"`, `"H04: no meta.json, the hook did not fire"`.
+`missing` lists, in words, every part that could not be measured and why: `"orchestrator: session transcript not found at the recorded path"`, `"H04: no agent record, the hook did not fire"`.
 
 ### 2.5 Fallback (AC-2)
 
 When a transcript cannot be read, or an entry has no recognisable `usage`, that part falls back:
 
-- **An investigator without a readable transcript** uses the usage the orchestrator relayed from the `Agent` result: `save_finding.py --id H01 --usage '<json>'` stores whatever of `input_tokens`, `output_tokens`, `cache_creation_input_tokens` and `cache_read_input_tokens` the result carried in `meta.json`. Fields that are absent stay absent, never zero.
+- **An investigator without a readable transcript** uses the usage the orchestrator relayed from the `Agent` result: `save_finding.py --id H01 --usage '<json>'` stores whatever of `input_tokens`, `output_tokens`, `cache_creation_input_tokens` and `cache_read_input_tokens` the result carried in `agents/<ID>.json`. Fields that are absent stay absent, never zero.
 - **The orchestrator without a readable transcript** is not measured. There is no fallback for it.
 - `source` becomes `"partial"`, and `missing` says what is missing. If nothing could be read, `source` is `"unavailable"`.
 
@@ -99,7 +101,7 @@ Investigators 445k across 10 agents (claude-sonnet-5-5), 1 repair, 0 re-spawns.
 Input-equivalent weights: input 1, cache write 1.25 (5 min) or 2 (1 h), cache read 0.1, output 5.
 ```
 
-The per-hotspot breakdown goes in `report.json` only. Model names go through `mdtext.code`. Without `usage.json`, the section is omitted and `report.md` is byte-identical to today's, which keeps the sample report reproducible (§7).
+The per-hotspot breakdown goes in `report.json` only. Model names go through `mdtext.code`. `report.py` uses `usage.json` only if its `window.from` equals this scan's `hotspots.json` `generated_at`; an older one is ignored with a run warning. Without a current `usage.json`, the section is omitted and `report.md` is byte-identical to today's, which keeps the sample report reproducible (§7).
 
 ### 2.7 Estimate in `--dry-run` (AC-3)
 
@@ -134,12 +136,14 @@ The docs' examples disagree on whether a plugin agent's name in the matcher carr
 ### 3.2 Behaviour
 
 1. Read the payload from stdin; give up silently if it is over 1 MB or not JSON.
-2. Return unless `agent_type` ends in `thunderstruck-investigator` and `<cwd>/.thunderstruck/bundles/index.json` exists.
+2. Find the repository root: `cwd` or the nearest parent holding `.git` (a session may start in a subdirectory). Return unless `agent_type` ends in `thunderstruck-investigator` and `<root>/.thunderstruck/bundles/index.json` exists. `<root>` replaces `<cwd>` everywhere below.
 3. Take `last_assistant_message`. Strip one markdown fence, as `save_finding.py` does. Parse it as JSON.
-4. Read `hotspot_id`. Return unless it is a key of `bundles/index.json`. The destination path is built from the index entry, never from the payload, so repository content steering the investigator cannot make the hook write anywhere else.
-5. If `findings/<ID>.json` exists with the same `bundle_hash`, it is a previous attempt from this run: move it to `findings/<ID>.attempt1.json` (overwriting an older one).
+4. Read `hotspot_id`. Return unless it is the `id` of an entry in `bundles/index.json`. The destination path is built from the index entry, never from the payload, so repository content steering the investigator cannot make the hook write anywhere else.
+5. If `findings/<ID>.json` exists with the same `bundle_hash`, it is a previous attempt from this run: move it to `agents/<ID>.attempt1.json` (overwriting an older one). This delivery is a `repair` if `validation.json` lists `<ID>` as invalid, otherwise a `respawn`.
 6. Run the shared normalising and stamping (§3.4) and write `findings/<ID>.json` atomically (write to a temp file, then rename).
-7. Append `{agent_id, session_id, transcript_path, stop_reason}` to `findings/<ID>.meta.json`.
+7. Write `bundle_hash` and append `{agent_id, session_id, transcript_path, stop_reason, kind}` (`kind` is `first`, `repair` or `respawn`) to the `agents` list in `agents/<ID>.json`. A record whose `bundle_hash` differs from the current one is replaced, not appended to.
+
+The agent record and the first attempt live in `.thunderstruck/agents/`, not `findings/`: `validate.py` reads every `findings/*.json` as a finding.
 
 If the message does not parse, or has no valid `hotspot_id`, nothing is written. The orchestrator's check (§4) then shows the hotspot as missing.
 
@@ -175,11 +179,11 @@ The same as the guardrail's, and tested the same way:
 
 For each id it prints `saved`, `missing` or `failed`. `saved` means `findings/<ID>.json` exists and its `bundle_hash` equals the current index entry's. A finding from an earlier run cannot count: a non-cached bundle's hash differs from any older finding's by definition.
 
-For each `missing` id, the orchestrator saves the result it already holds with today's `save_finding.py --id <ID> --from <file>`, adding `--fallback` so `meta.json` records it, and `--usage` with the `Agent` result's usage. If that also fails, it records `--failed`. That is the only path in which the orchestrator re-types a finding.
+For each `missing` id, the orchestrator saves the result it already holds with today's `save_finding.py --id <ID> --from <file>`, adding `--fallback` so `agents/<ID>.json` records it, and `--usage` with the `Agent` result's usage. If that also fails, it records `--failed`. That is the only path in which the orchestrator re-types a finding.
 
 ### 4.3 Repair round
 
-Unchanged in substance: step 4 re-runs only invalid hotspots, once. The hook captures the repaired output and keeps the first attempt as `attempt1` (§3.2). Then `--check` and the same fallback apply.
+Unchanged in substance: step 4 re-runs only invalid hotspots, once. The hook captures the repaired output and keeps the first attempt as `agents/<ID>.attempt1.json` (§3.2). Then `--check` and the same fallback apply.
 
 ### 4.4 Quieter scripts
 
@@ -229,9 +233,9 @@ Bundle bytes, `bundle_hash`, the cache, the validator and the finding contract. 
 ## 6. Security
 
 - `last_assistant_message` is model output that read repository content. The hook treats it as data: parsed as JSON, never executed, never used as a path. The destination comes from `bundles/index.json` (§3.2).
-- The hook writes only inside `<cwd>/.thunderstruck/findings/`, and refuses to follow a symlink there (`O_NOFOLLOW` on the temp file, and checking the directory is not a link).
+- The hook writes only inside `<cwd>/.thunderstruck/findings/` and `<cwd>/.thunderstruck/agents/`, and refuses to follow a symlink there (`O_NOFOLLOW` on the temp file, and checking the directory is not a link).
 - `usage.py` reads transcripts, which contain the whole conversation. It extracts only `timestamp`, `message.id`, `requestId`, `message.model` and `message.usage`. Nothing else from a transcript is written anywhere, and `usage.json` contains no text from the conversation.
-- `usage.py` reads only paths recorded by the hook, and only if they are under `~/.claude/projects/` and end in `.jsonl`.
+- `usage.py` reads only paths recorded by the hook, and only if they resolve under the Claude Code projects directory (`$CLAUDE_CONFIG_DIR/projects/`, by default `~/.claude/projects/`) and end in `.jsonl`.
 
 ## 7. Degradation
 
@@ -240,14 +244,14 @@ Bundle bytes, `bundle_hash`, the cache, the validator and the finding contract. 
 | Hook fields missing (older Claude Code) | Every hotspot `missing` at the check; fallback saves; `fallback_saves` counted in the report |
 | Hooks disabled | Same as above |
 | A transcript unreadable or in an unknown format | That part falls back or is listed under `missing` (§2.5) |
-| No `meta.json` at all | `usage.json` has `source: unavailable`; the report says consumption was not measured, and why |
+| No agent record at all | `usage.json` has `source: unavailable`; the report says consumption was not measured, and why |
 | Headless or CI run without transcripts | Same as above |
-| `usage.py` itself fails | `report.py` runs anyway, without the section, and adds a run warning |
+| `usage.py` itself fails | `report.py` runs anyway, without the section (it cannot tell a failure from a scan without measurement); the skill's step 6 summary says consumption was not measured, and why |
 | Sample report generation | `gen_sample_report.py` writes no `usage.json`, so the sample has no Consumption section and stays byte-reproducible |
 
 ## 8. Test strategy
 
-- **`capture_finding.py`**, from recorded hook payloads in `tests/fixtures/hook_payloads/`: a valid result; a fenced result; a `hotspot_id` not in the index; a path-shaped `hotspot_id`; another agent type; unparsable JSON; a payload over 1 MB; no `.thunderstruck/`; a second delivery moving the first to `attempt1`. Plus exit-0 on every one, stdlib-only by AST, and the latency budget.
+- **`capture_finding.py`**, from recorded hook payloads in `tests/fixtures/hook_payloads/`: a valid result; a fenced result; a `hotspot_id` not in the index; a path-shaped `hotspot_id`; another agent type; unparsable JSON; a payload over 1 MB; no `.thunderstruck/`; a second delivery moving the first to `agents/<ID>.attempt1.json`; no file other than `<ID>.json` ever written to `findings/`. Plus exit-0 on every one, stdlib-only by AST, and the latency budget.
 - **Byte-identity**: the same result saved by the hook and by `save_finding.py --from` produces identical files.
 - **`save_finding.py --check`**: saved, missing, a stale finding from an older bundle hash counting as missing, and `--failed`.
 - **`usage.py`**, from synthetic transcripts in `tests/fixtures/transcripts/`: a normal scan; entries before the window excluded; duplicated entries counted once; a re-spawn; a repair; a missing subagent transcript falling back to relayed usage; an unknown entry shape; nothing readable. Plus: no conversation text in `usage.json`, and paths outside `~/.claude/projects/` refused.
