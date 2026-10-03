@@ -100,7 +100,7 @@ def collect_history(repo: Path, since: str, filters: c.Filters,
         parts = header.split("\x00")
         if len(parts) < 4:
             continue
-        sha, author, when, subject = parts[0], parts[1], parts[2], parts[3]
+        sha, author, when, subject = parts[0], parts[1], c.git_iso_date(parts[2]), parts[3]
         if filters.excludes_author(author):
             skipped_bot += 1
             continue
@@ -274,7 +274,7 @@ def dormant_sweep(repo: Path, unchanged: list[str], catalog: dict, patterns: dic
         out = c.git(repo, "--literal-pathspecs", "log", "-1", "--format=%H%x00%aI%x00%at",
                     "--", rel, check=False).strip()
         sha, when, epoch = (out.split("\x00") + ["", "", ""])[:3]
-        last[rel] = (sha, when, int(epoch) if epoch.isdigit() else 0)
+        last[rel] = (sha, c.git_iso_date(when), int(epoch) if epoch.isdigit() else 0)
     # chronological: the epoch, not the ISO string, whose offsets vary per commit
     top = sorted(qualified[:3 * keep],
                  key=lambda q: (c.is_script_path(q[1]), -q[0], last[q[1]][2], q[1]))[:keep]

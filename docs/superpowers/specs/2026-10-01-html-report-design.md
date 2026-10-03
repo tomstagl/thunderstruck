@@ -36,10 +36,12 @@ The page is a static template plus data. `report_html.py` has no logic of its ow
 | `suppressed` | `[{detector, path, hits, reason}]` | `hs.get("suppressed")` |
 | `coverage_rows` | one row per scanned pattern, in `report.md` order: `{id, name, tier, unconfirmed_files, leads_read, leads_confirmed, findings}`, plus the `OTHER` row when present (with `null` for the columns `report.md` shows as `—`) | the coverage-table block in `render_markdown` |
 | `files_affected` | number of distinct finding files | `render_markdown` |
+| `clean[].cited_by` | per clean hotspot, the ids of findings from other hotspots that cite its file as `code` evidence (empty when none). This is the "no finding of its own; cited as evidence by …" note in `report.md` | the `cited_by` map in `render_markdown` |
+| `not_scanned` | `{intro, items}` in plain text: the sentences under **Not scanned**, or `null` without `coverage_gaps` | `render_not_scanned` |
 
 `warnings` keeps its current content (hotspot plus link warnings). `run_warnings` exists so the page shows exactly what `report.md` shows, context warnings included, without changing an existing field.
 
-The coverage table and run warnings move into helpers (`coverage_rows(data)`, `run_warnings(data)`). `render_markdown` and `render_json` both call them, so the two outputs can't drift. `render_markdown`'s output does not change by a byte: `test_sample_report` and `gen_sample_report.py --check` prove it.
+The coverage table, run warnings, clean citations and not-scanned lines move into helpers (`coverage_rows(data)`, `run_warnings(data)`, `clean_cited_by(findings)`, `not_scanned(gaps, code, text)`). `render_markdown` and `render_json` both call them; `not_scanned` takes the span formatters, so Markdown passes `md.code`/`md.text` and JSON passes plain text, so the two outputs can't drift. `render_markdown`'s output does not change by a byte: `test_sample_report` and `gen_sample_report.py --check` prove it.
 
 `report.json` keeps `repo.root` (the absolute path). Its other readers rely on it. The page drops it (§3.2).
 
@@ -114,10 +116,10 @@ A rail entry above the findings, **Overview**, selected by default when the URL 
 |---|---|---|
 | Run header, with the "findings are falsifiable hypotheses" note | `repo`, `scanned_at`, `window`, `counts`, `files_affected` | always |
 | Run warnings and suppressed leads | `run_warnings`, `suppressed` | non-empty |
-| Not scanned | `coverage_gaps` | non-empty |
+| Not scanned | `not_scanned` | not `null` |
 | Service context | `service_context` (entity, `fetched_at` date, inbound and outbound edges, truncation) | not `null` |
 | Pattern coverage | `coverage_rows`, plus the "0 leads" footnote | always |
-| Hotspots investigated with no finding | `clean` (file linked by `url`, `notes` as text) | non-empty |
+| Hotspots investigated with no finding | `clean` (file linked by `url`, `notes` as text, and "no finding of its own; cited as evidence by FR-…" from `cited_by`) | non-empty |
 | Incomplete | `incomplete` (file, reason, first errors as text) | non-empty |
 | Ranked hotspots | `hotspots` (id, file → `url`, history → `history_url`, score, patterns) | always |
 | Dormant integration points | `dormant` | non-empty |
@@ -129,6 +131,7 @@ Service-context age is shown as the `fetched_at` date, not "N days ago": the pag
 - every investigated hotspot clean: "No findings: all N investigated hotspots came back clean."
 - some incomplete: "No findings, but K of N hotspots could not be analysed. See Incomplete." The word "clean" is never used for an incomplete hotspot.
 - all incomplete: "No hotspot could be analysed. This report says nothing about the code."
+- no investigated hotspot at all: "No hotspot was investigated. This report says nothing about the code."
 
 The design's fixed "Every investigated hotspot came back clean" text is removed.
 

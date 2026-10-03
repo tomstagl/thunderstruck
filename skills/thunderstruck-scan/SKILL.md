@@ -166,13 +166,25 @@ Writes `report.md`, `report.json` and `index.json`. The last enables the
 PreToolUse guardrail: from now on, editing a file with open findings surfaces
 them before the edit.
 
+Then render the HTML report:
+
+```bash
+uv run "${CLAUDE_PLUGIN_ROOT}/scripts/report_html.py"
+```
+
+Writes `report.html`, one self-contained file to read findings one by one in
+a browser or to send to someone. This step never stops the scan: if it exits
+non-zero, note its last line for step 6 and carry on. Do not retry it.
+
 ## Step 6 — tell the user
 
 Summarise in the conversation. Lead with the finding, not the file:
 
 - How many findings at what confidence, across how many files.
 - The top two or three in one line each — failure mode, trigger, what keeps it
-  failing. Link `.thunderstruck/report.md` for the rest.
+  failing. Link `.thunderstruck/report.md` for the rest, and
+  `.thunderstruck/report.html` to review them one by one in a browser. If the
+  HTML step failed, say so in one line, with its reason.
 - Anything incomplete or degraded, plainly.
 - That findings are hypotheses with a `Verify` line, and that
   `/thunderstruck-verify FR-001` turns one into a failing test.
