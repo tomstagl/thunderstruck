@@ -45,8 +45,8 @@ uv run --with pytest --with pyyaml --with lizard --with markdown-it-py==4.2.0 --
 
 This needs a real repository, a fresh interactive session and a real scan. The nightly ticket agent cannot do it. **Agent rule:** if `docs/calibration/consumption.md` does not exist on `origin/main`, or has no line starting `Read cap: `, stop at Task 0 as *Blocked* with the gap "the baseline is not recorded".
 
-- [ ] Pick one real repository with at least 10 hotspots. Note its commit.
-- [ ] Twice: delete its `.thunderstruck/findings/`, start a fresh Claude Code session in it, and run `/thunderstruck-scan` with default arguments using the current plugin.
+- [ ] Pick one real repository with at least 10 hotspots. Note its commit, and fix the window as an ISO date one year before that commit's date. `--since 12m` is relative to today, so Task N, run weeks later, would rank different hotspots.
+- [ ] Twice: delete its `.thunderstruck/findings/`, start a fresh Claude Code session in it, check out the noted commit, and run `/thunderstruck-scan --since <the ISO date>` with otherwise default arguments using the current plugin. Record the exact arguments.
 - [ ] In a scratch directory, write a throwaway script that reads that session's transcript and its `subagents/agent-*.jsonl`, deduplicates entries by `message.id`, skips `<synthetic>`, and applies the §2.3 weights. Window: from `hotspots.json`'s `generated_at` to the last entry.
 - [ ] Record, per scan and as the mean of the two: input-equivalent totals for the orchestrator and for investigators, each split by token type and model; agents per hotspot; extra `Read`/`Grep`/`Glob` calls per investigator (median, 90th percentile); finding count; validation pass rate (`validation.json` `valid`/`checked` before the repair round).
 - [ ] Write `docs/calibration/consumption.md` in the form of `docs/calibration/config.md`, with no organisation-specific names, and end it with exactly these two lines:
@@ -292,7 +292,7 @@ def main(stdin_text: str) -> None:
 
 **Files:** `docs/calibration/consumption.md`; possibly `scripts/_common.py`.
 
-- [ ] Install the released plugin. On the same repository and commit as Task 0, twice: delete `findings/`, fresh session, default `/thunderstruck-scan`.
+- [ ] Install the released plugin. On the same repository and commit as Task 0, twice: delete `findings/`, fresh session, `/thunderstruck-scan` with exactly Task 0's recorded arguments.
 - [ ] Record `usage.json`'s figures beside Task 0's, as means of the two runs, and the same quality numbers. Record which matcher form the `SubagentStop` hook fired with (§11) and whether either session compacted.
 - [ ] Verdict against the ticket's success measures: weighted total ≤ 50% of baseline; zero re-spawns; finding count down by no more than one per five hotspots; validation pass rate not lower.
 - [ ] Update `INVESTIGATOR_TOKENS_PER_BUNDLE_TOKEN` to the measured post-change ratio in the same PR, and regenerate nothing else.
