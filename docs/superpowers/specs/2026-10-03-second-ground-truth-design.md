@@ -17,7 +17,7 @@ docs/calibration/correctness/<set>/          NEW · one directory, data only
     report.json, hotspots.json, validation.json, catalog-brief.md, bundles/, findings/
     profile.toml                             the .thunderstruck.toml the scan ran with (§4.2)
     usage.json                               when the release writes one (#5)
-  labels.json                                thunderstruck.labels/v1, role "holdout" (§6)
+  labels.json                                thunderstruck.labels/v1, role as decided on the ticket (§6)
   review.md                                  per finding: verdict, how established, refuting fact
                                              in words, preconditions; the reader's evidence
   repro/                                     every reproduction a label names (§5.2)
@@ -39,7 +39,7 @@ A candidate must meet all of these, each checked from the repository itself, not
 | C-2 | TypeScript or Java (ticket, scope) | A second language beside Celery's Python; both have calibrated detectors (`docs/calibration/typescript.md`, `java.md`) | File counts by extension at `HEAD` |
 | C-3 | A permissive licence (MIT, Apache-2.0, BSD) covering the whole tree, so excerpts may be checked in (AC-1) | `scan/bundles/` and `repro/` copy upstream code into this public repository. Copyleft (GPL, AGPL) and source-available licences are excluded: they either attach terms to this repository or forbid redistribution. A tree with proprietary "enterprise" directories is excluded too, because the scan cannot be guaranteed to stay out of them | `LICENSE*` and `NOTICE*` files at every level; `license` fields of the packages the scan would rank |
 | C-4 | A test suite that runs locally, with real dependencies started locally (Docker is acceptable, cloud credentials are not) | AC-2 wants at least half the labels established by execution; a labeller can only execute in a project whose tests run | The repository's own contributor docs and CI workflows name the command; Task 1 of the plan runs it at the pinned commit |
-| C-5 | Enough history: at least 300 non-bot commits in the 12-month window and 10 hotspots with real churn | A ranking on thin history is weaker (`signals.py` warns); Celery had 372 | `signals.py --top 10 --since 12m`, which counts the window's commits after skipping bots |
+| C-5 | Enough history: at least 300 non-bot commits in the 12-month window and 10 hotspots with real churn | A ranking on thin history is weaker (`signals.py` warns); Celery had 372 | `signals.py --top 10 --since <ISO date 12 months back>`, which counts the window's commits after skipping bots |
 | C-6 | Actively maintained at the pinned commit | Findings about abandoned code are less useful and harder to verify against current dependencies | Last commit within a month of pinning |
 
 ## 3. Candidates
@@ -90,13 +90,13 @@ The scan uses the pipeline that #56, #37 and #57 are measured against: the newes
 
 ### 4.2 Arguments and scope
 
-`/thunderstruck-scan --top 10 --since 12m`, the arguments of the Celery scan, on a clean clone at the pinned commit, with a `.thunderstruck.toml` holding §3.1's profile and nothing else. The profile is how a user restricts a scan (`_common.Filters.from_profile`); it adds to the default exclusions and never replaces them. `hotspots.json` records `config.profile: true`; the file itself is copied to `scan/profile.toml` so the scope is reproducible. Excluding UI code is the scope decision of §3.1, made before any finding exists; nothing is excluded after seeing findings.
+`/thunderstruck-scan --top 10 --since <date>`, where `<date>` is the ISO date twelve months before the pinned commit's committer date. That is the Celery scan's depth and window length. Its `hotspots.json` records `window.since: "2025-10-03"`, an ISO date. A relative `--since 12m` is resolved against the wall clock (`signals.parse_since`), so a rescan on another day would change the window. `README.md` records the date, and a test asserts `hotspots.json`'s `window.since` equals it. The scan runs on a clean clone at the pinned commit, with a `.thunderstruck.toml` holding §3.1's profile and nothing else. The profile is how a user restricts a scan (`_common.Filters.from_profile`); it adds to the default exclusions and never replaces them. `hotspots.json` records `config.profile: true`; the file itself is copied to `scan/profile.toml` so the scope is reproducible. Excluding UI code is the scope decision of §3.1, made before any finding exists; nothing is excluded after seeing findings.
 
 If the scan reports fewer than 15 findings, it is re-run once at the same commit with `--top 15` and the first scan is discarded, before any finding is labelled. Below 15, a single relabel moves a rate by more than 6 points and the Wilson interval spans most of the scale. Hotspots under **Incomplete** are recorded in `README.md` and not labelled.
 
 ### 4.3 What is copied
 
-#55 §10 step 1: `report.json`, `hotspots.json`, `validation.json`, `catalog-brief.md`, `bundles/` and `findings/` into `scan/`, plus `profile.toml` and, when the release writes it, `usage.json` (#5). Every local absolute path is replaced: the scanned checkout by `<repo>`, the plugin by `<thunderstruck>`, the labeller's sandbox by `<labeller-scratchpad>`, and the dependency store by §3.1's placeholder. Nothing else is edited. A test asserts no file of the set contains a home or temp-directory path (§10).
+#55 §10 step 1: `report.json`, `hotspots.json`, `validation.json`, `catalog-brief.md`, `bundles/` and `findings/` into `scan/`, plus `profile.toml` and, when the release writes it, `usage.json` (#5). Every local absolute path is replaced: the scanned checkout by `<repo>`, the plugin by `<thunderstruck>`, the labeller's sandbox by `<labeller-scratchpad>`, and the dependency store by §3.1's placeholder. Prefixes are matched in their resolved form too (`pwd -P`). On macOS the scan records `/private/var/folders/…` for a temp directory, and replacing only `/var/folders/…` would leave `/private<repo>` behind. Nothing else is edited: upstream text that happens to contain a path, such as `/home/node` in a Dockerfile, stays as written. So the check at copy time looks for the actual local prefixes (`$HOME`, the work directory). It cannot be a generic pattern. CI asserts what it can without knowing those prefixes (§10).
 
 ## 5. Labelling
 
@@ -115,9 +115,11 @@ These are conventions of this set, checked by its own test (§10), not rules of 
 
 ### 5.3 Who labels
 
-A model may label (#55, product decisions), and the scorer excludes a finding when the scored run's model equals its labeller (#55 §3.4). So the labeller must be a model that no stage scored on this set runs as by default: not the scan's session or investigator model (recorded in `README.md`, and in `usage.json` when present), and not the refuter model #37's spec names. **The default is `claude-fable-5-1`**, Celery's labeller, which keeps the labeller mix of the two sets comparable; Task 1 checks it against #37's spec at that time and records the choice. Every label names it; a person who relabels a finding writes their handle.
+A model may label (#55, product decisions), and the scorer excludes a finding when the scored run's model equals its labeller (#55 §3.4). So the labeller must be a model that no stage scored on this set runs as by default: not the scan's session or investigator model (recorded in `README.md`, and in `usage.json` when present), and not #37's default skeptic model. #37's spec (`docs/superpowers/specs/2026-10-03-finding-verification-design.md`) chooses that model by measurement (its plan's Task 20), so it may not be settled when labelling starts. **The default is `claude-fable-5-1`**, Celery's labeller, which keeps the labeller mix of the two sets comparable. Task 3 checks it against #37's merged default at that time. If #37 has no merged default yet, `README.md` records that, and records the labeller, so a later skeptic default that equals it is visible. Every label names it; a person who relabels a finding writes their handle.
 
-## 6. Role: holdout
+## 6. Role
+
+The role is a product decision recorded on the ticket before Task 1 starts. Everything below that depends on it is written for both values.
 
 **Recommended: `"role": "holdout"`.** #54's success measure is that the Celery figures hold on the second repository "without tuning to it". That is a holdout by definition, and #55 §5.3 provides the mechanism: totals only by default, and `--reveal` marks every figure line `revealed` so a PR that looked shows it.
 
@@ -128,7 +130,12 @@ Consequences, all within #55's design:
 - The labels are public, so the holdout is a discipline, not a secret. CLAUDE.md's benchmark paragraph (#55 plan, Task 9) gains one sentence naming the set as holdout: its `labels.json` and `review.md` are not read while changing a stage, and a PR that used `--reveal` says why.
 - A holdout of about 20 findings has wide intervals. It can show that a change does not generalise (a drop beyond its interval), not that it does. `README.md` states this beside the figures.
 
-The alternative, `development`, doubles the data to tune on and leaves no unseen set. Once tickets have tuned on it, nothing would test generalisation until a third set.
+The alternative, `development`, doubles the data to tune on and leaves no unseen set. Once tickets have tuned on it, nothing would test generalisation until a third set. If the maintainer chooses it:
+
+- the set's per-finding rows print by default;
+- its test may pin per-finding results as Celery's do;
+- CLAUDE.md names the set as a second development set instead of a holdout;
+- the holdout test of §10 is replaced by one asserting that the rows print without `--reveal`.
 
 ## 7. Baselines and combined figures (AC-3, AC-4)
 
@@ -184,15 +191,15 @@ The public-repository rule applies: scrubbed paths, no hosts, no credentials. A 
 
 - **The set loads and validates** (#55 §2.2): `load_label_sets` on Celery and the new set together; distinct commits.
 - **Coverage:** the label keys equal the keys of `scan/report.json`'s findings: every finding labelled, nothing extra (AC-2).
-- **Provenance (AC-1):** `labels.commit == report.repo.head`; `README.md` contains that commit, a licence line and `LICENSES/` is non-empty; role is `holdout`.
+- **Provenance (AC-1):** `labels.commit == report.repo.head`; `README.md` contains that commit, a licence line and `LICENSES/` is non-empty; the role in `labels.json` equals the role row of `README.md`, which records the ticket's decision; `hotspots.json`'s `window.since` equals the README's window date (§4.2).
 - **AC-2's count** per §5.2, and every `executed` label's `established_by` names files that exist under `repro/`.
-- **Scrubbed:** no file under the set contains a home directory (`/Users/`, `/home/`), a per-user temp directory (`/private/var/`, `/var/folders/`) or a drive-letter path. Bare `/tmp/` is allowed, because a reproduction may write there.
+- **Scrubbed:** `repo.root` in `report.json` and `hotspots.json` is `<repo>`, and no file under the set contains a per-user temp directory (`/var/folders/`), which upstream source never names. The full check, for the actual `$HOME` and work-directory prefixes, is a step at copy time (§4.3), because CI does not know them.
 - **Pipeline runs re-derive:** for both sets, `runs/pipeline.json` equals what §7.1 builds from `scan/`.
 - **Baselines (AC-4):** the totals of §7.3 for the new set, read from `evaluate` without `--reveal`; Celery's report-everything totals (5/4/12/0, duplicates 0 of 1) and its unchanged confidence and bundle totals (8 of 21, 4 of 9).
 - **Per set and combined (AC-3):** §7.2's command exits 0, prints a block per set and a `## pooled` block for every measure, and every rate line carries `@`, `n=` and `labels:`. The pooled verdict n equals the sum of the two sets' n.
-- **Holdout:** the same command without `--reveal` prints no per-finding row for the new set, and with `--reveal` every figure line of that set ends `· revealed`.
+- **Role:** for a holdout, the same command without `--reveal` prints no per-finding row for the new set, and with `--reveal` every figure line of that set ends `· revealed`. For a development set, the rows print without `--reveal`.
 
-The new set's figures are pinned as totals only (§6).
+For a holdout, the new set's figures are pinned as totals only (§6).
 
 ## 11. Consumption
 
@@ -220,12 +227,13 @@ The benchmark makes no model call (#55 §11). Two things in this ticket do, both
 
 - **Recommend trigger.dev.** The lead density, the testcontainers suite and the contrast to Celery outweigh Java as a preference (§3.3); the ticket says "preferably TypeScript or Java", and both qualify.
 - **Exclude UI code by a profile, decided per candidate before the scan.** Without it, front-end components fill hotspot slots in all three candidates and yield findings outside the catalog's scope. A profile is the user-facing mechanism and leaves the pipeline unchanged.
-- **Holdout.** #54's success measure asks for a set nothing was tuned on (§6).
+- **Recommend holdout; the maintainer decides.** #54's success measure asks for a set nothing was tuned on (§6). The plan branches on the recorded role rather than assuming it.
 - **A `runs/pipeline.json` per set rather than a repeatable `--report`.** Pooling across sets needs one run per set in one command; making `--report` repeatable is a scorer change, which the ticket rules out. The file is re-derived by test, so it cannot drift from the scan.
 - **"Report everything" as the verdict baseline.** Today's pipeline has no refuter; upholding every finding is what it does, and it is the figure #37 must beat. It is computed, not labelled, so it adds nothing to trust.
 - **`established_by` on every label and reproductions checked in.** AC-2 has to be checkable mechanically, and Celery's scratchpad scripts are not recoverable. The scorer is untouched: these are the set's own checks.
 - **At least 15 findings, by re-scan before labelling.** A smaller n makes every figure an interval spanning most of the scale; re-scanning after labelling would select findings.
-- **Same scan arguments as Celery.** A different window or depth would make the two sets differ in more than repository.
+- **Celery's depth and window length, with the window fixed as an ISO date.** A different window or depth would make the two sets differ in more than repository. A relative window would make the scan depend on the day it ran.
+- **The scan and the labelling are run by the maintainer.** Both are interactive Claude Code sessions on a chosen model, and the labelling needs Docker and judgement over many hours. The nightly ticket agent cannot do either honestly. It stops before them (plan, Task 2) and resumes for the deterministic Task 4.
 
 ## 15. Open design questions
 
