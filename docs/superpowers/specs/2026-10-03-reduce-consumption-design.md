@@ -44,20 +44,22 @@ Claude Code writes one JSONL transcript per session, `<project dir>/<session id>
 - An agent record counts only if its `bundle_hash` equals the current `bundles/index.json` entry's, so records left by an earlier scan in the same directory are ignored.
 - Per entry: `input_tokens`, `cache_creation_input_tokens` (split into `ephemeral_5m_input_tokens` and `ephemeral_1h_input_tokens` when present), `cache_read_input_tokens`, `output_tokens`.
 
-### 2.3 Input-equivalent tokens
+### 2.3 Weighted tokens
 
-One number that tracks cost without naming a price:
+One number that tracks cost across models and token types without naming a price. Every token is weighted by its published price relative to **Claude Sonnet 5.5 base input = 1**:
 
-| Token type | Weight |
-|---|---|
-| input | 1 |
-| cache write, 5-minute | 1.25 |
-| cache write, 1-hour | 2 |
-| cache write, TTL not stated | 1.25 |
-| cache read | 0.1 |
-| output | 5 |
+| Model | input | cache write 5m | cache write 1h | cache read | output |
+|---|---|---|---|---|---|
+| `claude-sonnet-5-5` | 1 | 1.25 | 2 | 0.1 | 5 |
+| `claude-opus-5-5` | 2 | 2.5 | 4 | 0.1 | 10 |
+| `claude-haiku-4-5` | 0.5 | 0.625 | 1 | 0.05 | 2.5 |
+| `claude-fable-5-1` | 5 | 6.25 | 10 | 0.125 | 25 |
 
-The ratios are Anthropic's published price ratios and are the same for Haiku, Sonnet and Opus. They live in one constant, `INPUT_EQUIVALENT_WEIGHTS` in `_common.py`, with a comment naming the pricing page. Cost in money is never computed.
+A cache write whose TTL the transcript does not state is weighted as a 5-minute write.
+
+A single per-model factor would be wrong: cache writes are 1.25× and 2× input on every model, but cache reads are 0.1× on most models, 0.05× on Opus 5.5 and 0.025× on Fable 5.1 (Anthropic pricing page, read 2026-10-03). Cache reads are most of a scan's tokens.
+
+The table is one constant, `TOKEN_WEIGHTS` in `_common.py`, with the pricing page URL and the date it was read. A model not in the table is counted in raw tokens, left out of the weighted total, and named in `missing`, so `source` becomes `partial`; adding a row is a one-line change with a test. Cost in money is never computed.
 
 ### 2.4 `usage.json`
 
@@ -66,13 +68,13 @@ The ratios are Anthropic's published price ratios and are the same for Haiku, So
   "schema": "thunderstruck.usage/v1",
   "source": "transcripts",
   "window": {"from": "2026-10-03T09:00:00+00:00", "to": "2026-10-03T09:21:40+00:00"},
-  "orchestrator": {"calls": 41, "by_model": {"claude-opus-5-5": {"input": 120, "cache_write_5m": 0, "cache_write_1h": 90211, "cache_read": 1402220, "output": 9120, "input_equivalent": 366382}}},
+  "orchestrator": {"calls": 41, "by_model": {"claude-opus-5-5": {"input": 120, "cache_write_5m": 0, "cache_write_1h": 90211, "cache_read": 1402220, "output": 9120, "weighted": 595644}}},
   "investigators": {
     "agents": 10, "respawns": 0, "repairs": 1, "fallback_saves": 0,
     "by_model": {"claude-sonnet-5-5": {"...": "same shape"}},
-    "by_hotspot": {"H01": {"agents": 1, "calls": 7, "input_equivalent": 41200}}
+    "by_hotspot": {"H01": {"agents": 1, "calls": 7, "weighted": 41200}}
   },
-  "total_input_equivalent": 811004,
+  "total_weighted": 1040644,
   "missing": []
 }
 ```
@@ -83,7 +85,7 @@ The ratios are Anthropic's published price ratios and are the same for Haiku, So
 
 When a transcript cannot be read, or an entry has no recognisable `usage`, that part falls back:
 
-- **An investigator without a readable transcript** uses the usage the orchestrator relayed from the `Agent` result: `save_finding.py --id H01 --usage '<json>'` stores whatever of `input_tokens`, `output_tokens`, `cache_creation_input_tokens` and `cache_read_input_tokens` the result carried in `agents/<ID>.json`. Fields that are absent stay absent, never zero.
+- **An investigator without a readable transcript** uses the usage the orchestrator relayed from the `Agent` result: `save_finding.py --id H01 --usage '<json>'` stores whatever of `input_tokens`, `output_tokens`, `cache_creation_input_tokens` and `cache_read_input_tokens` the result carried in `agents/<ID>.json`. Fields that are absent stay absent, never zero. The skill adds `"model"` with the `--model` value; `MODEL_ALIASES` in `_common.py` maps `haiku`, `sonnet` and `opus` to the table's ids, so relayed usage is weighted like transcript usage.
 - **The orchestrator without a readable transcript** is not measured. There is no fallback for it.
 - `source` becomes `"partial"`, and `missing` says what is missing. If nothing could be read, `source` is `"unavailable"`.
 
@@ -96,9 +98,9 @@ The report never prints a total that silently leaves something out. With `source
 ```
 ## Consumption
 
-Signals to report: 811k input-equivalent tokens. Orchestrator 366k (claude-opus-5-5, 41 calls).
+Signals to report: 1041k weighted tokens. Orchestrator 596k (claude-opus-5-5, 41 calls).
 Investigators 445k across 10 agents (claude-sonnet-5-5), 1 repair, 0 re-spawns.
-Input-equivalent weights: input 1, cache write 1.25 (5 min) or 2 (1 h), cache read 0.1, output 5.
+Weighted by published price per model and token type, Claude Sonnet 5.5 input = 1.
 ```
 
 The per-hotspot breakdown goes in `report.json` only. Model names go through `mdtext.code`. `report.py` uses `usage.json` only if its `window.from` equals this scan's `hotspots.json` `generated_at`; an older one is ignored with a run warning. Without a current `usage.json`, the section is omitted and `report.md` is byte-identical to today's, which keeps the sample report reproducible (§7).
@@ -108,11 +110,11 @@ The per-hotspot breakdown goes in `report.json` only. Model names go through `md
 `bundle.py`'s summary always ends with an estimate line, so the skill's `--dry-run` (which stops after `bundle.py`) shows it:
 
 ```
-estimate: ~450k input-equivalent tokens for 10 investigators, plus the orchestrator
-  assumes ~45k per investigator per 8k-token bundle (calibration 2026-10, docs/calibration/consumption.md)
+estimate: ~450k weighted tokens for 10 investigators on sonnet, plus the orchestrator
+  assumes ~9 weighted tokens per bundle token on sonnet (docs/calibration/consumption.md)
 ```
 
-The per-bundle multiplier is one constant, `INVESTIGATOR_TOKENS_PER_BUNDLE_TOKEN`, set from Task 0 and Task N's measurements and cited to the calibration doc. The orchestrator's share is not estimated, because it depends on the session more than on the scan.
+The per-bundle multiplier is one constant, `INVESTIGATOR_TOKENS_PER_BUNDLE_TOKEN`: weighted tokens per bundle token for one investigator, with the investigators' raw token counts weighted by the Sonnet 5.5 row whatever model they ran on. It is set from Task 0's measurements, updated by Task N's, and cited to the calibration doc. For another `--model` the estimate scales by that model's input weight and says so. The orchestrator's share is not estimated, because it depends on the session more than on the scan.
 
 ## 3. Saving results with a hook (AC-5, AC-6, AC-10)
 
@@ -264,7 +266,7 @@ Bundle bytes, `bundle_hash`, the cache, the validator and the finding contract. 
 
 These are what the ticket's success measures ask for. Both use one real repository, results recorded in `docs/calibration/consumption.md` with no organisation-specific names.
 
-- **Task 0, baseline, before any change.** A default `--top 10` scan with the current plugin, from a fresh session, with an empty `findings/`. A throwaway script (not committed) applies §2.2 and §2.3 to the session's transcripts. Recorded: input-equivalent totals for orchestrator and investigators, by token type; agents per hotspot; extra reads per investigator (median, 90th percentile); finding count; validation pass rate.
+- **Task 0, baseline, before any change.** A default `--top 10` scan with the current plugin, from a fresh session, with an empty `findings/`. A throwaway script (not committed) applies §2.2 and §2.3 to the session's transcripts. Recorded: weighted totals for orchestrator and investigators, by token type; agents per hotspot; extra reads per investigator (median, 90th percentile); finding count; validation pass rate.
 - **Task N, after the build.** The same repository at the same commit, same arguments, fresh session, empty `findings/`, measured with `usage.py`. The same numbers, side by side, against the ticket's thresholds.
 
 Runs vary. Each task records two scans, and the comparison uses the mean.
@@ -278,7 +280,7 @@ Runs vary. Each task records two scans, and the comparison uses the mean.
 | A shared stdlib `finding_shape.py` | The hook has the guardrail's constraints, so it cannot import `_common`. One implementation keeps hook and manual saves byte-identical. |
 | Transcripts first, relayed `Agent` usage as fallback | Transcripts are exact and include the orchestrator, the ticket's biggest cost. Relayed usage is a stable interface but misses the orchestrator. |
 | The session located through the hook's `transcript_path` | Deriving Claude Code's project directory name from a path is guesswork. |
-| Input-equivalent tokens, not money | The weights are stable across models. Prices change and depend on the plan. |
+| Weighted tokens, per model and token type, not money | Model choice is one of the levers, so the measure must see it; cache-read pricing differs by model, so a single model factor would mislead. Ratios relative to one reference stay readable without quoting a price. |
 | `model: sonnet` in frontmatter and passed per call | The ticket's decision. Frontmatter is the backstop when the call omits it. |
 | `--top 10` unchanged | The ticket's decision. Fewer hotspots is less coverage, not efficiency. |
 | Usage kept out of findings and bundles | It is volatile; bundles must stay byte-identical. |

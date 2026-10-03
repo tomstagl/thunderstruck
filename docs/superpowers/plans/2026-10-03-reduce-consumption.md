@@ -25,7 +25,7 @@ uv run --with pytest --with pyyaml --with lizard --with markdown-it-py==4.2.0 --
 - Bundle bytes, `bundle_hash`, `VALIDATION_RULES` and the finding contract do not change (§5.4, AC-9).
 - `examples/sample-report.md` stays byte-identical; `gen_sample_report.py --check` passes on every commit (§7).
 - `usage.json` contains no text from any transcript: only counts, model names, ids and timestamps (§6).
-- Input-equivalent weights, exactly: input 1, cache write 5-minute 1.25, cache write 1-hour 2, cache write without TTL 1.25, cache read 0.1, output 5 (§2.3).
+- Weighted tokens use spec §2.3's table exactly (Sonnet 5.5 input = 1, per model and token type); a model without a row is never weighted by a guess (§2.3).
 - No money figure anywhere (ticket, product decision).
 - Do not declare `hooks` in `plugin.json` (CLAUDE.md).
 
@@ -47,10 +47,10 @@ This needs a real repository, a fresh interactive session and a real scan. The n
 
 - [ ] Pick one real repository with at least 10 hotspots. Note its commit, and fix the window as an ISO date one year before that commit's date. `--since 12m` is relative to today, so Task N, run weeks later, would rank different hotspots.
 - [ ] Twice: delete its `.thunderstruck/findings/`, start a fresh Claude Code session in it, check out the noted commit, and run `/thunderstruck-scan --since <the ISO date>` with otherwise default arguments using the current plugin. Record the exact arguments.
-- [ ] In a scratch directory, write a throwaway script that reads that session's transcript and its `subagents/agent-*.jsonl`, deduplicates entries by `message.id`, skips `<synthetic>`, and applies the §2.3 weights. Window: from `hotspots.json`'s `generated_at` to the last entry.
-- [ ] Record, per scan and as the mean of the two: input-equivalent totals for the orchestrator and for investigators, each split by token type and model; agents per hotspot; extra `Read`/`Grep`/`Glob` calls per investigator (median, 90th percentile); finding count; validation pass rate (`validation.json` `valid`/`checked` before the repair round).
+- [ ] In a scratch directory, write a throwaway script that reads that session's transcript and its `subagents/agent-*.jsonl`, deduplicates entries by `message.id`, skips `<synthetic>`, and applies the §2.3 table. Orchestrator window: from `hotspots.json`'s `generated_at` up to and including the assistant entry that issues the `report.py` command (where `usage.py`'s window will end), excluding turns that answer any user message other than the scan command.
+- [ ] Record, per scan and as the mean of the two: raw token counts and weighted totals for the orchestrator and for investigators, each split by token type and model; agents per hotspot; extra `Read`/`Grep`/`Glob` calls per investigator (median, 90th percentile); finding count; validation pass rate (`validation.json` `valid`/`checked` before the repair round).
 - [ ] Write `docs/calibration/consumption.md` in the form of `docs/calibration/config.md`, with no organisation-specific names, and end it with exactly these two lines:
-  - `Investigator tokens per bundle token: <mean investigator input-equivalent per investigator ÷ mean bundle tokens_estimated, one decimal>`
+  - `Investigator tokens per bundle token: <mean investigator tokens per investigator, weighted with the Sonnet 5.5 row, ÷ mean bundle tokens_estimated, one decimal>`
   - `Read cap: <5 if the 90th percentile of extra reads is under 5, else that percentile rounded up>`
 
 ### Task 1: Move finding shaping into a stdlib module
@@ -160,7 +160,7 @@ def main(stdin_text: str) -> None:
 - Produces, on the command line:
   - `save_finding.py --check H01 H02 …` prints one line per id, `H01 saved` / `H01 missing` / `H01 failed`, and exits 0. `saved`: `findings/<ID>.json` exists with the current `bundle_hash` and no `analysis_failed`. `failed`: same hash, `analysis_failed: true`. Otherwise `missing`, including an unknown id.
   - `--fallback` with `--id … --from …` or `--failed` records `{"fallback": true}` in `agents/<ID>.json`.
-  - `--usage '<json>'` with `--id` records `{"relayed_usage": {…}}` in `agents/<ID>.json`, keeping only the four integer keys `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`; an absent key stays absent (§2.5). Malformed JSON is a `c.die` with exit 2.
+  - `--usage '<json>'` with `--id` records `{"relayed_usage": {…}}` in `agents/<ID>.json`, keeping only the four integer keys `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens` plus a string `model`; an absent key stays absent (§2.5). Malformed JSON is a `c.die` with exit 2.
   - `--id` is no longer required when `--check` is given; `--check` and `--id` together are an error.
 
 - [ ] Write `tests/test_save_finding_check.py`, failing: `saved` after a normal save; `missing` before any save; `missing` for a finding whose `bundle_hash` is from an older bundle (edit the bundle's source line and re-run `bundle.py`); `failed` after `--failed`; `missing` for `H99`; `--fallback` and `--usage '{"input_tokens": 5, "output_tokens": 2, "note": "x"}'` record `fallback: true` and `relayed_usage == {"input_tokens": 5, "output_tokens": 2}`; Review Focus 3: a prose-first result through `--from` exits 2 and `--check` still says `missing`.
@@ -176,32 +176,33 @@ def main(stdin_text: str) -> None:
 **Interfaces:**
 - Consumes: `agents/<ID>.json` from Tasks 2–3; `bundles/index.json`; `hotspots.json` `generated_at`.
 - Produces:
-  - In `_common.py`: `INPUT_EQUIVALENT_WEIGHTS = {"input": 1.0, "cache_write_5m": 1.25, "cache_write_1h": 2.0, "cache_write": 1.25, "cache_read": 0.1, "output": 5.0}` with a comment naming Anthropic's pricing page; `USAGE_SCHEMA = "thunderstruck.usage/v1"`.
+  - In `_common.py`: `TOKEN_WEIGHTS: dict[str, dict[str, float]]`, spec §2.3's table keyed by model id then by bucket (`input`, `cache_write_5m`, `cache_write_1h`, `cache_read`, `output`), with a comment giving the pricing page URL and the date read; `MODEL_ALIASES = {"haiku": "claude-haiku-4-5", "sonnet": "claude-sonnet-5-5", "opus": "claude-opus-5-5"}`; `USAGE_SCHEMA = "thunderstruck.usage/v1"`.
   - In `usage.py`:
     - `projects_root() -> Path` — `Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "projects"`.
     - `safe_transcript(path: str | None) -> Path | None` — the resolved path if it is under `projects_root().resolve()` and ends in `.jsonl`, else `None`.
     - `read_entries(path: Path, since: str | None = None, until: str | None = None) -> list[dict] | None` — `None` if unreadable; otherwise one `{"model": str, "usage": dict}` per distinct `message.id` (falling back to `requestId`) among `type == "assistant"` lines with a dict `message.usage` and `message.model != "<synthetic>"`, inside the ISO window when given. Lines that are not JSON are skipped and counted.
-    - `split(usage: dict) -> dict[str, int]` — the six bucket keys of `INPUT_EQUIVALENT_WEIGHTS`; `cache_creation_input_tokens` goes to `cache_write_5m`/`cache_write_1h` from `usage["cache_creation"]` when present, else to `cache_write`.
-    - `input_equivalent(buckets: dict[str, int]) -> int` — `round(sum(weight × count))`.
-    - `tally(entries: list[dict]) -> dict` — `{"calls": n, "by_model": {model: {**buckets, "input_equivalent": n}}}`, models sorted.
+    - `split(usage: dict) -> dict[str, int]` — the five bucket keys; `cache_creation_input_tokens` goes to `cache_write_5m`/`cache_write_1h` from `usage["cache_creation"]` when present, else all to `cache_write_5m`.
+    - `weighted(model: str, buckets: dict[str, int]) -> int | None` — `round(sum(TOKEN_WEIGHTS[model][b] × count))`, or `None` for a model without a row.
+    - `tally(entries: list[dict]) -> dict` — `{"calls": n, "by_model": {model: {**buckets, "weighted": n or None}}}`, models sorted; a `None` model adds `"model <id> has no weights; its tokens are not in the total"` to `missing`.
     - `build(repo: Path, now: str) -> dict` — the §2.4 document.
-  - CLI: `usage.py [--repo P]` writes `.thunderstruck/usage.json` and prints one line: `usage: <source>, ~<total>k input-equivalent tokens -> <path>`. Exit 0 even when `source` is `unavailable`; exit 2 only when there is no `hotspots.json`.
+  - CLI: `usage.py [--repo P]` writes `.thunderstruck/usage.json` and prints one line: `usage: <source>, ~<total>k weighted tokens -> <path>`. Exit 0 even when `source` is `unavailable`; exit 2 only when there is no `hotspots.json`.
 
 `build` in order:
 1. `since = hotspots["generated_at"]`, `until = now`.
 2. For each non-cached index entry, load `agents/<ID>.json`; drop it if its `bundle_hash` differs from the entry's (Review Focus 2). No record: add `"<ID>: no agent record, the hook did not fire"` to `missing`.
-3. For each agent: `safe_transcript(transcript_path)`, then `Path(t).with_suffix("") / "subagents" / f"agent-{agent_id}.jsonl"`, `read_entries` without a window. Unreadable: use `relayed_usage` if the record has one (as a single entry with model `"unknown"`), else add to `missing`.
+3. For each agent: `safe_transcript(transcript_path)`, then `Path(t).with_suffix("") / "subagents" / f"agent-{agent_id}.jsonl"`, `read_entries` without a window. Unreadable: use `relayed_usage` if the record has one, as a single entry whose model is `MODEL_ALIASES` applied to its `model` field, else add to `missing`.
 4. `agents` = number of agent entries across records; `repairs` and `respawns` = entries with that `kind`; `fallback_saves` = records with `fallback: true`.
 5. Orchestrator: the first readable `transcript_path` among the records, `read_entries(path, since, until)`. None readable: `missing` gets `"orchestrator: session transcript not readable"`.
 6. `source`: `transcripts` when `missing` is empty, `unavailable` when no entry at all was read, otherwise `partial`.
 
 - [ ] Write the transcript fixtures as small JSONL files built by a helper in the test (not checked-in blobs), under a temp `CLAUDE_CONFIG_DIR`: a session file with entries before and inside the window, a split response (three lines, same `message.id`), a `<synthetic>` line, a user line and a tool-result line; two subagent files.
 - [ ] Write `tests/test_usage.py`, failing:
-  - weights: one entry of each bucket at 1000 tokens gives `input_equivalent == 1000 + 1250 + 2000 + 1250 + 100 + 5000`;
+  - weights: one `claude-sonnet-5-5` entry with 1000 tokens in each bucket gives `weighted == 1000 + 1250 + 2000 + 100 + 5000`; the same on `claude-opus-5-5` gives `2000 + 2500 + 4000 + 100 + 10000`; `cache_creation_input_tokens` without a `cache_creation` split is weighted as 5-minute; a model `claude-future-9` gives `weighted is None`, its raw counts kept, `source: partial` and a `missing` line naming it;
+  - `TOKEN_WEIGHTS` equals spec §2.3's table: parse the table from the spec file and compare, so the two can never drift;
   - the split response counts once; `<synthetic>`, user and tool lines count zero (Review Focus 4); entries before `generated_at` are excluded from the orchestrator and subagent entries are never windowed;
   - a normal run gives `source: transcripts`, `missing == []`, `agents == 2`, `respawns == 0`;
   - a record with agents of kind `first` and `respawn` gives `respawns == 1`; `first` and `repair` gives `repairs == 1` and `respawns == 0`;
-  - a deleted subagent file with `relayed_usage` gives `source: partial`, that hotspot from the relayed figures under model `unknown`, and a `missing` line naming it;
+  - a deleted subagent file with `relayed_usage` gives `source: partial`, that hotspot from the relayed figures weighted with the row `MODEL_ALIASES["sonnet"]` names (the record's `model` is `"sonnet"`), and a `missing` line naming the unreadable transcript;
   - a record from an older `bundle_hash` is ignored (Review Focus 2);
   - no agent records at all gives `source: unavailable`;
   - a `transcript_path` outside `projects_root()` (e.g. `/etc/passwd`, or a `.jsonl` in the temp dir but outside it) is never opened: patch `Path.open` to fail the test if called with it;
@@ -238,11 +239,11 @@ def main(stdin_text: str) -> None:
 **Files:** `scripts/bundle.py`, `scripts/validate.py`, `scripts/_common.py`, `tests/test_quiet_output.py` (new), any existing test that asserts on per-bundle or `ok` lines (find them with `grep -rn '"ok  \|tokens  ' tests/`).
 
 **Interfaces:**
-- Produces: `--verbose` on `bundle.py` and `validate.py`; `INVESTIGATOR_TOKENS_PER_BUNDLE_TOKEN: float` in `_common.py`, set to Task 0's recorded value with a comment citing `docs/calibration/consumption.md`; `bundle.estimate_line(todo_tokens: list[int]) -> list[str]`.
+- Produces: `--verbose` on `bundle.py` and `validate.py`; `--model` on `bundle.py` (estimate only, default `sonnet`, never affects bundle bytes); `INVESTIGATOR_TOKENS_PER_BUNDLE_TOKEN: float` in `_common.py`, set to Task 0's recorded value with a comment citing `docs/calibration/consumption.md`; `bundle.estimate_line(todo_tokens: list[int]) -> list[str]`.
 
 - [ ] Write `tests/test_quiet_output.py`, failing:
   - `bundle.py` default stdout has no line matching `^[HD]\d\d  ~`, still has the `need investigating` line, and ends with the two §2.7 estimate lines; with `--verbose` the per-bundle lines are back;
-  - the estimate is `round(sum(todo tokens) × INVESTIGATOR_TOKENS_PER_BUNDLE_TOKEN / 1000)` thousand, and with zero bundles to investigate it reads `estimate: no investigators to run`;
+  - the estimate is `round(sum(todo tokens) × INVESTIGATOR_TOKENS_PER_BUNDLE_TOKEN / 1000)` thousand on sonnet; `bundle.py --model opus` (the skill passes its `--model` through) multiplies by `TOKEN_WEIGHTS[MODEL_ALIASES["opus"]]["input"]` and names the model; with zero bundles to investigate it reads `estimate: no investigators to run`;
   - `validate.py` default stdout has no `ok  ` line, has every `FAIL` line with each error indented beneath it, and the summary line; `--verbose` restores `ok  ` lines; `--quiet` still prints nothing;
   - bundle files and `index.json` are byte-identical with and without `--verbose`.
 - [ ] Run them; they fail.
@@ -279,12 +280,13 @@ def main(stdin_text: str) -> None:
 - [ ] Run them; they fail.
 - [ ] Edit `SKILL.md`:
   - arguments: `| --model M | sonnet | Model for the investigators: haiku, sonnet or opus. The repair round uses the same one. |`;
-  - step 2's dry-run paragraph: also relay `bundle.py`'s estimate lines;
+  - step 2: pass `--model M` to `bundle.py` (estimate only), and in the dry-run paragraph relay its estimate lines;
+  - the fallback's `--usage` JSON carries `"model": "<the --model value>"`;
   - step 3: the §4.1 rules as a list under a "How to run them" heading, the `--check` step after each batch, and the §4.2 fallback, replacing "Save each result immediately…" (the hook now does that). Keep the save and `--failed` commands in the fallback;
   - step 4: the hook captures the repair; after it, `--check` and the same fallback;
   - step 5: run `uv run "${CLAUDE_PLUGIN_ROOT}/scripts/usage.py"` first; its failure never stops the report, and step 6 then says consumption was not measured, quoting its error line;
   - step 6: summarise from `report.json` (`counts`, the top findings, `consumption`), and include the Consumption line.
-- [ ] Rewrite `orchestration.md`'s Cost control with Task 0's measured figures and the input-equivalent weights, and add a row to "When things fail": *Hook did not save a result → `--check` says `missing`; save it with `--fallback`; the report counts it.* Add `usage.json` and `agents/` to `report-format.md`'s output list, and add a line under "What leaves the machine": `usage.py` reads Claude Code's own transcripts on this machine and writes counts only.
+- [ ] Rewrite `orchestration.md`'s Cost control with Task 0's measured figures and the weighted-token table, and add a row to "When things fail": *Hook did not save a result → `--check` says `missing`; save it with `--fallback`; the report counts it.* Add `usage.json` and `agents/` to `report-format.md`'s output list, and add a line under "What leaves the machine": `usage.py` reads Claude Code's own transcripts on this machine and writes counts only.
 - [ ] Bump the minor version in all four places (the next minor above `main`'s at the time; `0.10.0` if `main` is still `0.9.0`) and add a CHANGELOG entry in the 0.8.2 entry's form: *Added* (Consumption section and `usage.py`; the capture hook; `--model`; the dry-run estimate), *Changed* (investigators default to Sonnet and read at most <Read cap> extra files; `bundle.py` and `validate.py` print summaries unless `--verbose`; orchestration rules).
 - [ ] Run the full suite, `gen_catalog_docs.py --check`, `gen_sample_report.py --check`, `claude plugin validate . --strict`, then install from this checkout and confirm `claude plugin list` says `enabled`.
 - [ ] Commit: `Orchestration rules, --model and docs for consumption (#5)`.
@@ -295,6 +297,6 @@ def main(stdin_text: str) -> None:
 
 - [ ] Install the released plugin. On the same repository and commit as Task 0, twice: delete `findings/`, fresh session, `/thunderstruck-scan` with exactly Task 0's recorded arguments.
 - [ ] Record `usage.json`'s figures beside Task 0's, as means of the two runs, and the same quality numbers. Record which matcher form the `SubagentStop` hook fired with (§11) and whether either session compacted.
-- [ ] Verdict against the ticket's success measures: weighted total ≤ 50% of baseline; zero re-spawns; finding count down by no more than one per five hotspots; validation pass rate not lower.
+- [ ] Verdict against the ticket's success measures: weighted total (spec §2.3) ≤ 50% of baseline; zero re-spawns; finding count down by no more than one per five hotspots; validation pass rate not lower.
 - [ ] Update `INVESTIGATOR_TOKENS_PER_BUNDLE_TOKEN` to the measured post-change ratio in the same PR, and regenerate nothing else.
 - [ ] If the verdict fails, open a follow-up ticket with the numbers; do not tune in place.
