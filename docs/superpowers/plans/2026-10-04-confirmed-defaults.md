@@ -12,7 +12,15 @@
 
 **Prerequisites, checked in Task 0, which blocks until they hold:** #5 (`scripts/finding_shape.py` with the owned keys and `FINDING_SCHEMA_VERSION`, the capture hook), #56 (`preconditions`, `check_ref`, `finding_gate`, `GATES`, `GATE_MARKERS`, `report.json` v2), #37 (`verify.py` with `settle`, `VERDICT_KEYS`, `claim_hash`, `cited_files`, `export_run`; `deps.py`; `agents/thunderstruck-skeptic.md`; the `validated_repo` test fixtures) and #55 (`scripts/benchmark.py`, the Celery `labels.json`) are merged on `main`.
 
-**Branch:** `feat/confirmed-defaults`. One commit per task. The full suite passes on every commit, and its real exit code is checked, never piped through `tail`:
+**Who builds what.** Tasks 0–14 are built by the ticket agent (or anyone) on the branch. Task 15 is a measurement that needs the maintainer: a Claude Code session with the plugin installed and a Celery checkout. After Task 14 the build stops with one defined outcome, **ready for maintainer measurement**:
+
+- the PR is opened as a **draft**, and its description starts with "Do not merge before Task 15 (maintainer measurement on #55, spec §13.2)"; it does not say "Close #57" or any other closing keyword;
+- a comment on #57 says "Ready for maintainer measurement: Task 15 of the plan" and links the draft PR;
+- #57 stays open; the agent does not mark the PR ready.
+
+The maintainer runs Task 15 on the same branch, commits its results there, and marks the PR ready only when AC-6 holds.
+
+**Branch:** named by whoever builds it (the ticket agent names its own). One commit per task. The full suite passes on every commit, and its real exit code is checked, never piped through `tail`:
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/ -q; echo "exit=$?"
@@ -23,16 +31,17 @@ New tests go in `tests/test_confirmed_defaults.py` (every task but Task 11) and 
 ## Global Constraints
 
 - One confirmation rule (`_common.confirm`), one reliance rule (`_common.unconfirmed_defaults`), one derivation (`_common.with_confirmations`), one gate rule (`_common.finding_gate`). Nothing else decides any of them (§1).
-- `confirmed` only with a check's item whose `default_ref` resolves and is not a fallback read, and whose `found` is `same` (§3.2). The validator alone never confirms.
+- `confirmed` only with a check's item whose `default_ref` resolves, names the setting (§4.3) and is not a fallback read, and whose `found` is `same` (§3.2). The validator alone never confirms.
 - Vocabularies exactly as the spec: `state` ∈ `confirmed unconfirmed`; `basis` ∈ `registered contradicted call_site_fallback not_found unresolved not_checked`; `found` ∈ `same different not_found`; `GATES == ("none", "unconfirmed_default", "non_default_setting")`; marker "relies on an unconfirmed default"; verdict key `confirmations`; item keys `setting claim stated_ref found default default_ref reason`.
 - `preconditions[].confirmation` is never taken from a model: `finding_shape.py`'s owned-field strip removes it (for `save_finding.py` and the capture hook alike), `validate.py` overwrites it, `report.py` re-derives it (§5.3, §9).
 - `verify.settle` refuses `upheld` on an unconfirmed default on every path, reuse included (§7.1).
 - `VALIDATION_RULES` does not change (Decision 12). `REPORT_SCHEMA_VERSION` stays `thunderstruck.report/v2`; `index.json` stays `thunderstruck.index/v1`.
-- No script starts a process other than `git` and the approved context command; nothing imports, executes or builds anything from the scanned repository or its dependencies (§11, AC-5).
-- Every model-written value (`default`, `claim`, a confirmation's `reason`) is inert in every output; dependency refs are never links.
+- No script starts a process other than `git` and the approved context command (which may be a script committed in the scanned repository, approved by hash, #1); nothing else imports, executes or builds anything from the scanned repository or its dependencies; hooks run `python3 -S` (§11, AC-5).
+- Every model-written value (a confirmation's `setting`, `default`, `default_ref`, `stated_ref`, `claim`, `reason`) is inert in every output; dependency refs are never links.
 - `guardrail.py` stays stdlib-only, always exits 0, states facts, under 100 ms median.
 - Bundles stay byte-identical; briefs and `checks/plan.json` stay deterministic.
-- The examples are regenerated once, in Task 12. Between Task 7 and Task 12 `gen_sample_report.py --check` may report them stale; Task 12 ends it.
+- The examples are regenerated once, in Task 12. From Task 5 (which changes the fixture and the canned verdicts) to Task 12 `gen_sample_report.py --check` may report them stale; Task 12 ends it. The generator itself must keep running from Task 5 on (`expect` on canned verdicts, Task 5).
+- Which unconfirmed defaults gate the finding is an open product question (ticket; spec §8, §19 q4). Build the spec's current choice (every unconfirmed `needs: default` default); do not change it without the maintainer's answer.
 - Public repository: no organisation-specific names, hosts, credentials or local paths in any file.
 
 ## Review Focus
@@ -49,17 +58,18 @@ New tests go in `tests/test_confirmed_defaults.py` (every task but Task 11) and 
 
 **Satisfies:** none on its own; every later task assumes it.
 
-- [ ] **Step 1: Check the three tickets are merged.**
+- [ ] **Step 1: Check that #5, #56, #37 and #55 are merged.** On a branch from current `origin/main`:
 
 ```bash
-git fetch origin && git checkout -b feat/confirmed-defaults origin/main
 grep -n "def finding_gate\|^GATES\|^GATE_MARKERS" scripts/_common.py
 grep -n "def check_ref" scripts/validate.py
 grep -n "^VERDICT_KEYS\|^def settle\|^def claim_hash\|^def cited_files\|^def export_run\|^def render_brief\|^class Resolver" scripts/verify.py
 grep -n "^def resolve_dependency_ref\|^def snapshot_dir\|^DEP_REF" scripts/deps.py
 grep -n "^def score_defaults" scripts/benchmark.py
 test -f agents/thunderstruck-skeptic.md && test -f docs/calibration/correctness/celery/labels.json && echo ok
-grep -n "FINDING_SCHEMA_VERSION\|OWNED\|def shape" scripts/finding_shape.py
+grep -n "^FINDING_SCHEMA_VERSION" scripts/finding_shape.py
+grep -n "^OWNED_FINDING_KEYS" scripts/finding_shape.py
+grep -n "^def shape" scripts/finding_shape.py
 ```
 
 Expected: every grep prints a line, and `ok`. **This task blocks.** If any line is missing, #5, #56, #37 or #55 is not merged: stop, start no other task, and report the ticket blocked with the missing names. The plan builds on those exact names.
@@ -118,6 +128,9 @@ def _item(found="same", **over) -> dict:
     (False, _item("different"), "contradicted"),
     (False, _item("not_found", default=None, default_ref=None), "not_found"),
     (False, _item("same", default_ref_error="no such file"), "unresolved"),
+    (False, _item("same", default_names_setting=False), "unresolved"),
+    (False, _item("different", default_names_setting=False), "unresolved"),
+    (False, _item("same", default_names_setting=True), "registered"),
     (False, _item("same", default_call_site=True), "call_site_fallback"),
     (True, _item("same", default_call_site=True), "call_site_fallback"),
     (False, _item("different", default_call_site=True), "call_site_fallback"),
@@ -235,7 +248,7 @@ def confirm(call_site, item: dict | None = None) -> dict:
         basis = "call_site_fallback" if call_site is True else "not_checked"
     elif item.get("found") == "not_found":
         basis = "not_found"
-    elif item.get("default_ref_error"):
+    elif item.get("default_ref_error") or item.get("default_names_setting") is False:
         basis = "unresolved"
     elif item.get("default_call_site") is True:
         basis = "call_site_fallback"
@@ -321,7 +334,7 @@ git commit -m "Confirmed defaults: the confirmation rule and the third gate (#57
 
 **Interfaces:**
 - Consumes: `c.strip_comments(text, lang)`, `c.detector_language(catalog, lang)`, `c.load_catalog()`.
-- Produces: `c.reads_with_fallback(text: str, setting: str, lang: str | None, catalog: dict) -> bool | None` (`None` when the language has no `setting_reads` entry); catalog key `setting_reads: {language: [pattern, …]}`.
+- Produces: `c.reads_with_fallback(text: str, setting: str, lang: str | None, catalog: dict) -> bool | None` (`None` when the language has no `setting_reads` entry); `c.names_setting(text: str, setting: str, lang: str | None) -> bool` (spec §4.3); catalog key `setting_reads: {language: [pattern, …]}`.
 
 - [ ] **Step 1: Write the failing tests.** Append:
 
@@ -388,6 +401,22 @@ def test_a_name_that_is_prose_or_regex_never_matches_and_never_raises(setting):
     assert c.reads_with_fallback("x = conf.get('a.b*c', 1)\n", setting, "python", CATALOG) in (False,)
 
 
+@pytest.mark.parametrize("text, setting, lang, expected", [
+    ("x = conf.get('result_backend_always_retry', True)\n", "result_backend_always_retry", "python", True),
+    ("    backend_always_retry=Option(False, type='bool'),\n", "result_backend_always_retry", "python", True),
+    ("        socket_connect_timeout=None,\n", "redis_socket_connect_timeout", "python", True),
+    ("    retry=Option(False),\n", "result_backend_always_retry", "python", False),  # one segment
+    ("TIMEOUT = 30\n", "TIMEOUT", "python", True),
+    ("x = 1  # result_backend_always_retry\n", "result_backend_always_retry", "python", False),
+    ('  "sync.pageSize": 500,\n', "sync.pageSize", "typescript", True),
+    ("const x = 1;\n", "sync.pageSize", "typescript", False),
+    ("pool.size=10\n", "pool.size", None, True),
+    ("anything\n", "max_retries (database backend)", "python", False),
+])
+def test_names_setting(text, setting, lang, expected):
+    assert c.names_setting(text, setting, lang) is expected
+
+
 def test_a_language_without_setting_reads_is_unknown():
     assert c.reads_with_fallback("x := os.Getenv(\"X\")\n", "X", "go", CATALOG) is None
     assert c.reads_with_fallback("x\n", "X", None, CATALOG) is None
@@ -429,6 +458,21 @@ setting_reads:
 _SETTING_NAME = re.compile(r"[\w.\-:/\[\]@]+")
 
 
+def names_setting(text: str, setting, lang: str | None) -> bool:
+    """Spec §4.3: the text (comments blanked when the language is known) contains
+    the setting's name or a `_`/`.`-delimited suffix of it of two or more segments."""
+    name = setting.strip() if isinstance(setting, str) else ""
+    if not name or not _SETTING_NAME.fullmatch(name):
+        return False
+    body = (strip_comments(text, lang) if lang else text).casefold()
+    parts = re.split(r"[_.]", name.casefold())
+    seps = re.findall(r"[_.]", name)
+    candidates = {name.casefold()}
+    for i in range(1, len(parts) - 1):
+        candidates.add("".join(parts[j] + (seps[j] if j < len(seps) else "") for j in range(i, len(parts))))
+    return any(cand and cand in body for cand in candidates)
+
+
 def reads_with_fallback(text: str, setting, lang: str | None, catalog: dict) -> bool | None:
     """True when `text` reads `setting` and supplies its own fallback at that read
     (spec §4). None when the language has no setting_reads patterns."""
@@ -464,12 +508,13 @@ git commit -m "Confirmed defaults: recognise a default stated at a fallback read
 
 **Files:**
 - Modify: `scripts/validate.py` (`PRECONDITION_KEYS`, `Validator.__init__`, new `Validator.fallback_read`, `main`)
-- Modify: `scripts/finding_shape.py` (the owned-field strip that `save_finding.py` and the capture hook's `shape()` both call)
+- Modify: `scripts/finding_shape.py` (`shape`, which `save_finding.py` and the capture hook both call)
+- Modify: `tests/test_checked_confidence.py` (#56's precondition-rule row for `confirmation`)
 - Test: `tests/test_confirmed_defaults.py`
 
 **Interfaces:**
 - Consumes: `Validator.check_ref(ref, where, errors, allow_dependency=False)` (#56, #37); `deps.DEP_REF`, `deps.resolve_dependency_ref`, `deps.snapshot_dir` (#37); `c.reads_with_fallback`, `c.confirm` (Tasks 1–2).
-- Produces: `Validator.fallback_read(ref, setting, allow_dependency: bool = False) -> bool | None`; every precondition of a passing document carries `confirmation = {"state", "basis", "reason", "call_site", "by": "validator"}`.
+- Produces: `Validator.fallback_read(ref, setting, allow_dependency: bool = False) -> bool | None`; `Validator.names_setting(ref, setting, allow_dependency: bool = False) -> bool | None` (spec §4.3; `None` when the ref does not resolve or the file is not text); every precondition of a passing document carries `confirmation = {"state", "basis", "reason", "call_site", "by": "validator"}`.
 
 - [ ] **Step 1: Write the failing tests.** Append:
 
@@ -563,6 +608,23 @@ def test_save_finding_strips_a_model_written_confirmation(validated_repo, valida
 
 If `save_finding.py`'s CLI reads the model output from stdin rather than `--from`, adapt the call to the CLI as it stands on `main` (the assertion is what matters). Add the same assertion for the capture hook: feed `capture_finding.py` an investigator payload in the form of #5's `tests/fixtures/hook_payloads/` whose finding carries `preconditions[0].confirmation`, and assert the saved findings file has none.
 
+In `tests/test_checked_confidence.py`, #56's `test_each_precondition_rule` row `({"confirmation": {"state": "confirmed"}}, "unknown key(s) ['confirmation']")` no longer holds: `confirmation` is accepted and then overwritten. Remove that row and add to the same file:
+
+```python
+def test_a_precondition_confirmation_is_accepted_then_replaced(repo):
+    assert not [e for e in _errors(repo, _pre(confirmation={"state": "confirmed"})) if "confirmation" in e]
+```
+
+(The replacement itself is pinned by `test_validate_writes_a_mechanical_confirmation_and_overwrites_a_claimed_one`.) And in `tests/test_confirmed_defaults.py`:
+
+```python
+def test_names_setting_on_repository_refs(tmp_path):
+    v = _validator(_tiny_repo(tmp_path, CELERYISH))
+    assert v.names_setting("app/defaults.py:2", "result_backend_always_retry") is True
+    assert v.names_setting("app/defaults.py:4", "result_backend_always_retry") is False
+    assert v.names_setting("backends/database.py:99", "x") is None
+```
+
 - [ ] **Step 2: Run them to verify they fail.** Expected: FAIL, `AttributeError: 'Validator' object has no attribute 'fallback_read'`, and the confirmation assertions.
 
 - [ ] **Step 3: Write the implementation.** In `scripts/validate.py`:
@@ -581,13 +643,13 @@ In `Validator.__init__`, store the catalog and its language map:
         self.langmap = c.language_map(catalog)
 ```
 
-Add the method (import `deps` at module top if #37 did not):
+Add the methods (import `deps` at module top if #37 did not):
 
 ```python
-    def fallback_read(self, ref: Any, setting: Any, allow_dependency: bool = False) -> bool | None:
-        """Spec §5.2: whether the cited lines read `setting` with a fallback.
-        None when the ref does not resolve, the file is not UTF-8 text, or its
-        language has no setting_reads patterns. Reads only resolved files."""
+    def _cited_text(self, ref: Any, allow_dependency: bool) -> tuple[str, str | None] | None:
+        """The cited lines (joined) and their language, for a ref check_ref resolves.
+        None when it does not resolve or the file is not UTF-8 text. Reads only
+        tracked repository files and snapshot files under .thunderstruck/deps/."""
         errors: list[str] = []
         got = self.check_ref(ref, "ref", errors, allow_dependency=allow_dependency)
         if got is None:
@@ -606,8 +668,18 @@ Add the method (import `deps` at module top if #37 did not):
         if text is None:
             return None
         lines = text.splitlines()[start - 1:end]
-        lang = c.detect_language(path.name, self.langmap)
-        return c.reads_with_fallback("\n".join(lines) + "\n", setting, lang, self.catalog)
+        return "\n".join(lines) + "\n", c.detect_language(path.name, self.langmap)
+
+    def fallback_read(self, ref: Any, setting: Any, allow_dependency: bool = False) -> bool | None:
+        """Spec §5.2: whether the cited lines read `setting` with a fallback.
+        None when unreadable or the language has no setting_reads patterns."""
+        got = self._cited_text(ref, allow_dependency)
+        return None if got is None else c.reads_with_fallback(got[0], setting, got[1], self.catalog)
+
+    def names_setting(self, ref: Any, setting: Any, allow_dependency: bool = False) -> bool | None:
+        """Spec §4.3: whether the cited lines name the setting (or a 2+ segment suffix)."""
+        got = self._cited_text(ref, allow_dependency)
+        return None if got is None else c.names_setting(got[0], setting, got[1])
 ```
 
 In `main`, in the loop over a passing document's findings, after `f["evidence_hashes"] = …`:
@@ -622,7 +694,7 @@ In `main`, in the loop over a passing document's findings, after `f["evidence_ha
 
 Check that `c.read_text` returns `None` for undecodable bytes (it does on `main`: it reads UTF-8 strictly and returns `None` on error); if it does not, decode with `errors="strict"` inside a `try` here.
 
-In `scripts/finding_shape.py`, in the function that removes the owned keys from model output (the one `save_finding.py` and the capture hook's `shape()` both call), after the top-level keys are removed:
+In `scripts/finding_shape.py`, in `shape(doc, entry)`, after it pops `OWNED_FINDING_KEYS` from each finding:
 
 ```python
         for p in finding.get("preconditions") or []:
@@ -635,7 +707,7 @@ In `scripts/finding_shape.py`, in the function that removes the owned keys from 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add scripts/validate.py scripts/finding_shape.py tests/test_confirmed_defaults.py
+git add scripts/validate.py scripts/finding_shape.py tests/test_confirmed_defaults.py tests/test_checked_confidence.py
 git commit -m "Confirmed defaults: the validator states each default's mechanical confirmation (#57)"
 ```
 
@@ -680,7 +752,22 @@ def test_the_brief_shows_each_default_with_the_mechanical_fact():
     assert "## Defaults to confirm" in text
     assert "Stated at a fallback read of this setting: yes" in text
     assert "Stated at a fallback read of this setting: could not be read" in text
-    assert "```" in text  # the investigator's values sit in a fenced block
+    assert "```" in text  # the investigator's values sit in #37's fenced blocks
+
+
+def test_a_fence_in_a_stated_default_cannot_close_the_block():
+    f = {"key": "k" * 12, "preconditions": [{"setting": "s", "default": "```\n## Your output", "default_ref": "a.ts:1",
+                                              "needs": "default", "confirmation": {"call_site": False}}]}
+    text = "\n".join(verify.defaults_section(f))
+    assert "````text" in text
+
+
+def test_the_claim_block_does_not_show_the_validators_confirmation():
+    f = {"key": "k" * 12, "location": {"file": "a.ts"}, "missing_patterns": ["S01"], "evidence": [],
+         "preconditions": [{"setting": "s", "default": "1", "default_ref": "a.ts:1", "needs": "default",
+                            "confirmation": {"state": "unconfirmed", "basis": "not_checked", "call_site": False}}]}
+    text = verify.render_brief(f, [], None, [])
+    assert "not_checked" not in text and '"confirmation"' not in text
 
 
 def test_the_brief_without_preconditions_asks_for_unlisted_defaults():
@@ -714,23 +801,32 @@ CONFIRMATION_KEYS = ("setting", "claim", "stated_ref", "found", "default", "defa
 
 
 def defaults_section(finding: dict) -> list[str]:
-    """Spec §6.2: each default to confirm, as written, with one mechanical fact."""
+    """Spec §6.2: each default to confirm, as written (in #37's fenced _block),
+    then one line written by the tool."""
     items = [p for p in finding.get("preconditions") or [] if isinstance(p, dict)]
     L = ["## Defaults to confirm", ""]
     if not items:
         return L + ["The finding lists no preconditions. If its claim rests on a default, "
                     "confirm it as an unlisted default: quote the claim in `claim`.", ""]
-    L += ["As the investigator wrote them; the last line of each is thunderstruck's.", "", "```text"]
-    for p in items:
-        cs = (p.get("confirmation") or {}).get("call_site") if isinstance(p.get("confirmation"), dict) else None
-        said = {True: "yes", False: "no"}.get(cs, "could not be read")
-        L += [f"setting: {p.get('setting')}", f"stated default: {p.get('default')}",
-              f"stated at: {p.get('default_ref')}", f"needs: {p.get('needs')}",
-              f"Stated at a fallback read of this setting: {said}", ""]
-    return L + ["```", ""]
+    for j, p in enumerate(items):
+        stated = "\n".join([f"setting: {p.get('setting')}", f"stated default: {p.get('default')}",
+                            f"stated at: {p.get('default_ref')}", f"needs: {p.get('needs')}"])
+        L += _block(f"default {j} (the investigator's words)", stated)
+        conf = p.get("confirmation") if isinstance(p.get("confirmation"), dict) else {}
+        said = {True: "yes", False: "no"}.get(conf.get("call_site"), "could not be read")
+        L += [f"Stated at a fallback read of this setting: {said}", ""]
+    return L
 ```
 
-In `render_brief`, append `defaults_section(finding)` directly after *The claim* section. Recompute nothing else: `brief_hash` follows the text.
+In `render_brief`, append `defaults_section(finding)` directly after *The claim* section, and change #37's preconditions block so it serialises the items without the validator's key:
+
+```python
+    shown = [{k: v for k, v in p.items() if k != "confirmation"} if isinstance(p, dict) else p
+             for p in finding.get("preconditions") or []]
+    L += _block("preconditions", json.dumps(shown, indent=2, ensure_ascii=False))
+```
+
+Recompute nothing else: `brief_hash` follows the text.
 
 In `agents/thunderstruck-skeptic.md`, add `c.NO_EXECUTION`'s sentence verbatim to the rules, `confirmations` to the output skeleton (empty list), and this numbered rule after the missing-gate rule:
 
@@ -774,12 +870,12 @@ git commit -m "Confirmed defaults: the skeptic confirms each default it is shown
 
 **Files:**
 - Modify: `scripts/verify.py` (`Resolver.fallback_read`, new `resolve_confirmations`, `_quotes_any`, `no_upheld_on_unconfirmed`; `settle`, `apply`, `claim_hash`, `cited_files`)
-- Modify: `tests/fixtures/build_fixture.py`, `scripts/gen_sample_report.py` (Task 12 Steps 3–4, done here first)
+- Modify: `tests/fixtures/build_fixture.py`, `scripts/gen_sample_report.py` (Task 12 Steps 3–4, done here first; and the canned-verdict guard learns `expect`)
 - Test: `tests/test_confirmed_defaults.py`
 
 **Interfaces:**
 - Consumes: `Validator.fallback_read` (Task 3); `c.with_confirmations`, `c.unconfirmed_defaults`, `c.CONFIRMATION_FOUND`, `c.CONFIRMATION_REASONS` (Task 1); #37's `settle`, `_norm`, `Resolver`, `apply`, `claim_hash`, `cited_files`, `OWNED`.
-- Produces: `Resolver.fallback_read(ref, setting) -> bool | None`; `verify.resolve_confirmations(finding: dict, result: dict, resolver: Resolver, ignored: list[str]) -> list[dict]` (items with `precondition`, `stated_call_site`, `default_call_site`, `default_ref_error` added); `verify.no_upheld_on_unconfirmed(finding: dict, check: dict) -> dict`; `check.confirmations` on every settled check that came from a result or the ledger; `preconditions[j].confirmation` written by `apply`; `cited_files(finding, verdict_evidence=(), confirmations=())`.
+- Produces: `Resolver.fallback_read(ref, setting) -> bool | None`; `verify.resolve_confirmations(finding: dict, result: dict, resolver: Resolver, ignored: list[str]) -> list[dict]` (items with `precondition`, `stated_call_site`, `default_names_setting`, `default_call_site`, `default_ref_error` added); `Resolver.names_setting(ref, setting) -> bool | None`; `verify.no_upheld_on_unconfirmed(finding: dict, check: dict) -> dict`; `check.confirmations` on every settled check that came from a result or the ledger; `preconditions[j].confirmation` written by `apply`; `cited_files(finding, verdict_evidence=(), confirmations=())`.
 
 - [ ] **Step 1: Write the failing tests.** Append (they use #37's `validated_repo` and the helpers of `tests/test_verification.py`, imported):
 
@@ -884,7 +980,7 @@ def test_claim_hash_ignores_confirmation_and_the_registry_is_in_the_ledger(valid
     assert "src/config/settings.ts" in ledger[e["key"]]["files"]
 ```
 
-These tests need the fixture and the canned collection precondition of Task 12. **Do Task 12 Steps 3 and 4 first, as part of this task** (the fixture files, the page-size read, the canned precondition and the two canned confirmations), and include those files in this task's commit; Task 12 then adds its sample tests and regenerates the samples.
+These tests need the fixture and the canned collection precondition of Task 12. **Do Task 12 Steps 3 and 4 first, as part of this task**, including the `expect` guard of Task 12 Step 4 (the fixture files, the page-size read, the canned precondition and the two canned confirmations), and include those files in this task's commit; Task 12 then adds its sample tests and regenerates the samples.
 
 - [ ] **Step 2: Run them to verify they fail.** Expected: FAIL (unknown key `confirmations` is now allowed by Task 4, but `check["confirmations"]` is absent and `upheld` stands).
 
@@ -937,7 +1033,8 @@ def resolve_confirmations(finding: dict, result: dict, resolver: "Resolver", ign
         j = index.get(norm)
         out = {"setting": setting, "precondition": j, "claim": None, "stated_ref": None,
                "stated_call_site": None, "found": item["found"], "default": None, "default_ref": None,
-               "default_ref_error": None, "default_call_site": None, "reason": str(item.get("reason") or "")}
+               "default_ref_error": None, "default_names_setting": None, "default_call_site": None,
+               "reason": str(item.get("reason") or "")}
         if j is None:
             if not _quotes_any(finding, item.get("claim")):
                 ignored.append(f"{where} names a setting the finding does not list, and its claim "
@@ -960,6 +1057,7 @@ def resolve_confirmations(finding: dict, result: dict, resolver: "Resolver", ign
             out["default"], out["default_ref"] = item["default"], item.get("default_ref")
             errors: list[str] = []
             if resolver.ref(item.get("default_ref"), f"{where}.default_ref", errors):
+                out["default_names_setting"] = resolver.names_setting(item["default_ref"], setting)
                 out["default_call_site"] = resolver.fallback_read(item["default_ref"], setting)
             else:
                 out["default_ref_error"] = errors[0] if errors else f"{where}.default_ref does not resolve"
@@ -990,13 +1088,22 @@ def no_upheld_on_unconfirmed(finding: dict, check: dict) -> dict:
 ```python
     def fallback_read(self, ref, setting) -> bool | None:
         return self.v.fallback_read(ref, setting, allow_dependency=True)
+
+    def names_setting(self, ref, setting) -> bool | None:
+        return self.v.names_setting(ref, setting, allow_dependency=True)
 ```
 
-In `settle` (#37 §9):
+#37's `settle` is a wrapper with one exit around `_decide` (#37 §16). Change it to:
 
-- On the `reuse` path, replace `return check` with `return no_upheld_on_unconfirmed(finding, check)`.
+```python
+def settle(finding, entry, result, resolver, plan, ledger_entry) -> dict:
+    return no_upheld_on_unconfirmed(finding, _decide(finding, entry, result, resolver, plan, ledger_entry))
+```
+
+That covers the reuse path and every other path. In `_decide`:
+
 - On the main path, directly after the refuted-claims loop: `items = resolve_confirmations(finding, result, resolver, ignored)`. Where #37 builds `read` (dependency versions), add each item whose `default_ref_error` is `None` and whose `default_ref` matches `deps.DEP_REF`: `read[f"{m['eco']}:{m['name']}"] = m["version"]`.
-- Replace the final `return {…}` with `check = {…}`, add `check["confirmations"] = items`, and `return no_upheld_on_unconfirmed(finding, check)`.
+- In the final `return {…}`, add the key `"confirmations": items`.
 
 The paths that return `unchecked` stay as they are (no status to refuse, no items).
 
@@ -1264,7 +1371,7 @@ def test_defaults_line_counts_bases():
                                                                          "basis": {}}, "gate": {}}}) is None
 ```
 
-In `tests/test_inert_report.py`, extend `MODEL_FIELDS` with the paths `check.confirmations[].default`, `check.confirmations[].claim`, `check.confirmations[].reason` (in the form that file uses for nested fields) so the hostile-text test plants text there.
+In `tests/test_inert_report.py`, extend `MODEL_FIELDS` with the paths `check.confirmations[].setting`, `.default`, `.default_ref`, `.stated_ref`, `.claim` and `.reason` (in the form that file uses for nested fields) so the hostile-text test plants text there.
 
 - [ ] **Step 2: Run them to verify they fail.** Expected: FAIL.
 
@@ -1310,7 +1417,7 @@ def _confirmation_clause(conf: dict, item: dict | None) -> str:
 
 - passes each precondition's item (`check.confirmations` entry whose `precondition` is its index);
 - shows "The failure happens on default settings and rests on these defaults:" when `f["gate"]` is `none` **or** `unconfirmed_default`;
-- after the listed lines, when unlisted items exist, adds "Defaults the check found this claim rests on:" and per item ``- `S`: the finding says “<claim>”;`` + `_confirmation_clause(item["confirmation"], item)`.
+- after the listed lines, when unlisted items exist, adds "Defaults the check found this claim rests on:" and per item `f"- {md.code(item['setting'])}: the finding says “{md.text(item['claim'])}”;"` + `_confirmation_clause(item["confirmation"], item)`; a `stated_ref` is appended as " (stated at " + the linked ref, or `md.code` for a dependency ref, + ")".
 
 In `render_markdown`, after #56's check-status line (and #37's verification line), add `defaults_line(data)` when it is not `None`. The badge marker comes from `c.GATE_MARKERS` already (#56), so `relies on an unconfirmed default` appears without further change; confirm by the test.
 
@@ -1355,7 +1462,7 @@ def test_gate_markers_include_the_unconfirmed_default():
     assert json.loads(m.group(1)) == c.GATE_MARKERS
 ```
 
-and extend `MODEL_FIELDS` as in Task 8. In `tests/test_report_html_browser.py`, in the test that opens a dossier with preconditions, assert that its Preconditions row contains `Unconfirmed` or `Confirmed`, and that a finding with `gate: unconfirmed_default` shows the marker text in its rail item.
+and extend `MODEL_FIELDS` with the same six confirmation paths as Task 8 (`setting`, `default`, `default_ref`, `stated_ref`, `claim`, `reason`). In `tests/test_report_html_browser.py`, in the test that opens a dossier with preconditions, assert that its Preconditions row contains `Unconfirmed` or `Confirmed`, and that a finding with `gate: unconfirmed_default` shows the marker text in its rail item.
 
 - [ ] **Step 2: Run them to verify they fail.** Expected: FAIL (`CONFIRMATION_REASONS` absent; `GATE_MARKERS` has two keys).
 
@@ -1471,6 +1578,7 @@ git commit -m "Confirmed defaults: the guardrail states whether a default was co
 **Files:**
 - Create: `tests/test_no_execution.py`
 - Modify: `agents/thunderstruck-investigator.md`, `skills/thunderstruck-scan/SKILL.md` (the sentence)
+- Modify: `hooks/hooks.json` (every command runs `python3 -S`)
 
 **Interfaces:**
 - Consumes: `c.NO_EXECUTION` (Task 4); #37's `validated_repo`, `validated_env`; the scripts as they are.
@@ -1518,11 +1626,21 @@ def _scripts() -> list[Path]:
 
 
 def _calls(tree: ast.AST):
-    for fn in [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))] + [tree]:
-        name = getattr(fn, "name", "<module>")
-        for node in ast.walk(fn):
-            if isinstance(node, ast.Call):
-                yield name, node
+    """Every call with the name of its innermost enclosing def ("<module>" at top level)."""
+    def visit(node: ast.AST, owner: str):
+        for child in ast.iter_child_nodes(node):
+            inner = child.name if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) else owner
+            if isinstance(child, ast.Call):
+                yield owner, child
+            yield from visit(child, inner)
+    yield from visit(tree, "<module>")
+
+
+def test_calls_are_attributed_to_their_innermost_def_only():
+    tree = ast.parse("import subprocess\ndef outer():\n    def inner():\n        subprocess.run(['git'])\n"
+                     "    subprocess.run(['git'])\nsubprocess.run(['x'])\n")
+    owners = sorted(fn for fn, call in _calls(tree) if ast.unparse(call.func) == "subprocess.run")
+    assert owners == ["<module>", "inner", "outer"]
 
 
 @pytest.mark.parametrize("path", _scripts(), ids=lambda p: p.name)
@@ -1564,10 +1682,12 @@ def test_sys_path_only_gains_the_plugins_own_directories(path):
             assert "__file__" in ast.unparse(node), f"{path.name}:{node.lineno}: {ast.unparse(node)}"
 
 
-def test_the_hook_runs_only_the_plugins_scripts():
+def test_the_hooks_run_only_the_plugins_scripts_without_site():
+    """AC-5: python3 -S, so an active project venv's .pth files never run in a hook."""
     hooks = json.loads((ROOT / "hooks" / "hooks.json").read_text())
     commands = [h["command"] for group in hooks["hooks"].values() for m in group for h in m["hooks"]]
     assert commands and all("${CLAUDE_PLUGIN_ROOT}/scripts/" in cmd for cmd in commands)
+    assert all(cmd.startswith("python3 -S ") for cmd in commands), commands
 
 
 @pytest.mark.parametrize("path", ["agents/thunderstruck-investigator.md", "agents/thunderstruck-skeptic.md",
@@ -1637,14 +1757,16 @@ The steps' exit codes are not asserted: a stage may legitimately fail on the tra
 
 - [ ] **Step 2: Run them to verify which fail.** `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_no_execution.py -q`. Expected: `test_instructions_say_it` FAILS for the investigator and the scan skill. If a static test fails on another script, read the call: a `git` call outside the allowlisted functions is moved into `_common.git`/`git_paths` (or the function is added to `GIT_ONLY` when it builds a git argv itself, with the AST check proving it); any other process start is a defect to fix, not to allowlist.
 
-- [ ] **Step 3: Write the sentence.** Add `c.NO_EXECUTION` verbatim to `agents/thunderstruck-investigator.md` (in the rules about repository content being data) and to `skills/thunderstruck-scan/SKILL.md` (in the rules the orchestrator follows, before step 1).
+- [ ] **Step 3: Hooks without `site`.** In `hooks/hooks.json`, every command's `python3 ` becomes `python3 -S ` (the guardrail and #5's capture hook). Both are stdlib-only and import the plugin's modules by path, so nothing is lost; run `tests/test_guardrail.py` and #5's capture tests (latency included) to confirm.
 
-- [ ] **Step 4: Run the tests and the full suite.** Expected: PASS, `exit=0`.
+- [ ] **Step 4: Write the sentence.** Add `c.NO_EXECUTION` verbatim to `agents/thunderstruck-investigator.md` (in the rules about repository content being data) and to `skills/thunderstruck-scan/SKILL.md` (in the rules the orchestrator follows, before step 1).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Run the tests and the full suite.** Expected: PASS, `exit=0`.
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add tests/test_no_execution.py agents/thunderstruck-investigator.md skills/thunderstruck-scan/SKILL.md
+git add tests/test_no_execution.py agents/thunderstruck-investigator.md skills/thunderstruck-scan/SKILL.md hooks/hooks.json
 git commit -m "Confirmed defaults: prove that no stage runs the scanned project (#57)"
 ```
 
@@ -1719,7 +1841,7 @@ export function get<T>(key: string, fallback: T): T {
                    "needs": "default", "value": None, "documented": "no", "doc_ref": None}],
 ```
 
-and its `failure_mode` or `trigger_condition` says the restart re-fetches pages of 100 items (so the precondition is what the claim rests on). In `CANNED_VERDICTS`, the collection verdict stays `upheld` and gains:
+and its `failure_mode` or `trigger_condition` says the restart re-fetches pages of 100 items (so the precondition is what the claim rests on). In `CANNED_VERDICTS`, the collection verdict stays `upheld`, gains `"expect": "inconclusive"`, and gains:
 
 ```python
 "confirmations": [{"setting": "sync.pageSize", "claim": None, "stated_ref": None, "found": "different",
@@ -1727,7 +1849,7 @@ and its `failure_mode` or `trigger_condition` says the restart re-fetches pages 
                    "reason": "The registry holds 500; get() returns it, so the fallback 100 never applies."}],
 ```
 
-with `{registry_line}` filled by `_line_of(repo, "src/config/settings.ts", '"sync.pageSize": 500')` where the verdict is saved. The api.ts verdict (`narrowed`) gains a confirmation of `API_RETRY_ON_429`: `found: same`, `default: "false (unset)"`, `default_ref` = the canned precondition's `default_ref`, reason "Unset means false; nothing else registers it."
+`expect` is the generator's, not the contract's: #37's generator fails (`SystemExit` naming the key) when a canned verdict settles to a status other than its `verdict`; change that guard to compare against `entry.get("expect", entry["verdict"])`, and pop `expect` before the verdict is saved (an unknown top-level key would make `apply` leave it `unchecked`). With `{registry_line}` filled by `_line_of(repo, "src/config/settings.ts", '"sync.pageSize": 500')` where the verdict is saved. The api.ts verdict (`narrowed`) gains a confirmation of `API_RETRY_ON_429`: `found: same`, `default: "false (unset)"`, `default_ref` = the canned precondition's `default_ref`, reason "Unset means false; nothing else registers it."
 
 - [ ] **Step 5: Regenerate and run everything.**
 
@@ -1759,7 +1881,7 @@ git commit -m "Confirmed defaults: a settings registry in the fixture, shown in 
 
 **Interfaces:**
 - Consumes: #37's `export_run(repo)`; #55's `score_defaults(records, label_set)`, `figure`, `format_figure`, `basis_of`, `EFFECTIVE`.
-- Produces: run records with `preconditions: [{"setting", "default", "confirmation"}]`; `score_defaults(...)["rows"][i]["confirmation"]` when the run gives one; `score_defaults(...)["confirmed_not_effective"]: list[{"key", "setting"}]` and `["confirmed"]: int`.
+- Produces: run records with `preconditions: [{"setting", "default", "confirmation"}]`; `score_defaults(...)["rows"][i]["confirmation"]` when the run gives one; `score_defaults(...)["confirmed_not_effective"]: list[{"key", "setting"}]` and `["confirmed"]: int`; `benchmark.upheld_on_wrong_default(records: dict, label_set: dict) -> list[{"key", "setting"}]`. #55's spec reserves both figures and the run record's `preconditions[].confirmation` (a one-line extension point the lead adds to #55); if it does not, stop and report it.
 
 - [ ] **Step 1: Write the failing tests.** In `tests/test_benchmark.py`, after #55's Task 6 tests:
 
@@ -1774,6 +1896,21 @@ def test_confirmed_defaults_that_are_not_effective_are_listed():
     assert m["confirmed_not_effective"] == [{"key": k, "setting": "result_backend_always_retry"}]
     assert {r["setting"]: r.get("confirmation") for r in m["rows"] if r["key"] == k}[
         "result_backend_max_retries"] == "confirmed"
+
+
+def test_upheld_findings_on_a_wrong_or_unstated_default_are_listed():
+    s = _celery()
+    k15, k16 = _key("FR-015"), _key("FR-016")
+    records = {
+        k15: {"verdict": "upheld", "preconditions": [
+            {"setting": "result_backend_always_retry", "default": "True"}]},   # max_retries not stated
+        k16: {"verdict": "upheld", "preconditions": []},                       # no discriminating label
+    }
+    got = b.upheld_on_wrong_default(records, s)
+    assert {"key": k15, "setting": "result_backend_always_retry"} in got
+    assert {"key": k15, "setting": "result_backend_max_retries"} in got
+    assert all(x["key"] != k16 for x in got)
+    assert b.upheld_on_wrong_default({k15: {"verdict": "narrowed"}}, s) == []
 ```
 
 In `tests/test_confirmed_defaults.py`:
@@ -1821,7 +1958,28 @@ In `benchmark.score_defaults`, keep each stated precondition's `confirmation` (`
     return {..., "confirmed": len(confirmed), "confirmed_not_effective": wrong}
 ```
 
-Where `benchmark.py` prints the defaults measure, add one figure line when `confirmed` is non-zero: `figure("confirmed defaults that are not effective", len(wrong), confirmed, basis)` through `format_figure`, and list the keys and settings (no prose; #55 §9).
+Add:
+
+```python
+def upheld_on_wrong_default(records: dict, label_set: dict) -> list[dict]:
+    """Upheld findings whose label has a discriminating precondition the run did not
+    state at its effective value: the ticket's success measure, counted directly."""
+    out = []
+    for k, r in sorted(records.items()):
+        if r.get("verdict") not in ("upheld", "upheld_but_gated"):
+            continue
+        stated = {str(p.get("setting", "")).strip().casefold(): p.get("default")
+                  for p in r.get("preconditions") or []}
+        for pc in label_set["_by_key"][k].get("preconditions") or []:
+            if pc["kind"] != "setting" or values_match(pc["literal"], pc["effective"]):
+                continue
+            name = pc["setting"].casefold()
+            if name not in stated or not values_match(normalise_value(stated[name]), pc["effective"]):
+                out.append({"key": k, "setting": pc["setting"]})
+    return out
+```
+
+and print it as a figure over the run's upheld findings, `figure("upheld on a default not stated at its effective value", len(found keys), upheld count, basis)`, listing keys and settings. Where `benchmark.py` prints the defaults measure, also add one figure line when `confirmed` is non-zero: `figure("confirmed defaults that are not effective", len(wrong), confirmed, basis)` through `format_figure`, and list the keys and settings (no prose; #55 §9).
 
 - [ ] **Step 4: Run the tests and the full suite.** Expected: PASS, `exit=0`.
 
@@ -1841,7 +1999,7 @@ git commit -m "Confirmed defaults: carry confirmations into benchmark runs (#57)
 **Files:**
 - Modify: `README.md` (*Findings are falsifiable, and checked*; *Privacy*), `CLAUDE.md`, `skills/thunderstruck-scan/references/report-format.md`, `skills/thunderstruck-verify/SKILL.md` (one sentence), `CHANGELOG.md`, `pyproject.toml`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`
 
-- [ ] **Step 1: README.** Under *Findings are falsifiable, and checked*, a paragraph: every default a finding relies on is shown as confirmed or unconfirmed with why; a default stated at the line that reads the setting with a fallback argument is flagged mechanically, because a settings layer may hold another value; a finding resting on an unconfirmed default is never reported upheld and is listed after default-path findings, marked. Under *Privacy*: thunderstruck never runs, imports, installs or builds the project it scans; it starts `git`, and the catalog command you approved.
+- [ ] **Step 1: README.** Under *Findings are falsifiable, and checked*, a paragraph: every default a finding relies on is shown as confirmed or unconfirmed with why; a default stated at the line that reads the setting with a fallback argument is flagged mechanically, because a settings layer may hold another value; a finding resting on an unconfirmed default is never reported upheld and is listed after default-path findings, marked. Under *Privacy*: thunderstruck never runs, imports, installs or builds the project it scans; it starts `git`, and the catalog command you approved by hash (even when that command is a script in the repository, it runs only as approved); its hooks start Python with `-S`.
 
 - [ ] **Step 2: CLAUDE.md.** In *Things that will bite you*, a paragraph:
 
@@ -1894,6 +2052,8 @@ git add README.md CLAUDE.md skills/ CHANGELOG.md pyproject.toml .claude-plugin/
 git commit -m "Confirmed defaults: documentation and release (#57)"
 ```
 
+- [ ] **Step 8: Stop: ready for maintainer measurement.** Push the branch and open the PR as a **draft** whose description starts with "Do not merge before Task 15 (maintainer measurement on #55, spec §13.2)". It must not contain "Close #57", "Fixes #57" or any other closing keyword. Comment on #57: "Ready for maintainer measurement: Task 15 of the plan", with the PR link. Tick Tasks 0–14 in the ticket's checklist; Task 15 stays open until the maintainer commits it on this branch.
+
 ---
 
 ### Task 15: On #55's frozen set (maintainer, with the plugin installed)
@@ -1926,7 +2086,7 @@ uv run <thunderstruck>/scripts/benchmark.py --run docs/calibration/correctness/c
 
 1. FR-015's status (must not be `upheld`) and the state and basis of its `result_backend_always_retry` and `result_backend_max_retries` items (each `unconfirmed`: `contradicted` or `call_site_fallback`). If FR-015 is `upheld` or either default is `confirmed`, stop: AC-6 is not met, and the cause (the skeptic's items in `verdicts.json`) goes in the PR.
 2. The defaults measure: counts over the five discriminating preconditions and over the rest.
-3. `confirmed defaults that are not effective`: expected 0 (success measure).
+3. `confirmed defaults that are not effective` and `upheld on a default not stated at its effective value`: both expected 0 (success measure).
 4. #37 AC-12's same-class count on this run, and every finding whose `check.reason` starts "The check upheld this claim, but it rests on a default no one confirmed", with its label (§19 q3).
 5. The skeptics' consumption from `usage.json`, beside #37's figure for the same model.
 
