@@ -188,10 +188,10 @@ A value is one of:
 |---|---|---|
 | `none` | | `None`, `none`, `null`, JSON null |
 | `bool` | `{"type": "bool", "value": true}` | `True`/`true`/`False`/`false`, JSON booleans |
-| `number` | `{"type": "number", "value": 120, "unit": "s"}` | a number, optionally followed by `s` or `ms` (converted to `s`); `inf`, `infinity` |
+| `number` | `{"type": "number", "value": 120, "unit": "s"}`; unbounded is `"value": "inf"` (JSON has no infinity) | a number, optionally followed by `s` or `ms` (converted to `s`); `inf`, `infinity` |
 | `text` | `{"type": "text", "value": "max_retries=20, interval 1 s"}` | anything else, compared case-folded with whitespace collapsed |
 
-Settings match on case-folded name. Per `kind: setting` precondition the run is: *matches effective*, *matches literal only*, *matches neither*, or *not stated*. Where literal equals effective, a match counts as effective. The headline is reported over the **discriminating** preconditions, those whose literal and effective differ, because only they can show the difference AC-5 asks about; the rest are counted beside it. On Celery the discriminating ones are `redis_socket_connect_timeout` (FR-001), `task_acks_on_timeout` (FR-002), `result_backend_always_retry` (FR-014, FR-015) and `result_backend_max_retries` (FR-015).
+Two numbers match when their values are equal and their units are equal or either is absent, so a run's bare `120.0` matches a label's `120 s`. Other types match on type and value. Settings match on case-folded name. Per `kind: setting` precondition the run is: *matches effective*, *matches literal only*, *matches neither*, or *not stated*. Where literal equals effective, a match counts as effective. The headline is reported over the **discriminating** preconditions, those whose literal and effective differ, because only they can show the difference AC-5 asks about; the rest are counted beside it. On Celery the discriminating ones are `redis_socket_connect_timeout` (FR-001), `task_acks_on_timeout` (FR-002), `result_backend_always_retry` (FR-014, FR-015) and `result_backend_max_retries` (FR-015).
 
 ## 5. Output
 
@@ -223,7 +223,7 @@ The same results as one object: per set, per measure, the counts, the interval, 
 
 Converted once from `verdicts.json`, and checked in. The conversion is mechanical for `key`, `verdict`, `basis` (`read_code` → `read`), `deserved_confidence`, `duplicate_of` (FR-006's id mapped to FR-001's key through `scan/report.json`) and `labelled_by` (`claude-fable-5-1`, from `notes`); `established_by` comes from each finding's `how_to_verify.what_you_ran_or_why_not` and, where that names no script, from the reproduction its `summary` cites. Refuting-fact ranges are parsed from `refuting_fact.where` with `kind` from the path (`site-packages/…` → `dependency`, `.rst` → `docs`, `git show …` → `history`). Canonical `literal`/`effective` values and the `setting`/`environment` split are normalised by hand from the prose, because the prose is the only source; each is reviewed against `verdicts.json` in the PR. `effective` records the value that holds at runtime, not a measured consequence of it: "about 0.65 s measured" for `task_publish_retry_policy` and "jitter has no effect unless retry_backoff is set" leave `effective` equal to `literal`. That leaves exactly the five discriminating preconditions named in §4.5.
 
-A test asserts `labels.json` agrees with `verdicts.json` on every field derived mechanically, and that every precondition in `verdicts.json` appears in `labels.json` under the same setting name. `verdicts.json` itself is not edited.
+A test asserts `labels.json` agrees with `verdicts.json` on every field derived mechanically, and that every precondition in `verdicts.json` appears in `labels.json` under the same setting name, or under the plain setting name where the evidence qualified it: `result_backend_always_retry (database backend)` is labelled `result_backend_always_retry`, and the combined `retry_backoff / retry_jitter` becomes one precondition per setting. The test holds that mapping as a table. `verdicts.json` itself is not edited.
 
 ### 6.2 Baseline runs (AC-8)
 
