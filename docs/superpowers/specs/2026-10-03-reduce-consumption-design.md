@@ -283,6 +283,7 @@ Runs vary. Each task records two scans, and the comparison uses the mean.
 | `--top 10` unchanged | The ticket's decision. Fewer hotspots is less coverage, not efficiency. |
 | Usage kept out of findings and bundles | It is volatile; bundles must stay byte-identical. |
 | Quieter scripts by default | Script output is re-charged on every later orchestrator call. |
+| Consumption in `report.md` and `report.json`, not yet in `report.html` | The HTML page (#3) reads `report.json`, so showing it there later is a template change with no new data. |
 
 ## 11. Open design questions
 

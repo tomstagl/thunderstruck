@@ -228,7 +228,8 @@ def main(stdin_text: str) -> None:
   - no `usage.json`: `report.md` byte-identical to the same run without the feature (compare against `render_markdown` with `data["usage"] = None`), and `report.json` has `"consumption": null`;
   - model names render through `md.code`: a model `"[x](http://e)"` appears as inert code, checked with the rendering helpers in `tests/test_inert_report.py`.
 - [ ] Run them; they fail.
-- [ ] Implement. `render_consumption` builds every value with `md.code` or plain integers.
+- [ ] Implement. `render_consumption` builds every value with `md.code` or plain integers. `report.html` (#3) is not changed: it reads `report.json`, ignores the new `consumption` key, and `tests/test_report_html.py` must pass unchanged.
+- [ ] In Task 8's step 5 edit, keep #3's order: `usage.py`, then `report.py`, then `report_html.py` (`test_scan_step_5_renders_html_after_the_markdown_and_never_fails`).
 - [ ] Run the new tests, the full suite and `uv run scripts/gen_sample_report.py --check`.
 - [ ] Commit: `Report what a scan consumed (#5)`.
 
@@ -284,7 +285,7 @@ def main(stdin_text: str) -> None:
   - step 5: run `uv run "${CLAUDE_PLUGIN_ROOT}/scripts/usage.py"` first; its failure never stops the report, and step 6 then says consumption was not measured, quoting its error line;
   - step 6: summarise from `report.json` (`counts`, the top findings, `consumption`), and include the Consumption line.
 - [ ] Rewrite `orchestration.md`'s Cost control with Task 0's measured figures and the input-equivalent weights, and add a row to "When things fail": *Hook did not save a result → `--check` says `missing`; save it with `--fallback`; the report counts it.* Add `usage.json` and `agents/` to `report-format.md`'s output list, and add a line under "What leaves the machine": `usage.py` reads Claude Code's own transcripts on this machine and writes counts only.
-- [ ] Bump the minor version in all four places (the next minor above `main`'s at the time; `0.9.0` if `main` is still `0.8.2`) and add a CHANGELOG entry in the 0.8.2 entry's form: *Added* (Consumption section and `usage.py`; the capture hook; `--model`; the dry-run estimate), *Changed* (investigators default to Sonnet and read at most <Read cap> extra files; `bundle.py` and `validate.py` print summaries unless `--verbose`; orchestration rules).
+- [ ] Bump the minor version in all four places (the next minor above `main`'s at the time; `0.10.0` if `main` is still `0.9.0`) and add a CHANGELOG entry in the 0.8.2 entry's form: *Added* (Consumption section and `usage.py`; the capture hook; `--model`; the dry-run estimate), *Changed* (investigators default to Sonnet and read at most <Read cap> extra files; `bundle.py` and `validate.py` print summaries unless `--verbose`; orchestration rules).
 - [ ] Run the full suite, `gen_catalog_docs.py --check`, `gen_sample_report.py --check`, `claude plugin validate . --strict`, then install from this checkout and confirm `claude plugin list` says `enabled`.
 - [ ] Commit: `Orchestration rules, --model and docs for consumption (#5)`.
 
