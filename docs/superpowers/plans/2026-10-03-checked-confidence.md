@@ -23,12 +23,14 @@ New tests go in one file, `tests/test_checked_confidence.py`, appended task by t
 - One confidence rule (`_common.effective_confidence`) and one gate rule (`_common.finding_gate`). Nothing else computes either; `guardrail.py` carries a copy of the ceiling table only because it may not import `_common`, and a test pins the copy (§1).
 - Whether a commit is a fix never affects confidence or order anywhere (AC-1). `classify_commit` feeds `history[].class` only.
 - The findings file keeps the investigator's `confidence` claim; it is never rewritten with the reported confidence (§4.3).
-- `validate.py` never changes an existing `check` (§3.2). `save_finding.py` strips `check`, `history` and `confidence_claimed` from model output (§3.4).
+- `validate.py` never changes an existing `check` (§3.2). `finding_shape.shape()`, which `save_finding.py` and the capture hook both call, strips `check`, `history` and `confidence_claimed` from model output (§3.4).
 - Every model-written value (setting, default, value, role, `check.reason`) is inert: `md.code`/`md.text` in `report.md`, `textContent` in the HTML, plain text in the guardrail. Only the tool builds links.
 - `guardrail.py` stays stdlib-only, always exits 0, states facts and never instructs, and stays under 100 ms median.
 - Field names, values and their spelling are exactly the spec's: `check.status` ∈ `unchecked upheld narrowed inconclusive refuted`; `preconditions[]` keys `setting default default_ref needs value documented doc_ref`; `needs` ∈ `changed default`; `documented` ∈ `yes no not_checked`; commit `role` ∈ `introduced fixed mitigated changed`; `gate` ∈ `none non_default_setting`. #37 and #57 build on these names.
 - `VALIDATION_RULES` becomes 4, `FINDING_SCHEMA_VERSION` `thunderstruck.finding/v2`, `REPORT_SCHEMA_VERSION` `thunderstruck.report/v2`. `index.json` stays `thunderstruck.index/v1`.
 - Bundles stay byte-identical across runs; nothing in this plan writes into a bundle body.
+- This plan builds on #5 and #55 as merged (Task 0). Result shaping lives in `scripts/finding_shape.py` (#5): `FINDING_SCHEMA_VERSION` and the validator-owned keys are defined there, and `_common` only re-exports the version; `save_finding.py` and the `SubagentStop` hook `scripts/capture_finding.py` both call `finding_shape.shape()`.
+- A missing prerequisite stops the run: replace `agent:in-progress` with `agent:blocked`, comment naming the task and the missing ticket, open no PR. Never skip a task and continue.
 - The examples are regenerated once, in Task 8. Between Task 2 and Task 8, `uv run scripts/gen_sample_report.py --check` reports them stale; that is expected and Task 8 ends it. The generator itself must keep producing valid findings from Task 2 on, because `test_the_sample_does_not_carry_todays_date` runs it.
 - Public repository: no organisation-specific names, hosts or credentials in any file.
 
@@ -41,6 +43,28 @@ New tests go in one file, `tests/test_checked_confidence.py`, appended task by t
 5. **`documented: "yes"` without a `doc_ref`, or a `doc_ref` with `documented: "no"`.** Both rejected. Pinned in Task 2.
 
 ---
+
+### Task 0: Prerequisites are merged
+
+**Satisfies:** none directly; every later task assumes it.
+
+- [ ] **Step 1: Check #5 and #55 are on `main`.**
+
+```bash
+git fetch -q origin
+for f in scripts/finding_shape.py scripts/capture_finding.py scripts/benchmark.py \
+         docs/calibration/correctness/celery/labels.json; do
+  git cat-file -e "origin/main:$f" 2>/dev/null && echo "ok      $f" || echo "MISSING $f"
+done
+git show origin/main:hooks/hooks.json | grep -q SubagentStop && echo "ok      SubagentStop hook" || echo "MISSING SubagentStop hook"
+git show origin/main:scripts/finding_shape.py | grep -q "def shape" && echo "ok      finding_shape.shape" || echo "MISSING finding_shape.shape"
+```
+
+Expected: every line `ok`.
+
+- [ ] **Step 2: Stop if anything is missing.** Any `MISSING` line ends the run before Task 1: replace `agent:in-progress` with `agent:blocked` on #56, comment "Blocked at Task 0: <the missing files>. #5 (finding_shape.py, capture_finding.py, the SubagentStop hook) / #55 (benchmark.py, labels.json) is not merged", open no PR. Do not build Tasks 1–8 without #55: a branch that cannot finish Task 9 cannot merge.
+
+No commit: this task changes nothing.
 
 ### Task 1: The shared vocabulary and the two rules
 
@@ -158,7 +182,7 @@ CHECK_SENTENCES = {
 COMMIT_ROLES = ("introduced", "fixed", "mitigated", "changed")
 PRECONDITION_NEEDS = ("changed", "default")
 DOCUMENTED = ("yes", "no", "not_checked")
-# Report order: default-path findings first. #57 appends "unconfirmed_default".
+# Report order: default-path findings first. #57 inserts "unconfirmed_default" (its spec).
 GATES = ("none", "non_default_setting")
 GATE_MARKERS = {"non_default_setting": "needs a non-default setting"}
 
@@ -206,10 +230,10 @@ git commit -m "Checked confidence: the confidence ceiling and the gate (#56)"
 
 **Files:**
 - Modify: `scripts/validate.py` (`REQUIRED_FIELDS`, `check_evidence`, `check_finding`, `_corroborates` removed, new `check_ref`, `check_preconditions`, `_written`, `_wrote`, `history`; `main`)
-- Modify: `scripts/_common.py` (`VALIDATION_RULES = 4`, `FINDING_SCHEMA_VERSION = "thunderstruck.finding/v2"`)
-- Modify: `scripts/save_finding.py` (owned fields)
+- Modify: `scripts/_common.py` (`VALIDATION_RULES = 4`)
+- Modify: `scripts/finding_shape.py` (`FINDING_SCHEMA_VERSION = "thunderstruck.finding/v2"`; `OWNED_FINDING_KEYS`, used by `shape()`)
 - Modify: `scripts/gen_sample_report.py` (`_corroborating_commit` returns a role; every canned finding gets `preconditions`)
-- Modify (test data only, rule below): `tests/test_pipeline.py`, `tests/test_validate_paths.py`, `tests/test_context_pipeline.py`, `tests/test_dormant.py`, `tests/test_cross_file.py`, `tests/test_shared_code.py`, `tests/test_inert_report.py`, `tests/test_investigator_contract.py`, `tests/test_report_html.py`, `tests/test_report_html_browser.py`
+- Modify (test data and two old-contract tests, Step 1): `tests/test_pipeline.py`, `tests/test_validate_paths.py`, `tests/test_context_pipeline.py`, `tests/test_dormant.py`, `tests/test_cross_file.py`
 - Delete: `tests/test_high_gate.py` (its blame tests move here in the new form)
 - Test: `tests/test_checked_confidence.py`
 
@@ -228,7 +252,15 @@ git commit -m "Checked confidence: the confidence ceiling and the gate (#56)"
   grep -n '"type": "commit"' tests/*.py
   ```
 
-  Every hit outside `tests/test_checked_confidence.py` is a hand-built finding or commit item to update. In `tests/test_investigator_contract.py::_malformed`, the commit item is rewritten to `git` type with a `commit:` prefix; keep its `role` (save_finding's normalise must not drop it). Then delete `tests/test_high_gate.py`.
+  The hits to update are exactly: `tests/test_pipeline.py` (`_valid_finding`, and the commit items of the `0000000000000000` parametrize row and of `test_commit_evidence_must_touch_the_finding_file`'s `foreign` item), `tests/test_validate_paths.py` (`_doc`, and the `only_i` commit item), `tests/test_context_pipeline.py` (the finding builder near line 122), `tests/test_dormant.py` (the D01 finding near line 182) and `tests/test_cross_file.py` (`"role": "fixed"` on its fix commit).
+
+  **Not** test data; leave them as they are: the commit items in `tests/test_investigator_contract.py` (lines 62–72 are `normalise()` inputs and its expected outputs, line 144 an error-message case); `tests/test_shared_code.py` (never validated); the `"how_to_verify"` hits in `test_inert_report.py`, `test_report_html.py` and `test_report_html_browser.py` (field-name lists). `_malformed` derives from `_valid_finding`, so its commit item carries `role` through `normalise()` unchanged.
+
+  Two existing tests encode the old contract:
+  - `tests/test_pipeline.py::test_broken_evidence_is_rejected`: its row `(lambda f: f.pop("sustaining_effect"), "sustaining_effect is missing")` becomes `(lambda f: f.pop("preconditions"), "preconditions is missing (it may be [], but the key must be present)")`.
+  - `tests/test_pipeline.py::test_high_confidence_requires_commit_evidence`: delete it (`high` no longer needs a commit).
+
+  Then delete `tests/test_high_gate.py`. (Checked: with Tasks 1–2 applied to today's `main`, these are the only changes the existing suite needs.)
 
 - [ ] **Step 2: Write the failing tests.** Append to `tests/test_checked_confidence.py`:
 
@@ -432,6 +464,22 @@ def test_save_finding_strips_what_a_model_must_not_set(scanned_copy, plugin_root
     assert saved["findings"][0]["check"]["status"] == "unchecked"
 
 
+def test_the_capture_hook_strips_what_a_model_must_not_set(scanned_copy, plugin_root):
+    hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
+    doc["findings"][0].update(check={"status": "upheld"}, history=[{"sha": "x"}],
+                              confidence_claimed="high")
+    payload = {"session_id": "s", "transcript_path": "/dev/null", "cwd": str(scanned_copy),
+               "hook_event_name": "SubagentStop", "agent_id": "a1",
+               "agent_type": "plugin:thunderstruck:thunderstruck-investigator",
+               "stop_reason": "completed", "last_assistant_message": json.dumps(doc)}
+    proc = subprocess.run([sys.executable, str(plugin_root / "scripts" / "capture_finding.py")],
+                          input=json.dumps(payload), capture_output=True, text=True)
+    assert proc.returncode == 0
+    saved = json.loads((scanned_copy / ".thunderstruck" / "findings" / f"{hid}.json").read_text())
+    assert not {"check", "history", "confidence_claimed"} & set(saved["findings"][0])
+    assert saved["schema"] == "thunderstruck.finding/v2"
+
+
 def test_findings_validated_under_rules_3_are_investigated_again(scanned_copy, plugin_root):
     old = {"findings": [{"key": "k", "confidence": "high"}], "validated_with": 3}
     assert bundle._validated_under_older_rules(old)
@@ -450,7 +498,7 @@ Expected: FAIL on the Task 2 tests (e.g. `preconditions is missing` not reported
 
 - [ ] **Step 4: Write the implementation.**
 
-In `scripts/_common.py`: `VALIDATION_RULES = 4` and `FINDING_SCHEMA_VERSION = "thunderstruck.finding/v2"`.
+In `scripts/_common.py`: `VALIDATION_RULES = 4`. In `scripts/finding_shape.py`: `FINDING_SCHEMA_VERSION = "thunderstruck.finding/v2"` (`_common` re-exports it unchanged).
 
 In `scripts/validate.py`, replace `REQUIRED_FIELDS` and add the precondition constants:
 
@@ -649,7 +697,15 @@ In `main()`, after `f["evidence_hashes"] = evidence_hashes(repo, f)`:
                     f["check"] = {"status": "unchecked", "by": None, "reason": None}
 ```
 
-In `scripts/save_finding.py`, the owned-field tuple becomes `("key", "content_hash", "catalog_evidence", "evidence_hashes", "check", "history", "confidence_claimed")`. (If #5 has moved this list into `scripts/finding_shape.py`, extend it there.)
+In `scripts/finding_shape.py`, the keys `shape()` pops from each finding become a module constant, and `shape()` iterates over it:
+
+```python
+# Written by validate.py or a later stage, never by a model (spec §3.4).
+OWNED_FINDING_KEYS = ("key", "content_hash", "catalog_evidence", "evidence_hashes",
+                      "check", "history", "confidence_claimed")
+```
+
+`save_finding.py` and `capture_finding.py` need no change: both call `shape()`.
 
 In `scripts/gen_sample_report.py`, `_corroborating_commit` returns a third value, the role: `"introduced"` for the blamed `OTHER` commit, `"fixed"` for the most recent fix, `"changed"` for the most recent change, and `(None, "", None)` when there is none. Its call site becomes:
 
@@ -669,7 +725,7 @@ Expected: PASS. Then run the full suite (command in the header); expected `exit=
 - [ ] **Step 6: Commit**
 
 ```bash
-git add -A scripts/validate.py scripts/_common.py scripts/save_finding.py scripts/gen_sample_report.py tests/
+git add -A scripts/validate.py scripts/_common.py scripts/finding_shape.py scripts/gen_sample_report.py tests/
 git commit -m "Validator: preconditions, commit roles and history; the fix gate goes (#56)"
 ```
 
@@ -1305,7 +1361,7 @@ git commit -m "HTML report: check status, preconditions and history; the report'
 
 **Interfaces:**
 - Consumes: `index.json` entries from Task 3 (`check_status`, `gate`, `preconditions`, `history`, reported `confidence`).
-- Produces: in `guardrail`: `CEILING: dict[str, str]`, `LEVELS`, `GATE_ORDER`, `effective(confidence, status) -> str` (a copy of `_common.effective_confidence`), `precondition_line(f) -> str | None`, `history_line(f) -> str | None`.
+- Produces: in `guardrail`: `CEILING: dict[str, str]`, `LEVELS`, `GATE_ORDER` (pinned to `_common.GATES` by a test), `effective(confidence, status) -> str` (a copy of `_common.effective_confidence`), `precondition_line(f) -> str | None`, `history_line(f) -> str | None`.
 
 - [ ] **Step 1: Write the failing tests.** Append:
 
@@ -1319,6 +1375,10 @@ from test_guardrail import project, run_hook  # noqa: E402,F401
 def test_guardrail_ceiling_copy_matches_common(claimed, status):
     assert guardrail.effective(claimed, status) == c.effective_confidence(claimed, status)
     assert guardrail.effective(claimed, "bogus") == c.effective_confidence(claimed, "bogus")
+
+
+def test_guardrail_gate_order_matches_common():
+    assert guardrail.GATE_ORDER == c.GATES
 
 
 def _context(project: Path, findings: list[dict]) -> str:
@@ -1670,7 +1730,7 @@ git commit -m "Sample: a gated finding, check status, preconditions and history 
 
 **Satisfies:** AC-9.
 
-**Precondition:** #55 is merged: `scripts/benchmark.py` and `docs/calibration/correctness/celery/labels.json` exist on `main`. If not, stop here and report the task blocked on #55; Tasks 1–8 and 10 do not depend on it.
+**Precondition:** Task 0 confirmed #55 is merged. If `scripts/benchmark.py` or `docs/calibration/correctness/celery/labels.json` is nevertheless missing here, stop the run: replace `agent:in-progress` with `agent:blocked`, comment "Blocked at Task 9: #55 is not merged", open no PR. Do not skip this task and continue to Task 10.
 
 **Files:**
 - Modify: `scripts/benchmark.py` (`run_from_report`)
@@ -1811,7 +1871,7 @@ git commit -m "Benchmark: confidence before and after checked confidence (#56)"
 `confidence` in its findings file is the investigator's claim. `report.py`
 reports `_common.effective_confidence(claim, check status)`: only `upheld`
 can be `high`, everything else is at most `medium`, and `narrowed` drops one
-level. Until #37 lands every finding is `unchecked`. `save_finding.py` strips
+level. Until #37 lands every finding is `unchecked`. `finding_shape.shape()` strips
 `check`, `history` and `confidence_claimed` from model output, so a model
 cannot raise its own finding, and `validate.py` never overwrites an existing
 `check`. A cited commit's class (`_common.classify_commit`) and whether it
@@ -1822,12 +1882,12 @@ are listed after default-path findings and marked. Tightening a validator
 rule means bumping `VALIDATION_RULES`.
 ```
 
-- [ ] **Step 3: report-format.md.** The tree line reads `thunderstruck.report/v2`. The finding contract's `high` and `sustaining_effect` bullets are replaced by: `preconditions` required (may be `[]`) with its keys and rules; commit `role` with the `introduced` rule; `amplifier`/`sustaining_effect` optional, never empty; `confidence` is a claim, reported through the check-status ceiling. A new section "Check status, preconditions and history" lists §6.2's per-finding fields, `counts.check_status` and `counts.gate`, §6.3's `index.json` additions, and names the keys reserved for #37 (`check.by`, `check.reason`, `check.holds`, `check.refuted_claims`, `check.evidence`, `check.model`, `check.dependency_versions`, `check.reused_from`, `check.duplicate_of`; and #37's extension of `finding_gate` to a narrowed verdict naming a missing setting) and #57 (`preconditions[].confirmation`, gate `unconfirmed_default`). The "Sections of `report.md` in `report.json`" intro notes that `run_warnings` now ends with check-status warnings, and that v2 changed `confidence`'s meaning.
+- [ ] **Step 3: report-format.md.** The tree line reads `thunderstruck.report/v2`. The finding contract's `high` and `sustaining_effect` bullets are replaced by: `preconditions` required (may be `[]`) with its keys and rules; commit `role` with the `introduced` rule; `amplifier`/`sustaining_effect` optional, never empty; `confidence` is a claim, reported through the check-status ceiling. A new section "Check status, preconditions and history" lists §6.2's per-finding fields, `counts.check_status` and `counts.gate`, §6.3's `index.json` additions, and names the keys reserved for #37 (`check.by`, `check.reason`, `check.holds`, `check.refuted_claims`, `check.evidence`, `check.model`, `check.dependency_versions`, `check.reused_from`, `check.duplicate_of`, `check.confirmations`; and #37's extension of `finding_gate` to a narrowed verdict naming a missing setting) and #57 (`preconditions[].confirmation`, gate `unconfirmed_default`, placed in `GATES` by #57). The "Sections of `report.md` in `report.json`" intro notes that `run_warnings` now ends with check-status warnings, and that v2 changed `confidence`'s meaning.
 
-- [ ] **Step 4: Version and CHANGELOG.** Bump the minor version in all four places (the next minor above `main`'s at the time; `0.10.0` if `main` is `0.9.x`) and add:
+- [ ] **Step 4: Version and CHANGELOG.** Bump the minor version in all four places to `<version>`, the next minor above `main`'s at the time (read it from `pyproject.toml` on `origin/main`; e.g. `0.9.3` becomes `0.10.0`), and add, with that version in the heading:
 
 ```markdown
-## 0.10.0
+## <version>
 
 Confidence that means the claim was checked (#56).
 

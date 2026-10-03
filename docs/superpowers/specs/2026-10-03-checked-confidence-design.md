@@ -134,13 +134,13 @@ Written by `validate.py` per finding that passes, one entry per distinct cited c
 
 ### 3.4 Owned fields
 
-`save_finding.py` strips, from each model-supplied finding, `key`, `content_hash`, `catalog_evidence`, `evidence_hashes` (today) and `check`, `history`, `confidence_claimed` (new). If #5's `scripts/finding_shape.py` has taken over that list when this lands, the new names go there; the list is one tuple either way.
+This ticket builds on #5, which moves result shaping into `scripts/finding_shape.py`: `shape(doc, entry)` is called by both `save_finding.py` and the `SubagentStop` capture hook (`scripts/capture_finding.py`), and pops the validator-owned keys from each model-supplied finding. That list becomes a module constant, `OWNED_FINDING_KEYS = ("key", "content_hash", "catalog_evidence", "evidence_hashes", "check", "history", "confidence_claimed")`, so a result saved by hand and one captured by the hook are stripped identically.
 
 ### 3.5 Cached findings (AC-8)
 
 The bump to `VALIDATION_RULES = 4` routes every findings file validated under 3 through `bundle.py`'s `_still_valid`. None of them carries `preconditions` or commit `role`, so all fail today's rules and their hotspots are investigated again; `report.py` already refuses a file whose `validated_with` is not current. No `high` granted by the fix rule survives, because no file validated under that rule passes, and because reported confidence is derived at render time from the check status (§4), not stored. The cost of the re-investigation on the first scan after upgrading is the price of AC-3 of #54 (every finding states its preconditions); Decision 4 records it.
 
-`FINDING_SCHEMA_VERSION` goes to `thunderstruck.finding/v2`. Nothing branches on it; it records which contract wrote the file.
+`FINDING_SCHEMA_VERSION` goes to `thunderstruck.finding/v2`, in `scripts/finding_shape.py`, where #5 defines it (`_common` only re-exports it). Nothing branches on it; it records which contract wrote the file.
 
 ## 4. Confidence
 
@@ -291,7 +291,7 @@ The latency budget (100 ms median) is unchanged; the added work is string format
 ### 7.1 For #37 (verification)
 
 - **Status.** #37 writes `check.status` into each findings file after `validate.py`, using the five values of §4.1, and nothing else changes confidence: `effective_confidence` already maps every status. #37 must not add a status; a sixth value needs this spec changed first.
-- **Its own keys.** Everything else #37 records about a verdict goes under `check`: `by` (e.g. `"skeptic"`), `reason` (one line, inert text), and keys this spec reserves for #37 without defining: `holds`, `refuted_claims`, `evidence`, `model`, `dependency_versions`, `reused_from`, `duplicate_of` (the key of the finding this one duplicates, or `null`; #37 AC-7). `validate.py` accepts and does not read them; `report.json` passes `check` through whole; rendering them is #37's change.
+- **Its own keys.** Everything else #37 records about a verdict goes under `check`: `by` (e.g. `"skeptic"`), `reason` (one line, inert text), and keys this spec reserves for #37 without defining: `holds`, `refuted_claims`, `evidence`, `model`, `dependency_versions`, `reused_from`, `duplicate_of` (the key of the finding this one duplicates, or `null`; #37 AC-7), and `confirmations` (written by #37's skeptic under #57's contract: one entry per default the skeptic checked; #57 §19). `validate.py` accepts and does not read them; `report.json` passes `check` through whole; rendering them is #37's change.
 - **Gate from the check.** #37 extends `finding_gate` (§5): it also returns `non_default_setting` when `check.status` is `narrowed` and a kept `check.refuted_claims` item has `field: "preconditions"` and a `setting`. The investigator's `preconditions` are untouched; the gate reads the check. Everything downstream (sort key, marker, `counts.gate`, `index.json`'s `gate`, and so the guardrail) reads the function's result, so no renderer changes.
 - **Refs into dependencies.** #37 accepts references into its dependency snapshot in verdicts only. Investigator fields (`default_ref`, `doc_ref`) stay repository-only: investigators run before the snapshot exists. `check_ref` (§3.1) is the one function that resolves both fields, so a later change that lets them cite a dependency is made there; whether to make it is #57's question (§7.2).
 - **Re-validation.** `validate.py` never overwrites an existing `check` (§3.2). Invalidating a verdict when cited code changes is #37's rule (its AC-9), applied by #37.
@@ -299,7 +299,7 @@ The latency budget (100 ms median) is unchanged; the added work is string format
 ### 7.2 For #57 (confirmed defaults)
 
 - **Confirmation per precondition.** #57 adds one key to each precondition item, which this spec reserves as `confirmation` (e.g. `{"state": "unconfirmed", "reason": "…"}`), and writes it after validation. To do so #57 adds `confirmation` to the precondition keys `validate.py` accepts from a later stage and to the keys `save_finding.py` strips from model output; until then a model writing it fails validation (§2.2).
-- **Order.** #57 appends its value to `GATES` (reserved name: `unconfirmed_default`) and extends `finding_gate`, alongside #37's extension (§7.1). The sort key, the marker, `counts.gate` and the guardrail's ordering all read `GATES`, so no renderer changes order logic. Whether `unconfirmed_default` sorts before or after `non_default_setting` is #57's decision.
+- **Order.** #57 adds its value to `GATES` (reserved name: `unconfirmed_default`), before or after `non_default_setting` as #57 decides, and extends `finding_gate`, alongside #37's extension (§7.1). The sort key, the marker, `counts.gate` and `index.json`'s `gate` all read `GATES`; the guardrail's copy `GATE_ORDER` is pinned to it by a test, so no renderer changes order logic.
 - **Defaults registered in a dependency.** #57 decides where such a default is cited: in the skeptic's `confirmation` (#37's assumption), or in the investigator's `default_ref` once investigators get the snapshot (through `check_ref`, §3.1).
 - **`needs: default` items** are the defaults #57 confirms; they exist from this ticket on, so #57 adds no investigator field.
 
@@ -334,9 +334,9 @@ Agreement equals the always-`medium` baseline (8 of 21), which is the ticket's f
 
 ## 10. Test strategy
 
-- **Rule tables.** `effective_confidence` over all 15 cells of §4.2; `finding_gate` on empty, `needs: default`-only and mixed lists; `check_status` on missing, malformed and each valid status; the guardrail's ceiling copy equals `_common`'s on every cell; the HTML script's `CHECK_SENTENCES` equals `_common`'s.
+- **Rule tables.** `effective_confidence` over all 15 cells of §4.2; `finding_gate` on empty, `needs: default`-only and mixed lists; `check_status` on missing, malformed and each valid status; the guardrail's ceiling copy equals `_common`'s on every cell, and its `GATE_ORDER` equals `GATES`; the HTML script's `CHECK_SENTENCES` equals `_common`'s.
 - **Validator** (`Validator` against the small repo of `test_validate_paths.py`, and the scanned fixture for blame): each §2.2 rule with its message; `default_ref`/`doc_ref` through every path rejection `code` refs get (absolute, `..`, untracked, out of range); `role` missing, unknown, on a non-commit item; `introduced` accepted for the blamed commit and rejected for one that only touched the file and for an uncommitted line; `high` with only a `feature` commit now passes; `check` absent → written `unchecked`, existing → kept, bad status → rejected; `history` entries with class and `wrote_cited_line`; empty-string `amplifier` rejected, absent accepted.
-- **Owned fields.** A model output carrying `check: {"status": "upheld"}`, `history` and `confidence_claimed` is saved without them and reported `unchecked`, at most `medium`.
+- **Owned fields.** A model output carrying `check: {"status": "upheld"}`, `history` and `confidence_claimed` is saved without them, by `save_finding.py` and by the capture hook alike, and reported `unchecked`, at most `medium`.
 - **Caching (AC-8).** A findings file stamped `validated_with: 3` with a `high` claim and a `fix` commit is re-investigated by `bundle.py` and reported Incomplete by `report.py` until it is.
 - **Report.** Order: a gated finding with `high` claim and the highest score is listed after a default-path `low`; display ids follow. `report.json` carries every §6.2 field and count; `index.json` §6.3's. Absent fields render *not stated* in md and HTML. The AC-7 wording, and no bare "validated finding" left in `report.md` or the template.
 - **Inert text.** The existing hostile-text tests in `test_inert_report.py` and `test_report_html.py` extend `MODEL_FIELDS` to precondition `setting`, `default`, `value` and `check.reason`.
