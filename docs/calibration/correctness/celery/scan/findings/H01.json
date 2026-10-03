@@ -1,0 +1,73 @@
+{
+  "hotspot_id": "H01",
+  "file": "celery/canvas.py",
+  "findings": [
+    {
+      "location": {
+        "file": "celery/canvas.py",
+        "symbol": "_chain.prepare_steps / chord.run",
+        "lines": "1286-1296"
+      },
+      "missing_patterns": [
+        "S08",
+        "S18"
+      ],
+      "failure_mode": "Publishing a chord whose body is a chain of further implicit chords produces header task messages that grow geometrically, roughly N^K for K nested chords with N header tasks each. Users see apply_async either spin on CPU and memory while serialising, or fail when the broker rejects an oversized message (SQS 256KB, RabbitMQ frame or Redis maxmemory limits). Workers can also OOM on deserialisation.",
+      "trigger_condition": "A canvas such as chord(g1, t1 | g2 | t2 | g3 | t3) is sent directly through chord.apply_async rather than wrapped in an outer chain. Chain.__or__ and chord.__or__ nest each further group|task pair into the previous chord's body. chord.run then calls body.freeze(), which reaches prepare_steps with clone=False. The unroll fix from 508c112 is gated on `clone and ...`, so it is skipped there and every nested chord is frozen in place. Each header task of a nested chord then carries the full remaining body in its options['chord'].",
+      "amplifier": "Signature.freeze writes opts['chord'] = body onto every header task (line 566-567), and chord.run copies the body into all N top-level header messages (line 2410). Each nesting level multiplies the serialised size by N.",
+      "sustaining_effect": null,
+      "blast_radius": "Any producer that publishes such a canvas, including tasks that build follow-up canvases on a worker. If an oversized message does get published, every worker that consumes a header task pays the deserialisation cost, and the shared broker's memory or quota suffers.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/canvas.py:1286-1296",
+          "note": "chord-body unroll only runs when clone=True; the comment itself says freezing (clone=False) keeps the chain as written"
+        },
+        {
+          "type": "code",
+          "ref": "celery/canvas.py:1154-1163",
+          "note": "_chain.freeze calls prepare_steps with clone=False, so the unroll is skipped"
+        },
+        {
+          "type": "code",
+          "ref": "celery/canvas.py:2401-2410",
+          "note": "chord.run freezes the body (a chain, so the clone=False path) and then attaches that body to every header task"
+        },
+        {
+          "type": "code",
+          "ref": "celery/canvas.py:2216-2217",
+          "note": "nested chord.freeze freezes its header with chord=self.body, so each header task embeds the rest of the canvas"
+        },
+        {
+          "type": "code",
+          "ref": "celery/canvas.py:1053-1057",
+          "note": "chain|task with a chord at the end appends to that chord's body, which builds the nested chord-in-body-chain shape"
+        },
+        {
+          "type": "commit",
+          "ref": "508c112",
+          "note": "[fix] 'Fix geometric message bloat in a chain of implicit chords', fixed only on the clone=True worker path"
+        },
+        {
+          "type": "commit",
+          "ref": "df57d9a",
+          "note": "[fix] 'Fix O(K\u00b2) message bloat in a chain of chords': an earlier fix for the same bloat in the same area, so this is the second patch to it"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "Two [fix] commits for message bloat, and the code explicitly leaves the clone=False path unfixed. chord.run is shown to take that path. I did not open group.freeze or _freeze_group_tasks to confirm they set the chord option on every member, and I did not measure the size, so I am keeping this at medium.",
+      "how_to_verify": "Build sig = chord(group(a.s() for _ in range(4)), t.s() | group(a.s() for _ in range(4)) | t.s() | group(a.s() for _ in range(4)) | t.s() | group(a.s() for _ in range(4)) | t.s()). Patch the producer to record message sizes, then call sig.apply_async(). Compare len(json.dumps(header_task.options)) with the same canvas sent as chain(group, t, group, t, ...).apply_async(). If the direct-chord sizes grow linearly rather than about 4x per level, this finding is wrong.",
+      "prediction": "The next message-bloat issue will be reported for a chord applied directly, or for a frozen canvas, rather than for a chain.",
+      "key": "a4b8d7590c34",
+      "content_hash": "sha256:c13e572e5474e02468ddb7f7a0f5a0244b1282e36b450afc010824fd84ecddee",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/canvas.py": "sha256:c13e572e5474e02468ddb7f7a0f5a0244b1282e36b450afc010824fd84ecddee"
+      }
+    }
+  ],
+  "notes": "Leads I rejected: (1) Pre-freezing a chain and then calling apply_async. The clone=True path re-freezes each unrolled chord, and Signature.freeze overwrites opts['chord'], so stale bodies get replaced. (2) The broad `except AttributeError` around chord() construction in prepare_steps. It falls back to a chord without task_id and would at worst re-raise, so it is not a production failure mode. (3) Partial args and is_first_task handling after the chord unroll pushes steps back onto the deque. The chord is still popped last, so the args land correctly. Unconfirmed lead: _is_chain_led_by_task deliberately keeps group-led body chains un-unrolled, so a chord whose body starts with a group still copies the whole body per header task. I did not have the reads left to show that this is reachable through `|` composition. The fix history is 10 fixes out of 15 commits, mostly canvas semantics (empty groups, clone sharing, deepcopy isolation), which points to a fragile construction model, but those are correctness bugs, not stability ones. Relevant file: <celery>/celery/canvas.py",
+  "bundle_hash": "sha256:006464b56545da71cb391f698df2cf8f3a6af914b848ca6f6f7eee2b30c89edb",
+  "schema": "thunderstruck.finding/v1",
+  "validated_with": 3
+}

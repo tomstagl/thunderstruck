@@ -1,0 +1,128 @@
+{
+  "hotspot_id": "H08",
+  "file": "celery/backends/database/__init__.py",
+  "findings": [
+    {
+      "location": {
+        "file": "celery/backends/database/__init__.py",
+        "symbol": "_query_task / _update_result",
+        "lines": "140-212"
+      },
+      "missing_patterns": [
+        "S19",
+        "S15"
+      ],
+      "failure_mode": "After an upgrade, every task result write fails with BackendStoreError and AsyncResult.get() raises. The only warning appears once, at startup.",
+      "trigger_condition": "The new release adds the nullable `children` column (and `stamps` with extended results). The result-DB user has no ALTER TABLE privilege, so _migrate_missing_columns fails. It logs a warning, sets prepared=True and is never retried.",
+      "amplifier": "The fallback in _query_task re-queries on the same session after the DatabaseError. On PostgreSQL that transaction is already aborted, so the fallback raises InFailedSqlTransaction. On any dialect, _update_result writes `children` (and `stamps`) whenever the model defines them, without checking the live table. It sets them even to None, so the INSERT or UPDATE names a column that does not exist.",
+      "sustaining_effect": "prepare_models never re-runs once prepared is True. Every store_result spends its 3 retries, each one disposing and rebuilding the engine, before failing. A restart does not help without manual DDL.",
+      "blast_radius": "Every task state and result stored through this backend in the affected deployment is lost. Chords and AsyncResult polling stall or error.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/backends/database/__init__.py:142-157",
+          "note": "fallback query reuses the failed session with no rollback, so it can never work on PostgreSQL"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/database/__init__.py:193-198",
+          "note": "children is written based on the model's columns, not the actual table; it is set to None even when there are no children"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/database/session.py:107-136",
+          "note": "failed column migration is downgraded to a warning, and prepared is still set to True at line 105"
+        },
+        {
+          "type": "commit",
+          "ref": "8244f04",
+          "note": "[fix] added the children column and the defer fallback"
+        },
+        {
+          "type": "commit",
+          "ref": "5cf6140",
+          "note": "[fix] a week later extended the same fallback to stamps: two fixes in the same area"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "The code path is clear from reading it. That SQLAlchemy emits the deferred column on flush, and that PostgreSQL leaves the transaction aborted, is well-known behaviour, but I did not run it. The trigger needs a DB user without DDL rights.",
+      "how_to_verify": "Against PostgreSQL, create celery_taskmeta without the children column. Grant the app user DML only. Run one task and look for BackendStoreError and UndefinedColumn or InFailedSqlTransaction in the worker log.",
+      "prediction": "Next DB-backend issue: results stopped being stored after an upgrade on a locked-down DB user.",
+      "key": "8196e104b15a",
+      "content_hash": "sha256:ca7bee8373c7b798b92e33571e32d0a77b091fc72128a4477ac3a99b8a1557a9",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/backends/database/__init__.py": "sha256:ca7bee8373c7b798b92e33571e32d0a77b091fc72128a4477ac3a99b8a1557a9",
+        "celery/backends/database/session.py": "sha256:f0228e5a7b46a4d1d8a6324068f71ba433ce9de1b97c4d4fc5a73d4890a381fc"
+      }
+    },
+    {
+      "location": {
+        "file": "celery/backends/database/__init__.py",
+        "symbol": "exception_safe_to_retry / on_backend_retryable_error",
+        "lines": "31-36"
+      },
+      "missing_patterns": [
+        "S04",
+        "S02",
+        "S12"
+      ],
+      "failure_mode": "When the result DB is overloaded, workers spam 'Failed operation ... Retrying' and then fail results with BackendStoreError. Meanwhile the DB sees a storm of new connections.",
+      "trigger_condition": "The DB returns errors such as 'too many connections' or a lock timeout (OperationalError). Non-transient errors also qualify: IntegrityError on a duplicate group_id in _save_group, DataError on an over-155-char value, ProgrammingError. All of these subclass DatabaseError.",
+      "amplifier": "Every DatabaseError is treated as retryable. always_retry defaults to True with 3 retries. The base sleep is 10 ms, so backoff with full jitter is at most 20/40/80 ms and the 3 retries finish in under about 140 ms. Before each retry, on_backend_retryable_error calls engine.dispose(), which drops the process's whole pool and forces fresh connections.",
+      "sustaining_effect": "Each prefork child disposes its pool and reconnects within milliseconds. The new connection handshakes take up the DB connection slots it needs to recover, so 'too many connections' persists while tasks keep arriving.",
+      "blast_radius": "Result storage for every worker process sharing the result DB. Any other application on the same database instance is starved of connections too.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/backends/database/__init__.py:31-36",
+          "note": "base DatabaseError (covers IntegrityError, DataError, ProgrammingError) is in the retryable set"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/database/__init__.py:122-126",
+          "note": "every retry disposes the cached engine and pool"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/database/__init__.py:70-71",
+          "note": "always_retry is on by default with 3 retries; base sleep stays at the 10 ms default"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/base.py:780-783",
+          "note": "backoff is min(10*2^n, 10000) ms with full jitter, which is milliseconds here"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/database/__init__.py:289-298",
+          "note": "plain insert into a table with a unique taskset_id: a duplicate save_group is retried 3 times and then raises"
+        },
+        {
+          "type": "commit",
+          "ref": "0348d64",
+          "note": "[fix] for connection health introduced RETRYABLE_DB_ERRORS and the invalidate hook"
+        },
+        {
+          "type": "commit",
+          "ref": "aa4c3b1",
+          "note": "[resilience] widened the retry policy to every DB operation"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "The retry classifier and the per-retry pool disposal are both explicit in the code. I have not observed the connection storm. Its size depends on worker concurrency and DB connection limits.",
+      "how_to_verify": "Set PostgreSQL max_connections just above the worker concurrency and run a task burst. Count connection attempts in pg_stat_activity or the logs: expect 4 or more per failed store_result, all within about 150 ms.",
+      "key": "6345778fa223",
+      "content_hash": "sha256:ca7bee8373c7b798b92e33571e32d0a77b091fc72128a4477ac3a99b8a1557a9",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/backends/base.py": "sha256:e95308ebf79e95fb915d4ca5c227a5f0f065c04425c0b3d75630f106ddc5da91",
+        "celery/backends/database/__init__.py": "sha256:ca7bee8373c7b798b92e33571e32d0a77b091fc72128a4477ac3a99b8a1557a9"
+      }
+    }
+  ],
+  "notes": "Rejected S07@168: the query-then-insert race on task_id raises IntegrityError, and the retry opens a fresh session that finds the row and updates it, so it recovers apart from the pool disposal covered in finding 2. S19@240 is real: a stamps decode failure is swallowed without logging, so stamps silently go missing. I left it out because the impact is small. Out of scope but worth knowing: _decode_stored_result calls pickle.loads on any payload starting with \\x80 that fails decoding (lines 259-272). That is a deserialization risk if the result DB can be written by others. Files: <celery>/celery/backends/database/__init__.py, <celery>/celery/backends/database/session.py, <celery>/celery/backends/database/models.py, <celery>/celery/backends/base.py.",
+  "bundle_hash": "sha256:d00674c25d27e4409aa5c16b976158e5eb52ce2ade89ec946c414a5ed933b591",
+  "schema": "thunderstruck.finding/v1",
+  "validated_with": 3
+}

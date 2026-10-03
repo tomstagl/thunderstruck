@@ -1,0 +1,161 @@
+{
+  "hotspot_id": "H05",
+  "file": "celery/app/amqp.py",
+  "findings": [
+    {
+      "location": {
+        "file": "celery/app/amqp.py",
+        "symbol": "_create_task_sender.send_task_message",
+        "lines": "598-610"
+      },
+      "missing_patterns": [
+        "S19",
+        "S17",
+        "S14"
+      ],
+      "failure_mode": "With task_send_sent_event enabled, a failed task-sent event publish is not logged and not raised. It is appended to an in-memory buffer that is never flushed. Monitoring (Flower, event consumers) loses the tasks' 'sent' state, and producer processes (web workers, beat, workers that publish subtasks) grow slowly in memory.",
+      "trigger_condition": "task_send_sent_event=True and the event publish fails after the task message went out. Examples: the celeryev exchange declare fails, or the connection drops and the merged retry policy runs out.",
+      "amplifier": "Each buffered entry holds argsrepr and kwargsrepr (up to 1024 chars each, plus the event envelope). A broker outage that lasts through many apply_async calls buffers one entry per task.",
+      "sustaining_effect": "amqp._event_dispatcher is created with enabled=False, and nothing in celery/ ever calls flush() on it. The deque is unbounded and never drained, so the memory stays allocated after the broker recovers, until the process restarts.",
+      "blast_radius": "Every process that publishes tasks through app.amqp.send_task_message: lost task-sent events everywhere, and memory growth in long-lived producers.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/app/amqp.py:658-662",
+          "note": "default dispatcher is Dispatcher(enabled=False), cached for the process lifetime"
+        },
+        {
+          "type": "code",
+          "ref": "celery/app/amqp.py:598-608",
+          "note": "task-sent event published through default_evd after the task publish"
+        },
+        {
+          "type": "code",
+          "ref": "celery/events/dispatcher.py:159-162",
+          "note": "exception swallowed into _outbound_buffer when buffer_while_offline (default True)"
+        },
+        {
+          "type": "code",
+          "ref": "celery/events/dispatcher.py:73",
+          "note": "_outbound_buffer = deque() with no maxlen"
+        },
+        {
+          "type": "commit",
+          "ref": "e1dba84",
+          "note": "[resilience] changed the retry policy of this exact event publish; the swallow-and-buffer path is unchanged"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "The buffer path and the missing flush are visible in code. A grep for _outbound_buffer and flush( found no caller that drains the amqp default dispatcher. The trigger needs an opt-in setting and was not observed.",
+      "how_to_verify": "Enable task_send_sent_event and make the celeryev exchange publish raise (mock producer.publish to fail only for that exchange). Call apply_async 10k times and check app.amqp._event_dispatcher._outbound_buffer: it reaches 10k entries, and nothing is logged.",
+      "prediction": "An incident report of Flower or event-based monitoring missing 'sent' tasks after a broker blip, with no error in producer logs.",
+      "key": "c15996fba8db",
+      "content_hash": "sha256:53dd85c0bfa45be48522f62425bf218ba01ece457ae7e20664771f755a685a01",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/app/amqp.py": "sha256:53dd85c0bfa45be48522f62425bf218ba01ece457ae7e20664771f755a685a01",
+        "celery/events/dispatcher.py": "sha256:46c894877cffc23d4c58037fac7a34671549301a38063b81815feed97daf6d94"
+      }
+    },
+    {
+      "location": {
+        "file": "celery/app/amqp.py",
+        "symbol": "_create_task_sender.send_task_message",
+        "lines": "598-610"
+      },
+      "missing_patterns": [
+        "S28",
+        "S13"
+      ],
+      "failure_mode": "When the broker degrades, apply_async latency rises for every thread in a producer process at the same time (for example a threaded web server), not only for the thread whose publish is retrying. Requests pile up behind one lock.",
+      "trigger_condition": "task_send_sent_event=True, several threads calling apply_async at once, and the broker connection slow or flapping so that event publishes retry.",
+      "amplifier": "All threads share one cached _event_dispatcher. Dispatcher.publish holds its threading.Lock across producer.publish with retry=True and the merged task_publish_retry_policy (since e1dba84), so every retry sleep happens inside the lock.",
+      "sustaining_effect": null,
+      "blast_radius": "Every caller of apply_async/send_task in the process is serialised behind one event publish. In a web tier this becomes request latency, and timeouts once the thread pool is full.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/events/dispatcher.py:138-140",
+          "note": "with self.mutex wraps the whole publish, including kombu ensure() retries"
+        },
+        {
+          "type": "code",
+          "ref": "celery/app/amqp.py:608",
+          "note": "evd.publish(..., retry=retry, retry_policy=_rp) on the shared default dispatcher"
+        },
+        {
+          "type": "code",
+          "ref": "celery/app/amqp.py:658-662",
+          "note": "one dispatcher per app, shared across threads"
+        },
+        {
+          "type": "commit",
+          "ref": "e1dba84",
+          "note": "[resilience] gave this event publish the full merged retry policy, which sets how long the lock is held"
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "Lock scope and sharing are confirmed in code. The task message itself is published outside the lock, so the effect depends on how long ensure() retries take and how much concurrency there is. Neither was measured.",
+      "how_to_verify": "Run 32 threads calling apply_async with sent events enabled against a broker proxy that adds 500ms latency or drops connections. Measure per-call latency with and without task_send_sent_event; with it enabled, latency should grow with thread count.",
+      "key": "293417791dc2",
+      "content_hash": "sha256:53dd85c0bfa45be48522f62425bf218ba01ece457ae7e20664771f755a685a01",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/app/amqp.py": "sha256:53dd85c0bfa45be48522f62425bf218ba01ece457ae7e20664771f755a685a01",
+        "celery/events/dispatcher.py": "sha256:46c894877cffc23d4c58037fac7a34671549301a38063b81815feed97daf6d94"
+      }
+    },
+    {
+      "location": {
+        "file": "celery/app/amqp.py",
+        "symbol": "_create_task_sender.send_task_message",
+        "lines": "524-553"
+      },
+      "missing_patterns": [
+        "S19",
+        "S18"
+      ],
+      "failure_mode": "Tasks routed by a task_routes entry that names only an exchange (no queue, no routing_key) are published to the default exchange with an empty routing key. The broker drops them as unroutable. apply_async returns success and the tasks never run.",
+      "trigger_condition": "A route such as {'exchange': 'billing'} (or one with an exchange but no routing_key) matches the task, so Router.route returns no 'queue' and the default-queue fallback is skipped.",
+      "amplifier": "With queue=None, exchange_type falls back to 'direct' through the AttributeError path. The anon-exchange rewrite then replaces the caller's exchange with '' and sets routing_key to qname, which is None. declare stays None, and the publish is not mandatory.",
+      "sustaining_effect": null,
+      "blast_radius": "Every task matched by that route is lost silently. Nothing is logged on either side.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/app/amqp.py:524-526",
+          "note": "default queue applied only when both queue and exchange are None"
+        },
+        {
+          "type": "code",
+          "ref": "celery/app/amqp.py:539-547",
+          "note": "exchange_type defaults to 'direct' on AttributeError; exchange overwritten to '' with routing_key=qname (None)"
+        },
+        {
+          "type": "code",
+          "ref": "celery/app/routes.py:71-75",
+          "note": "a matched route returns without the default-queue fallback"
+        },
+        {
+          "type": "commit",
+          "ref": "1a47689",
+          "note": "[feature] changed default-queue resolution in this branch; the exchange-only path was not covered"
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "The code path is traced from Router.route to the publish. How often real configurations use exchange-only routes is unknown, and kombu's handling of routing_key=None was not checked.",
+      "how_to_verify": "Set task_routes={'t.x': {'exchange': 'billing'}} and call send_task('t.x') against RabbitMQ with the billing exchange bound to a queue. Inspect the publish args (exchange='' routing_key=None) and confirm no queue receives the message.",
+      "key": "39e3d9a88104",
+      "content_hash": "sha256:53dd85c0bfa45be48522f62425bf218ba01ece457ae7e20664771f755a685a01",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/app/amqp.py": "sha256:53dd85c0bfa45be48522f62425bf218ba01ece457ae7e20664771f755a685a01",
+        "celery/app/routes.py": "sha256:a61a000b2919dc44823578795f5a00c10c22946bbed30a794d48bf71a868831f"
+      }
+    }
+  ],
+  "notes": "Rejected or deprioritised: the Queues select/deselect/consume_from fix chain (066e96e, ece6862, 2e150f8, then the 95c1bf2 alias feature). These three fixes in four months point to a fragile design, but the current code keeps _default_consume_from, select, select_add and deselect consistent, and no remaining failure path could be shown. _handle_conf_update (6ed1ec1) may skip a route refresh when conf.update gets an iterable of pairs; that is minor. No detector leads were provided. No instructions embedded in the repository were found.",
+  "bundle_hash": "sha256:c7291c31545fdbeed94505fd38fc2edf698ae9a68cdd69fb75356092f1dd4ec8",
+  "schema": "thunderstruck.finding/v1",
+  "validated_with": 3
+}

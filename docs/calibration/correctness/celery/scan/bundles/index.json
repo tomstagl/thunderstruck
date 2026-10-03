@@ -1,0 +1,127 @@
+{
+  "schema": "thunderstruck.bundles/v1",
+  "budget": 8000,
+  "context_hash": null,
+  "bundles": [
+    {
+      "id": "H01",
+      "file": "celery/canvas.py",
+      "bundle": "<celery>/.thunderstruck/bundles/H01.md",
+      "bundle_hash": "sha256:006464b56545da71cb391f698df2cf8f3a6af914b848ca6f6f7eee2b30c89edb",
+      "content_hash": "sha256:c13e572e5474e02468ddb7f7a0f5a0244b1282e36b450afc010824fd84ecddee",
+      "tokens_estimated": 6299,
+      "score": 0.829,
+      "cached": false,
+      "context_hash": null,
+      "findings_path": "<celery>/.thunderstruck/findings/H01.json"
+    },
+    {
+      "id": "H02",
+      "file": "celery/backends/redis.py",
+      "bundle": "<celery>/.thunderstruck/bundles/H02.md",
+      "bundle_hash": "sha256:0cffe66c5128d465a4f7568630040e76ea65721b50691ba9e3e778f4a2ed4db7",
+      "content_hash": "sha256:858b2a75d236bef42a1d04fdd15d83b057d844b171321f37f6dd5f236b72b7fb",
+      "tokens_estimated": 5709,
+      "score": 0.753,
+      "cached": false,
+      "context_hash": null,
+      "findings_path": "<celery>/.thunderstruck/findings/H02.json"
+    },
+    {
+      "id": "H03",
+      "file": "celery/app/base.py",
+      "bundle": "<celery>/.thunderstruck/bundles/H03.md",
+      "bundle_hash": "sha256:96a7376672380096ac49aee668eebe1114889af81fc4291521297ad302fa8968",
+      "content_hash": "sha256:059bee09b559f4e915f08c2e3731df51df879017e4d3c1b234ba4641eb33b749",
+      "tokens_estimated": 5882,
+      "score": 0.6764,
+      "cached": false,
+      "context_hash": null,
+      "findings_path": "<celery>/.thunderstruck/findings/H03.json"
+    },
+    {
+      "id": "H04",
+      "file": "celery/backends/base.py",
+      "bundle": "<celery>/.thunderstruck/bundles/H04.md",
+      "bundle_hash": "sha256:86738cccca4b6ccedfddd24951456dd2ff3909cd6a5593a5e603cb153c5091c7",
+      "content_hash": "sha256:e95308ebf79e95fb915d4ca5c227a5f0f065c04425c0b3d75630f106ddc5da91",
+      "tokens_estimated": 4777,
+      "score": 0.5851,
+      "cached": false,
+      "context_hash": null,
+      "findings_path": "<celery>/.thunderstruck/findings/H04.json"
+    },
+    {
+      "id": "H05",
+      "file": "celery/app/amqp.py",
+      "bundle": "<celery>/.thunderstruck/bundles/H05.md",
+      "bundle_hash": "sha256:c7291c31545fdbeed94505fd38fc2edf698ae9a68cdd69fb75356092f1dd4ec8",
+      "content_hash": "sha256:53dd85c0bfa45be48522f62425bf218ba01ece457ae7e20664771f755a685a01",
+      "tokens_estimated": 4583,
+      "score": 0.4627,
+      "cached": false,
+      "context_hash": null,
+      "findings_path": "<celery>/.thunderstruck/findings/H05.json"
+    },
+    {
+      "id": "H06",
+      "file": "celery/worker/request.py",
+      "bundle": "<celery>/.thunderstruck/bundles/H06.md",
+      "bundle_hash": "sha256:90e6d4d845127db718a8013edafe8a64060d890c75d8b50b730553ea10463bcd",
+      "content_hash": "sha256:9e9989ec68b53caf7b1b68323c1b169b513b4ee6dd33600e9fa7257bafbebee0",
+      "tokens_estimated": 5021,
+      "score": 0.3747,
+      "cached": false,
+      "context_hash": null,
+      "findings_path": "<celery>/.thunderstruck/findings/H06.json"
+    },
+    {
+      "id": "H07",
+      "file": "celery/worker/consumer/consumer.py",
+      "bundle": "<celery>/.thunderstruck/bundles/H07.md",
+      "bundle_hash": "sha256:356d5cadd9e12c1594440ec140324c8cc393b0892f09f0e201deef96a701c95d",
+      "content_hash": "sha256:d7437464d90df4b0af74879743fc068e2d3cbc9563dec12c137e6eb29049ad4a",
+      "tokens_estimated": 4523,
+      "score": 0.3065,
+      "cached": false,
+      "context_hash": null,
+      "findings_path": "<celery>/.thunderstruck/findings/H07.json"
+    },
+    {
+      "id": "H08",
+      "file": "celery/backends/database/__init__.py",
+      "bundle": "<celery>/.thunderstruck/bundles/H08.md",
+      "bundle_hash": "sha256:d00674c25d27e4409aa5c16b976158e5eb52ce2ade89ec946c414a5ed933b591",
+      "content_hash": "sha256:ca7bee8373c7b798b92e33571e32d0a77b091fc72128a4477ac3a99b8a1557a9",
+      "tokens_estimated": 4189,
+      "score": 0.2598,
+      "cached": false,
+      "context_hash": null,
+      "findings_path": "<celery>/.thunderstruck/findings/H08.json"
+    },
+    {
+      "id": "H09",
+      "file": "celery/app/task.py",
+      "bundle": "<celery>/.thunderstruck/bundles/H09.md",
+      "bundle_hash": "sha256:3de7f0bc9c3f771477693a30aec64d54112a17c3ca707983ed13fd9fb4e98490",
+      "content_hash": "sha256:0816e65771ed59f59196ce22b5f03ffd1331e6b6f3505934bbf94b4d727135c3",
+      "tokens_estimated": 3861,
+      "score": 0.2291,
+      "cached": false,
+      "context_hash": null,
+      "findings_path": "<celery>/.thunderstruck/findings/H09.json"
+    },
+    {
+      "id": "H10",
+      "file": "celery/app/trace.py",
+      "bundle": "<celery>/.thunderstruck/bundles/H10.md",
+      "bundle_hash": "sha256:71d16727bf20b173ae3ecdb77226d9f4474d63daf80b11a1bfbb31b76290903d",
+      "content_hash": "sha256:e1affcf2e8d0c659e5754ac27f1b439f07a728e74dba1ef2f4f9b508e7677a8e",
+      "tokens_estimated": 5232,
+      "score": 0.2281,
+      "cached": false,
+      "context_hash": null,
+      "findings_path": "<celery>/.thunderstruck/findings/H10.json"
+    }
+  ]
+}

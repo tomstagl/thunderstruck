@@ -1,0 +1,348 @@
+{
+  "meta": {
+    "repo": "<celery>",
+    "head": "508c112",
+    "mode": "read-only refutation; no Celery code executed",
+    "dependency_versions_read": {
+      "kombu": "5.7.0a1",
+      "redis": "8.1.0",
+      "amqp": "5.4.0 (located only; not needed)"
+    },
+    "dependency_source_root": "<site-packages>"
+  },
+  "findings": [
+    {
+      "id": "FR-001",
+      "hotspot_id": "H03",
+      "verdict": "narrowed",
+      "what_holds": "send_task really does call backend.on_task_call() while holding a pooled producer (celery/app/base.py:1124-1128), a non-worker process reaches ResultConsumer.consume_from from there (celery/backends/redis.py:675-677), consume_from runs the retrying reconnect under _pubsub_lock, and broker_pool_acquire_timeout defaults to None so waiters block until a slot frees. A publishing thread therefore holds a broker producer slot for its own entire Redis reconnect cycle, and callers with ignore_result=True are held up with it.",
+      "refutations": [
+        {
+          "claim": "Other threads queue on the lock while holding their own slots, until all broker_pool_limit (10) slots are taken",
+          "fact": "app.backend is thread-local unless result_backend_thread_safe is True; the default is False, so every thread builds its own RedisBackend, its own ResultConsumer and its own _pubsub_lock. No two threads share the lock on default settings; there is no cross-thread lock convoy, only each thread's own reconnect loop.",
+          "where": "celery/app/base.py:1644-1663 (_backend setter: `if backend.thread_safe: self._backend_cache = backend else: self._local.backend = backend`); celery/backends/base.py:236 (`self.thread_safe = conf.get('result_backend_thread_safe', False)`); docs/userguide/configuration.rst:913-922",
+          "kind": "scanned_file",
+          "in_bundle": false
+        },
+        {
+          "claim": "producer_pool.acquire(block=True, timeout=None) waits forever; apply_async hangs with no error",
+          "fact": "The slot hold is bounded. The reconnect is ensure() = kombu retry_over_time with Backend.retry_policy max_retries=20, interval 0/1/1 s, after which reconnect_on_error raises RuntimeError(E_RETRY_LIMIT_EXCEEDED); kombu's _reraise_as_library_errors only converts recoverable connection/channel errors, so the RuntimeError propagates out of apply_async and the slot is released. Waiters on acquire then proceed. ~20 s per thread when Redis refuses connections; longer only because redis_socket_connect_timeout defaults to None (OS connect timeout per attempt). redis-py adds no inner retry layer: Celery passes its own ConnectionPool with no `retry` and redis_retry_on_timeout=False, so the connection gets Retry(NoBackoff(), 0).",
+          "where": "celery/backends/base.py:204-209; celery/backends/redis.py:685-691; celery/backends/asynchronous.py:343-363; kombu/utils/functional.py retry_over_time (`if max_retries is not None and retries >= max_retries: raise`); kombu/connection.py:530-540; kombu/resource.py acquire (timeout None = forever only while no slot frees); redis/connection.py:900-910; celery/backends/redis.py:862-871",
+          "kind": "dependency_source",
+          "in_bundle": false
+        },
+        {
+          "claim": "every publishing thread in a client process (web app, beat, a canvas-building task) hangs",
+          "fact": "Inside a worker task task_join_will_block() is True (set by the pool bootstep and in prefork children), so on_task_call skips consume_from entirely; a task that builds and publishes a canvas on a worker never takes this path. Only non-worker processes (web, beat, scripts) do.",
+          "where": "celery/backends/redis.py:675-677; celery/_state.py:55-61; celery/worker/components.py:171; celery/concurrency/prefork.py:50",
+          "kind": "scanned_file",
+          "in_bundle": false
+        },
+        {
+          "claim": "how_to_verify: pause Redis with CLIENT PAUSE and every apply_async thread blocks",
+          "fact": "PubSub.subscribe only sends the command and never reads a reply (execute_command -> connection.send_command), so a server that accepts connections but pauses commands does not make subscribe raise, no reconnect is triggered, and the lock is released immediately. The verification as written would not exercise the mechanism; it needs connection refusal or a blackholed host.",
+          "where": "redis/client.py:1208-1235 (PubSub.execute_command); celery/backends/redis.py:305-311",
+          "kind": "dependency_source",
+          "in_bundle": false
+        }
+      ],
+      "preconditions": [
+        {"setting": "broker_pool_acquire_timeout", "default": "None (block until a slot frees)", "where_registered": "celery/app/defaults.py:102", "documented": true},
+        {"setting": "broker_pool_limit", "default": "10", "where_registered": "celery/app/defaults.py:101", "documented": true},
+        {"setting": "result_backend_thread_safe", "default": "False (literal fallback in code; not registered in defaults.py)", "where_registered": "celery/backends/base.py:236", "documented": true},
+        {"setting": "task_ignore_result", "default": "False", "where_registered": "celery/app/defaults.py:295", "documented": true},
+        {"setting": "redis_socket_connect_timeout", "default": "None", "where_registered": "celery/app/defaults.py:203", "documented": true},
+        {"setting": "redis_retry_on_timeout", "default": "False", "where_registered": "celery/app/defaults.py:204", "documented": true},
+        {"setting": "result_backend_transport_options.retry_policy (Redis reconnect)", "default": "max_retries 20, interval_start 0, interval_step 1, interval_max 1", "where_registered": "celery/backends/base.py:204-209 (class attribute, merged in celery/backends/redis.py:667-673)", "documented": false}
+      ],
+      "commit_check": [
+        {"sha": "1a39f8c", "supports_claim": true, "why": "Message confirms a real indefinite pool wait (#9929) and that the None default was kept deliberately for backward compatibility, so the wait remains unbounded unless opted in. The issue it fixed was slots exhausted by concurrent apply_async, not a backend-held slot; the commit does not mention on_task_call."}
+      ],
+      "duplicate_of": null,
+      "what_reading_could_not_settle": "How long one reconnect attempt actually blocks against a blackholed Redis host (OS connect timeout) and whether a half-open pub/sub socket makes subscribe raise; whether web frameworks surface or swallow the RuntimeError; the measured process-wide latency with more callers than pool slots.",
+      "files_read": 13,
+      "minutes_estimate": 35
+    },
+    {
+      "id": "FR-004",
+      "hotspot_id": "H01",
+      "verdict": "upheld",
+      "what_holds": "Every step reads as claimed. `t1 | g2 | t2 | g3 | t3` builds chain(t1, chord(g2, chain(t2, chord(g3, t3)))) via _chain.__or__ (CHAIN[last is group] | TASK -> chord, CHAIN[last is chord] | GROUP/TASK -> appended to the chord body). chord.run freezes that body with _chain.freeze -> prepare_steps(clone=False), where the split added by 508c112 is gated on `clone`, so the nested chords are frozen in place; chord.freeze stamps options['chord']=body onto every header member (group._freeze_group_tasks/_freeze_unroll -> Signature.freeze), and chord.run then attaches the whole frozen body to each top-level header task. With the default json serializer every shared reference is serialised separately, so each top-level header message carries N2*...*NK copies and N1 such messages are published. The 508c112 commit message states the limitation was deliberate ('Keep chain bodies whole when freezing ... Split only when preparing a run, which always clones') and the Changelog scopes the fix to a chain 'when it is run'.",
+      "refutations": [
+        {
+          "claim": "Chain.__or__ and chord.__or__ nest each further group|task pair into the previous chord's body, so the operator-built canvas hits the frozen path",
+          "fact": "True for the body shape, but when the whole canvas is built with operators starting from a group (g1 | t1 | g2 | t2 ...) the result is a one-element _chain wrapping the chord (`sig.tasks = sig.tasks[:-1]`), whose apply_async goes through _chain.run -> prepare_steps(clone=True) and IS split by the fix. The geometric path needs the outermost object to be a chord: an explicit chord(header, chain) or group | chain (group.__or__ returns a chord). The finding's own trigger says this; the generality of 'chain of implicit chords' should not be read wider.",
+          "where": "celery/canvas.py:1045-1057 (_chain.__or__), celery/canvas.py:1702-1711 (group.__or__ -> chord), celery/canvas.py:2192-2207 (chord.__or__)",
+          "kind": "scanned_file",
+          "in_bundle": false
+        }
+      ],
+      "preconditions": [
+        {"setting": "task_serializer", "default": "json (pickle would memoise the shared body object once per message and shrink the growth)", "where_registered": "celery/app/defaults.py:317", "documented": true}
+      ],
+      "commit_check": [
+        {"sha": "508c112", "supports_claim": true, "why": "Diff adds the split only under `if clone and isinstance(task, chord) and _is_chain_led_by_task(task.body)`; the message's second bullet explains splitting at freeze left body-tail tasks without ids, so freeze (clone=False) was intentionally left nested. The new size test (test_chain_of_implicit_chords_serialized_size_linear) only exercises prepare_steps with clone=True."},
+        {"sha": "df57d9a", "supports_claim": true, "why": "Earlier fix for message bloat in the same _chain.__or__ area (collapsing consecutive chords into a nested body); it is the second patch to the same growth class, as the finding says."}
+      ],
+      "duplicate_of": null,
+      "what_reading_could_not_settle": "Actual byte sizes and the ~N-fold-per-level factor; whether brokers reject or workers OOM at realistic N and K.",
+      "files_read": 4,
+      "minutes_estimate": 25
+    },
+    {
+      "id": "FR-005",
+      "hotspot_id": "H02",
+      "verdict": "narrowed",
+      "what_holds": "The bookkeeping drift is real: _reconnect_pubsub sets self._pubsub=None before the mget that fails, ensure() gives up after the retry policy, reconnect_on_error turns that into RuntimeError, subscribed_to is left as it was, the next consume_from() goes through start() which subscribes only the new id, and _consume_from skips any key already in subscribed_to. Nothing later re-subscribes those keys. Under gevent/eventlet the greenlet drainer catches the RuntimeError as a generic Exception, stores it, and shuts down for good.",
+      "refutations": [
+        {
+          "claim": "AsyncResult.get() never returns ... and the process does not recover until it is restarted; under gevent/eventlet the drainer dies and stays dead (as a hang)",
+          "fact": "On the default (thread) Drainer the get() that exhausts the retries raises RuntimeError('Retry limit exceeded ... The Celery application must be restarted') to the caller -- a loud, designed signal, not a hang. Under gevent/eventlet every later get() raises that same stored exception immediately from wait_for() -> start() -> _ensure_not_shut_down(); it does not hang either. The silent hang is confined to the default drainer, in the same thread, for a result subscribed before the outage that completes during a *later* wait.",
+          "where": "celery/backends/asynchronous.py:21-24 (E_RETRY_LIMIT_EXCEEDED), 343-363 (reconnect_on_error), 136-160 (greenletDrainer.run stores _exc), 170-190 (start/wait_for/_ensure_not_shut_down)",
+          "kind": "other_repo_file",
+          "in_bundle": false
+        },
+        {
+          "claim": "how_to_verify: call A.get(timeout=None) after A completes; A.get() hangs",
+          "fact": "Every wait starts with on_wait_for_pending -> result._iter_meta() -> AsyncResult._get_task_meta() -> backend.get_task_meta(), a fresh GET; a result that is already READY is returned without touching pub/sub. The hang only happens if A finishes *after* the second wait has started. The verification step as written would pass for the wrong reason.",
+          "where": "celery/backends/redis.py:208-211 (on_wait_for_pending); celery/result.py:461-476 (_maybe_set_cache/_get_task_meta/_iter_meta)",
+          "kind": "other_repo_file",
+          "in_bundle": false
+        },
+        {
+          "claim": "Every caller in the client process that waits on results it requested before the outage is affected",
+          "fact": "The backend, and with it ResultConsumer/subscribed_to, is per thread (result_backend_thread_safe=False). Only a thread whose own consumer ran drain_events during the outage and exhausted the 20 retries is left in the drifted state. A thread that merely held an AsyncResult and waits after Redis is back hits the connection error on its old pubsub, reconnects successfully, and _reconnect_pubsub re-subscribes its whole subscribed_to set.",
+          "where": "celery/app/base.py:1644-1663; celery/backends/base.py:236; celery/backends/redis.py:149-170 (`self._pubsub.subscribe(*self.subscribed_to)` on success)",
+          "kind": "scanned_file",
+          "in_bundle": true
+        },
+        {
+          "claim": "unreachable for longer than the reconnect retry policy (20 retries, 1 s max interval, so about 20 s)",
+          "fact": "20 s is sleep time only (interval_start 0, then 1 s, capped 1 s). Each attempt additionally spends the connect time: with redis_socket_connect_timeout=None a blackholed host costs the OS connect timeout per attempt, so the budget is minutes, not 20 s, in that failure shape; 20 s holds for connection-refused.",
+          "where": "celery/backends/base.py:204-209; celery/app/defaults.py:203; kombu/utils/functional.py retry_over_time",
+          "kind": "dependency_source",
+          "in_bundle": false
+        }
+      ],
+      "preconditions": [
+        {"setting": "result_backend_thread_safe", "default": "False", "where_registered": "celery/backends/base.py:236 (literal fallback)", "documented": true},
+        {"setting": "redis_socket_connect_timeout", "default": "None", "where_registered": "celery/app/defaults.py:203", "documented": true},
+        {"setting": "reconnect retry policy", "default": "max_retries 20, interval 0/1/1", "where_registered": "celery/backends/base.py:204-209", "documented": false}
+      ],
+      "commit_check": [
+        {"sha": "d35acd7", "supports_claim": true, "why": "Moves subscribed_to.discard inside the branch that actually unsubscribes, i.e. a prior fix for subscribed_to drifting from real subscriptions -- the same class of bug, not this path."},
+        {"sha": "30402bd", "supports_claim": true, "why": "git blame confirms the comment at redis.py:163-167 ('left in subscribed_to, a later consume_from() ... would think it is subscribed and never get its result') was added by this commit, and it handles stale entries only for pending unsubscribes, not for a failed reconnect."}
+      ],
+      "duplicate_of": null,
+      "what_reading_could_not_settle": "Whether redis-py's on_connect resubscribe could ever rescue the old channels on the new PubSub object in practice (by reading, it cannot: a fresh PubSub has no channels); real durations of the retry budget against a failing host.",
+      "files_read": 6,
+      "minutes_estimate": 25
+    },
+    {
+      "id": "FR-006",
+      "hotspot_id": "H02",
+      "verdict": "narrowed",
+      "what_holds": "reconnect_on_error wraps both _drain_one and _consume_from, and both run inside _locked(); _reconnect = ensure(_reconnect_pubsub) sleeps between retries with the RLock held, and _reconnect_pubsub does connection_pool.reset(), mget and the new connect under it. on_task_call puts consume_from on every apply_async in a non-worker process. So a caller's apply_async blocks for its own full reconnect cycle rather than failing fast.",
+      "refutations": [
+        {
+          "claim": "Every thread or greenlet in the producing process ... web request threads pile up behind one drainer that is sleeping between retries",
+          "fact": "The backend is thread-local by default (result_backend_thread_safe=False), so each thread has its own ResultConsumer and its own _pubsub_lock; no thread waits on another thread's reconnect. The convoy described needs result_backend_thread_safe=True.",
+          "where": "celery/app/base.py:1644-1663; celery/backends/base.py:236; docs/userguide/configuration.rst:913-922",
+          "kind": "other_repo_file",
+          "in_bundle": false
+        },
+        {
+          "claim": "a drainer thread / 'Run a client with a drainer thread'",
+          "fact": "In the default environment there is no drainer thread: Drainer.wait_for calls result_consumer.drain_events inline in the thread that called get(). Only the gevent/eventlet drainers spawn a separate greenlet.",
+          "where": "celery/backends/asynchronous.py:60-100 (Drainer), 103-200 (greenletDrainer)",
+          "kind": "other_repo_file",
+          "in_bundle": false
+        },
+        {
+          "claim": "stall for the whole reconnect cycle (tens of seconds or more) instead of failing fast",
+          "fact": "Holds per call, but it is bounded: 20 retries with 1 s sleeps, then RuntimeError(E_RETRY_LIMIT_EXCEEDED) propagates out of apply_async. See FR-001.",
+          "where": "celery/backends/base.py:204-209; celery/backends/asynchronous.py:355-363",
+          "kind": "other_repo_file",
+          "in_bundle": false
+        }
+      ],
+      "preconditions": [
+        {"setting": "result_backend_thread_safe", "default": "False (the cross-thread convoy needs True)", "where_registered": "celery/backends/base.py:236", "documented": true},
+        {"setting": "reconnect retry policy", "default": "max_retries 20, interval 0/1/1", "where_registered": "celery/backends/base.py:204-209", "documented": false}
+      ],
+      "commit_check": [
+        {"sha": "cd3b42e", "supports_claim": true, "why": "Introduced the shared pubsub lock and wrapped every pubsub operation, including reconnect, in it; the message says exactly that."},
+        {"sha": "3083864", "supports_claim": true, "why": "Moved only the socket wait out of the lock ('only take the lock to read'); _drain_one and therefore reconnect_on_error still run under _locked(), as the finding says."},
+        {"sha": "30402bd", "supports_claim": true, "why": "A re-entrancy deadlock fix on the same lock, nine days after cd3b42e; it is the third change to the lock and is unrelated to a retry convoy, as the rationale admits."}
+      ],
+      "duplicate_of": "FR-001",
+      "what_reading_could_not_settle": "Measured apply_async latency during a Redis blip.",
+      "files_read": 7,
+      "minutes_estimate": 15
+    },
+    {
+      "id": "FR-007",
+      "hotspot_id": "H04",
+      "verdict": "upheld_but_gated",
+      "what_holds": "_ensure_retryable loops while retries < self.max_retries with no deadline; max_retries defaults to float('inf') and always_retry to False. store_result and get_task_meta go through it. SyncBackendMixin.wait_for counts only its naps, and for Redis the retry loop is entered before the drainer's monotonic deadline applies (on_wait_for_pending -> _iter_meta -> get_task_meta), so get(timeout=N) can exceed N without bound while the backend is down. Opt-in: result_backend_always_retry must be True.",
+      "refutations": [
+        {
+          "claim": "the backend (Redis, DB) ... with result_backend_max_retries left at its default (inf)",
+          "fact": "DatabaseBackend overrides both defaults: always_retry=True and max_retries=3, documented as deliberate backward compatibility. On the DB backend the loop is bounded to 3 retries unless the operator raises result_backend_max_retries explicitly; the unbounded case on defaults applies to Redis (and other non-DB backends) only after opting into always_retry.",
+          "where": "celery/backends/database/__init__.py:69-71; docs/userguide/configuration.rst:862-868, 896-907, 1104-1131",
+          "kind": "other_repo_file",
+          "in_bundle": false
+        },
+        {
+          "claim": "wait_for's time_elapsed adds only nap, so time spent inside get_task_meta is never counted (as the Redis get() path)",
+          "fact": "RedisBackend does not use SyncBackendMixin.wait_for at all (AsyncBackendMixin path). The same symptom is reached differently: the first get_task_meta happens in on_wait_for_pending before drain_events_until starts its monotonic clock. The cited lines describe the sync KV backends.",
+          "where": "celery/backends/redis.py:208-211; celery/backends/asynchronous.py:66-80, 395-410; celery/result.py:470-476",
+          "kind": "other_repo_file",
+          "in_bundle": false
+        }
+      ],
+      "preconditions": [
+        {"setting": "result_backend_always_retry", "default": "False (DatabaseBackend: True)", "where_registered": "celery/app/defaults.py:231; override celery/backends/database/__init__.py:70", "documented": true},
+        {"setting": "result_backend_max_retries", "default": "inf (DatabaseBackend: 3)", "where_registered": "celery/app/defaults.py:229; override celery/backends/database/__init__.py:71", "documented": true},
+        {"setting": "result_backend_max_sleep_between_retries_ms", "default": "10000", "where_registered": "celery/app/defaults.py:228", "documented": true},
+        {"setting": "result_backend_base_sleep_between_retries_ms", "default": "10", "where_registered": "celery/app/defaults.py:230", "documented": true}
+      ],
+      "commit_check": [
+        {"sha": "0266822", "supports_claim": true, "why": "Extracted _ensure_retryable and routed forget/save_group/delete_group/get_group_meta through it; docs added in the same commit list the covered operations. Also the commit that gave the DB backend its bounded 3-retry default."},
+        {"sha": "0348d64", "supports_claim": true, "why": "Added the on_backend_retryable_error hook inside the loop (engine/session invalidation); no attempt cap or deadline added."}
+      ],
+      "duplicate_of": null,
+      "what_reading_could_not_settle": "Whether real Redis outages raise only connection_errors (retryable) or also non-retryable errors that would break the loop early.",
+      "files_read": 6,
+      "minutes_estimate": 15
+    },
+    {
+      "id": "FR-008",
+      "hotspot_id": "H04",
+      "verdict": "narrowed",
+      "what_holds": "BaseKeyValueStoreBackend.get_many issues one MGET of every still-pending key per iteration, sleeps a fixed interval, and compares the timeout against summed naps only; with a 2 s MGET, timeout=3 and interval=0.5 it runs about 3 x 2.5 s. That is the join path for SyncBackendMixin.iter_native, i.e. KeyValueStoreBackend subclasses (cache/memcached, DynamoDB, filesystem, cloud blob/document stores).",
+      "refutations": [
+        {
+          "claim": "blast radius: all result readers and writers sharing the key-value backend (for example Redis)",
+          "fact": "Redis does not take this path. RedisBackend(BaseKeyValueStoreBackend, AsyncBackendMixin) resolves iter_native to AsyncBackendMixin.iter_native, which drains pub/sub under drain_events_until's time.monotonic deadline. For Redis get_many is called exactly once per join, from ResultSet._iter_meta with max_iterations=1 -- a single MGET, no 0.5 s polling loop and no repeated full-set MGETs.",
+          "where": "celery/backends/base.py:1022-1040 (SyncBackendMixin.iter_native), 1104-1111, 1420 (class hierarchy); celery/backends/asynchronous.py:230-256, 66-80; celery/result.py:888-891",
+          "kind": "other_repo_file",
+          "in_bundle": false
+        }
+      ],
+      "preconditions": [
+        {"setting": "join interval", "default": "0.5 s (argument default, not a setting)", "where_registered": "celery/backends/base.py:1224-1227", "documented": true}
+      ],
+      "commit_check": [
+        {"sha": "1ea3d4f", "supports_claim": true, "why": "Message says it 'applies the same two changes #10487 made to SyncBackendMixin.wait_for' -- the sleep-only accounting was kept on purpose for consistency; MGET latency is still not counted."}
+      ],
+      "duplicate_of": null,
+      "what_reading_could_not_settle": "Whether re-joining clients keep a slow sync KV backend slow after the original slowdown (the sustaining effect); real MGET latencies at thousands of ids.",
+      "files_read": 3,
+      "minutes_estimate": 10
+    },
+    {
+      "id": "FR-009",
+      "hotspot_id": "H04",
+      "verdict": "upheld",
+      "what_holds": "_handle_group_chord_error wraps backend._call_task_errbacks(fake_request, ...) in `except Exception: pass` with no log. Old-style or unregistered errbacks are dispatched by group(old_signature).apply_async; a publish failure there (OperationalError after task_publish_retry_policy's 3 retries, which kombu logs only at debug) reaches that pass. New-style errbacks are logged on failure (base.py:364-369) so the gap is specific to the old-style path. The fake request carries delivery_info={} so the eager check does not itself blow up; the member is still marked failed afterwards, so the task failure is recorded while the errback loss is invisible.",
+      "refutations": [],
+      "preconditions": [
+        {"setting": "task_publish_retry / task_publish_retry_policy", "default": "True / max_retries 3, interval_start 0, step 0.2, max 1", "where_registered": "celery/app/defaults.py:298-305", "documented": true}
+      ],
+      "commit_check": [
+        {"sha": "477c816", "supports_claim": true, "why": "Added try/except plus logger.exception only around the inline new-style errback call; the old-style group.apply_async dispatch and the outer bare pass in _handle_group_chord_error were untouched."}
+      ],
+      "duplicate_of": null,
+      "what_reading_could_not_settle": "Which exception type actually reaches the pass in a live broker failure, and how often chord-error handling coincides with broker unavailability.",
+      "files_read": 2,
+      "minutes_estimate": 10
+    },
+    {
+      "id": "FR-010",
+      "hotspot_id": "H05",
+      "verdict": "narrowed",
+      "what_holds": "app.amqp._event_dispatcher is one Dispatcher(enabled=False) per app; publish() ignores `enabled`, and _publish swallows any Exception into an unbounded deque because buffer_while_offline defaults to True. Nothing flushes that instance: the two flush() callers operate on the worker's own c.event_dispatcher, and flush() on the amqp dispatcher would be a no-op anyway since its producer is None. The deque holds the event dict with argsrepr/kwargsrepr (<=1024 chars each). Gated on task_send_sent_event=True.",
+      "refutations": [
+        {
+          "claim": "A broker outage that lasts through many apply_async calls buffers one entry per task",
+          "fact": "The task message is published first, on the same producer with the same merged retry policy; while the broker is down that publish raises OperationalError to the caller and the task-sent publish is never reached. An outage therefore adds at most one entry per connection drop that falls between the two publishes. Sustained per-task growth needs an event-only failure that leaves task publishes working, e.g. the celeryev exchange declare being refused (declare=[exchange] is attempted on every publish).",
+          "where": "celery/app/amqp.py:563-575 (task publish) vs 598-608 (event publish); celery/events/dispatcher.py:142-162",
+          "kind": "scanned_file",
+          "in_bundle": true
+        }
+      ],
+      "preconditions": [
+        {"setting": "task_send_sent_event", "default": "False", "where_registered": "celery/app/defaults.py:314-316", "documented": true},
+        {"setting": "EventDispatcher buffer_while_offline", "default": "True (constructor default, not a setting)", "where_registered": "celery/events/dispatcher.py:57-58", "documented": true}
+      ],
+      "commit_check": [
+        {"sha": "e1dba84", "supports_claim": true, "why": "Changed only the retry policy passed to evd.publish (retry_policy -> merged _rp); the except/buffer path in dispatcher._publish is untouched."}
+      ],
+      "duplicate_of": null,
+      "what_reading_could_not_settle": "Whether a refused exchange declare recurs on every publish (kombu declared_entities caching on failure) and whether the channel closed by the broker is revived for the next task publish; the real per-entry memory cost.",
+      "files_read": 6,
+      "minutes_estimate": 15
+    },
+    {
+      "id": "FR-018",
+      "hotspot_id": "H05",
+      "verdict": "upheld_but_gated",
+      "what_holds": "Dispatcher.publish holds self.mutex (threading.Lock) across _publish -> producer.publish(retry=True, retry_policy=_rp); kombu wraps _publish in connection.ensure, whose retry sleeps happen inside the call and therefore inside the lock. The dispatcher is a cached_property on the per-app AMQP object, shared by all threads and, unlike the backend, not thread-local. The task publish itself is outside the lock, so only the event-publish portion is serialised. Gated on task_send_sent_event=True.",
+      "refutations": [
+        {
+          "claim": "e1dba84 gave this event publish the full merged retry policy, which sets how long the lock is held (read as lengthening the hold)",
+          "fact": "Before e1dba84 the event publish used the caller's retry_policy, normally None; kombu's Connection.ensure then defaults max_retries=None, which retry_over_time treats as retry forever. The merged policy bounds the hold to task_publish_retry_policy (3 retries, interval_max 1 s). The commit shortened the worst-case hold; it did not create the serialisation.",
+          "where": "git show e1dba84 (celery/app/amqp.py: `retry_policy=retry_policy` -> `retry_policy=_rp`); kombu/messaging.py:328-351; kombu/connection.py:557-559; kombu/utils/functional.py retry_over_time ('If neither of this and timeout is set, we will retry forever'); celery/app/defaults.py:301-305",
+          "kind": "dependency_source",
+          "in_bundle": false
+        }
+      ],
+      "preconditions": [
+        {"setting": "task_send_sent_event", "default": "False", "where_registered": "celery/app/defaults.py:314-316", "documented": true},
+        {"setting": "task_publish_retry", "default": "True", "where_registered": "celery/app/defaults.py:298-300", "documented": true},
+        {"setting": "task_publish_retry_policy", "default": "max_retries 3, interval_start 0, interval_max 1, interval_step 0.2", "where_registered": "celery/app/defaults.py:301-305", "documented": true}
+      ],
+      "commit_check": [
+        {"sha": "e1dba84", "supports_claim": true, "why": "Confirms the event publish now retries under the merged policy inside the mutex; note the direction (bounded what was previously unbounded)."}
+      ],
+      "duplicate_of": null,
+      "what_reading_could_not_settle": "Per-call latency growth with thread count against a slow broker; whether kombu's ensure reconnect under the mutex also blocks other producers' task publishes (separate producers, shared connection pool entries).",
+      "files_read": 5,
+      "minutes_estimate": 10
+    },
+    {
+      "id": "FR-019",
+      "hotspot_id": "H05",
+      "verdict": "narrowed",
+      "what_holds": "Router.route returns a matched route without the default-queue fallback; for {'exchange': 'billing'} send_task_message sees exchange='billing', queue=None, routing_key=None, exchange_type falls back to 'direct' through the AttributeError branch, and the anon-exchange rewrite fires because routing_key is falsy, setting exchange='' and routing_key=qname=None. kombu Producer.publish then substitutes its own defaults: routing_key None -> '' and exchange '' -> Exchange(''), with mandatory unset and nothing logged. apply_async returns an AsyncResult that will never resolve. kombu's handling, which the finding left unchecked, confirms the path.",
+      "refutations": [
+        {
+          "claim": "The broker drops them as unroutable",
+          "fact": "Only on AMQP brokers. On kombu virtual transports (Redis, SQS, ...) Channel._lookup treats '' as the anonymous exchange and returns [routing_key or deadletter_queue], so the message is appended to the `ae.undeliver` queue rather than dropped. It is still never consumed by a worker, so the task is still lost silently, but it is recoverable from that queue.",
+          "where": "kombu/transport/virtual/base.py Channel._lookup (`if not exchange: return [routing_key or default]`, default=self.deadletter_queue)",
+          "kind": "dependency_source",
+          "in_bundle": false
+        },
+        {
+          "claim": "Tasks routed by a task_routes entry that names only an exchange (presented as a supported route shape)",
+          "fact": "No documented route form is exchange-only: the routing guide shows exchange+exchange_type+routing_key, queue, or queue+exchange; the beat example with options={'exchange': 'broadcast_tasks'} relies on the task_routes entry supplying the queue. The trigger is a misconfiguration the code fails to reject, not a documented feature that misbehaves. The exchange-only shape does appear in the Router unit tests, but only at lookup level.",
+          "where": "docs/userguide/routing.rst:105-109, 673-677, 791-796, 812-816; t/unit/app/test_routes.py:93-99",
+          "kind": "docs",
+          "in_bundle": false
+        }
+      ],
+      "preconditions": [
+        {"setting": "task_routes", "default": "None (an exchange-only matching entry is required)", "where_registered": "celery/app/defaults.py:313", "documented": true},
+        {"setting": "task_default_queue", "default": "celery (skipped for a matched route)", "where_registered": "celery/app/defaults.py:285", "documented": true}
+      ],
+      "commit_check": [
+        {"sha": "1a47689", "supports_claim": true, "why": "Only made the default-queue lookup lazy (`amqp.default_queue`) and tested queue-named routes; the `queue is None and exchange is None` guard that skips the default for exchange-only publishes predates it (be6879b 'Fixes problem declaring queues when sending'), so the exchange-only path was indeed not considered."}
+      ],
+      "duplicate_of": null,
+      "what_reading_could_not_settle": "RabbitMQ's actual disposition of the publish (silent drop unless an alternate exchange is configured) and whether any broker-side log is produced; how common exchange-only routes are in real configs.",
+      "files_read": 7,
+      "minutes_estimate": 15
+    }
+  ]
+}

@@ -1,0 +1,91 @@
+{
+  "hotspot_id": "H09",
+  "file": "celery/app/task.py",
+  "findings": [
+    {
+      "location": {
+        "file": "celery/app/task.py",
+        "symbol": "Task.retry",
+        "lines": "863-878"
+      },
+      "missing_patterns": [
+        "S07",
+        "S15"
+      ],
+      "failure_mode": "Tasks that call self.retry() while the broker is briefly unable to accept publishes are lost for good. They end up in FAILURE with a kombu OperationalError instead of being retried. On-call sees a burst of task-failed events and FAILURE results naming connection or publish errors, and that work never runs again.",
+      "trigger_condition": "Publishing the retry message fails for longer than the default task_publish_retry_policy window (3 retries at 0/0.2/0.4s, so roughly 0.6s), while the worker can still reject or ack the original message. Examples: a RabbitMQ node failover, a memory or disk alarm that blocks publishers but not consumers, or a Redis failover.",
+      "amplifier": "Retries cluster when a downstream dependency is failing, and that is also when broker trouble tends to coincide. Every task that hits retry() inside the window turns into Reject(requeue=False). The original message is acked or rejected without a requeue, so nothing redelivers it.",
+      "sustaining_effect": null,
+      "blast_radius": "Every in-flight task type that uses manual retry() on the affected workers. Chords and chains that contain those tasks fail through their errbacks instead of completing.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/app/task.py:872-875",
+          "note": "S.apply_async() failure is turned into Reject(exc, requeue=False): no requeue and no fallback"
+        },
+        {
+          "type": "code",
+          "ref": "celery/worker/request.py:677-699",
+          "note": "Reject without requeue is recorded as a terminal FAILURE and the message is rejected without requeue"
+        },
+        {
+          "type": "code",
+          "ref": "celery/app/defaults.py:301-306",
+          "note": "default publish retry policy gives up after about 0.6s across 3 attempts"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "The loss path is explicit in the code and confirmed in request.py. No [fix] commit in the bundle touches retry(), so the ceiling is medium. I did not observe the trigger, and whether a blocked publish raises or hangs depends on kombu and the transport.",
+      "how_to_verify": "Under a worker with acks_late, make Producer.publish raise OperationalError for 2s, for example with a toxiproxy cut on the publish connection only. Run a task that calls self.retry(countdown=1). The task ends in FAILURE and is never re-executed, and the queue holds no retry message.",
+      "prediction": "The next broker failover incident includes reports of retried tasks marked FAILURE with connection errors that never ran again",
+      "key": "d710c0302beb",
+      "content_hash": "sha256:0816e65771ed59f59196ce22b5f03ffd1331e6b6f3505934bbf94b4d727135c3",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/app/defaults.py": "sha256:7066721b879df620abbd5b565a01ddd2ebb39ce9ec1bb9bd0d2408653982f1dd",
+        "celery/app/task.py": "sha256:0816e65771ed59f59196ce22b5f03ffd1331e6b6f3505934bbf94b4d727135c3",
+        "celery/worker/request.py": "sha256:9e9989ec68b53caf7b1b68323c1b169b513b4ee6dd33600e9fa7257bafbebee0"
+      }
+    },
+    {
+      "location": {
+        "file": "celery/app/task.py",
+        "symbol": "Task.retry",
+        "lines": "842-850"
+      },
+      "missing_patterns": [
+        "S02"
+      ],
+      "failure_mode": "After a downstream outage, every task that failed during it comes back at the same moment, default_retry_delay (180s) or one fixed countdown later. The dependency sees periodic synchronized spikes, so it fails again when it should be recovering, and tasks use up max_retries (default 3) and fail permanently.",
+      "trigger_condition": "A shared dependency such as an API or database is unavailable for a short time while many tasks are in flight. Each task calls self.retry() with no countdown or a constant one.",
+      "amplifier": "The countdown is used as-is, with no jitter and no growth per attempt. N failures inside the outage window become N retries landing inside the same short window.",
+      "sustaining_effect": "Retry waves stay in phase: tasks that fail in wave k all reschedule together for wave k+1. Each wave pushes the recovering dependency back over capacity until max_retries runs out, so the outage outlasts its trigger by up to max_retries x countdown.",
+      "blast_radius": "Every caller of the shared dependency, not only Celery workers, sees the load spikes every 180s. Tasks that use up their retries are lost as FAILURE.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/app/task.py:842-843",
+          "note": "countdown falls back to the fixed default_retry_delay, with no jitter or backoff in manual retry()"
+        },
+        {
+          "type": "code",
+          "ref": "celery/app/task.py:846-850",
+          "note": "the countdown is passed unchanged into the retry signature"
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "The code clearly has no jitter. autoretry_for with retry_backoff and retry_jitter exists elsewhere for users who opt in, so the impact depends on how callers use manual retry(). There is no fix history for it in the bundle.",
+      "how_to_verify": "Enqueue 1,000 tasks that all fail against a stub returning 503 for 10s and call self.retry(). Plot the ETA distribution of the retry messages. They fall inside a window of about 10s at t+180s instead of being spread out.",
+      "key": "50df890ef774",
+      "content_hash": "sha256:0816e65771ed59f59196ce22b5f03ffd1331e6b6f3505934bbf94b4d727135c3",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/app/task.py": "sha256:0816e65771ed59f59196ce22b5f03ffd1331e6b6f3505934bbf94b4d727135c3"
+      }
+    }
+  ],
+  "notes": "The replace() chain-with-group area has had two fixes in a row (01608ff, 8aed820). I checked canvas _chain.from_dict: deserialized chain tasks are turned back into signatures, so the isinstance(group) check holds and I could not confirm a remaining failure. In apply(), eager retry recurses through retval.sig.apply(retries=retries+1) at line 961 and ignores countdown. With max_retries=None that ends in RecursionError, but it only applies to eager mode, so I mentioned it here rather than reporting it. 72a968d (the apply_async options copy) looks correct. The bundle had no detector leads. Files: <celery>/celery/app/task.py, <celery>/celery/worker/request.py, <celery>/celery/app/defaults.py.",
+  "bundle_hash": "sha256:3de7f0bc9c3f771477693a30aec64d54112a17c3ca707983ed13fd9fb4e98490",
+  "schema": "thunderstruck.finding/v1",
+  "validated_with": 3
+}

@@ -1,0 +1,71 @@
+{
+  "hotspot_id": "H03",
+  "file": "celery/app/base.py",
+  "findings": [
+    {
+      "location": {
+        "file": "celery/app/base.py",
+        "symbol": "send_task / producer_or_acquire",
+        "lines": "1124-1128"
+      },
+      "missing_patterns": [
+        "S28",
+        "S01",
+        "S13"
+      ],
+      "failure_mode": "When the Redis result backend is slow or reconnecting, every publishing thread in a client process (web app, beat, a canvas-building task) hangs inside apply_async/send_task with no error. Requests pile up behind the 10 producer slots, and broker publishing stops for the whole process even though the broker is healthy.",
+      "trigger_condition": "The Redis result backend stalls or drops its pub/sub connection while a non-worker process is publishing tasks with ignore_result=False (the default). broker_pool_acquire_timeout is left at its default of None.",
+      "amplifier": "send_task takes a pooled producer and then, while still holding it, calls backend.on_task_call(). For Redis this goes to consume_from(), which takes an unbounded RLock (_pubsub_lock) and, on error, runs a retrying reconnect (_reconnect_pubsub via retry_over_time) with the lock still held. One stalled subscriber therefore holds both the pubsub lock and a producer slot. Other threads queue on the lock while holding their own slots, until all broker_pool_limit (10) slots are taken. After that, producer_pool.acquire(block=True, timeout=None) waits forever.",
+      "sustaining_effect": "Blocked publishers keep their request threads and producer slots until the reconnect loop gives up or succeeds. Upstream HTTP clients time out and retry, which adds more blocked publishers. After Redis recovers, the backlog of convoyed threads still has to drain one at a time through the serialized pubsub lock before publishing returns to normal.",
+      "blast_radius": "Every task publish from the affected process stalls, not only publishes that need results. Callers whose results are ignored are blocked too, because they wait for the same producer slots.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/app/base.py:1124-1128",
+          "note": "backend.on_task_call() runs inside the producer_or_acquire block, so a result-backend call holds a broker producer slot"
+        },
+        {
+          "type": "code",
+          "ref": "celery/app/base.py:1261-1288",
+          "note": "_acquire_producer blocks with timeout=self.conf.broker_pool_acquire_timeout"
+        },
+        {
+          "type": "code",
+          "ref": "celery/app/defaults.py:102",
+          "note": "pool_acquire_timeout defaults to None, so the wait is unbounded unless an operator opts in"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/redis.py:299-311",
+          "note": "consume_from takes _pubsub_lock without a timeout; on a subscribe error, reconnect_on_error runs the reconnect while the lock is held"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/redis.py:149-191",
+          "note": "_reconnect_pubsub runs under _locked() and is wrapped in a retrying _ensure()"
+        },
+        {
+          "type": "commit",
+          "ref": "1a39f8c",
+          "note": "[fix] 'add timeout to broker pool acquisition to prevent indefinite blocking' made the timeout configurable, but the default is still None, so the indefinite wait remains out of the box"
+        }
+      ],
+      "confidence": "high",
+      "confidence_rationale": "A [fix] commit targeted exactly this indefinite block. The code still defaults to an unbounded wait and still makes a lock-guarded, retrying result-backend call while holding the producer. The Redis retry-policy defaults were not checked within the read budget, so how long a stall lasts is not established.",
+      "how_to_verify": "Use the Redis result backend with broker_pool_limit=2 and the default acquire timeout. Pause Redis (CLIENT PAUSE, or drop its packets) and call apply_async from 20 threads. If the hypothesis is right, every thread blocks, including ones whose tasks have ignore_result=True, and none raises OperationalError. If those threads still publish, the hypothesis is wrong.",
+      "prediction": "The next 'apply_async hangs' report will involve a Redis result-backend blip, with thread dumps showing threads parked in ResultConsumer._locked or producer_pool.acquire.",
+      "key": "f62fb0c3468b",
+      "content_hash": "sha256:059bee09b559f4e915f08c2e3731df51df879017e4d3c1b234ba4641eb33b749",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/app/base.py": "sha256:059bee09b559f4e915f08c2e3731df51df879017e4d3c1b234ba4641eb33b749",
+        "celery/app/defaults.py": "sha256:7066721b879df620abbd5b565a01ddd2ebb39ce9ec1bb9bd0d2408653982f1dd",
+        "celery/backends/redis.py": "sha256:858b2a75d236bef42a1d04fdd15d83b057d844b171321f37f6dd5f236b72b7fb"
+      }
+    }
+  ],
+  "notes": "Rejected leads: (1) In the stamped_headers loop, options.pop(stamp) has no default, but amqp.create_task_message already indexes options[header], so it adds no new failure. (2) The quorum native-delayed-delivery branch can hit KeyError on options['exchange_type'] when the router returns no queue. Router output normally includes a queue, so this was not confirmed. (3) A timedelta expires value would raise TypeError at the expires_s < 0 comparison, but timedelta is not a documented type for expires. One possibility outside this file: the Redis ResultConsumer.subscribed_to set grows with every send_task whose result is never collected (an S17 candidate in celery/backends/redis.py, not verified).",
+  "bundle_hash": "sha256:96a7376672380096ac49aee668eebe1114889af81fc4291521297ad302fa8968",
+  "schema": "thunderstruck.finding/v1",
+  "validated_with": 3
+}

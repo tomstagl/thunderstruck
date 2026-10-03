@@ -1,0 +1,338 @@
+{
+  "meta": {
+    "repo": "<celery>",
+    "head": "508c112",
+    "dependency_versions_read": {
+      "billiard": "4.3.0 (requirements/default.txt pin)",
+      "kombu": "5.7.0a1 (requirements/default.txt floor; requires amqp>=5.4.0,<6)",
+      "amqp": "5.4.0 (also inspected 5.3.1, 5.2.0, 5.1.1 for the frame-write lock)",
+      "sqlalchemy": "2.1.3",
+      "vine": "5.1.0"
+    },
+    "method": "read-only: Celery source, docs, git log/show/blame, and dependency source located via uv; no Celery code executed"
+  },
+  "findings": [
+    {
+      "id": "FR-002",
+      "hotspot_id": "H06",
+      "verdict": "upheld_but_gated",
+      "what_holds": "With acks_late=True and acks_on_timeout=False, a hard time limit both stores FAILURE (firing on_failure, errbacks, task_failure, task-failed) and requeues the message, so every redelivery re-fires the failure hooks with no attempt cap. on_failure deliberately skips mark_as_failure when it requeues; on_timeout does not, and the task_acks_on_timeout docs say only 'rejected and requeued' while the Reject docs promise no terminal result for a requeued message.",
+      "refutations": [
+        {
+          "claim": "on_timeout writes FAILURE and fires the hooks before it requeues (the two paths disagree on ordering)",
+          "fact": "In prefork the pool calls on_failure first and on_timeout second: billiard's TimeoutHandler.on_hard_timeout does job._set(TimeLimitExceeded) (error_callback -> Request.on_failure, which rejects with requeue=True and skips mark_as_failure) and only then job.handle_timeout(soft=False) (-> Request.on_timeout, which stores FAILURE and fires hooks; its own reject is a no-op because Request.reject checks self.acknowledged). Net effect is the same as the finding states, but the requeue happens before the FAILURE write, not after.",
+          "where": "billiard/pool.py:686-705 (on_hard_timeout), billiard/pool.py:1816-1842 (handle_timeout/_set), celery/worker/request.py:785-789 (reject no-op once acknowledged)",
+          "kind": "dependency_source",
+          "in_bundle": false
+        }
+      ],
+      "preconditions": [
+        {"setting": "task_acks_late", "default": "False", "where_registered": "celery/app/defaults.py:269", "documented": true},
+        {"setting": "task_acks_on_timeout", "default": "None -> True (falls back to acks_on_failure_or_timeout, else True)", "where_registered": "celery/app/defaults.py:276; resolved at celery/app/task.py:449-454", "documented": true}
+      ],
+      "commit_check": [
+        {"sha": "7135768", "supports_claim": true, "why": "Adds task.on_failure/after_return/task_failure/task-failed to on_timeout ahead of the ack/reject branch; its docs note (docs/userguide/tasks.rst) says hard limits now invoke on_failure/errbacks without qualifying by acks_on_timeout."},
+        {"sha": "40c2349", "supports_claim": true, "why": "Diff of request.py changes on_timeout from 'if acks_late and acks_on_failure_or_timeout: acknowledge()' (otherwise leave unacked) to 'if acks_on_timeout: acknowledge() else: reject(requeue=True)', i.e. immediate requeue instead of waiting for connection close."}
+      ],
+      "duplicate_of": null,
+      "what_reading_could_not_settle": "Whether a requeued message is redelivered to the same worker immediately (RabbitMQ requeues to head of queue) or spreads across workers; the rate of the loop in practice.",
+      "files_read": 9,
+      "minutes_estimate": 20
+    },
+    {
+      "id": "FR-003",
+      "hotspot_id": "H10",
+      "verdict": "upheld_but_gated",
+      "what_holds": "On the dedup fast path any Exception from dispatching callbacks/chain becomes Reject(requeue=True) with no counter or delay; the Reject propagates out of trace_task (outer handler re-raises Reject), billiard marshals it as a failure result, and Request.on_failure performs an immediate reject(requeue=True). The requeued message comes back redelivered=True and re-enters the same branch, so a permanent dispatch error loops until a broker-side policy stops it. The code comment and the commit history show this is a deliberate trade-off.",
+      "refutations": [
+        {
+          "claim": "every bounce does two result-backend reads (r.state and r._get_task_meta())",
+          "fact": "AsyncResult caches the meta once the state is a READY state: r.state -> _get_task_meta() -> _maybe_set_cache() sets _cache for SUCCESS, so the subsequent r._get_task_meta() returns the cache. One backend read per bounce, not two.",
+          "where": "celery/result.py:461-473, 505-533",
+          "kind": "other_repo_file",
+          "in_bundle": false
+        },
+        {
+          "claim": "(implicit) the unbounded requeue is an oversight",
+          "fact": "It was an explicit design decision: the PR's commit message contains the bullet 'fix(trace): raise Reject(requeue=True) on dedup dispatch failure instead of acking', and the code comment names broker dead-letter / max-delivery-count policies as the intended circuit breaker.",
+          "where": "865922abda9551876c2fd6cd7fb1ce59e7f2291a (commit body); celery/app/trace.py:549-560",
+          "kind": "commit_message",
+          "in_bundle": false
+        }
+      ],
+      "preconditions": [
+        {"setting": "worker_deduplicate_successful_tasks", "default": "False", "where_registered": "celery/app/defaults.py:344-346", "documented": true},
+        {"setting": "task_acks_late", "default": "False (dedup only applies to redelivered late-acked messages per docs)", "where_registered": "celery/app/defaults.py:269", "documented": true},
+        {"setting": "result_backend (persistent)", "default": "None (no backend); docs: setting ignored for non-persistent backends", "where_registered": "celery/app/defaults.py (result namespace)", "documented": true}
+      ],
+      "commit_check": [
+        {"sha": "865922a", "supports_claim": true, "why": "Introduced _dispatch_callbacks_and_chain on the dedup path and, per its own bullet list, switched the failure handling to Reject(requeue=True) instead of acking; the 'fix' label refers to lost chains after a crash, not to this loop."}
+      ],
+      "duplicate_of": null,
+      "what_reading_could_not_settle": "The actual bounce rate on a given broker and whether RabbitMQ redelivers the requeued message to the same consumer immediately under prefetch; whether SQS marks requeued messages redelivered the same way kombu's Redis transport does (kombu/transport/redis.py:1080-1081 confirmed for Redis).",
+      "files_read": 7,
+      "minutes_estimate": 18
+    },
+    {
+      "id": "FR-011",
+      "hotspot_id": "H06",
+      "verdict": "narrowed",
+      "what_holds": "In the Reject(requeue=False) branch, backend.mark_as_failure runs before self.reject(); if the backend write raises (always_retry off, so _ensure_retryable re-raises), the reject, task_failure signal and task-failed event are skipped. In prefork billiard's safe_apply_callback logs 'Pool callback raised exception' and swallows it, so the worker keeps running and the message stays unacked until the channel closes.",
+      "refutations": [
+        {
+          "claim": "the message stays unacked on the worker and is redelivered after the connection drops or the worker restarts (as the general failure mode)",
+          "fact": "Only with task_acks_late=True. On the default acks_late=False the message is acknowledged in on_accepted before the task runs, so Request.reject() is a no-op regardless of the ordering and nothing remains unacked; the only loss is the result write, signal and event. The trigger condition does not state acks_late, and the Reject docs say rejection 'won't have any effect unless Task.acks_late is enabled'.",
+          "where": "celery/worker/request.py:520-527 (on_accepted acks when not acks_late), :785-789 (reject guarded by self.acknowledged); docs/userguide/tasks.rst:1471-1473",
+          "kind": "scanned_file",
+          "in_bundle": false
+        }
+      ],
+      "preconditions": [
+        {"setting": "task_acks_late", "default": "False", "where_registered": "celery/app/defaults.py:269", "documented": true},
+        {"setting": "result_backend_always_retry", "default": "False", "where_registered": "celery/app/defaults.py:231", "documented": true}
+      ],
+      "commit_check": [
+        {"sha": "e2b276e", "supports_claim": true, "why": "git blame attributes lines 677-699 (mark_as_failure + task_failure before return self.reject(...)) to e2b276e; it introduced the write-before-settle ordering in this branch."}
+      ],
+      "duplicate_of": null,
+      "what_reading_could_not_settle": "Whether a result-handler thread/hub stall occurs in other pools; with the threads pool the exception from on_success->on_failure is captured by the executor Future and never surfaced (concurrency/base.py:27-44, thread.py:54-55), which reading suggests but execution would confirm.",
+      "files_read": 8,
+      "minutes_estimate": 15
+    },
+    {
+      "id": "FR-012",
+      "hotspot_id": "H06",
+      "verdict": "narrowed",
+      "what_holds": "With acks_late=True and reject_on_worker_lost=True, a WorkerLostError leads to reject(requeue=True) with no attempt cap, and a payload that deterministically kills the child loops. SystemExit/KeyboardInterrupt from a child that was not cancelled or revoked is mapped to WorkerLostError via _worker_lost_info.",
+      "refutations": [
+        {
+          "claim": "Commit 67ba9e5 widened the worker-lost path to SystemExit, so more exit causes now take the requeue branch",
+          "fact": "The commit restores prior behaviour rather than widening it. Its message: 'With Billiard >= 4.3.0 a task calling sys.exit() no longer kills the child before the result is reported ... Report it as WorkerLostError, as before: the process is gone either way'. Before billiard 4.3.0 sys.exit() killed the child and surfaced as WorkerLostError anyway; billiard 4.3.0's worker loop now catches BaseException and marshals the SystemExit as a result, which had turned it into an acked ordinary failure. The set of exit causes that reach the requeue branch is the long-standing one.",
+          "where": "67ba9e5faa51bcec1fdb42748fff18629458a95d (commit body); billiard/pool.py:362-370 (except BaseException -> result=(False, ExceptionInfo()))",
+          "kind": "commit_message",
+          "in_bundle": false
+        },
+        {
+          "claim": "(implicit) this is an undocumented hazard",
+          "fact": "The requeue loop is the documented, warned-about consequence of the opt-in setting: 'Enabling this can cause message loops; make sure you know what you're doing.' The FAQ also states the worker acknowledges when the child is terminated by sys.exit() or a signal unless this is enabled.",
+          "where": "docs/userguide/configuration.rst (task_reject_on_worker_lost, Default: Disabled, warning block); docs/faq.rst:843-849",
+          "kind": "docs",
+          "in_bundle": false
+        }
+      ],
+      "preconditions": [
+        {"setting": "task_reject_on_worker_lost", "default": "None (falsy)", "where_registered": "celery/app/defaults.py:310; celery/app/task.py:359 (from_config)", "documented": true},
+        {"setting": "task_acks_late", "default": "False", "where_registered": "celery/app/defaults.py:269", "documented": true}
+      ],
+      "commit_check": [
+        {"sha": "67ba9e5", "supports_claim": false, "why": "The diff does add the SystemExit->WorkerLostError mapping, but the message says it is restoring the pre-billiard-4.3 behaviour ('as before'); it does not corroborate a new or wider failure path."}
+      ],
+      "duplicate_of": null,
+      "what_reading_could_not_settle": "Nothing material; the loop is the documented behaviour of an opt-in flag.",
+      "files_read": 6,
+      "minutes_estimate": 12
+    },
+    {
+      "id": "FR-013",
+      "hotspot_id": "H07",
+      "verdict": "refuted",
+      "what_holds": "call_soon_ack does execute message.ack_log_error/reject_log_error inline when self.hub is None, and 9c8145f introduced that. Nothing else in the finding survives.",
+      "refutations": [
+        {
+          "claim": "Workers that run without a hub (threads, gevent, eventlet pools) now send acks from the task's execution context; trigger is --pool=threads with concurrency > 1 on py-amqp",
+          "fact": "The threads pool runs with a hub. should_use_eventloop() is detect_environment()=='default' and transport.implements.asynchronous and not Windows; it no longer consults pool_cls.is_green. py-amqp and Redis transports are asynchronous, and the threads pool is not green/monkeypatched, so -P threads gets asynloop and call_soon_ack takes the 'if self.hub: return self.hub.call_soon(p)' branch: the ack is queued (under Hub._ready_lock) and written by the main loop thread, exactly as before 9c8145f. Only gevent/eventlet (detect_environment != 'default') run without a hub.",
+          "where": "celery/worker/worker.py:307-310 (should_use_eventloop); celery/worker/components.py:36-38,66 (hub/timer selection); celery/worker/consumer/consumer.py:288-290 (hub branch); kombu/asynchronous/hub.py:204-209 (call_soon under _ready_lock)",
+          "kind": "other_repo_file",
+          "in_bundle": false
+        },
+        {
+          "claim": "Those writes can interleave with drain_events and with acks from other threads on the same broker connection; no lock and no hand-off, so frames collide and the broker sees UnexpectedFrame / framing errors",
+          "fact": "py-amqp serializes every frame write on a connection. frame_writer() creates a per-connection threading.Lock ('buffer_lock') and write_frame() holds it for the whole encode-and-transport.write() of a frame; the comment says it is created at connect time precisely so it picks up eventlet/gevent monkeypatching. So acks issued from several greenlets (the only no-hub case) cannot interleave at the frame level. The lock is new in amqp 5.4.0 (absent in 5.3.1/5.2.0/5.1.1), but Celery HEAD requires kombu>=5.7.0a1, which requires amqp>=5.4.0.",
+          "where": "amqp/method_framing.py:104-122 (amqp 5.4.0); kombu-5.7.0a1 METADATA 'Requires-Dist: amqp<6.0.0,>=5.4.0'; requirements/default.txt (kombu>=5.7.0a1)",
+          "kind": "dependency_source",
+          "in_bundle": false
+        },
+        {
+          "claim": "accept_callback (early ack) and callback (on_success) run inside the pool thread, so acks are issued from pool threads",
+          "fact": "True that the callbacks run in the executor thread (apply_target), but they only create a promise that calls call_soon_ack, which with a hub defers to Hub.call_soon; the frame is written later by the main thread. The cited lines do not establish a pool-thread socket write.",
+          "where": "celery/concurrency/base.py:27-44; celery/worker/consumer/consumer.py:786-795, 273-294",
+          "kind": "scanned_file",
+          "in_bundle": true
+        }
+      ],
+      "preconditions": [
+        {"setting": "worker pool (-P)", "default": "prefork (hub); threads/solo also hub on amqp/redis; only gevent/eventlet are hub-less", "where_registered": "celery/worker/worker.py:307-310", "documented": false}
+      ],
+      "commit_check": [
+        {"sha": "9c8145f", "supports_claim": false, "why": "It added call_soon_ack, but the commit body shows the greenlet-safety trade-off was weighed ('Scope immediate exec to ack/reject via call_soon_ack ... so that remote-control commands from gPidbox preserve greenlet-safety'); it is a latency fix for synloop (gevent/eventlet), not evidence of framing errors, and it does not affect the threads pool at all."}
+      ],
+      "duplicate_of": null,
+      "what_reading_could_not_settle": "Behaviour on a deployment that pins an older kombu/amqp than Celery's declared floor (amqp < 5.4.0 has no buffer_lock); that configuration is outside the scanned HEAD's declared dependencies.",
+      "files_read": 10,
+      "minutes_estimate": 25
+    },
+    {
+      "id": "FR-014",
+      "hotspot_id": "H08",
+      "verdict": "upheld_but_gated",
+      "what_holds": "If the automatic ALTER TABLE fails (no DDL privilege), prepare_models logs once, sets prepared=True and never retries. Every subsequent write still fails: on PostgreSQL the _query_task fallback re-queries on the same aborted transaction (SQLAlchemy only autorollbacks when not in a transaction, and a Session has autobegun one) so it raises InFailedSqlTransaction; on any dialect the ORM INSERT names 'children' because SQLAlchemy renders explicit NULL for unset nullable columns without defaults (_insert_cols_as_none), and _update_result sets it regardless of the live table. 'children' lives on the base Task model so every DB-backend deployment gets the new column.",
+      "refutations": [
+        {
+          "claim": "Every store_result spends its 3 retries, each one disposing and rebuilding the engine, before failing with BackendStoreError",
+          "fact": "On default settings the database backend does not retry at all. self.always_retry = conf.get('result_backend_always_retry', True) returns the registered default False, because Settings is a ChainMap over [preconf, loader conf, DEFAULTS] and ConfigurationView.__getitem__ finds the key in DEFAULTS before the literal fallback is ever used. With always_retry False, _ensure_retryable re-raises the original DatabaseError immediately: no retries, no engine.dispose(), no BackendStoreError wrapper.",
+          "where": "celery/backends/database/__init__.py:70-71; celery/app/defaults.py:231 (backend_always_retry=Option(False)); celery/utils/collections.py:400-412, 426-431; celery/app/utils.py:290-292 (Settings(preconf, [conf, defaults])); celery/backends/base.py:760-793",
+          "kind": "other_repo_file",
+          "in_bundle": false
+        },
+        {
+          "claim": "The only warning appears once, at startup",
+          "fact": "True for the log, but the condition and the remedy are documented: the configuration guide says Celery attempts the ALTER TABLE automatically and gives the manual DDL for users whose DB user lacks ALTER TABLE rights; the stamps note says the migration must be run before upgrading. The maintainers' test for this scenario only exercises the read path (get_task_meta on a table without the column), never store_result, so the write-path failure is unverified rather than contradicted.",
+          "where": "docs/userguide/configuration.rst:1312-1323, 1014-1016; t/unit/backends/test_database.py:678-721",
+          "kind": "docs",
+          "in_bundle": false
+        }
+      ],
+      "preconditions": [
+        {"setting": "result_backend = db+... with an existing pre-5.7 celery_taskmeta and a DB user without ALTER TABLE", "default": "n/a (deployment state)", "where_registered": "celery/backends/database/session.py:104-136", "documented": true},
+        {"setting": "result_backend_always_retry", "default": "False (literal True in DatabaseBackend.__init__ is shadowed by the registered default)", "where_registered": "celery/app/defaults.py:231", "documented": true},
+        {"setting": "database_create_tables_at_setup", "default": "True (irrelevant: prepare_models also runs on first session)", "where_registered": "celery/app/defaults.py:265", "documented": true}
+      ],
+      "commit_check": [
+        {"sha": "8244f04", "supports_claim": true, "why": "Added the children column to the base Task model, _migrate_missing_columns with warning-only failure, and the defer() fallback in _query_task."},
+        {"sha": "5cf6140", "supports_claim": true, "why": "Extended the same defer fallback to stamps a week later; stamps is only on TaskExtended (result_extended=True)."}
+      ],
+      "duplicate_of": null,
+      "what_reading_could_not_settle": "Exact exception class per dialect (psycopg UndefinedColumn vs InFailedSqlTransaction, MySQL 1054) and whether some drivers surface the missing column as a non-DatabaseError; the SQLAlchemy NULL-rendering rule was read from source, not run.",
+      "files_read": 9,
+      "minutes_estimate": 25
+    },
+    {
+      "id": "FR-015",
+      "hotspot_id": "H08",
+      "verdict": "narrowed",
+      "what_holds": "RETRYABLE_DB_ERRORS includes the SQLAlchemy base DatabaseError, so IntegrityError, DataError and ProgrammingError are classified retryable, and each retry calls session_manager.invalidate() -> engine.dispose(). That classification is long-standing (the pre-0348d64 @retry decorator caught the same DatabaseError); the per-retry dispose is new with 0348d64 and deliberate.",
+      "refutations": [
+        {
+          "claim": "always_retry is on by default with 3 retries; the 3 retries finish in under about 140 ms",
+          "fact": "Neither number holds. conf.get('result_backend_always_retry', True) and conf.get('result_backend_max_retries', 3) return the registered defaults (False and inf) because the finalized Settings ChainMap includes DEFAULTS, so the literal fallbacks are dead. On default settings the DB backend performs no retries and no dispose; the 'Failed operation ... Retrying' spam and BackendStoreError cannot occur. If a user sets result_backend_always_retry=True without max_retries, retries are unbounded (inf) with backoff capped at 10 s, each disposing the pool, which is a different (and longer) failure than the one described. The docs' statement that the DB backend defaults to always_retry=True/3 retries does not match the code path.",
+          "where": "celery/backends/database/__init__.py:70-71; celery/app/defaults.py:229,231; celery/utils/collections.py:400-412,426-431; celery/app/utils.py:290-292; docs/userguide/configuration.rst:1116-1117",
+          "kind": "other_repo_file",
+          "in_bundle": false
+        },
+        {
+          "claim": "The new connection handshakes take up the DB connection slots it needs to recover, so 'too many connections' persists",
+          "fact": "session_cleanup closes the session (checking the connection in) before the exception reaches _ensure_retryable, and Engine.dispose(close=True) closes all checked-in connections before a new pool is created. The retry therefore churns one connection (close, then open) rather than holding extra slots; concurrency per worker process does not multiply.",
+          "where": "celery/backends/database/__init__.py:39-47; sqlalchemy/engine/base.py:3139-3164",
+          "kind": "dependency_source",
+          "in_bundle": false
+        }
+      ],
+      "preconditions": [
+        {"setting": "result_backend_always_retry", "default": "False (literal True fallback is never used)", "where_registered": "celery/app/defaults.py:231", "documented": true},
+        {"setting": "result_backend_max_retries", "default": "inf (literal 3 fallback is never used)", "where_registered": "celery/app/defaults.py:229", "documented": true},
+        {"setting": "result_backend_base_sleep_between_retries_ms / max_sleep", "default": "10 / 10000", "where_registered": "celery/app/defaults.py:228,230", "documented": true}
+      ],
+      "commit_check": [
+        {"sha": "0348d64", "supports_claim": true, "why": "Introduced RETRYABLE_DB_ERRORS and on_backend_retryable_error -> invalidate/dispose; message says the dispose is intended so retries reconnect cleanly."},
+        {"sha": "aa4c3b1", "supports_claim": true, "why": "Wrapped _create_tables, task_result_exists and cleanup in _ensure_retryable, as the finding says."}
+      ],
+      "duplicate_of": null,
+      "what_reading_could_not_settle": "Nothing about the default path; what remains open is the real connection churn when a user explicitly enables always_retry with a finite max_retries, which only measurement would show.",
+      "files_read": 9,
+      "minutes_estimate": 22
+    },
+    {
+      "id": "FR-016",
+      "hotspot_id": "H09",
+      "verdict": "upheld",
+      "what_holds": "Task.retry() publishes the retry via S.apply_async(); any Exception from the publish is converted to Reject(exc, requeue=False). The trace path hands that to Request.on_failure, which stores FAILURE, fires task_failure and rejects without requeue (or, with acks_late off, the message was already acked), so the work never runs again. Publishing uses task_publish_retry (default True) with the default policy max_retries=3, interval_start=0, step=0.2, max=1, which kombu's retry_over_time turns into sleeps of 0, 0.2, 0.4 s before giving up: roughly 0.6 s of tolerance. The behaviour dates from 2014 ('Task: Do not requeue if retry fails.').",
+      "refutations": [],
+      "preconditions": [
+        {"setting": "task_publish_retry", "default": "True", "where_registered": "celery/app/defaults.py:298-300", "documented": true},
+        {"setting": "task_publish_retry_policy", "default": "{max_retries: 3, interval_start: 0, interval_max: 1, interval_step: 0.2}", "where_registered": "celery/app/defaults.py:301-307; wired at celery/app/amqp.py:490-491,558", "documented": true}
+      ],
+      "commit_check": [
+        {"sha": "f05a957 (blame of task.py:875, not cited by the finding)", "supports_claim": true, "why": "'Task: Do not requeue if retry fails.' shows the conversion to Reject(requeue=False) is deliberate and long-standing; no fix commit in the bundle touches retry(), consistent with the finding's medium ceiling."}
+      ],
+      "duplicate_of": null,
+      "what_reading_could_not_settle": "Whether a RabbitMQ memory/disk alarm makes the publish raise within the window or block indefinitely (the finding hedges this itself); a blocked publisher would hang the task rather than lose it.",
+      "files_read": 7,
+      "minutes_estimate": 12
+    },
+    {
+      "id": "FR-017",
+      "hotspot_id": "H10",
+      "verdict": "upheld",
+      "what_holds": "After fun() returns, _dispatch_callbacks_and_chain and mark_as_done sit in a try that only catches EncodeError. Any other exception (e.g. kombu OperationalError after the ~0.6 s publish retry window, or a backend error in mark_as_done) reaches the outer 'except Exception', which calls report_internal_error and on_error(task_request, exc) with call_errbacks=True -> handle_failure -> mark_as_failure(call_errbacks=True) and task_failure. The returned ExceptionInfo makes Request.on_failure(return_ok=True) ack the message, so a task whose side effects happened is recorded FAILURE, its errbacks fire, and the chain is not continued. Reachable on default settings; the structure predates 865922a.",
+      "refutations": [],
+      "preconditions": [
+        {"setting": "none beyond using link callbacks or chains", "default": "n/a", "where_registered": "celery/app/trace.py:611-683", "documented": false}
+      ],
+      "commit_check": [
+        {"sha": "865922a", "supports_claim": true, "why": "Moved the main-path dispatch into _dispatch_callbacks_and_chain and left the EncodeError-only handler unchanged, as the finding states; it does not itself corroborate an observed incident."}
+      ],
+      "duplicate_of": null,
+      "what_reading_could_not_settle": "Whether the kombu publish retry (0, 0.2, 0.4 s) masks the typical RabbitMQ failover in practice; the partial-dispatch (callbacks sent, chain not) frequency.",
+      "files_read": 6,
+      "minutes_estimate": 12
+    },
+    {
+      "id": "FR-020",
+      "hotspot_id": "H07",
+      "verdict": "narrowed",
+      "what_holds": "Timer.cancel() only flips entry.canceled; an entry whose callback is already executing on a separate timer thread is not stopped, and apply_eta_task does task_reserved + on_task_request + qos.decrement_eventually without checking the connection. The three on_close commits are correctly described.",
+      "refutations": [
+        {
+          "claim": "Trigger: broker connection loss on a synloop worker (threads/solo pool with the timer2 thread)",
+          "fact": "threads and solo pools do not use the timer2 thread on the default transports. should_use_eventloop() is true for any non-green pool on an asynchronous transport (py-amqp, Redis, SQS), so threads/solo/prefork get asynloop with a kombu Timer driven by the main thread inside the hub loop; on_close runs on that same thread after the loop exits, and asynloop additionally does hub.reset() and hub.timer.clear() on error. The threaded timer2.Timer (celery/utils/timer2.py, a threading.Thread) is only selected when there is no hub and the pool is not green, i.e. a non-asynchronous transport or Windows. Green pools use greenlet timers (gevent: Greenlet.spawn_later; eventlet: GreenletExit on cancel), where a timer callback cannot be mid-flight across on_close unless it yields, and apply_eta_task contains no blocking call.",
+          "where": "celery/worker/worker.py:307-310; celery/worker/components.py:32-47,56-69; celery/worker/loops.py:106-136; celery/utils/timer2.py:24,79-99,141; celery/concurrency/gevent.py:42-70; celery/concurrency/base.py:54",
+          "kind": "other_repo_file",
+          "in_bundle": false
+        },
+        {
+          "claim": "Deleting timer.clear() (ab711a0) left on_close responsible for each timer entry one at a time",
+          "fact": "ab711a0 removed timer.clear() so heartbeats keep firing while the prefork pool drains on graceful shutdown; for the error path asynloop still clears hub.timer (loops.py:132), and 4d38683 later added the per-entry cancel for the synloop path. The chain of commits is accurate but does not reopen the hub-timer case.",
+          "where": "ab711a0b2de8fcc5aa8ec6701cdcb0530d6daebb (diff and message); celery/worker/loops.py:124-135",
+          "kind": "commit_message",
+          "in_bundle": false
+        }
+      ],
+      "preconditions": [
+        {"setting": "broker transport without implements.asynchronous, or Windows, with a non-green pool", "default": "pyamqp/redis are asynchronous -> hub timer, no thread", "where_registered": "celery/worker/worker.py:307-310", "documented": false}
+      ],
+      "commit_check": [
+        {"sha": "4d38683", "supports_claim": true, "why": "Added scheduled_requests and the on_close cancel loop; its message says the synloop error path does not clear the timer the way asynloop does, which is why the cancel loop exists."},
+        {"sha": "1cc9ecf", "supports_claim": true, "why": "Fixed on_close wiping in-flight reservations (reserved_requests rebuilt from active_requests)."},
+        {"sha": "ab711a0", "supports_claim": true, "why": "Did remove 'if self.timer: self.timer.clear()' from on_close, for the graceful-shutdown heartbeat reason."}
+      ],
+      "duplicate_of": null,
+      "what_reading_could_not_settle": "On the residual configurations (non-asynchronous transport or Windows with timer2), whether the window between the timer thread entering apply_eta_task and on_close's cancel loop is realistically hit; and whether in green pools any greenlet switch can occur between task_reserved and pool.apply_async.",
+      "files_read": 9,
+      "minutes_estimate": 20
+    },
+    {
+      "id": "FR-021",
+      "hotspot_id": "H09",
+      "verdict": "narrowed",
+      "what_holds": "Manual Task.retry() uses the caller's countdown or default_retry_delay (180 s) verbatim, with no jitter or growth; max_retries defaults to 3. A fleet of tasks that all fail during a short outage and call self.retry() with no countdown will be rescheduled into the same window.",
+      "refutations": [
+        {
+          "claim": "(implicit) Celery lacks capped backoff with jitter for retries (S02 missing)",
+          "fact": "Backoff and jitter are a documented, built-in opt-in: autoretry_for with retry_backoff / retry_backoff_max / retry_jitter (jitter defaults True) computes get_exponential_backoff_interval(..., full_jitter=retry_jitter). Manual retry() is the primitive that honours whatever countdown or eta the caller passes; the library does not impose a fixed delay on code that chooses a jittered one. The failure mode therefore applies only to callers who use bare retry() without a computed countdown, which is a caller-side pattern rather than a defect in Task.retry.",
+          "where": "celery/app/autoretry.py:21-55; docs/userguide/tasks.rst:738-784; celery/app/task.py:241,245,842-843",
+          "kind": "docs",
+          "in_bundle": false
+        }
+      ],
+      "preconditions": [
+        {"setting": "Task.default_retry_delay / Task.max_retries (class attributes, not app settings)", "default": "180 s / 3", "where_registered": "celery/app/task.py:245 / :241", "documented": true},
+        {"setting": "Task.retry_backoff / retry_jitter", "default": "False / True (only consulted by autoretry_for)", "where_registered": "celery/app/autoretry.py:21-31", "documented": true}
+      ],
+      "commit_check": [],
+      "duplicate_of": null,
+      "what_reading_could_not_settle": "How many real callers use bare retry(); the ETA distribution under a real outage.",
+      "files_read": 4,
+      "minutes_estimate": 8
+    }
+  ]
+}

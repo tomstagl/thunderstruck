@@ -1,0 +1,116 @@
+{
+  "hotspot_id": "H07",
+  "file": "celery/worker/consumer/consumer.py",
+  "findings": [
+    {
+      "location": {
+        "file": "celery/worker/consumer/consumer.py",
+        "symbol": "call_soon_ack",
+        "lines": "273-295"
+      },
+      "missing_patterns": [
+        "OTHER",
+        "S27"
+      ],
+      "failure_mode": "Workers that run without a hub (threads, gevent, eventlet pools) now send basic.ack/basic.reject from the task's own execution context instead of the consumer loop. Those writes can interleave with drain_events and with acks from other threads on the same broker connection. On-call sees intermittent 'UnexpectedFrame', framing or connection-reset errors, the consumer reconnects, and unacked tasks are redelivered and run twice.",
+      "trigger_condition": "--pool=threads (or a green pool whose socket write yields part-way) with concurrency > 1 on py-amqp. Two tasks finish at about the same moment, or one finishes while the main thread is inside drain_events.",
+      "amplifier": "Every task completion writes a frame from a different thread, so the collision rate grows with concurrency and throughput. Before 9c8145f, call_soon queued the ack in _pending_operations and the main loop sent it, so only one thread ever wrote.",
+      "sustaining_effect": "Each connection reset makes the broker redeliver every unacked prefetched task. Those tasks run again and finish in a burst of concurrent acks, which raises the odds of the next collision. on_connection_error_after_connected also lowers prefetch and then restores it under the same concurrent-ack path.",
+      "blast_radius": "The whole worker's consumer connection: all queues it consumes are interrupted and acks_late tasks are executed more than once.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/worker/consumer/consumer.py:288-294",
+          "note": "With no hub, p() (message.ack_log_error) runs right away in whatever thread or greenlet called it; no lock and no hand-off to the consumer thread"
+        },
+        {
+          "type": "code",
+          "ref": "celery/worker/consumer/consumer.py:786-795",
+          "note": "Every task message's ack and reject promises are routed through call_soon_ack"
+        },
+        {
+          "type": "code",
+          "ref": "celery/concurrency/thread.py:54-55",
+          "note": "Threads pool submits apply_target to a ThreadPoolExecutor, so its callbacks run in executor threads"
+        },
+        {
+          "type": "code",
+          "ref": "celery/concurrency/base.py:27-44",
+          "note": "accept_callback (early ack) and callback (on_success, which acks for acks_late) both run inside the pool thread"
+        },
+        {
+          "type": "commit",
+          "ref": "9c8145f",
+          "note": "[fix] 'Deferred ack synloop bug' added call_soon_ack and removed the single-writer hand-off for acks"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "Code shows acks issued from pool threads with no serialization. I did not check whether py-amqp or the kombu transport locks frame writes internally (Redis acks go through a thread-safe redis-py pool, so the risk is mainly AMQP). Strictly, the [fix] commit introduced the risk rather than corroborating an observed failure.",
+      "how_to_verify": "Run a --pool=threads -c 16 worker on RabbitMQ with acks_late and 10k no-op tasks. Count consumer reconnects and duplicate task executions. Repeat with call_soon_ack forced to defer to _pending_operations and compare.",
+      "prediction": "The next synloop or threads-pool incident report is about AMQP framing errors or connection resets under high task throughput, followed by duplicate execution.",
+      "key": "5fc6c6cb450e",
+      "content_hash": "sha256:d7437464d90df4b0af74879743fc068e2d3cbc9563dec12c137e6eb29049ad4a",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/concurrency/base.py": "sha256:6ad38b0bdd0563bc21a3ffd3a2765ba5dd9ac1b3a29e48164b1de6d79320d562",
+        "celery/concurrency/thread.py": "sha256:8d586742cb69bfc5146b10ceb5d3386008e1c05c613819500af4cde202765a76",
+        "celery/worker/consumer/consumer.py": "sha256:d7437464d90df4b0af74879743fc068e2d3cbc9563dec12c137e6eb29049ad4a"
+      }
+    },
+    {
+      "location": {
+        "file": "celery/worker/consumer/consumer.py",
+        "symbol": "on_close",
+        "lines": "539-578"
+      },
+      "missing_patterns": [
+        "S07"
+      ],
+      "failure_mode": "ETA/countdown tasks run twice after a broker reconnect. An ETA callback already running on the threaded timer when on_close runs is not stopped by timer.cancel(). It reserves the request after on_close has rebuilt reserved_requests and sends it to the pool. Its ack goes to the dead channel and only logs an error, while the broker redelivers the same message to this or another worker.",
+      "trigger_condition": "Broker connection loss on a synloop worker (threads/solo pool with the timer2 thread) while ETA entries are due, e.g. a burst of countdown tasks that all come due during a broker failover.",
+      "amplifier": "Deleting timer.clear() (ab711a0) left on_close responsible for each timer entry one at a time. The cancel loop runs on the main thread while the timer thread fires entries independently. apply_eta_task also calls qos.decrement_eventually() on whatever qos object exists at that moment, which after a reconnect is the new consumer's.",
+      "sustaining_effect": null,
+      "blast_radius": "Non-idempotent ETA tasks (emails, charges) handled by this worker execute twice per reconnect. The new consumer's prefetch count can also drift down because of stray decrements.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/worker/consumer/consumer.py:562-576",
+          "note": "Cancels pending timer entries and clears scheduled_requests, but a callback already running is not stopped; the comment at 570-573 concedes a same-race case"
+        },
+        {
+          "type": "code",
+          "ref": "celery/worker/consumer/consumer.py:691-695",
+          "note": "apply_eta_task reserves the request, sends it to the pool and decrements qos with no check that the connection or channel is still current"
+        },
+        {
+          "type": "commit",
+          "ref": "4d38683",
+          "note": "[fix] added the scheduled_requests cleanup to on_close"
+        },
+        {
+          "type": "commit",
+          "ref": "1cc9ecf",
+          "note": "[fix] earlier fix to on_close wiping in-flight reservations"
+        },
+        {
+          "type": "commit",
+          "ref": "ab711a0",
+          "note": "[fix] removed timer.clear() from on_close; three on_close fixes in four months"
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "The repeated on_close fixes show the teardown and reconnect state handling keeps breaking. This exact race needs the timer thread to be inside the callback during on_close, and I did not confirm it in timer2 within my read budget.",
+      "how_to_verify": "In a test with a threaded timer, make apply_eta_task block on an event, run on_close, then release the event. Check whether the request ends up in reserved_requests and whether it reaches pool.apply_async after on_close has returned.",
+      "key": "2b1793902d2d",
+      "content_hash": "sha256:d7437464d90df4b0af74879743fc068e2d3cbc9563dec12c137e6eb29049ad4a",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/worker/consumer/consumer.py": "sha256:d7437464d90df4b0af74879743fc068e2d3cbc9563dec12c137e6eb29049ad4a"
+      }
+    }
+  ],
+  "notes": "Rejected S19@celery/worker/consumer/consumer.py:435: the silently swallowed collect() failure is followed by connection.close() and a reconnect, so swallowing it costs observability only and causes no failure mode. Rate-limit bucket timer entries left by ab711a0 are harmless because clear_pending() empties the bucket before they fire. Files read: consumer.py, concurrency/thread.py, plus greps of concurrency/base.py, worker/request.py and worker/strategy.py.",
+  "bundle_hash": "sha256:356d5cadd9e12c1594440ec140324c8cc393b0892f09f0e201deef96a701c95d",
+  "schema": "thunderstruck.finding/v1",
+  "validated_with": 3
+}
