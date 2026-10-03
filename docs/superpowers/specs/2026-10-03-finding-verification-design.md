@@ -253,7 +253,7 @@ An item that breaks a rule is dropped and named in the reason; it never fails th
 
 `upheld` and `inconclusive` need no resolving evidence (AC-3 names `refuted` and `narrowed`), but any evidence they give is resolved and shown, and unresolved items are dropped and named.
 
-The function is `verify.settle(finding, plan_entry, result, resolver) -> dict` (the `check`). It is the one place a status is decided, and the place #57 adds its rule that a finding resting on an unconfirmed default cannot be `upheld` (§16).
+The function is `verify.settle(finding, plan_entry, result, resolver) -> dict` (the `check`). It is the one place a status is decided. It has one exit after the table, on every path including reuse, which is where #57 adds its rule that a finding resting on an unconfirmed default cannot be `upheld` (§16).
 
 AC-11 is enforced twice: by the prompt, and by the rule above, which does not depend on the model obeying the prompt. A skeptic that is steered into refuting an `OTHER` finding produces `inconclusive`, never `refuted`, and the finding stays in the list.
 
@@ -429,10 +429,15 @@ A finding narrowed because it needs a setting changed is, for a reader, a findin
 
 ## 16. For #57 (confirmed defaults)
 
-- The brief already shows each precondition with its `default_ref`, so the skeptic sees the defaults a claim rests on.
-- #57 adds one top-level key to the verdict contract (§8.1), e.g. `confirmations: [{"setting", "state", "reason", "default_ref"}]`, to `verify.VERDICT_KEYS`, and resolves each `default_ref` through `check_ref(..., allow_dependency=True)`, so a default registered in a dependency can be cited.
-- `apply` writes `preconditions[j].confirmation` (#56 §7.2) from it, and #57's rule that a finding resting on an unconfirmed default cannot be `upheld` goes into `verify.settle` (§9), the one place a status is decided.
-- When the investigator's stated default and the skeptic's differ (#57 AC-4), both are in the findings file: the investigator's in `preconditions`, the skeptic's in `confirmation`.
+#57's spec (`docs/superpowers/specs/2026-10-04-confirmed-defaults-design.md`, §6–§7) holds the design. This section names the hook points in this design that it extends; each is a named change there, not a behaviour of this ticket.
+
+- **`verify.VERDICT_KEYS` gains `confirmations`** (§8.1), and the settled `check` gains `check.confirmations`, so confirmations travel with the verdict into `verdicts.json` and the ledger and are reused with it (§10).
+- **`claim_hash` ignores `preconditions[].confirmation`** (§10), as it ignores `check` and `history`: the field is written by the validator and the verifier, and counting it would make every verdict look changed.
+- **`cited_files` and the ledger's `files` gain the confirmation refs** (each kept `default_ref` and `stated_ref` in the repository), and the ledger's `dependency_versions` gains the package of every resolving dependency `default_ref`, so a change to the registry that confirmed a default invalidates the verdict (§10).
+- **`verify.settle` turns `upheld` on an unconfirmed default into `inconclusive`** (§9), after the table has decided a status and on every path that yields one, **the ledger-reuse path included**. `settle` therefore has a single exit after the table (the plan's `settle` wraps `_decide`), which is where the rule goes.
+- The brief (§6.2) gains a *Defaults to confirm* section, and `export-run` (§13) adds `preconditions` per finding; both are specified in #57.
+
+The rule can turn some verdicts on #55's frozen set from `upheld` into `inconclusive`, which §13 counts as not reaching the same class. #57 reports the findings affected; if they take #37 below 15 of 21, the remedy is the skeptic's prompt, not relaxing the rule (#57 §19, question 3).
 
 ## 17. Degradation
 

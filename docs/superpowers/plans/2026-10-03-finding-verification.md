@@ -2580,7 +2580,15 @@ UNCHECKED_NO_RESULT = "No verdict reached disk: the skeptic failed, stopped or i
 
 def settle(finding: dict, entry: dict, result: dict | None, resolver: Resolver, plan: dict,
            ledger_entry: dict | None) -> dict:
-    """The one place a check status is decided (spec §9). #57 adds its rule here."""
+    """The one place a check status is decided (spec §9). Every path, the
+    ledger-reuse path included, leaves through here: #57 adds its rule after
+    _decide (spec §16)."""
+    return _decide(finding, entry, result, resolver, plan, ledger_entry)
+
+
+def _decide(finding: dict, entry: dict, result: dict | None, resolver: Resolver, plan: dict,
+            ledger_entry: dict | None) -> dict:
+    """Spec §9's table, in order; the first rule that applies decides."""
     if entry["action"] == "reuse":
         check = dict(ledger_entry["check"])
         check["reused_from"] = {"scan": ledger_entry["scan"], "head": ledger_entry["head"]}
