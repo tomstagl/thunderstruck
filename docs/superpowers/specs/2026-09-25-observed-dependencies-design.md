@@ -1,7 +1,7 @@
 # Observed dependencies and catalog drift: design
 
 **Requirements:** [#6](https://github.com/tomstagl/thunderstruck/issues/6). The problem, stories, scope, acceptance criteria (AC-n) and product decisions are in the ticket and are not repeated here.
-**Plan:** to follow once this spec is reviewed.
+**Plan:** `docs/superpowers/plans/2026-10-03-observed-dependencies.md`.
 **Builds on:** `docs/superpowers/specs/2026-09-23-architecture-context-design.md` (#1), cited below as *context spec §n*.
 
 Examples use generic names (`component:default/checkout`, `payments-api`, `ledger.internal`).
@@ -67,7 +67,7 @@ The constant exclusions live in `catalog/observed.yaml`, so adding one is a data
 - **loopback and unspecified:** `localhost`, `*.localhost`, `127.0.0.0/8`, `::1`, `0.0.0.0`;
 - **reserved names** (RFC 2606, RFC 6761): `example.com`, `example.org`, `example.net` and their subdomains, and `*.example`, `*.test`, `*.invalid`;
 - **identifier hosts**, URLs that name a schema or a namespace rather than a server: `www.w3.org`, `json-schema.org`, `schemas.xmlsoap.org`, `schemas.microsoft.com`, `xmlns.com`, `purl.org`, `maven.apache.org`, `www.apache.org` and `schemas.android.com`;
-- **documentation hosts**, in string literals that are only a URL, such as a link in an error message: `github.com`, `gitlab.com`, `docs.*`, `*.readthedocs.io`, `developer.mozilla.org`, `stackoverflow.com`;
+- **documentation hosts**, which code links to (a link in an error message) rather than calls. They are excluded wherever they appear: `github.com`, `gitlab.com`, `docs.*`, `*.readthedocs.io`, `developer.mozilla.org`, `stackoverflow.com`;
 - **templated values:** a host or name containing `$`, `{`, `}`, `%` or `<` (`${HOST}`, `{{ .Values.host }}`) is not a value. The template's *variable* is observed through §2.2 where it qualifies.
 
 ### 2.5 Which files
@@ -237,6 +237,7 @@ the service catalog. These are leads to check, not findings.
 | `[observed]` entry invalid | the entry is dropped with a warning; the rest runs |
 | file limit reached | warning with the limit; the drift section says the scan was partial |
 | a file can't be read or decoded | skipped and counted, as the detector pass does |
+| a YAML file that doesn't parse (a Helm template, say) | the structural forms (mesh hosts, container `env[].name`, the §2.3 YAML forms) are skipped for that file; the line forms (URL hosts, `${NAME}` placeholders) still apply. One warning counts such files. |
 | `observed.json` missing or malformed at bundle or report time | treated as `skipped`; `validate.py` rejects `observed` refs with rule 1 |
 
 There are no retries and no network calls. The only budget is the file limit.
@@ -267,7 +268,7 @@ There are no retries and no network calls. The only budget is the file limit.
   - one ExternalSecret;
   - one call to an inbound neighbour.
 
-  One documented edge has no call. As in #1, the additions are untracked where they would change the fixture's history.
+  One documented edge has no call. `observed.py` reads tracked files only (§2.5), so unlike #1's untracked profile and `catalog-info.yaml`, the code and config additions are committed: one extra commit on top of the built history, dated one day after its last commit, and made only where service context is added. The context-free fixture and its history are unchanged (AC-10). The `[observed]` profile entries stay untracked, like `[context]`.
 - **Pipeline:** bundle section content, determinism (two runs, identical `observed_hash` and bundles), snapshot pinning, each validator rule, and each report list.
 - **AC-10:** the existing suite over the context-free fixture passes with no bundle change, and the sample report without context is unchanged. The sample report *with* context is regenerated, because it now shows a drift section. That is the one intended change to a generated file.
 - **Secret safety:** a test repository with a URL containing a password and a secret-shaped literal. The test asserts that the password and the literal appear in no file under `.thunderstruck/`.
