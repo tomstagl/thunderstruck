@@ -49,7 +49,7 @@ The other 13 are identifiers and strings: `requests.pop(r.id, None)` (a worker-s
 
 A boundary is a **call**: a line where the code invokes a client library, or a method whose name only a boundary client has. Two kinds of rule, and the difference is the whole design:
 
-- **Through a library name** (`requests.get(`, `axios.post(`, `boto3.client(`, `task.delay(`): counts only when the file imports that library (`require`). A variable that happens to share the library's name (`requests.pop(…)` on a dict, AC-2) never matches twice over: the rule names the library's own verbs (`get`, `post`, …, never `pop`), and it runs only in a file that imports `requests`, which Celery's consumer does not. In Java every type is imported, so every Java rule is gated this way.
+- **Through a library name** (`requests.get(`, `axios.post(`, `boto3.client(`, `task.delay(`): counts only when the file imports that library (`require`). A variable that happens to share the library's name (`requests.pop(…)` on a dict, AC-2) never matches twice over: the rule names the library's own verbs (`get`, `post`, …, never `pop`), and it runs only in a file that imports `requests`, which Celery's consumer does not. In Java every type is imported, so every Java rule that names a client is gated this way; the one ungated Java rule is upper-case SQL text, which names no library (it is a string, whichever client sends it).
 - **A boundary-shaped method on any receiver** (`.execute(`, `session.query(`, `.publish(`, `.drain_events(`, `.chat.completions.create(`, a Prisma-shaped `db.<model>.findMany(`): no import gate, because service code reaches these through an injected client (`self.client`, `this.prisma`, a `broker` passed in) whose file imports nothing recognisable. These method names are rare outside boundary clients; generic ones (`.get(`, `.send(`, `.create(`, `.add(`) are never in this kind.
 
 Then, for both kinds:
@@ -88,14 +88,14 @@ Language resolution uses `_common.detector_language`, so `javascript` uses the `
 
 The rules per language (exact regexes are in the plan's Task 5; every one was run in the prototype):
 
-| Label | Python | TypeScript / JavaScript | Java (all import-gated) |
+| Label | Python | TypeScript / JavaScript | Java (import-gated, except SQL text) |
 |---|---|---|---|
 | HTTP | `requests`/`httpx` verb calls, `urlopen(`, `aiohttp.ClientSession(`; each gated on its import | global `fetch(`; `axios`, `got`, `superagent`, `ky`, `undici`, `http(s).get/request` gated on their import | `RestTemplate`/`WebClient` verbs, `newCall(`, `httpClient.send(` |
 | database | `.execute(`/`.executemany(`/`.executescript(`; `…session.query/scalars/commit/flush/add/add_all/merge(`; Django `.objects.<x>(` gated on `django`; upper-case SQL | `db`/`prisma`/`tx` `.<model>.<prisma verb>(`, `$queryRaw`/`$executeRaw`, `.query(`; upper-case SQL | JDBC/JPA/jOOQ verbs gated on `java.sql`, `jakarta.persistence`, `org.springframework.jdbc`, …; upper-case SQL |
 | queue/messaging | `.publish(`, `.basic_publish/consume/get(`, `.drain_events(`, `.send_message(s)(`, `.receive_message(`; Celery `.apply_async/send_task/delay(` gated on `celery`, never on a receiver ending in `pool`/`Pool` | `.publish(`, `.sendMessage(`, `.sendMessageBatch(`, `new SendMessage/SendMessageBatch/PublishCommand(` | `send`/`convertAndSend`/`publish`/`basicPublish` and `@KafkaListener`-style annotations, gated on the messaging packages |
 | LLM | `.chat.completions/messages/embeddings/responses.create(`, `.generate_content(` | the same, and `.generateContent(` | none |
 | cloud SDK | `boto3.client/resource/Session(` gated on `import boto3` | `.send(new XCommand(` gated on `@aws-sdk/` | AWS SDK v2 `XClient.builder()` gated on `software.amazon.awssdk` |
-| filesystem | builtin `open(` (not `def open(`, not `x.open(`), `Path` `read_text/write_text/read_bytes/write_bytes(` | `fs.read*/write*/append*(`, `readFile`/`writeFile`/`appendFile(Sync)(` | `Files.read*/write*/…(`, `new File{Input,Output}Stream(`, `new File{Reader,Writer}(` |
+| filesystem | builtin `open(` (not `def open(`, not `x.open(`), `Path` `read_text/write_text/read_bytes/write_bytes(` | `fs.read*/write*/append*(`, `readFile`/`writeFile`/`appendFile(Sync)(` | `Files.read*/write*/…(`, `new File{Input,Output}Stream(`, `new File{Reader,Writer}(`, gated on `java.nio.file` or `java.io` |
 | scheduler | `schedule.every(`, APScheduler schedulers and `.add_job(`, `threading.Timer(`, `.call_later(`, `.add_periodic_task(` | `setInterval(`, `cron.schedule(`, `new CronJob(`, `@Cron(`, `@Interval(` | `@Scheduled`, `schedule*(` gated on `java.util.concurrent` or Spring scheduling |
 
 `.poll(` was in the first prototype and taken out: on Celery it tagged `select.poll()` in `redis.py`. `.apply_async(` on a pool is multiprocessing, not messaging, which is the reason for the pool exclusion.

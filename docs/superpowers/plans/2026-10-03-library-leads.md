@@ -19,11 +19,12 @@ uv run --with pytest --with pyyaml --with lizard --with markdown-it-py==4.2.0 --
 **Celery copy.** Tasks 2–4 and 8 measure against celery/celery at the benchmark commit. Make a private copy once, outside the repository (never scan a checkout someone else uses: the pipeline writes `.thunderstruck/` into it):
 
 ```bash
-git clone https://github.com/celery/celery "$SCRATCH/celery" && git -C "$SCRATCH/celery" checkout 508c1129269d2b1baffc516d8f5c05da06273ef0
-printf '[context]\nenabled = false\n' > "$SCRATCH/celery/.thunderstruck.toml"
+mkdir -p /tmp/thunderstruck-58
+git clone https://github.com/celery/celery "/tmp/thunderstruck-58/celery" && git -C "/tmp/thunderstruck-58/celery" checkout 508c1129269d2b1baffc516d8f5c05da06273ef0
+printf '[context]\nenabled = false\n' > "/tmp/thunderstruck-58/celery/.thunderstruck.toml"
 ```
 
-`$SCRATCH` is any scratch directory outside the repository.
+Every command in this plan uses the fixed scratch path `/tmp/thunderstruck-58`, written out in full, because shell variables do not persist between commands. It is outside the repository and nothing in it is committed.
 
 ## Global Constraints
 
@@ -103,7 +104,7 @@ def test_a_detector_without_absent_before_is_unchanged():
 
 def test_absent_before_tolerates_crlf():
     det = {"id": "SX-py", "kind": "regex", "pattern": r"except\s*:",
-           "absent_before": r"try\s*:\s*$", "absent_before_window": 1}
+           "absent_before": r"try\s*:[ \t]*\n[^\n]*except", "absent_before_window": 1}
     assert run_detectors(_cat(det), "a.py", "try:\r\nexcept:\r\n    pass\r\n", "python") == []
 ```
 
@@ -242,12 +243,14 @@ class Backend:
                 if self.exception_safe_to_retry(exc):
                     if retries < self.max_retries:
                         retries += 1
+                        sleep_amount = min(2 ** retries, 30)
+                        delay = sleep_amount / 1000
                         logger.warning("Retrying %s more times.", self.max_retries - retries)
                         try:
                             self.on_retryable_error(exc)
                         except Exception:
                             logger.exception("hook failed; continuing retry loop")
-                        time.sleep(retries)
+                        time.sleep(delay)
                     else:
                         raise
                 else:
@@ -257,7 +260,7 @@ class Backend:
 - [ ] **Step 2: Run it to verify it fails**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/detectors -q -k "S04-python"`
-Expected: FAIL on `S04-python-negative_hook_in_retry_branch` (line 22 fires).
+Expected: FAIL on `S04-python-negative_hook_in_retry_branch` (line 24 fires: the predicate is 8 lines above it, outside today's `window_before: 6`).
 
 - [ ] **Step 3: Correct the detector.** In `catalog/stability.yaml`, under `S04-py-bare-except-retry`, after `window_before: 6` add:
 
@@ -276,7 +279,7 @@ Expected: FAIL on `S04-python-negative_hook_in_retry_branch` (line 22 fires).
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/detectors -q`
 Expected: PASS, every S04 positive included.
 
-Run: `uv run scripts/calibrate.py --repo "$SCRATCH/celery" --lang python --patterns S04`
+Run: `uv run scripts/calibrate.py --repo "/tmp/thunderstruck-58/celery" --lang python --patterns S04`
 Expected: exactly one hit, `S04-py-bare-except-retry celery/app/builtins.py:71`; `celery/backends/base.py:773` is gone.
 
 - [ ] **Step 5: Commit**
@@ -365,7 +368,7 @@ Expected: FAIL on `S19-python-negative_teardown_after_logged_error`; both new po
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/detectors -q`
 Expected: PASS.
 
-Run: `uv run scripts/calibrate.py --repo "$SCRATCH/celery" --lang python --patterns S19`
+Run: `uv run scripts/calibrate.py --repo "/tmp/thunderstruck-58/celery" --lang python --patterns S19`
 Expected: 8 hits; `celery/worker/consumer/consumer.py:435` is gone, `celery/backends/base.py:489` and `celery/backends/database/__init__.py:240` remain.
 
 - [ ] **Step 5: Commit**
@@ -442,7 +445,7 @@ Expected: FAIL on `S07-python-negative_get_or_create`; both new positives PASS.
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/detectors -q`
 Expected: PASS.
 
-Run: `uv run scripts/calibrate.py --repo "$SCRATCH/celery" --lang python --patterns S07`
+Run: `uv run scripts/calibrate.py --repo "/tmp/thunderstruck-58/celery" --lang python --patterns S07`
 Expected: two hits, `celery/backends/cassandra.py:40` and `celery/backends/database/__init__.py:295` (the lead moved off the get-or-create at 168; 295 is the accepted unique-constraint case, spec §3.2).
 
 - [ ] **Step 5: Commit**
@@ -1186,6 +1189,7 @@ boundaries:
     - id: B-java-file
       label: filesystem
       pattern: '\bFiles\s*\.\s*(?:read|write|newBuffered|newInput|newOutput|lines|copy|move|delete)\w*\s*\(|\bnew\s+File(?:Input|Output)Stream\s*\(|\bnew\s+File(?:Reader|Writer)\s*\('
+      require: '^\s*import\s+java\.(?:nio\.file|io)\b'
     - id: B-java-scheduler
       label: scheduler
       pattern: '@Scheduled\b|\.\s*schedule(?:AtFixedRate|WithFixedDelay)?\s*\('
@@ -1294,7 +1298,7 @@ def section_boundaries(text: str, rel: str, lang: str, catalog: dict) -> str:
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_pipeline.py -q`
 Expected: PASS, including `test_bundles_are_within_budget_and_deterministic` and `test_bundle_contains_the_sections_the_investigator_needs`.
 
-- [ ] **Step 5: Measure Celery (AC-1).** Save as `$SCRATCH/count_boundaries.py` (not in the repository):
+- [ ] **Step 5: Measure Celery (AC-1).** Save as `/tmp/thunderstruck-58/count_boundaries.py` (not in the repository):
 
 ```python
 """Count the boundary lines in a scan's bundles, and how many come from a
@@ -1339,11 +1343,11 @@ print(f"total: {total} shown, {bad} from a comment, docstring or import")
 Run:
 
 ```bash
-uv run --no-project --with pyyaml python "$SCRATCH/count_boundaries.py" . "$SCRATCH/celery" docs/calibration/correctness/celery/scan/bundles
-rm -rf "$SCRATCH/celery/.thunderstruck"
-uv run scripts/signals.py --repo "$SCRATCH/celery" --top 10 --since 2025-10-03
-uv run scripts/bundle.py --repo "$SCRATCH/celery"
-uv run --no-project --with pyyaml python "$SCRATCH/count_boundaries.py" . "$SCRATCH/celery" "$SCRATCH/celery/.thunderstruck/bundles"
+uv run --no-project --with pyyaml python "/tmp/thunderstruck-58/count_boundaries.py" . "/tmp/thunderstruck-58/celery" docs/calibration/correctness/celery/scan/bundles
+rm -rf "/tmp/thunderstruck-58/celery/.thunderstruck"
+uv run scripts/signals.py --repo "/tmp/thunderstruck-58/celery" --top 10 --since 2025-10-03
+uv run scripts/bundle.py --repo "/tmp/thunderstruck-58/celery"
+uv run --no-project --with pyyaml python "/tmp/thunderstruck-58/count_boundaries.py" . "/tmp/thunderstruck-58/celery" "/tmp/thunderstruck-58/celery/.thunderstruck/bundles"
 ```
 
 Expected: `total: 68 shown, 51 from a comment, docstring or import` for the frozen bundles, and `total: 27 shown, 0 from a comment, docstring or import` after (spec §2.6). Keep both outputs for Task 8 and the PR.
@@ -1365,6 +1369,7 @@ git commit -m "Bundle: boundaries from the catalog, and say when none were looke
 - Modify: `scripts/report.py` (constants; the section in `render_markdown`; docstrings at the top and in `coverage_rows`)
 - Modify: `templates/report.html` (the Overview section and the rail's summary line)
 - Modify: `skills/thunderstruck-scan/references/report-format.md` (`coverage_rows` line)
+- Modify: `README.md` (the `report.md` row of the output table)
 - Modify: `tests/test_pipeline.py`, `tests/test_coverage_gaps.py`, `tests/test_report_json_fields.py`, `tests/test_report_html_browser.py`
 - Create: `tests/test_lead_wording.py`
 - Regenerate: `examples/sample-report.md`, `examples/sample-report.html`
@@ -1499,6 +1504,8 @@ and replace `"Run, coverage, hotspots, and what was not analysed"` with `"Run, l
 
 - [ ] **Step 5: Change the docs.** In `skills/thunderstruck-scan/references/report-format.md` change `- \`coverage_rows\`: the **Pattern coverage** table, in order:` to `- \`coverage_rows\`: the **Detector leads by pattern** table, in order:`.
 
+In `README.md`, in the table of files written to `.thunderstruck/`, change the `report.md` row's text `pattern coverage with leads read and confirmed` to `detector leads by pattern (what a lead and no lead mean, leads read and confirmed)`.
+
 - [ ] **Step 6: Regenerate the samples and run the tests**
 
 ```bash
@@ -1512,7 +1519,7 @@ Expected: PASS. `git diff examples/` shows only the heading, intro and footnote 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add scripts/report.py templates/report.html skills/thunderstruck-scan/references/report-format.md tests/ examples/sample-report.md examples/sample-report.html
+git add scripts/report.py templates/report.html skills/thunderstruck-scan/references/report-format.md README.md tests/ examples/sample-report.md examples/sample-report.html
 git commit -m "Report: the lead table says what a lead and no lead mean (#58)"
 ```
 
@@ -1528,26 +1535,30 @@ git commit -m "Report: the lead table says what a lead and no lead mean (#58)"
 
 - [ ] **Step 1: Sweep Celery before and after.**
 
-The "before" side is `main` without this branch, unpacked into a scratch directory (no stash, no second checkout of this worktree):
+The "before" side is this branch's merge base with `main` (the code before any task of this plan), unpacked into a scratch directory (no stash, no second checkout of this worktree):
 
 ```bash
-mkdir -p "$SCRATCH/before" && git archive origin/main | tar -x -C "$SCRATCH/before"
-uv run --directory "$SCRATCH/before" scripts/calibrate.py --repo "$SCRATCH/celery" --lang all --patterns all > "$SCRATCH/celery-before.txt"
-uv run scripts/calibrate.py --repo "$SCRATCH/celery" --lang all --patterns all > "$SCRATCH/celery-after.txt"
-diff "$SCRATCH/celery-before.txt" "$SCRATCH/celery-after.txt"
+mkdir -p "/tmp/thunderstruck-58/before" && git archive "$(git merge-base HEAD origin/main)" | tar -x -C "/tmp/thunderstruck-58/before"
+uv run --directory "/tmp/thunderstruck-58/before" scripts/calibrate.py --repo "/tmp/thunderstruck-58/celery" --lang all --patterns all > "/tmp/thunderstruck-58/celery-before.txt"
+uv run scripts/calibrate.py --repo "/tmp/thunderstruck-58/celery" --lang all --patterns all > "/tmp/thunderstruck-58/celery-after.txt"
+diff "/tmp/thunderstruck-58/celery-before.txt" "/tmp/thunderstruck-58/celery-after.txt"
 ```
 
 Expected: 27 hits before and 25 after, all Python. The diff removes `S04 … celery/backends/base.py:773` and `S19 … celery/worker/consumer/consumer.py:435`, and moves `S07 … database/__init__.py:168` to `:295`.
 
-- [ ] **Step 2: Sweep the five `python.md` repositories for lost true positives.** Clone each at the commit `python.md` pins (fastapi/full-stack-fastapi-template `cb740b6…`, netbox-community/netbox `785d0b9…`, httpie/cli `5b604c3…`, celery/celery `eb3dfa3…`, rq/rq `90a67a1…`; full SHAs in `python.md`'s table) into `$SCRATCH/py/<name>`, then for each:
+- [ ] **Step 2: Sweep the five `python.md` repositories for lost true positives.** Clone each at the commit `python.md` pins (fastapi/full-stack-fastapi-template `cb740b6…`, netbox-community/netbox `785d0b9…`, httpie/cli `5b604c3…`, celery/celery `eb3dfa3…`, rq/rq `90a67a1…`; full SHAs in `python.md`'s table) into `/tmp/thunderstruck-58/py/<name>`, then for each:
 
 ```bash
-uv run --directory "$SCRATCH/before" scripts/calibrate.py --repo "$SCRATCH/py/<name>" --lang python --patterns S04,S07,S19 > "$SCRATCH/py/<name>.before"
-uv run scripts/calibrate.py --repo "$SCRATCH/py/<name>" --lang python --patterns S04,S07,S19 > "$SCRATCH/py/<name>.after"
-diff "$SCRATCH/py/<name>.before" "$SCRATCH/py/<name>.after"
+uv run --directory "/tmp/thunderstruck-58/before" scripts/calibrate.py --repo "/tmp/thunderstruck-58/py/<name>" --lang python --patterns S04,S07,S19 > "/tmp/thunderstruck-58/py/<name>.before"
+uv run scripts/calibrate.py --repo "/tmp/thunderstruck-58/py/<name>" --lang python --patterns S04,S07,S19 > "/tmp/thunderstruck-58/py/<name>.after"
+diff "/tmp/thunderstruck-58/py/<name>.before" "/tmp/thunderstruck-58/py/<name>.after"
 ```
 
-Every line that disappears is looked up in `python.md`'s judgments. If one was a TP, stop: add a `positive_<shape>` sample reproducing it to the task that silenced it (Task 2, 3 or 4), tighten that `absent_before` until the sample fires and the Celery negative stays silent, and re-run this step. If it cannot be done, record it under **Lost** in Step 3 and lower that detector's `confidence` one step in the same commit (AC-3).
+Every line that disappears is looked up in `python.md`'s judgments. Then:
+
+- **It was judged FP** (fixed or accepted): list it under **Silences checked** in Step 3.
+- **It has no judgment in `python.md`:** stop. Do not judge it yourself; label the ticket `agent:blocked` and comment with the detector, repository, `file:line` and the code, so the maintainer judges it.
+- **It was judged TP:** add a `positive_<shape>` sample reproducing it to the task that silenced it (Task 2, 3 or 4), tighten that `absent_before` until the sample fires and the Celery negative stays silent, and re-run this step. If that cannot be done for S04 or S19, record the hit under **Lost** in Step 3 and lower that detector's `confidence` one step in the same commit (AC-3). If it cannot be done for **S07**, stop and label the ticket `agent:blocked`: S07 must stay `medium` (spec §3.2), so the trade between the lost lead and the ranking is the maintainer's call.
 
 - [ ] **Step 3: Write `docs/calibration/celery.md`** in the form of `python.md`, with these sections, every hit of `celery-after.txt` listed under its detector, and every judgment re-checked by reading the code at `508c112` (line numbers moved since `python.md`'s commit):
 
@@ -1565,7 +1576,7 @@ Column meanings are `python.md`'s.
 
 | Repo | Kind | Commit | Python files swept |
 |---|---|---|---|
-| celery/celery | library and worker | `508c1129269d2b1baffc516d8f5c05da06273ef0` | <from calibrate's stderr> |
+| celery/celery | library and worker | `508c1129269d2b1baffc516d8f5c05da06273ef0` | <`files_swept.python` from `calibrate.py --repo /tmp/thunderstruck-58/celery --lang python --patterns all --summary`> |
 
 ## Detectors
 
@@ -1649,10 +1660,10 @@ name: a call through a library's own name needs that library's import, so a
 dict called `requests` is not HTTP.
 ```
 
-- [ ] **Step 2: Version and CHANGELOG.** Bump the minor version in all four places (the next minor above `main`'s at the time; `0.10.0` if `main` is still `0.9.x`), and add:
+- [ ] **Step 2: Version and CHANGELOG.** Bump the minor version in all four places (the next minor above `main`'s at the time; `0.10.0` if `main` is still `0.9.x`), and add, with `<version>` the version just set:
 
 ```markdown
-## 0.10.0
+## <version>
 
 Detector and boundary leads that hold up on library code (#58).
 
