@@ -10,7 +10,15 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-03-finding-verification-design.md` (§n below refers to it). Requirements AC-1…AC-15 and the product decisions are in GitHub issue #37, part of #54.
 
-**Prerequisites, checked in Task 0:** #5 (`capture_finding.py`, `finding_shape.py`, `usage.py`, the orchestration rules) and #56 (`check`, `effective_confidence`, `finding_gate`, `check_ref`, `order_key`, `report.json` v2) are merged on `main`. Tasks 18–21 also need #55 (`scripts/benchmark.py`, `docs/calibration/correctness/celery/labels.json`).
+**Prerequisites, checked in Task 0:** #5 (`capture_finding.py`, `finding_shape.py`, `usage.py`, the orchestration rules) and #56 (`check`, `effective_confidence`, `finding_gate`, `check_ref`, `order_key`, `report.json` v2) are merged on `main`. Task 21 also needs #55 (`scripts/benchmark.py`, `docs/calibration/correctness/celery/labels.json`).
+
+**Who builds what.** Tasks 0–19 are built by the ticket agent (or anyone) on the branch. Tasks 20–22 are measurements that need the maintainer: a Claude Code session with the plugin installed, the fixture, and a Celery checkout. After Task 19 the build stops with one defined outcome, **ready for maintainer measurement**:
+
+- the PR is opened as a **draft**, and its description starts with "Do not merge before Tasks 20–22 (maintainer measurement, spec §12.3)";
+- a comment on #37 says "Ready for maintainer measurement: Tasks 20–22 of the plan" and links the draft PR;
+- #37 stays open; nothing closes it, and the agent does not mark the PR ready.
+
+The maintainer runs Tasks 20–22 on the same branch, commits their results there, and marks the PR ready only when Task 21 has set a measured default model and Task 22 has met the ceiling. Verification never ships on by default unmeasured (spec §12.3).
 
 **Branch:** `feat/finding-verification`. One commit per task. The full suite passes on every commit, and its real exit code is checked, never piped through `tail`:
 
@@ -18,17 +26,18 @@
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/ -q; echo "exit=$?"
 ```
 
-(`--with packaging` is new: `deps.py` uses it; Task 3 adds it to CI and to CLAUDE.md's command.) New tests go in `tests/test_deps.py` (Tasks 2–5), `tests/test_skeptic_contract.py` (Task 8) and `tests/test_verification.py` (everything else), appended task by task under a `# --- Task N` comment. Run one task's tests with `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/<file> -q -k "<name>"`.
+(`--with packaging` is new: `deps.py`'s Python discoverer uses it; Task 3 adds it to CI and to CLAUDE.md's full-suite command. CLAUDE.md's one-test and detector-sample commands need no change: `deps.py` imports `packaging` only inside `discover_pypi` and `pypi_declared`, so `validate.py` and every test that does not discover Python packages run without it.) New tests go in `tests/test_deps.py` (Tasks 2–5), `tests/test_skeptic_contract.py` (Task 8) and `tests/test_verification.py` (everything else), appended task by task under a `# --- Task N` comment. Run one task's tests with `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/<file> -q -k "<name>"`.
 
 ## Global Constraints
 
 - The skeptic is the only model step this plan adds. Which findings it sees, what it is shown, whether its evidence resolves, the status that follows, duplicates, reuse and rendering are decided by scripts (§1).
 - At most four subagents at once in the whole scan; one skeptic per finding per scan; no repair round and no re-spawn for skeptics (§7, AC-2).
 - With `--no-verify` no script of this plan runs and no subagent is spawned; `report.py` reports every finding `unchecked` (§11.1, AC-1).
-- `check.status` takes only #56's five values; this plan adds none. Every other verdict datum goes under `check` with the names `by reason holds refuted_claims evidence model dependency_versions reused_from duplicate_of` (§2).
+- `check.status` takes only #56's five values; this plan adds none. Every other verdict datum goes under `check` with the names #56 §7.1 reserves: `by reason holds refuted_claims evidence model dependency_versions reused_from duplicate_of` (§2). `finding_gate`'s extension is the one #56 §7.1 specifies. Investigator `default_ref`/`doc_ref` stay repository-only (#56 §7.1).
+- `check` is stripped from model output by #56's owned-field list, which lives in `scripts/finding_shape.py` once #5 has landed; this plan does not touch that list.
 - The skeptic sees the claim and its evidence only: never `confidence`, `confidence_rationale`, `notes`, `history` or `check` (§6.2, ticket product decision).
 - Every verdict ref is resolved mechanically before it affects a status: `code` and `commit` as `validate.py` resolves them, `dependency` against `.thunderstruck/deps/` only (§4.5, §8.2).
-- `deps.py` never downloads, never runs a package manager, a build or anything from a package, and opens no socket (§4.1, §15).
+- `deps.py` never downloads, never runs a package manager, a build or anything from a package, and opens no socket (§4.1, §15). At module level it imports only the standard library and `_common`; `packaging` and `yaml` are imported inside the functions that use them, because `validate.py` imports `deps.py` on every scan (§4.5).
 - No path written by the hook, `verify.py save` or `apply` comes from model output; keys come from `checks/plan.json` (§7, §15).
 - Every model-written value (`reason`, `holds`, `claim`, `fact`, evidence `note`) is inert in every output; dependency refs are never links (§11).
 - `capture_finding.py` stays stdlib-only (plus `finding_shape`), always exits 0, prints nothing, and stays under 100 ms median (#5 §3.3).
@@ -52,7 +61,9 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 **Satisfies:** none on its own; it stops the plan from building on a contract that is not there.
 
-- [ ] **Step 1:** On `main`, confirm each of these exists and stop (label the ticket `agent:blocked` with the missing item) if one does not: `scripts/capture_finding.py`, `scripts/finding_shape.py` with `parse_result` and `write_json_atomic`, `scripts/usage.py` with `build`, `_common.MODEL_ALIASES`, `_common.effective_confidence`, `_common.finding_gate`, `_common.check_status`, `_common.CHECK_STATUSES`, `validate.Validator.check_ref`, `report.order_key`, `_common.REPORT_SCHEMA_VERSION == "thunderstruck.report/v2"`, and a `SubagentStop` entry in `hooks/hooks.json`.
+The merge order is #5 → #56 → #37. The ticket picker takes the lowest-numbered ready ticket, so it can pick #37 before #56 has merged; this task is what stops it.
+
+- [ ] **Step 1:** On `main`, confirm each of these exists. If any #56 item is missing, stop: label #37 `agent:blocked` and comment "Waits for #56: <the missing items>". If any #5 item is missing, the same with "Waits for #5". The maintainer removes the label once the missing ticket has merged; nothing is built before that. The items: `scripts/capture_finding.py`, `scripts/finding_shape.py` with `parse_result` and `write_json_atomic`, `scripts/usage.py` with `build`, `_common.MODEL_ALIASES`, `_common.effective_confidence`, `_common.finding_gate`, `_common.check_status`, `_common.CHECK_STATUSES`, `validate.Validator.check_ref`, `report.order_key`, `_common.REPORT_SCHEMA_VERSION == "thunderstruck.report/v2"`, and a `SubagentStop` entry in `hooks/hooks.json`.
 
 ```bash
 git checkout main && git pull --ff-only
@@ -245,6 +256,21 @@ def no_network(monkeypatch):
     def refuse(*a, **k):
         raise AssertionError("deps.py must not open a socket")
     monkeypatch.setattr(socket, "socket", refuse)
+
+
+def test_deps_imports_only_stdlib_and_common_at_module_level():
+    """validate.py imports deps on every scan, --no-verify included: packaging
+    and yaml are imported inside the discoverers that use them, never at the top."""
+    import ast
+    import sys as _sys
+    tree = ast.parse(Path(deps.__file__).read_text())
+    top = set()
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            top |= {a.name.split(".")[0] for a in node.names}
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            top.add(node.module.split(".")[0])
+    assert top <= set(_sys.stdlib_module_names) | {"_common", "__future__"}, top
 
 
 def test_deps_runs_no_process():
@@ -1893,7 +1919,7 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
-`--model`'s default here is provisional and the skill always passes one; Task 20 sets it to the measured default (§12.3).
+`--model`'s default here is provisional and the skill always passes one; Task 21 sets it to the measured default (§12.3).
 
 - [ ] **Step 5: Run the tests**, then the full suite and `uv run scripts/gen_sample_report.py --check`. Expected: PASS, `exit=0`, samples unchanged.
 
@@ -2066,7 +2092,7 @@ Return only the JSON object, no prose, no fence:
 ```
 ````
 
-The frontmatter `model` is provisional; Task 20 sets the measured default.
+The frontmatter `model` is provisional; Task 21 sets the measured default.
 
 - [ ] **Step 4: Run the tests.** Expected: PASS. Then `claude plugin validate . --strict`. Expected: passes.
 
@@ -2084,7 +2110,7 @@ git commit -m "Verification: the skeptic agent and its verdict contract (#37)"
 **Files:**
 - Modify: `scripts/finding_shape.py` (`find_plan_entry`, `stamp_verdict`, `record_skeptic`)
 - Modify: `scripts/capture_finding.py` (dispatch on agent type)
-- Modify: `hooks/hooks.json` (matcher)
+- Modify: `hooks/hooks.json` (the `SubagentStop` matcher, extended in #5's form)
 - Modify: `scripts/verify.py` (`check`, `save` subcommands)
 - Create: `tests/fixtures/hook_payloads/skeptic_valid.json`, `skeptic_unplanned.json`, `skeptic_path_key.json`, `skeptic_prose.json`
 - Test: `tests/test_verification.py`, `tests/test_capture_finding.py`
@@ -2254,7 +2280,7 @@ def _capture_skeptic(payload: dict) -> None:
     finding_shape.record_skeptic(out, plan, entry, {**agent, "kind": kind})
 ```
 
-`entry["key"]` comes from the plan, so the destination never holds payload text. In `hooks/hooks.json` the `SubagentStop` matcher becomes `"thunderstruck-investigator|thunderstruck-skeptic"`; update #5's manifest test to expect that string.
+`entry["key"]` comes from the plan, so the destination never holds payload text. In `hooks/hooks.json`, extend the `SubagentStop` matcher in whatever form #5 recorded (its spec §11 leaves the `plugin:thunderstruck:` prefix open, and its install check records which form fires): add the skeptic as a second alternative of the same form, e.g. `X|Y` where `X` is today's investigator matcher and `Y` is the same string with `thunderstruck-investigator` replaced by `thunderstruck-skeptic`. The script's own `agent_type` suffix checks (`thunderstruck-investigator`, `thunderstruck-skeptic`) stay, so a matcher that fires more widely is harmless. Update #5's manifest test to derive the expected matcher the same way rather than hard-coding a string.
 
 In `scripts/verify.py` add subcommands `check` and `save`:
 
@@ -2950,7 +2976,7 @@ After #56's per-finding fields are set and before sorting:
 
 Return from `collect()` additionally: `"refuted": refuted`, `"verification": block`, `"dependency_warnings": warnings`, `"duplicates_merged": len(absorbed)` where `block, warnings = verification_block(run, deps.load_index(repo))`. `run_warnings` appends `+ list(data.get("dependency_warnings") or [])`.
 
-`render_json`: add `"verification": data["verification"]` and `"refuted": [_finding_json(f) for f in data["refuted"]]` (whatever #56 named the per-finding serialiser; refuted items drop `id`); `counts.check_status` counts over `data["findings"] + data["refuted"]`; `counts.refuted = len(data["refuted"])`; `counts.duplicates_merged = data["duplicates_merged"]`.
+`render_json`: add `"verification": data["verification"]` and `"refuted": [{k: v for k, v in f.items() if k != "id"} for f in data["refuted"]]` (refuted findings are dumped as `render_json` dumps `findings`, raw, minus `id`, which they never had a real one of); `counts.check_status` counts over `data["findings"] + data["refuted"]`; `counts.refuted = len(data["refuted"])`; `counts.duplicates_merged = data["duplicates_merged"]`.
 
 `render_index`: refuted findings are already absent (not in `data["findings"]`). After the `secondary` loop:
 
@@ -3321,7 +3347,7 @@ If `apply` fails, note its last line for step 6 and continue: the report then
 says verification was not run.
 ````
 
-Step 5 keeps #5's order (`usage.py`, `report.py`, `report_html.py`). Step 6 adds: "how many findings were upheld, narrowed, refuted and inconclusive (from `report.json`'s `counts.check_status`), and that refuted findings are listed separately with the reason." `orchestration.md`: the pipeline diagram gains `deps.py`, the skeptic, `verify.py`; "Cost control" gains a paragraph on the skeptics (one per finding, reuse through `checks/ledger.json`, `--no-verify`) with Task 21's measured figures once they exist; "Resuming" says deleting `.thunderstruck/checks/` forces every finding to be checked again; the failure table gains the rows of spec §17 that concern the orchestrator; "What leaves the machine" says dependency source is read from what is already installed and nothing is downloaded. `report-format.md`: the tree gains `checks/` and `deps/`; a section "Verification" lists the `check` keys of spec §2, the verdict contract (§8.1), `report.json`'s `verification`, `refuted`, `also_at`, `counts.refuted`, `counts.duplicates_merged`, and `index.json`'s `holds` and `via: "duplicate"`.
+Step 5 keeps #5's order (`usage.py`, `report.py`, `report_html.py`). Step 6 adds: "how many findings were upheld, narrowed, refuted and inconclusive (from `report.json`'s `counts.check_status`), and that refuted findings are listed separately with the reason." `orchestration.md`: the pipeline diagram gains `deps.py`, the skeptic, `verify.py`; "Cost control" gains a paragraph on the skeptics (one per finding, reuse through `checks/ledger.json`, `--no-verify`) with Task 22's measured figures once they exist; "Resuming" says deleting `.thunderstruck/checks/` forces every finding to be checked again; the failure table gains the rows of spec §17 that concern the orchestrator; "What leaves the machine" says dependency source is read from what is already installed and nothing is downloaded. `report-format.md`: the tree gains `checks/` and `deps/`; a section "Verification" lists the `check` keys of spec §2, the verdict contract (§8.1), `report.json`'s `verification`, `refuted`, `also_at`, `counts.refuted`, `counts.duplicates_merged`, and `index.json`'s `holds` and `via: "duplicate"`.
 - [ ] **Step 4: Run** the tests and the full suite. Expected: PASS.
 - [ ] **Step 5: Commit**
 
@@ -3578,78 +3604,7 @@ git add scripts/verify.py tests/test_verification.py
 git commit -m "Verification: export verdicts as a benchmark run (#37)"
 ```
 
-### Task 19: The verification log on the fixture (maintainer, with the plugin installed)
-
-**Satisfies:** AC-13 (the planted finding refuted and FR-001 upheld, recorded), AC-11 (a live skeptic does not refute the `OTHER` finding).
-
-**Files:**
-- Create: `docs/calibration/verification.md`
-
-- [ ] **Step 1:** Install this branch as the plugin (`claude plugin marketplace add "$PWD" && claude plugin install thunderstruck@thunderstruck`; `claude plugin list` says enabled). Build the fixture: `uv run scripts/gen_sample_report.py --keep "$SCRATCH/fixture"` (any scratch directory outside the repository).
-- [ ] **Step 2:** In a fresh Claude Code session in that directory, ask for step 4b of `/thunderstruck-scan` only, with `--verify-model <the default from Task 20, or sonnet if Task 20 has not run>`: the skeptics run on the canned findings (including the planted `labels.ts` one), then `verify.py apply`, `usage.py`, `report.py`.
-- [ ] **Step 3:** Record in `docs/calibration/verification.md`, section "Fixture": the plugin commit; the model; per finding (display id, file, verdict, one line of reason); that the planted `labels.ts` finding is `refuted` with evidence in `src/client/http-defaults.ts`; that FR-001 (`releases.ts`) is `upheld`; that the `format.ts` `OTHER` finding is not `refuted`; whether `Grep`/`Glob` searched inside `.thunderstruck/deps/` when given the path (spec §21 question 4; the fixture has no dependencies, so check it by asking one skeptic to `Grep` a snapshot made by hand with `deps.py` in a scratch Python project, and record the answer); the skeptics' consumption from `usage.json`. If the planted finding is not refuted or FR-001 is not upheld, stop: label the ticket `agent:blocked` with the verdicts.
-- [ ] **Step 4: Commit**
-
-```bash
-git add docs/calibration/verification.md
-git commit -m "Verification log: the fixture's planted finding refuted, FR-001 upheld (#37)"
-```
-
-### Task 20: The default skeptic model on #55 (maintainer, needs #55 merged)
-
-**Satisfies:** AC-12.
-
-**Files:**
-- Create: `docs/calibration/correctness/celery/runs/skeptic-haiku.json` (and `-sonnet`, `-opus` as tried)
-- Modify: `docs/calibration/verification.md` (section "Celery benchmark")
-- Modify: `agents/thunderstruck-skeptic.md` (frontmatter `model`), `scripts/verify.py` (`prepare --model` default)
-- Test: `tests/test_verification.py`
-
-- [ ] **Step 1:** Prepare a Celery checkout at `508c1129269d2b1baffc516d8f5c05da06273ef0` with a `.venv` holding kombu 5.7.0a1, py-amqp 5.4.0, billiard 4.3.0, redis 8.1.0 and SQLAlchemy 2.1.3 (`uv venv && uv pip install kombu==5.7.0a1 amqp==5.4.0 billiard==4.3.0 redis==8.1.0 SQLAlchemy==2.1.3`). Install nothing from Celery itself. Copy `docs/calibration/correctness/celery/scan/hotspots.json` to its `.thunderstruck/`.
-- [ ] **Step 2:** For each candidate in order `haiku`, `sonnet`, `opus`: `uv run <thunderstruck>/scripts/verify.py prepare --frozen <thunderstruck>/docs/calibration/correctness/celery/scan --model <alias>` (delete `.thunderstruck/checks/` first); run step 4b's skeptic loop in a fresh Claude Code session; `verify.py apply`; `verify.py export-run --out <thunderstruck>/docs/calibration/correctness/celery/runs/skeptic-<alias>.json`; `uv run scripts/benchmark.py --run docs/calibration/correctness/celery/runs/skeptic-<alias>.json`. Record `deps/index.json`'s basis for each package once. Stop at the first candidate with **at least 15 of 21 same verdict class (counting `inconclusive` and absent verdicts as not same) and no correct finding refuted**.
-- [ ] **Step 3:** Record in `docs/calibration/verification.md`, section "Celery benchmark": each candidate's `benchmark.py` lines as printed, the count over 21, the duplicate result (FR-006 → FR-001), and the skeptics' consumption from `usage.json`. If no candidate qualifies, stop: label the ticket `agent:blocked` with the table.
-- [ ] **Step 4:** Set the qualifying alias as `model:` in `agents/thunderstruck-skeptic.md` and as `prepare --model`'s default. Add a test that pins it to the recorded figure:
-
-```python
-# --- Task 20 ----------------------------------------------------------------
-def test_the_default_skeptic_model_is_the_measured_one():
-    doc = (ROOT / "docs" / "calibration" / "verification.md").read_text()
-    chosen = re.search(r"^Default skeptic model: `(\w+)`$", doc, re.M)[1]
-    import yaml
-    front = yaml.safe_load((ROOT / "agents" / "thunderstruck-skeptic.md").read_text().split("---")[1])
-    assert front["model"] == chosen
-    run = json.loads((ROOT / "docs" / "calibration" / "correctness" / "celery" / "runs"
-                      / f"skeptic-{chosen}.json").read_text())
-    assert run["produced_by"]["model"] == c.MODEL_ALIASES[chosen]
-```
-
-and a test that runs `uv run scripts/benchmark.py --run docs/calibration/correctness/celery/runs/skeptic-<chosen>.json --json` and asserts, from the verdict measure of the Celery set, a same-class count of at least 15 and a correct-refuted count of 0 (key names as #55's `RESULT_SCHEMA` defines them and its `tests/test_benchmark.py` reads them). The doc carries the line `Default skeptic model: \`<alias>\``. Add `import re` to the test file's imports if absent.
-- [ ] **Step 5: Commit**
-
-```bash
-git add docs/calibration/ agents/thunderstruck-skeptic.md scripts/verify.py tests/
-git commit -m "Verification: the default skeptic model, measured on the Celery benchmark (#37)"
-```
-
-### Task 21: The cost ceiling (maintainer, after Task 20, with #5's Task N done)
-
-**Satisfies:** AC-15.
-
-**Files:**
-- Modify: `docs/calibration/consumption.md` (new section "With verification (#37)")
-- Modify: `skills/thunderstruck-scan/references/orchestration.md` (Cost control figures)
-
-- [ ] **Step 1:** On celery/celery at `508c1129269d2b1baffc516d8f5c05da06273ef0`, with this branch installed as the plugin, run `/thunderstruck-scan --since 2025-10-03` (verification on by default, the default skeptic model) twice, each in a fresh session with `.thunderstruck/findings/` and `.thunderstruck/checks/` deleted first, and the `.venv` of Task 20 present.
-- [ ] **Step 2:** From each run's `usage.json`: orchestrator, investigators and skeptics weighted totals, `total_weighted`, skeptic agents, failures, reused verdicts; from `report.json`: `counts.check_status`. Record both runs and the mean in the new section, in the format of the Task 0 tables.
-- [ ] **Step 3:** Compare the mean `total_weighted` with **1,652,683.0**. If it is higher, stop: label the ticket `agent:blocked` with the figures (the ticket's open product question decides). Otherwise write the result line `With verification: mean <n> weighted tokens, <p>% of the Task 0 baseline.` and add the measured per-skeptic mean to `orchestration.md`'s Cost control.
-- [ ] **Step 4: Commit**
-
-```bash
-git add docs/calibration/consumption.md skills/thunderstruck-scan/references/orchestration.md
-git commit -m "Consumption: a default scan with verification against the Task 0 baseline (#37)"
-```
-
-### Task 22: Documentation and release
+### Task 19: Documentation and release
 
 **Satisfies:** AC-14.
 
@@ -3676,6 +3631,79 @@ git add README.md CLAUDE.md skills/ CHANGELOG.md pyproject.toml .claude-plugin/
 git commit -m "Docs and release: verification on by default (#37)"
 ```
 
+- [ ] **Step 5: Stop: ready for maintainer measurement.** Push the branch and open the PR as a **draft** whose description starts with "Do not merge before Tasks 20–22 (maintainer measurement, spec §12.3)" and lists the three tasks. Comment on #37: "Ready for maintainer measurement: Tasks 20–22 of the plan", with the PR link. Do not mark the PR ready and do not close #37. Tick Tasks 0–19 in the ticket's checklist as usual; Tasks 20–22 stay open until the maintainer commits them on this branch.
+
+### Task 20: The verification log on the fixture (maintainer, with the plugin installed)
+
+**Satisfies:** AC-13 (the planted finding refuted and FR-001 upheld, recorded), AC-11 (a live skeptic does not refute the `OTHER` finding).
+
+**Files:**
+- Create: `docs/calibration/verification.md`
+
+- [ ] **Step 1:** Install this branch as the plugin (`claude plugin marketplace add "$PWD" && claude plugin install thunderstruck@thunderstruck`; `claude plugin list` says enabled). Build the fixture: `uv run scripts/gen_sample_report.py --keep "$SCRATCH/fixture"` (any scratch directory outside the repository).
+- [ ] **Step 2:** In a fresh Claude Code session in that directory, ask for step 4b of `/thunderstruck-scan` only, with `--verify-model <the default from Task 21, or sonnet if Task 21 has not run>`: the skeptics run on the canned findings (including the planted `labels.ts` one), then `verify.py apply`, `usage.py`, `report.py`.
+- [ ] **Step 3:** Record in `docs/calibration/verification.md`, section "Fixture": the plugin commit; the model; per finding (display id, file, verdict, one line of reason); that the planted `labels.ts` finding is `refuted` with evidence in `src/client/http-defaults.ts`; that FR-001 (`releases.ts`) is `upheld`; that the `format.ts` `OTHER` finding is not `refuted`; whether `Grep`/`Glob` searched inside `.thunderstruck/deps/` when given the path (spec §21 question 4; the fixture has no dependencies, so check it by asking one skeptic to `Grep` a snapshot made by hand with `deps.py` in a scratch Python project, and record the answer); the skeptics' consumption from `usage.json`. If the planted finding is not refuted or FR-001 is not upheld, stop and do not merge: comment on #37 with the verdicts.
+- [ ] **Step 4: Commit**
+
+```bash
+git add docs/calibration/verification.md
+git commit -m "Verification log: the fixture's planted finding refuted, FR-001 upheld (#37)"
+```
+
+### Task 21: The default skeptic model on #55 (maintainer, needs #55 merged)
+
+**Satisfies:** AC-12.
+
+**Files:**
+- Create: `docs/calibration/correctness/celery/runs/skeptic-haiku.json` (and `-sonnet`, `-opus` as tried)
+- Modify: `docs/calibration/verification.md` (section "Celery benchmark")
+- Modify: `agents/thunderstruck-skeptic.md` (frontmatter `model`), `scripts/verify.py` (`prepare --model` default)
+- Test: `tests/test_verification.py`
+
+- [ ] **Step 1:** Prepare a Celery checkout at `508c1129269d2b1baffc516d8f5c05da06273ef0` with a `.venv` holding kombu 5.7.0a1, py-amqp 5.4.0, billiard 4.3.0, redis 8.1.0 and SQLAlchemy 2.1.3 (`uv venv && uv pip install kombu==5.7.0a1 amqp==5.4.0 billiard==4.3.0 redis==8.1.0 SQLAlchemy==2.1.3`). Install nothing from Celery itself. Copy `docs/calibration/correctness/celery/scan/hotspots.json` to its `.thunderstruck/`.
+- [ ] **Step 2:** For each candidate in order `haiku`, `sonnet`, `opus`: `uv run <thunderstruck>/scripts/verify.py prepare --frozen <thunderstruck>/docs/calibration/correctness/celery/scan --model <alias>` (delete `.thunderstruck/checks/` first); run step 4b's skeptic loop in a fresh Claude Code session; `verify.py apply`; `verify.py export-run --out <thunderstruck>/docs/calibration/correctness/celery/runs/skeptic-<alias>.json`; `uv run scripts/benchmark.py --run docs/calibration/correctness/celery/runs/skeptic-<alias>.json`. Record `deps/index.json`'s basis for each package once. Stop at the first candidate with **at least 15 of 21 same verdict class (counting `inconclusive` and absent verdicts as not same) and no correct finding refuted**.
+- [ ] **Step 3:** Record in `docs/calibration/verification.md`, section "Celery benchmark": each candidate's `benchmark.py` lines as printed, the count over 21, the duplicate result (FR-006 → FR-001), and the skeptics' consumption from `usage.json`. If no candidate qualifies, stop and do not merge: comment on #37 with the table.
+- [ ] **Step 4:** Set the qualifying alias as `model:` in `agents/thunderstruck-skeptic.md` and as `prepare --model`'s default. Add a test that pins it to the recorded figure:
+
+```python
+# --- Task 21 ----------------------------------------------------------------
+def test_the_default_skeptic_model_is_the_measured_one():
+    doc = (ROOT / "docs" / "calibration" / "verification.md").read_text()
+    chosen = re.search(r"^Default skeptic model: `(\w+)`$", doc, re.M)[1]
+    import yaml
+    front = yaml.safe_load((ROOT / "agents" / "thunderstruck-skeptic.md").read_text().split("---")[1])
+    assert front["model"] == chosen
+    run = json.loads((ROOT / "docs" / "calibration" / "correctness" / "celery" / "runs"
+                      / f"skeptic-{chosen}.json").read_text())
+    assert run["produced_by"]["model"] == c.MODEL_ALIASES[chosen]
+```
+
+and a test that runs `uv run scripts/benchmark.py --run docs/calibration/correctness/celery/runs/skeptic-<chosen>.json --json` and asserts, from the verdict measure of the Celery set, a same-class count of at least 15 and a correct-refuted count of 0 (key names as #55's `RESULT_SCHEMA` defines them and its `tests/test_benchmark.py` reads them). The doc carries the line `Default skeptic model: \`<alias>\``. Add `import re` to the test file's imports if absent.
+- [ ] **Step 5: Commit**
+
+```bash
+git add docs/calibration/ agents/thunderstruck-skeptic.md scripts/verify.py tests/
+git commit -m "Verification: the default skeptic model, measured on the Celery benchmark (#37)"
+```
+
+### Task 22: The cost ceiling (maintainer, after Task 21, with #5's Task N done)
+
+**Satisfies:** AC-15.
+
+**Files:**
+- Modify: `docs/calibration/consumption.md` (new section "With verification (#37)")
+- Modify: `skills/thunderstruck-scan/references/orchestration.md` (Cost control figures)
+
+- [ ] **Step 1:** On celery/celery at `508c1129269d2b1baffc516d8f5c05da06273ef0`, with this branch installed as the plugin, run `/thunderstruck-scan --since 2025-10-03` (verification on by default, the default skeptic model) twice, each in a fresh session with `.thunderstruck/findings/` and `.thunderstruck/checks/` deleted first, and the `.venv` of Task 21 present.
+- [ ] **Step 2:** From each run's `usage.json`: orchestrator, investigators and skeptics weighted totals, `total_weighted`, skeptic agents, failures, reused verdicts; from `report.json`: `counts.check_status`. Record both runs and the mean in the new section, in the format of the Task 0 tables.
+- [ ] **Step 3:** Compare the mean `total_weighted` with **1,652,683.0**. If it is higher, stop and do not merge: comment on #37 with the figures (the ticket's open product question decides). Otherwise write the result line `With verification: mean <n> weighted tokens, <p>% of the Task 0 baseline.` and add the measured per-skeptic mean to `orchestration.md`'s Cost control.
+- [ ] **Step 4: Commit**
+
+```bash
+git add docs/calibration/consumption.md skills/thunderstruck-scan/references/orchestration.md
+git commit -m "Consumption: a default scan with verification against the Task 0 baseline (#37)"
+```
+
 ## Acceptance criteria coverage
 
 | AC | Tasks |
@@ -3690,8 +3718,8 @@ git commit -m "Docs and release: verification on by default (#37)"
 | AC-8 | 2, 3, 4, 5, 6, 10, 11, 12 |
 | AC-9 | 7, 10, 12 |
 | AC-10 | 9, 11, 12, 13, 15 |
-| AC-11 | 8, 10, 17, 19 |
-| AC-12 | 18, 20 |
-| AC-13 | 17, 19 |
-| AC-14 | 17, 22 |
-| AC-15 | 21 |
+| AC-11 | 8, 10, 17, 20 |
+| AC-12 | 18, 21 |
+| AC-13 | 17, 20 |
+| AC-14 | 17, 19 |
+| AC-15 | 22 |
