@@ -99,7 +99,7 @@ A resolved entity is then classified against `context.json`:
 | declared in the map, but in neither list | `mapped_undocumented`: the team knows the entity, the catalog doesn't list the edge. It is drift. |
 | — | `unmatched` |
 
-`documented` and `dependent_only` compare against **all** edges, including the ones `context.py` truncated at 25 per direction. `context.json` records only the kept edges. So when `truncated` is non-zero, an unmatched value may be one of the dropped edges. The drift section says so in a note, and `observed.json` carries the count.
+`documented` and `dependent_only` compare against the edges `context.json` kept. `context.py` truncates at 25 per direction and records only the kept edges, with a count of the rest. So when `truncated` is non-zero, an unmatched value may be one of the dropped edges. The drift section says so in a note, and `observed.json` carries the count.
 
 ## 4. Configuration
 
