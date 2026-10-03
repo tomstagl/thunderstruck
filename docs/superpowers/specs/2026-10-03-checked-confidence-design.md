@@ -68,7 +68,7 @@ Each item is one setting the failure depends on:
 
 No other key is accepted from the investigator: an unknown key is a validation error naming it. That keeps a model from writing a key a later stage owns (§7.2).
 
-**What is a precondition.** A setting the code reads, with a default the repository registers. A condition of the deployment (a database user's privileges, a route a user wrote) is not one: it has no default to register and stays in `trigger_condition` (Decision 7). A setting whose default the repository does not register (a dependency's own default) cannot be cited until #37 adds dependency references (§7.1); until then the investigator states it in `trigger_condition`.
+**What is a precondition.** A setting the code reads, with a default the repository registers. A condition of the deployment (a database user's privileges, a route a user wrote) is not one: it has no default to register and stays in `trigger_condition` (Decision 7). A setting whose default the repository does not register (a dependency's own default) cannot be cited by the investigator, who runs before #37's dependency snapshot exists (§7.1); the investigator states it in `trigger_condition`, and whether such a default is cited elsewhere is #57's question (§7.2).
 
 An empty list means the failure happens on default settings and relies on no stated default. A list whose items all have `needs: default` is a default-path finding too; its items are there so the reader, and #57, can see which defaults the claim rests on.
 
@@ -175,7 +175,7 @@ The claim is an upper bound: a check never raises a finding above what its inves
 
 ## 5. Gate and order (AC-5)
 
-`GATES = ("none", "non_default_setting")`. `finding_gate(f)` returns `non_default_setting` when any precondition has `needs: changed`, else `none`. The report's sort key becomes:
+`GATES = ("none", "non_default_setting")`. `finding_gate(f)` returns `non_default_setting` when any precondition has `needs: changed`, else `none`. It is the one place a gate is decided, and it may read the finding's `check` as well as its `preconditions`: #37 extends it so that a `narrowed` verdict naming a missing setting also gates the finding, and #57 adds `unconfirmed_default` (§7). The report's sort key becomes:
 
 ```
 (GATES.index(gate), CONFIDENCE_RANK[confidence], -hotspot_score, file)
@@ -291,14 +291,16 @@ The latency budget (100 ms median) is unchanged; the added work is string format
 ### 7.1 For #37 (verification)
 
 - **Status.** #37 writes `check.status` into each findings file after `validate.py`, using the five values of §4.1, and nothing else changes confidence: `effective_confidence` already maps every status. #37 must not add a status; a sixth value needs this spec changed first.
-- **Its own keys.** Everything else #37 records about a verdict goes under `check`: `by` (e.g. `"skeptic"`), `reason` (one line, inert text), and keys this spec reserves for #37 without defining: `holds`, `refuted_claims`, `evidence`, `model`, `dependency_versions`, `reused_from`. `validate.py` accepts and does not read them; `report.json` passes `check` through whole; rendering them is #37's change.
-- **Refs into dependencies.** When #37 adds a reference form into dependency source, `default_ref` and `doc_ref` accept it through `check_ref` (§3.1), the one function both use.
+- **Its own keys.** Everything else #37 records about a verdict goes under `check`: `by` (e.g. `"skeptic"`), `reason` (one line, inert text), and keys this spec reserves for #37 without defining: `holds`, `refuted_claims`, `evidence`, `model`, `dependency_versions`, `reused_from`, `duplicate_of` (the key of the finding this one duplicates, or `null`; #37 AC-7). `validate.py` accepts and does not read them; `report.json` passes `check` through whole; rendering them is #37's change.
+- **Gate from the check.** #37 extends `finding_gate` (§5): it also returns `non_default_setting` when `check.status` is `narrowed` and a kept `check.refuted_claims` item has `field: "preconditions"` and a `setting`. The investigator's `preconditions` are untouched; the gate reads the check. Everything downstream (sort key, marker, `counts.gate`, `index.json`'s `gate`, and so the guardrail) reads the function's result, so no renderer changes.
+- **Refs into dependencies.** #37 accepts references into its dependency snapshot in verdicts only. Investigator fields (`default_ref`, `doc_ref`) stay repository-only: investigators run before the snapshot exists. `check_ref` (§3.1) is the one function that resolves both fields, so a later change that lets them cite a dependency is made there; whether to make it is #57's question (§7.2).
 - **Re-validation.** `validate.py` never overwrites an existing `check` (§3.2). Invalidating a verdict when cited code changes is #37's rule (its AC-9), applied by #37.
 
 ### 7.2 For #57 (confirmed defaults)
 
 - **Confirmation per precondition.** #57 adds one key to each precondition item, which this spec reserves as `confirmation` (e.g. `{"state": "unconfirmed", "reason": "…"}`), and writes it after validation. To do so #57 adds `confirmation` to the precondition keys `validate.py` accepts from a later stage and to the keys `save_finding.py` strips from model output; until then a model writing it fails validation (§2.2).
-- **Order.** #57 appends its value to `GATES` (reserved name: `unconfirmed_default`) and extends `finding_gate`. The sort key, the marker, `counts.gate` and the guardrail's ordering all read `GATES`, so no renderer changes order logic. Whether `unconfirmed_default` sorts before or after `non_default_setting` is #57's decision.
+- **Order.** #57 appends its value to `GATES` (reserved name: `unconfirmed_default`) and extends `finding_gate`, alongside #37's extension (§7.1). The sort key, the marker, `counts.gate` and the guardrail's ordering all read `GATES`, so no renderer changes order logic. Whether `unconfirmed_default` sorts before or after `non_default_setting` is #57's decision.
+- **Defaults registered in a dependency.** #57 decides where such a default is cited: in the skeptic's `confirmation` (#37's assumption), or in the investigator's `default_ref` once investigators get the snapshot (through `check_ref`, §3.1).
 - **`needs: default` items** are the defaults #57 confirms; they exist from this ticket on, so #57 adds no investigator field.
 
 ## 8. Fixture and sample (AC-10)
@@ -373,7 +375,7 @@ No model call is added. The investigator writes a few more fields per finding an
 5. **A commit's role is stated by the model and checked only where it can be.** `introduced` is decidable by blame; `fixed`, `mitigated` and `changed` are intent, shown beside the mechanical class so a disagreement is visible.
 6. **`needs: default` items exist now, though they do not gate.** The defaults a claim rests on are what #57 confirms; defining them here keeps the investigator contract from changing twice.
 7. **No environment preconditions.** A deployment condition has no registered default to cite or confirm; it is a trigger. Celery's one such item (a database user's privileges) reads correctly as a trigger.
-8. **`default_ref` resolves inside the repository only.** A reference that cannot be resolved cannot be shown as resolved; dependency refs arrive with #37.
+8. **`default_ref` resolves inside the repository only.** A reference that cannot be resolved cannot be shown as resolved. #37 resolves dependency refs in verdicts only; whether investigator fields ever accept them is #57's question.
 9. **`report.json` goes to v2.** `confidence` changes meaning and two fields may be absent; a consumer must notice. `index.json`'s change is additive and its one reader, the guardrail, handles both.
 10. **`documented` is three-valued.** "We did not look" and "we looked and the docs are silent" are different facts, and the investigator's read budget makes the first common.
 11. **History in its own block; evidence keeps the subject.** One place states class, role and blame; the evidence list stays what the investigator cited.

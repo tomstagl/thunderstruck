@@ -182,7 +182,8 @@ def effective_confidence(claimed, status: str) -> str:
 
 
 def finding_gate(finding: dict) -> str:
-    """non_default_setting when any precondition needs a setting changed."""
+    """non_default_setting when any precondition needs a setting changed.
+    The one gate rule: #37 extends it to read the check, #57 adds a gate (spec §7)."""
     pre = finding.get("preconditions") if isinstance(finding, dict) else None
     items = pre if isinstance(pre, list) else []
     if any(isinstance(p, dict) and p.get("needs") == "changed" for p in items):
@@ -489,7 +490,7 @@ Add these methods to `Validator`:
 ```python
     def check_ref(self, ref: Any, where: str, errors: list[str]) -> tuple[str, int, int] | None:
         """A path:line or path:start-end that must resolve exactly as a `code`
-        evidence ref does. #37's dependency refs will be accepted here too."""
+        evidence ref does. The one place a precondition ref is resolved (spec §7)."""
         if not isinstance(ref, str) or not ref.strip():
             errors.append(f"{where} must be one string, {REF_FORMS['code']}; got {shown(ref)}")
             return None
@@ -1821,7 +1822,7 @@ are listed after default-path findings and marked. Tightening a validator
 rule means bumping `VALIDATION_RULES`.
 ```
 
-- [ ] **Step 3: report-format.md.** The tree line reads `thunderstruck.report/v2`. The finding contract's `high` and `sustaining_effect` bullets are replaced by: `preconditions` required (may be `[]`) with its keys and rules; commit `role` with the `introduced` rule; `amplifier`/`sustaining_effect` optional, never empty; `confidence` is a claim, reported through the check-status ceiling. A new section "Check status, preconditions and history" lists §6.2's per-finding fields, `counts.check_status` and `counts.gate`, §6.3's `index.json` additions, and names the keys reserved for #37 (`check.by`, `check.reason`, `check.holds`, `check.refuted_claims`, `check.evidence`, `check.model`, `check.dependency_versions`, `check.reused_from`) and #57 (`preconditions[].confirmation`, gate `unconfirmed_default`). The "Sections of `report.md` in `report.json`" intro notes that `run_warnings` now ends with check-status warnings, and that v2 changed `confidence`'s meaning.
+- [ ] **Step 3: report-format.md.** The tree line reads `thunderstruck.report/v2`. The finding contract's `high` and `sustaining_effect` bullets are replaced by: `preconditions` required (may be `[]`) with its keys and rules; commit `role` with the `introduced` rule; `amplifier`/`sustaining_effect` optional, never empty; `confidence` is a claim, reported through the check-status ceiling. A new section "Check status, preconditions and history" lists §6.2's per-finding fields, `counts.check_status` and `counts.gate`, §6.3's `index.json` additions, and names the keys reserved for #37 (`check.by`, `check.reason`, `check.holds`, `check.refuted_claims`, `check.evidence`, `check.model`, `check.dependency_versions`, `check.reused_from`, `check.duplicate_of`; and #37's extension of `finding_gate` to a narrowed verdict naming a missing setting) and #57 (`preconditions[].confirmation`, gate `unconfirmed_default`). The "Sections of `report.md` in `report.json`" intro notes that `run_warnings` now ends with check-status warnings, and that v2 changed `confidence`'s meaning.
 
 - [ ] **Step 4: Version and CHANGELOG.** Bump the minor version in all four places (the next minor above `main`'s at the time; `0.10.0` if `main` is `0.9.x`) and add:
 
