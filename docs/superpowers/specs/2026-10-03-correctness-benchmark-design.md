@@ -13,7 +13,7 @@ docs/calibration/correctness/<set>/
   runs/<name>.json                NEW · thunderstruck.benchmark-run/v1 · checked-in things to score
 
 scripts/benchmark.py              NEW · deterministic · stdlib only · no network, no model, no git
-  --run FILE                      score a run file
+  --run FILE                      score a run file (repeatable)
   --report FILE                   adapter: a scan's report.json → confidences (§3.2)
   --bundles DIR                   adapter: a scan's bundles/ → what each Source block shows (§3.3)
   --labels DIR                    label sets to load (repeatable; default: every
@@ -133,9 +133,9 @@ Reads `bundles/index.json` for each hotspot's file and each `bundles/<id>.md` fo
 | `lines A-B — the most complex function …` | A to B, unless clipped |
 | `file trimmed to fit the budget; N lines total` | head from 1 and tail ending at N |
 
-When `_clip` cut the excerpt, the fenced body holds a `... [trimmed: N characters omitted] ...` marker. The shown lines are then the head (from the start line, as many lines as precede the marker) and the tail (ending at the end line, as many lines as follow it); a line the character cut split is not counted as shown. A bundle whose Source block matches none of these forms is **unreadable** (§7). The bundle adapter needs a commit: it takes it from the `hotspots.json` in the directory that holds `bundles/`.
+When `_clip` cut the excerpt, the fenced body holds a `... [trimmed: N characters omitted] ...` marker. The shown lines are then the head (from the start line, as many lines as precede the marker) and the tail (ending at the end line, as many lines as follow it). The cut is by characters, so the last head line and the first tail line are never counted as shown, even when the cut fell exactly at a line end: the parser can under-count by at most two lines and never claims a line that was not rendered whole. `bundle.py` counts the empty line after a file's final newline in `A-B` and trimmed notes; the parser drops it. A bundle whose Source block matches none of these forms is **unreadable** (§7). The bundle adapter needs a commit: it takes it from the `hotspots.json` in the directory that holds `bundles/`.
 
-A test renders `section_source` for each of the three forms, with and without clipping, and asserts the parser recovers exactly the lines rendered, so a change to the bundle format fails here rather than silently zeroing AC-4.
+A test renders `section_source` for each of the three forms, with and without clipping, and asserts the parser's lines against the rendered ones (§8), so a change to the bundle format fails here rather than silently zeroing AC-4.
 
 "Shows" means the Source block only. The Celery reviewer's `in_bundle` differs on three facts: it reads `true` for FR-005, whose lines were visible only in a trimmed diff, and `false` for FR-003 and FR-015, whose in-file ranges the Source block holds but which also needed other files. Diff fragments are cut mid-hunk (`correctness.md`), so they are not counted as showing a fact; a fact that also has ranges in other files is reported as `shown` with `partly elsewhere` (§4.4).
 
@@ -207,7 +207,7 @@ The interval is Wilson's 95% score interval, deterministic and stdlib-only; it i
 
 ### 5.2 Per set, never only pooled
 
-Results are printed per set. With more than one set loaded the scorer adds a pooled line per measure, always below the per-set lines and marked `pooled`. Pooling hides a regression on the smaller set, so the comparison a PR states is "no worse on any set", not "better in total". Unlabelled findings (AC-7) are listed by key under their run, counted, and appear in no rate.
+Results are printed per set. When the runs scored cover more than one set, one run per set, the scorer adds a pooled line per measure, always below the per-set lines and marked `pooled`; two runs on the same set are reported side by side and never pooled. Pooling hides a regression on the smaller set, so the comparison a PR states is "no worse on any set", not "better in total". Unlabelled findings (AC-7) are listed by key under their run, counted, and appear in no rate.
 
 ### 5.3 Holdout
 
@@ -262,7 +262,7 @@ Exit 0 means the input was scored, whatever the figures. The benchmark sets no t
 - **Validation (AC-9):** one test per rejection rule in §2.2; a set of only valid labels plus one bad label scores nothing.
 - **Stability (AC-9):** score, add labels to a copy of the set, score again; every original finding's row is byte-identical.
 - **Second set (AC-10):** a synthetic three-finding set under `tests/fixtures/benchmark/`, with its own repo, commit, a holdout role and every verdict class, scored with the same command beside Celery; pooled lines appear; holdout rows appear only with `--reveal`.
-- **Bundle parser:** §3.3's render-and-parse test for all three Source forms, clipped and not.
+- **Bundle parser:** §3.3's render-and-parse test for all three Source forms, clipped and not: every line the parser reports is rendered whole in the fence, and at most two whole lines are not reported.
 - **Labels agree with evidence:** §6.1's comparison with `verdicts.json`, and §6.2's re-derivation of `runs/spike-refuter.json`.
 - **Determinism:** two `--json` runs are byte-identical.
 - **No network, no model:** the module imports nothing outside the standard library (AST check, as for `guardrail.py`).
