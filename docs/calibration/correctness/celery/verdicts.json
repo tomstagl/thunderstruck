@@ -1,0 +1,1258 @@
+{
+  "findings": [
+    {
+      "id": "FR-001",
+      "key": "f62fb0c3468b",
+      "hotspot_id": "H03",
+      "verdict": "partially_correct",
+      "verdict_basis": "executed",
+      "summary": "With the Redis result backend unreachable, each result-tracking apply_async blocks for the whole backend retry cycle while holding a producer slot, then raises RuntimeError; ignore_result publishers do starve behind the 10 slots. The claimed cross-thread pile-up on _pubsub_lock does not happen by default, the call is not error-free and it does not wait forever.",
+      "refuting_fact": {
+        "statement": "app.backend is per-thread unless result_backend_thread_safe=True, so every thread has its own ResultConsumer and its own _pubsub_lock; threads do not queue on one lock. Two threads were observed inside the reconnect retry loop simultaneously. Each blocked caller also logs an ERROR per retry and ends with CRITICAL plus RuntimeError after the retry policy is exhausted.",
+        "where": "celery/app/base.py:1640-1657; celery/backends/base.py:236; celery/backends/asynchronous.py:358-363",
+        "location_kind": "scanned_file",
+        "in_bundle": false,
+        "investigator_could_have_seen": "Yes, with one Read. The fact is in the hotspot file itself (base.py:1640-1657) but outside the bundle excerpt (lines 930-1155). The bundle shows only `self._local = threading.local()` / `self._backend_cache` in a trimmed diff at bundle line 405. The RuntimeError path is in asynchronous.py, which the investigator's own rationale says it did not read within budget."
+      },
+      "preconditions": [
+        {
+          "setting": "broker_pool_acquire_timeout",
+          "literal_default": "None (block indefinitely)",
+          "effective_default": "None",
+          "where_defined": "celery/app/defaults.py:102",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:3280"
+        },
+        {
+          "setting": "broker_pool_limit",
+          "literal_default": "10",
+          "effective_default": "10",
+          "where_defined": "celery/app/defaults.py:101",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:3260"
+        },
+        {
+          "setting": "redis_socket_connect_timeout",
+          "literal_default": "None",
+          "effective_default": "120 s (redis-py falls back to socket_timeout)",
+          "where_defined": "celery/app/defaults.py:203; site-packages/redis/connection.py:888-889",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:1663"
+        },
+        {
+          "setting": "redis_socket_timeout",
+          "literal_default": "120.0",
+          "effective_default": "120.0",
+          "where_defined": "celery/app/defaults.py:202",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:1675"
+        },
+        {
+          "setting": "result backend retry_policy",
+          "literal_default": "max_retries=20, interval 1 s",
+          "effective_default": "same",
+          "where_defined": "celery/backends/base.py:204-205",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:925"
+        },
+        {
+          "setting": "result_backend_thread_safe",
+          "literal_default": "False",
+          "effective_default": "False (per-thread backend, so no shared lock)",
+          "where_defined": "celery/backends/base.py:236",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:913"
+        },
+        {
+          "setting": "task_ignore_result",
+          "literal_default": "False",
+          "effective_default": "False",
+          "where_defined": "celery/app/defaults.py:295",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:531"
+        }
+      ],
+      "commits": [
+        {
+          "sha": "1a39f8c",
+          "role_claimed": "A [fix] targeted this indefinite block; default still None",
+          "role_actual": "added_the_mitigation",
+          "wrote_cited_lines": true,
+          "note": "Accurate. Wrote base.py:1261-1288 and defaults.py:102. It is an opt-in mitigation, so it corroborates the unbounded default, not the lock convoy."
+        }
+      ],
+      "confidence_assessment": {
+        "claimed": "high",
+        "deserved": "medium",
+        "why_claimed_was_wrong": "The high gate was met mechanically (code plus a [fix] commit), but the amplifier and sustaining effect rest on a shared lock that the investigator never checked. Its own rationale admits the Redis retry defaults were not read."
+      },
+      "how_to_verify": {
+        "status": "reproduced",
+        "what_you_ran_or_why_not": "review/recipe_fr001.py: pool_limit=2, stalled fake Redis (accepts, never answers), 20 fresh threads, socket_timeout scaled to 1 s and max_retries to 1. All 14 result-tracking threads blocked 3-21 s and raised RuntimeError; all 6 ignore_result threads blocked 18-21 s; none raised OperationalError. Also redis/fr001_a.py at full defaults against a refused port: 19.1 s then RuntimeError; redis/fr001_b_dbg.py: two threads in the retry loop at once. Threads with a warm pubsub connection published in 0.00 s during a stall. Not run against a real Redis; the 44 min figure for a blackholed host at defaults is extrapolated, not measured."
+      },
+      "duplicate_of": null,
+      "detector_leads": [],
+      "root_cause_of_error": "Reasoned from lock scope in redis.py without checking who shares the lock. It assumed one process-wide backend; the per-thread backend lives 500 lines below the bundle excerpt in the same file. Read budget ran out before the reconnect/retry path was read, so duration and the terminal RuntimeError were guessed as 'no error' and 'forever'."
+    },
+    {
+      "id": "FR-002",
+      "key": "a0ba5bc31036",
+      "hotspot_id": "H06",
+      "verdict": "correct_but_gated",
+      "verdict_basis": "executed",
+      "summary": "Reproduced on a real prefork worker: with acks_late and acks_on_timeout=False a task over its hard time limit is stored FAILURE, its errback fires, and the message is requeued and run again, once per redelivery with no cap. This is opt-in and the requeue is documented.",
+      "refuting_fact": {
+        "statement": null,
+        "where": null,
+        "location_kind": "none",
+        "in_bundle": null,
+        "investigator_could_have_seen": null
+      },
+      "preconditions": [
+        {
+          "setting": "task_acks_late",
+          "literal_default": "False",
+          "effective_default": "False",
+          "where_defined": "celery/app/defaults.py:269",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:651"
+        },
+        {
+          "setting": "task_acks_on_timeout",
+          "literal_default": "None",
+          "effective_default": "True (falls back to task_acks_on_failure_or_timeout=True)",
+          "where_defined": "celery/app/defaults.py:276; celery/app/task.py:449-453",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:698 ('When disabled, timed-out task messages will be rejected and requeued')"
+        },
+        {
+          "setting": "task_time_limit",
+          "literal_default": "None",
+          "effective_default": "None",
+          "where_defined": "celery/app/defaults.py:321",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:566"
+        }
+      ],
+      "commits": [
+        {
+          "sha": "7135768",
+          "role_claimed": "[fix] added the failure hooks ahead of the requeue branch",
+          "role_actual": "introduced_mechanism",
+          "wrote_cited_lines": true,
+          "note": "Partly. It wrote request.py:563-584 (Task.on_failure, after_return, task_failure signal, task-failed event). The FAILURE store and errback dispatch via mark_as_failure were already in on_timeout before it."
+        },
+        {
+          "sha": "40c2349",
+          "role_claimed": "[feature] changed the timeout path from ack-or-nothing to reject(requeue=True)",
+          "role_actual": "other",
+          "wrote_cited_lines": true,
+          "note": "Literally true for on_timeout (wrote 606-610), but that reject is a no-op at runtime: billiard calls on_failure first (site-packages/billiard/pool.py:694 before 702) and on_failure has requeued TimeLimitExceeded since 53dc515 (2025-03-20, uncited). Attribution is incomplete, not false."
+        }
+      ],
+      "confidence_assessment": {
+        "claimed": "high",
+        "deserved": "high",
+        "why_claimed_was_wrong": null
+      },
+      "how_to_verify": {
+        "status": "reproduced",
+        "what_you_ran_or_why_not": "review/real_worker.py timeout: real prefork worker, memory broker, time_limit=1, task sleeps 5. In 10 s: 5 executions, 4 errback executions, state FAILURE throughout, 6 'Hard time limit' log lines. Also worker/fr_request.py at Request level. Bounds from a RabbitMQ quorum-queue delivery limit were not tested."
+      },
+      "duplicate_of": null,
+      "detector_leads": [],
+      "root_cause_of_error": "Right, because the whole path is inside the hotspot file and the investigator read it. It misattributed which line performs the requeue because billiard's callback order is outside the repo, and it did not weigh that the docs describe the requeue as the setting's purpose."
+    },
+    {
+      "id": "FR-003",
+      "key": "b1af3746845c",
+      "hotspot_id": "H10",
+      "verdict": "partially_correct",
+      "verdict_basis": "executed",
+      "summary": "An unbounded Reject(requeue=True) loop exists on the dedup fast path, but only for prefork, only when the stored SUCCESS has no children, and only when dispatch raises. Several stated facts are wrong: one backend read per pass not two, an unregistered signature does not fail, SQS cannot reach the path, and solo/threads pools do not honour the Reject.",
+      "refuting_fact": {
+        "statement": "With the default Task.trail=True the first execution stores children whenever a callback was dispatched, so on redelivery the fast path dispatches nothing and cannot raise. The loop needs trail=False or a meta without children. An unregistered link falls back to send_task and publishes. kombu's SQS transport never sets delivery_info['redelivered'] on receive.",
+        "where": "celery/app/task.py:260; celery/app/trace.py:531-541; celery/result.py:470-473; site-packages/kombu/transport/SQS/__init__.py:577",
+        "location_kind": "other_repo_file",
+        "in_bundle": false,
+        "investigator_could_have_seen": "Partly. The children check is in the bundle (bundle lines 104-111) and the finding does state 'no stored children'. The trail=True default (task.py:260) is one Read away. The result cache (result.py) is one Read away. The SQS behaviour is outside the repo."
+      },
+      "preconditions": [
+        {
+          "setting": "worker_deduplicate_successful_tasks",
+          "literal_default": "False",
+          "effective_default": "False",
+          "where_defined": "celery/app/defaults.py:344",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:3471"
+        },
+        {
+          "setting": "task_acks_late",
+          "literal_default": "False",
+          "effective_default": "False",
+          "where_defined": "celery/app/defaults.py:269",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:651"
+        },
+        {
+          "setting": "Task.trail",
+          "literal_default": "True",
+          "effective_default": "True (children stored, loop unreachable)",
+          "where_defined": "celery/app/task.py:260",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/tasks.rst"
+        }
+      ],
+      "commits": [
+        {
+          "sha": "865922a",
+          "role_claimed": "[fix] added the dedup dispatch together with the unbounded Reject(requeue=True)",
+          "role_actual": "introduced_mechanism",
+          "wrote_cited_lines": true,
+          "note": "Accurate. Wrote trace.py:549-560 including the comment that admits indefinite requeue."
+        }
+      ],
+      "confidence_assessment": {
+        "claimed": "high",
+        "deserved": "low",
+        "why_claimed_was_wrong": "High was granted because the commit that wrote the lines is labelled [fix]. That shows who wrote the code, not that the trigger is reachable. Reachability needs three stacked non-default conditions that were not tested."
+      },
+      "how_to_verify": {
+        "status": "reproduced",
+        "what_you_ran_or_why_not": "canvas/fr003_tracer.py and canvas/fr003_worker.py (memory broker patched to mark requeued messages redelivered, as the Redis transport does). Default trail=True: 0 dispatches on redelivery. trail=False plus malformed link: 5 of 5 passes Reject(requeue=True), 1 backend read per pass. Real prefork worker: 6 bounces in 5 s. Unregistered link: published, no failure. Solo: CRITICAL 'Unrecoverable error'. Threads: one log line, message never settled. Rate on a real Redis or RabbitMQ broker not measured; SQS claim from reading kombu only."
+      },
+      "duplicate_of": null,
+      "detector_leads": [],
+      "root_cause_of_error": "The code comment in the cited lines openly admits the indefinite requeue, and the investigator took it at face value without asking how often the precondition holds. It did not open task.py (trail default), result.py (meta cache) or the worker pool code that receives the Reject."
+    },
+    {
+      "id": "FR-004",
+      "key": "a4b8d7590c34",
+      "hotspot_id": "H01",
+      "verdict": "correct",
+      "verdict_basis": "executed",
+      "summary": "Confirmed and measured. A chord applied directly whose body is a chain of further group|task pairs publishes header messages that grow about 6x per nesting level at N=4; the fix in 508c112 is gated on clone=True and chord.run reaches prepare_steps with clone=False. 'N^K' is imprecise: the measured factor is N+2.",
+      "refuting_fact": {
+        "statement": null,
+        "where": null,
+        "location_kind": "none",
+        "in_bundle": null,
+        "investigator_could_have_seen": null
+      },
+      "preconditions": [],
+      "commits": [
+        {
+          "sha": "508c112",
+          "role_claimed": "[fix] for geometric bloat, fixed only on the clone=True path",
+          "role_actual": "partial_fix_of_same_root_cause",
+          "wrote_cited_lines": true,
+          "note": "Accurate. Wrote canvas.py:1286-1296. Its tests cover the chain forms, not chord(header, chain_body).apply_async()."
+        },
+        {
+          "sha": "df57d9a",
+          "role_claimed": "[fix] earlier fix for the same bloat, second patch to it",
+          "role_actual": "partial_fix_of_same_root_cause",
+          "wrote_cited_lines": true,
+          "note": "Accurate. Wrote 2 of the cited lines at 1053-1057."
+        }
+      ],
+      "confidence_assessment": {
+        "claimed": "medium",
+        "deserved": "high",
+        "why_claimed_was_wrong": "Understated. The investigator held it at medium because it had not measured; the measurement confirms it."
+      },
+      "how_to_verify": {
+        "status": "reproduced",
+        "what_you_ran_or_why_not": "canvas/fr004_bloat.py, re-run by me. N=4: largest message 795 B, 3.7 KB, 21 KB, 127 KB, 761 KB, 4.6 MB, 27 MB for K=1..7 in the direct-chord form, against 16 KB at K=7 for the operator and chain forms. N=100, K=3: 5.03 MB per message, 503 MB total, apply_async took 10 s; operator form 88 KB. Worker-side OOM on deserialisation was not tested."
+      },
+      "duplicate_of": null,
+      "detector_leads": [],
+      "root_cause_of_error": "Right. Everything needed was in the bundle: the excerpt covers prepare_steps (1163-1402) and the diff of 508c112 shows the clone gate. Two [fix] commits on the same symptom pointed straight at the uncovered path."
+    },
+    {
+      "id": "FR-005",
+      "key": "bb3600c042ef",
+      "hotspot_id": "H02",
+      "verdict": "partially_correct",
+      "verdict_basis": "executed",
+      "summary": "The state corruption is real: after a failed reconnect _pubsub is None while subscribed_to keeps stale keys, and start() subscribes only the new key. The consequences are overstated: get() on an already-completed task returns immediately, a waiter blocked before completion gets TimeoutError (a hang only with timeout=None), a second get() succeeds, and thread-based clients recover without restart.",
+      "refuting_fact": {
+        "statement": "get() goes through on_wait_for_pending, which reads the stored meta directly, so a result that completed is returned without any pub/sub message. Under gevent the outcome is an immediate RuntimeError per backend instance, not a hang.",
+        "where": "celery/backends/redis.py:209-212; celery/backends/asynchronous.py:136-155",
+        "location_kind": "scanned_file",
+        "in_bundle": true,
+        "investigator_could_have_seen": "Yes. redis.py:209-212 is in the hotspot file, and the bundle shows on_wait_for_pending iterating result._iter_meta in a diff at bundle lines 448-450. The investigator cited the surrounding lines (202-207) and did not connect it to its own Verify step."
+      },
+      "preconditions": [
+        {
+          "setting": "result backend retry_policy",
+          "literal_default": "max_retries=20, interval 1 s",
+          "effective_default": "about 19 s measured against a refused port",
+          "where_defined": "celery/backends/base.py:204-205",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:925"
+        },
+        {
+          "setting": "result_backend_thread_safe",
+          "literal_default": "False",
+          "effective_default": "False (state is per thread, not per process)",
+          "where_defined": "celery/backends/base.py:236",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:913"
+        }
+      ],
+      "commits": [
+        {
+          "sha": "d35acd7",
+          "role_claimed": "[fix] for the same problem class: subscribed_to drift",
+          "role_actual": "other",
+          "wrote_cited_lines": false,
+          "note": "Related bookkeeping fix on the unsubscribe path. Wrote none of the cited lines."
+        },
+        {
+          "sha": "30402bd",
+          "role_claimed": "[fix] 9 days ago in the same bookkeeping",
+          "role_actual": "other",
+          "wrote_cited_lines": true,
+          "note": "Wrote 7 lines in 155-171. Committed 2026-09-28, which is 5 days before the scan, not 9."
+        }
+      ],
+      "confidence_assessment": {
+        "claimed": "medium",
+        "deserved": "medium",
+        "why_claimed_was_wrong": null
+      },
+      "how_to_verify": {
+        "status": "not_reproduced",
+        "what_you_ran_or_why_not": "redis/fr005.py, re-run by me with retry scaled to 2: after outage and recovery, A.get(timeout=5) for a completed A returned in 0.01 s. The recipe's own step does not hang. A variant does show the bug: B.get(timeout=5) already waiting when B completes raised TimeoutError at 5.0 s with SUCCESS stored. gevent runs (fr005_gevent*.py): drainer dies, later get() raises RuntimeError in 0.00 s."
+      },
+      "duplicate_of": null,
+      "detector_leads": [],
+      "root_cause_of_error": "Traced the bookkeeping correctly but stopped at 'the subscription is missing, so the result never arrives' without reading the 20 lines below that poll the stored meta. No execution, so the Verify step was never tried."
+    },
+    {
+      "id": "FR-006",
+      "key": "df2cb49b3e2c",
+      "hotspot_id": "H02",
+      "verdict": "partially_correct",
+      "verdict_basis": "executed",
+      "summary": "A caller whose pubsub operation hits a connection error does stall for the whole reconnect cycle while holding its own lock. The claim that every thread piles up behind one drainer is false by default: backends and locks are per thread and the default drainer has no background thread. It is the same defect as FR-001 seen from the drain side.",
+      "refuting_fact": {
+        "statement": "Backend, ResultConsumer and _pubsub_lock are per thread unless result_backend_thread_safe=True, so one thread's reconnect does not block another thread's consume_from. Subscribe on a warm connection is send-only and does not block during a stall.",
+        "where": "celery/app/base.py:1640-1657; celery/backends/base.py:236",
+        "location_kind": "other_repo_file",
+        "in_bundle": false,
+        "investigator_could_have_seen": "Yes, one Read of celery/app/base.py. Nothing in the H02 bundle mentions _local or thread_safe."
+      },
+      "preconditions": [
+        {
+          "setting": "result_backend_thread_safe",
+          "literal_default": "False",
+          "effective_default": "False",
+          "where_defined": "celery/backends/base.py:236",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:913"
+        },
+        {
+          "setting": "redis_socket_timeout",
+          "literal_default": "120.0",
+          "effective_default": "120.0",
+          "where_defined": "celery/app/defaults.py:202",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:1675"
+        },
+        {
+          "setting": "result backend retry_policy",
+          "literal_default": "max_retries=20",
+          "effective_default": "same",
+          "where_defined": "celery/backends/base.py:204-205",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:925"
+        }
+      ],
+      "commits": [
+        {
+          "sha": "cd3b42e",
+          "role_claimed": "introduced the shared pubsub lock",
+          "role_actual": "introduced_mechanism",
+          "wrote_cited_lines": true,
+          "note": "Accurate for the lock. Retrying reconnect under the consumer dates from 6ccdc7b (2020)."
+        },
+        {
+          "sha": "3083864",
+          "role_claimed": "moved the socket wait out of the lock; reconnect path still holds it",
+          "role_actual": "added_the_mitigation",
+          "wrote_cited_lines": true,
+          "note": "Accurate."
+        },
+        {
+          "sha": "30402bd",
+          "role_claimed": "[fix] for a deadlock on this lock, third change in 9 days",
+          "role_actual": "other",
+          "wrote_cited_lines": true,
+          "note": "Accurate count: 09-20, 09-27, 09-28. It is a different defect (GC re-entrancy)."
+        }
+      ],
+      "confidence_assessment": {
+        "claimed": "medium",
+        "deserved": "low",
+        "why_claimed_was_wrong": "Lock scope was read correctly, but who contends for the lock was assumed. With per-thread locks the convoy has no second participant."
+      },
+      "how_to_verify": {
+        "status": "not_reproduced",
+        "what_you_ran_or_why_not": "review/recipe_fr001.py second half: 8 threads with warm connections, Redis stalled, every apply_async returned in 0.00 s. With fresh threads the stall is the FR-001 behaviour. redis/fr001_b_shared.py with result_backend_thread_safe=True does serialise callers."
+      },
+      "duplicate_of": "FR-001",
+      "detector_leads": [],
+      "root_cause_of_error": "Same blind spot as FR-001, from the other hotspot: the investigator for redis.py reasoned about the lock without opening app/base.py to see how many consumers exist per process. Parallel investigators cannot see each other's findings, so the duplicate was linked but not merged."
+    },
+    {
+      "id": "FR-007",
+      "key": "8bcddcb49b5d",
+      "hotspot_id": "H04",
+      "verdict": "correct_but_gated",
+      "verdict_basis": "executed",
+      "summary": "Confirmed exactly as described once result_backend_always_retry is enabled without a cap: store_result and get() retry with no deadline and get(timeout=2) overran to 14 s. It is opt-in, and the infinite default of result_backend_max_retries is documented.",
+      "refuting_fact": {
+        "statement": null,
+        "where": null,
+        "location_kind": "none",
+        "in_bundle": null,
+        "investigator_could_have_seen": null
+      },
+      "preconditions": [
+        {
+          "setting": "result_backend_always_retry",
+          "literal_default": "False",
+          "effective_default": "False",
+          "where_defined": "celery/app/defaults.py:231",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:856"
+        },
+        {
+          "setting": "result_backend_max_retries",
+          "literal_default": "inf",
+          "effective_default": "inf",
+          "where_defined": "celery/app/defaults.py:229",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:896"
+        }
+      ],
+      "commits": [
+        {
+          "sha": "0266822",
+          "role_claimed": "[resilience] extended the retry wrapper to more operations",
+          "role_actual": "other",
+          "wrote_cited_lines": true,
+          "note": "Accurate. The unbounded loop itself is from 0463bff (2020)."
+        },
+        {
+          "sha": "0348d64",
+          "role_claimed": "[fix] patched this retry loop but added no bound",
+          "role_actual": "unrelated_change_to_file",
+          "wrote_cited_lines": true,
+          "note": "Accurate. It added the on_backend_retryable_error hook inside the loop."
+        }
+      ],
+      "confidence_assessment": {
+        "claimed": "medium",
+        "deserved": "high",
+        "why_claimed_was_wrong": "Understated; the behaviour is deterministic and reproduced."
+      },
+      "how_to_verify": {
+        "status": "reproduced",
+        "what_you_ran_or_why_not": "redis/fr007.py and fr007_ctl.py, re-run by me. always_retry=True, backend down 12 s: get(timeout=2) still blocked at 12 s and raised TimeoutError at 14.0 s; store blocked 12.1 s; 101 'Retrying inf more times' warnings. Defaults: both raise ConnectionError in 0.00 s. For Redis the get() path is on_wait_for_pending, not the cited wait_for."
+      },
+      "duplicate_of": null,
+      "detector_leads": [
+        {
+          "ref": "S04@celery/backends/base.py:773",
+          "verdict": "false_lead",
+          "why": "Line 773 is the except around the on_backend_retryable_error hook, not the retry decision. The retry at 764 is gated by exception_safe_to_retry, which returns False in the base class. Present in the H04 bundle, cited by no finding."
+        }
+      ],
+      "root_cause_of_error": "Right. The loop and the defaults are in the hotspot file and the retry-layer section of the bundle pointed at them."
+    },
+    {
+      "id": "FR-008",
+      "key": "34e3742160f1",
+      "hotspot_id": "H04",
+      "verdict": "partially_correct",
+      "verdict_basis": "executed",
+      "summary": "The timeout accounting bug is real: get_many counts only its sleeps, so timeout=3 with a 2 s MGET raised after 17 s. The finding names Redis as the example backend, but Redis never runs this polling loop, and its own predicted overrun (7.5 s) is wrong.",
+      "refuting_fact": {
+        "statement": "RedisBackend mixes in AsyncBackendMixin, whose iter_native uses pub/sub and calls get_many once. The polling loop is reached only through SyncBackendMixin backends such as cache/memcached and GCS.",
+        "where": "celery/backends/redis.py:372; celery/backends/asynchronous.py:224-230; celery/backends/base.py:1022-1023",
+        "location_kind": "other_repo_file",
+        "in_bundle": false,
+        "investigator_could_have_seen": "Yes, one Read of redis.py:372 or asynchronous.py:230. Not in the H04 bundle."
+      },
+      "preconditions": [],
+      "commits": [
+        {
+          "sha": "1ea3d4f",
+          "role_claimed": "[resilience] timeout=0 fix kept the sleep-only accounting",
+          "role_actual": "other",
+          "wrote_cited_lines": true,
+          "note": "Accurate. Wrote 8 lines in 1259-1269. The accounting dates from a40ab46 (2011)."
+        }
+      ],
+      "confidence_assessment": {
+        "claimed": "medium",
+        "deserved": "medium",
+        "why_claimed_was_wrong": null
+      },
+      "how_to_verify": {
+        "status": "reproduced",
+        "what_you_ran_or_why_not": "redis/fr008.py, re-run by me on the cache backend with mget mocked at 2 s and 1000 ids: TimeoutError after 17.1 s, 7 MGETs of 1000 keys each. The script also asserts RedisBackend.iter_native is AsyncBackendMixin.iter_native. The load-amplification claim was not measured."
+      },
+      "duplicate_of": null,
+      "detector_leads": [],
+      "root_cause_of_error": "Found a deterministic bug in the function the bundle showed, then guessed which backends call it. 'Key-value backend, for example Redis' was an assumption; one grep for iter_native would have corrected it."
+    },
+    {
+      "id": "FR-009",
+      "key": "25300c62e151",
+      "hotspot_id": "H04",
+      "verdict": "partially_correct",
+      "verdict_basis": "executed",
+      "summary": "The bare 'except Exception: pass' is real and does swallow a failed errback publish with no log line. It is reachable only when link_error sits in the group's own options. The usual API, group.link_error(), puts errbacks on the children, and this handler then dispatches nothing at all, broker failure or not.",
+      "refuting_fact": {
+        "statement": "group.link_error() attaches the errback to each child and leaves group.options empty, while _handle_group_chord_error reads group_callback.options.get('link_error', []). So the finding's Verify recipe observes 'errback never runs, nothing logged' with and without the injected fault.",
+        "where": "celery/canvas.py:1806-1816; celery/backends/base.py:482",
+        "location_kind": "other_repo_file",
+        "in_bundle": false,
+        "investigator_could_have_seen": "Yes, one Read of canvas.py group.link_error. Not in the H04 bundle (no occurrence of link_error)."
+      },
+      "preconditions": [
+        {
+          "setting": "task_publish_retry_policy",
+          "literal_default": "max_retries=3, 0/0.2/0.4 s",
+          "effective_default": "about 0.65 s measured",
+          "where_defined": "celery/app/defaults.py:301-306",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:448"
+        }
+      ],
+      "commits": [
+        {
+          "sha": "477c816",
+          "role_claimed": "[fix] for a sibling silent-failure path; added logging only for new-style errbacks",
+          "role_actual": "other",
+          "wrote_cited_lines": false,
+          "note": "Accurate description. It changed _call_task_errbacks, not the cited swallow, which was written by 9cb389d (2025-07-02)."
+        }
+      ],
+      "confidence_assessment": {
+        "claimed": "medium",
+        "deserved": "low",
+        "why_claimed_was_wrong": "The swallow is visible, but the investigator did not check that the options it reads are ever populated by the public API."
+      },
+      "how_to_verify": {
+        "status": "not_reproduced",
+        "what_you_ran_or_why_not": "canvas/fr009_errback.py, re-run by me. Case 1 (body.link_error, healthy broker): nothing published, so the recipe's expected observation appears without any fault and cannot confirm the hypothesis. Case 3 (link_error in group.options, publish raises): nothing published, 0 log lines, which does confirm the swallow. Case 4 (new-style errback that raises): logged."
+      },
+      "duplicate_of": null,
+      "detector_leads": [
+        {
+          "ref": "S19@celery/backends/base.py:489",
+          "verdict": "true_lead",
+          "why": "The swallow exists and leaves no trace. This is the one detector lead the report confirms."
+        }
+      ],
+      "root_cause_of_error": "Confirmed a detector lead by reading the except block, then wrote a trigger and a recipe without tracing where link_error is stored. It missed the larger deterministic gap one function away."
+    },
+    {
+      "id": "FR-010",
+      "key": "c15996fba8db",
+      "hotspot_id": "H05",
+      "verdict": "partially_correct",
+      "verdict_basis": "executed",
+      "summary": "With task_send_sent_event on, a failed task-sent event publish is swallowed into an unbounded buffer that nothing flushes, with no log line. The stated amplifier is wrong: a broker outage does not fill it, because the task publish runs first and raises before the event publish is reached.",
+      "refuting_fact": {
+        "statement": "In send_task_message the task message is published before the task-sent event. In an outage the task publish raises and the event code never runs, so entries accumulate only when the event publish fails while task publishes succeed (for example a refused celeryev declare).",
+        "where": "celery/app/amqp.py:570 and 598-608",
+        "location_kind": "scanned_file",
+        "in_bundle": true,
+        "investigator_could_have_seen": "Yes. Both publishes are in the bundle's source excerpt (lines 494-625; `ret = producer.publish` at bundle line 109, the sent_event block after it)."
+      },
+      "preconditions": [
+        {
+          "setting": "task_send_sent_event",
+          "literal_default": "False",
+          "effective_default": "False",
+          "where_defined": "celery/app/defaults.py:314",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:3871"
+        }
+      ],
+      "commits": [
+        {
+          "sha": "e1dba84",
+          "role_claimed": "[resilience] changed the retry policy of this event publish; buffer path unchanged",
+          "role_actual": "unrelated_change_to_file",
+          "wrote_cited_lines": false,
+          "note": "Accurate and non-corroborating. Wrote none of the cited lines; the swallow-and-buffer path dates from 2010-2014."
+        }
+      ],
+      "confidence_assessment": {
+        "claimed": "medium",
+        "deserved": "medium",
+        "why_claimed_was_wrong": null
+      },
+      "how_to_verify": {
+        "status": "reproduced",
+        "what_you_ran_or_why_not": "amqp/fr010.py and fr010b.py, re-run by me: publish mocked to fail only for the celeryev exchange, 10,000 apply_async calls, buffer length 10,000, maxlen None, nothing logged, about 0.9 to 2.9 KB per entry. flush() clears the buffer without sending (producer is None). The real-broker trigger (refused declare) was reasoned from code, not run."
+      },
+      "duplicate_of": null,
+      "detector_leads": [],
+      "root_cause_of_error": "Read the dispatcher correctly and grepped for flush callers, which was the hard part. It then described the trigger from intuition ('broker outage') without reading the ordering of the two publishes shown in its own bundle."
+    },
+    {
+      "id": "FR-011",
+      "key": "6105880fd01e",
+      "hotspot_id": "H06",
+      "verdict": "correct_but_gated",
+      "verdict_basis": "executed",
+      "summary": "Confirmed at handler level: when the backend write raises inside the Reject(requeue=False) branch, on_failure raises before reject(), the message stays unacked, and billiard logs 'Pool callback raised exception' and swallows it. It needs acks_late, an explicit Reject in task code and a backend failure at that moment.",
+      "refuting_fact": {
+        "statement": null,
+        "where": null,
+        "location_kind": "none",
+        "in_bundle": null,
+        "investigator_could_have_seen": null
+      },
+      "preconditions": [
+        {
+          "setting": "task_acks_late",
+          "literal_default": "False",
+          "effective_default": "False (early-acked tasks are unaffected)",
+          "where_defined": "celery/app/defaults.py:269",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:651"
+        },
+        {
+          "setting": "result_backend_always_retry",
+          "literal_default": "False",
+          "effective_default": "False (store raises immediately)",
+          "where_defined": "celery/app/defaults.py:231",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:856"
+        },
+        {
+          "setting": "task_ignore_result",
+          "literal_default": "False",
+          "effective_default": "False",
+          "where_defined": "celery/app/defaults.py:295",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:531"
+        }
+      ],
+      "commits": [
+        {
+          "sha": "e2b276e",
+          "role_claimed": "[feature] introduced the backend write ahead of reject()",
+          "role_actual": "introduced_mechanism",
+          "wrote_cited_lines": true,
+          "note": "Accurate. Wrote request.py:683-686."
+        }
+      ],
+      "confidence_assessment": {
+        "claimed": "medium",
+        "deserved": "medium",
+        "why_claimed_was_wrong": null
+      },
+      "how_to_verify": {
+        "status": "reproduced",
+        "what_you_ran_or_why_not": "worker/fr_request.py and worker/fr011_redis.py, re-run by me: real Request object, Redis backend on a closed port, default config. on_failure raised ConnectionError in 0.0 s, acknowledged=False; healthy control ran store, signal, event, REJECT(requeue=False). Redelivery after a worker restart was not run. The swallow is at site-packages/billiard/pool.py:1804-1814."
+      },
+      "duplicate_of": null,
+      "detector_leads": [],
+      "root_cause_of_error": "Right. An ordering bug fully visible in the hotspot file, with the contrasting correct ordering 20 lines below. The investigator flagged the one thing it could not see (what happens to the exception in billiard) in its rationale."
+    },
+    {
+      "id": "FR-012",
+      "key": "6bd1a259060b",
+      "hotspot_id": "H06",
+      "verdict": "partially_correct",
+      "verdict_basis": "executed",
+      "summary": "The requeue loop under reject_on_worker_lost is real and uncapped, and reproduced on a real worker. It is opt-in and the docs warn it 'can cause message loops'. The finding's distinguishing claim, that commit 67ba9e5 widened the trigger to SystemExit, is wrong: that commit preserves the previous behaviour under billiard 4.3.0.",
+      "refuting_fact": {
+        "statement": "Before billiard 4.3.0 a task calling sys.exit() killed the child and already arrived as WorkerLostError. 67ba9e5 maps the new SystemExit report back to WorkerLostError ('Report it as WorkerLostError, as before'). The source comment at the cited lines says 'so keep treating it as a lost worker'.",
+        "where": "celery/worker/request.py:669-670; git show 67ba9e5 (commit message)",
+        "location_kind": "scanned_file",
+        "in_bundle": true,
+        "investigator_could_have_seen": "Partly. The source comment 'keep treating it as a lost worker' is in the bundle excerpt (bundle line 83). The commit message that says 'as before' is not: bundles carry subjects and trimmed diffs only, and the diff for 67ba9e5 is trimmed across exactly this hunk."
+      },
+      "preconditions": [
+        {
+          "setting": "task_reject_on_worker_lost",
+          "literal_default": "None (disabled)",
+          "effective_default": "disabled",
+          "where_defined": "celery/app/defaults.py:310",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:714 (line 731: 'Enabling this can cause message loops')"
+        },
+        {
+          "setting": "task_acks_late",
+          "literal_default": "False",
+          "effective_default": "False",
+          "where_defined": "celery/app/defaults.py:269",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:651"
+        },
+        {
+          "setting": "worker_lost_wait",
+          "literal_default": "10.0",
+          "effective_default": "10.0 (a hard-killed child is requeued about every 10 s)",
+          "where_defined": "celery/app/defaults.py:354",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst"
+        }
+      ],
+      "commits": [
+        {
+          "sha": "67ba9e5",
+          "role_claimed": "[feature] widened the worker-lost path to SystemExit reports",
+          "role_actual": "other",
+          "wrote_cited_lines": true,
+          "note": "Claim is wrong. It wrote request.py:663-674 to keep SystemExit treated as a lost worker after a billiard change; the trigger set is unchanged."
+        }
+      ],
+      "confidence_assessment": {
+        "claimed": "medium",
+        "deserved": "medium",
+        "why_claimed_was_wrong": null
+      },
+      "how_to_verify": {
+        "status": "reproduced",
+        "what_you_ran_or_why_not": "review/real_worker.py: real prefork worker. sys.exit(1): 9 executions in 10 s, state never leaves PENDING. os._exit(1): redelivered after 10.4 s (worker_lost_wait), second delivery received. Also worker/fr_request.py at Request level. Behaviour with billiard before 4.3.0 was taken from the commit message, not run."
+      },
+      "duplicate_of": null,
+      "detector_leads": [],
+      "root_cause_of_error": "The core loop is documented behaviour that the investigator restated. To make it a finding it leaned on the most recent commit in the bundle and inferred 'widened' from a diff trimmed in the middle; it had no commit body to read and ignored the word 'keep' in the comment it cited."
+    },
+    {
+      "id": "FR-013",
+      "key": "5fc6c6cb450e",
+      "hotspot_id": "H07",
+      "verdict": "wrong",
+      "verdict_basis": "executed",
+      "summary": "Wrong on both trigger and mechanism. Workers with --pool=threads on py-amqp or Redis get a hub and run asynloop, so acks still go through hub.call_soon. Where there is no hub, py-amqp serialises every frame write behind a per-connection lock, so concurrent acks cannot interleave frames.",
+      "refuting_fact": {
+        "statement": "should_use_eventloop() is true for any pool on an asynchronous transport outside gevent/eventlet and Windows, so threads pools take the `if self.hub` branch in call_soon_ack. py-amqp wraps write_frame in `with buffer_lock`; kombu 5.7 requires amqp>=5.4.0.",
+        "where": "site-packages/amqp/method_framing.py:118-122; celery/worker/worker.py:307-310",
+        "location_kind": "dependency_source",
+        "in_bundle": false,
+        "investigator_could_have_seen": "Trigger: yes. The call_soon_ack docstring in the cited range says 'In synloop (gevent/eventlet) workers' (bundle line 339) and worker.py:307 is one Read away. Mechanism: only by reading the installed amqp package, which is outside the repository and outside the investigator's reach."
+      },
+      "preconditions": [],
+      "commits": [
+        {
+          "sha": "9c8145f",
+          "role_claimed": "[fix] added call_soon_ack and removed the single-writer hand-off for acks",
+          "role_actual": "other",
+          "wrote_cited_lines": true,
+          "note": "Literally true for hub-less workers (wrote 288-294 and 2 lines of 786-795). The finding's own rationale concedes the commit introduced the suspected risk and does not corroborate an observed failure."
+        }
+      ],
+      "confidence_assessment": {
+        "claimed": "medium",
+        "deserved": "low",
+        "why_claimed_was_wrong": "The rationale itself says the investigator did not check whether py-amqp or kombu lock frame writes. An unchecked assumption that decides the whole finding should have capped it at low or dropped it."
+      },
+      "how_to_verify": {
+        "status": "not_runnable",
+        "what_you_ran_or_why_not": "The recipe needs RabbitMQ; none is available here. Refuted instead by worker/fr013.py, re-run by me: threads, solo and prefork on pyamqp and redis all report hub set and asynloop; 16 threads x 300 basic.ack frames through a transport that yields mid-frame gave 4800 of 4800 intact frames, and the control without buffer_lock corrupted immediately. No gevent or eventlet worker was run against a real broker."
+      },
+      "duplicate_of": null,
+      "detector_leads": [
+        {
+          "ref": "S19@celery/worker/consumer/consumer.py:435",
+          "verdict": "false_lead",
+          "why": "A bare except around connection.collect() while tearing down a connection that already failed; the error is logged with exc_info one statement earlier (line 429). Present in the H07 bundle, cited by no finding."
+        }
+      ],
+      "root_cause_of_error": "Built a concurrency failure from a diff without knowing which pools run without a hub or what the transport guarantees. Both facts decide the finding and both were flagged as unchecked in its own rationale, yet it was reported at medium."
+    },
+    {
+      "id": "FR-014",
+      "key": "8196e104b15a",
+      "hotspot_id": "H08",
+      "verdict": "correct",
+      "verdict_basis": "executed",
+      "summary": "Confirmed on PostgreSQL 16.2. With an old-schema table and a database user that cannot ALTER, the migration logs a warning, prepared is set True, and every read and write then raises InFailedSqlTransaction because the fallback query reuses the aborted session. Two details are off: the error is a raw InternalError, not BackendStoreError, and there are no retries on defaults.",
+      "refuting_fact": {
+        "statement": null,
+        "where": null,
+        "location_kind": "none",
+        "in_bundle": null,
+        "investigator_could_have_seen": null
+      },
+      "preconditions": [
+        {
+          "setting": "result_backend",
+          "literal_default": "none",
+          "effective_default": "db+postgresql with a celery_taskmeta table created by an older release",
+          "where_defined": "n/a (deployment)",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:1313-1323 (mentions the manual ALTER, does not say results break without it)"
+        },
+        {
+          "setting": "database user privileges",
+          "literal_default": "n/a",
+          "effective_default": "DML only, not table owner",
+          "where_defined": "n/a (deployment)",
+          "documented_behaviour": false,
+          "doc_ref": null
+        },
+        {
+          "setting": "result_backend_always_retry (database backend)",
+          "literal_default": "True per code comment and docs",
+          "effective_default": "False at runtime",
+          "where_defined": "celery/backends/database/__init__.py:70; celery/app/defaults.py:231",
+          "documented_behaviour": false,
+          "doc_ref": "docs/userguide/configuration.rst:863-869 (states the opposite)"
+        }
+      ],
+      "commits": [
+        {
+          "sha": "8244f04",
+          "role_claimed": "[fix] added the children column and the defer fallback",
+          "role_actual": "introduced_mechanism",
+          "wrote_cited_lines": true,
+          "note": "Accurate. Wrote all three cited ranges."
+        },
+        {
+          "sha": "5cf6140",
+          "role_claimed": "[fix] extended the same fallback to stamps a week later",
+          "role_actual": "introduced_mechanism",
+          "wrote_cited_lines": true,
+          "note": "Accurate. Wrote 10 lines of 142-157."
+        }
+      ],
+      "confidence_assessment": {
+        "claimed": "medium",
+        "deserved": "high",
+        "why_claimed_was_wrong": "Understated; reproduced on a real database."
+      },
+      "how_to_verify": {
+        "status": "reproduced",
+        "what_you_ran_or_why_not": "worker/fr014_pg.py, re-run by me against PostgreSQL 16.2 (pgserver): ALTER fails with InsufficientPrivilege, 8 warnings, prepared=True, then all four reads and writes raise InFailedSqlTransaction and no row is written. worker/fr014.py on sqlite: reads work, writes fail with 'no column named children'. always_retry was False and max_retries inf in both runs."
+      },
+      "duplicate_of": null,
+      "detector_leads": [
+        {
+          "ref": "S07@celery/backends/database/__init__.py:168",
+          "verdict": "false_lead",
+          "why": "session.add(task) follows a query for the existing row, and task_id is unique; a replay updates the row or raises IntegrityError, it does not duplicate rows. Present in the H08 bundle, cited by no finding."
+        },
+        {
+          "ref": "S19@celery/backends/database/__init__.py:240",
+          "verdict": "true_lead",
+          "why": "A stamps decode failure on read is swallowed with no trace. Real but low impact (stamp metadata silently missing from the result). Present in the H08 bundle, cited by no finding."
+        }
+      ],
+      "root_cause_of_error": "Right. It combined a visible code path with well-known PostgreSQL transaction semantics. The '3 retries, each rebuilding the engine' sentence was copied from the same misleading comment that broke FR-015."
+    },
+    {
+      "id": "FR-015",
+      "key": "6345778fa223",
+      "hotspot_id": "H08",
+      "verdict": "wrong",
+      "verdict_basis": "executed",
+      "summary": "Wrong on defaults: the database backend does not retry at all, so the retry-plus-dispose storm it describes never runs. When a user opts in, all DatabaseError subclasses are retried and the sleeps are as stated, but engine.dispose happens only in forked children, and enabling always_retry alone gives infinite retries of permanent errors.",
+      "refuting_fact": {
+        "statement": "conf.get('result_backend_always_retry', True) returns False because the key has a registered global default; the literal fallback never applies. The same holds for max_retries (inf, not 3). On a live app: always_retry=False, max_retries=inf, one attempt, zero dispose calls.",
+        "where": "celery/app/defaults.py:229-231; celery/backends/database/__init__.py:70-71",
+        "location_kind": "runtime_behaviour",
+        "in_bundle": false,
+        "investigator_could_have_seen": "Only partly. The misleading line and its comment are in the bundle (bundle line 70). The registered defaults are one Read away in defaults.py, but concluding that conf.get ignores its fallback needs knowledge of the settings object or an execution. The code author, the docs and the unit tests all make the same mistake."
+      },
+      "preconditions": [
+        {
+          "setting": "result_backend_always_retry (database backend)",
+          "literal_default": "True (conf.get fallback, comment and docs)",
+          "effective_default": "False",
+          "where_defined": "celery/backends/database/__init__.py:70; celery/app/defaults.py:231",
+          "documented_behaviour": false,
+          "doc_ref": "docs/userguide/configuration.rst:863-869 and 1113-1117 (both state True and 3, which is wrong)"
+        },
+        {
+          "setting": "result_backend_max_retries (database backend)",
+          "literal_default": "3",
+          "effective_default": "inf",
+          "where_defined": "celery/backends/database/__init__.py:71; celery/app/defaults.py:229",
+          "documented_behaviour": false,
+          "doc_ref": "docs/userguide/configuration.rst:1113-1117"
+        },
+        {
+          "setting": "result_backend_base_sleep_between_retries_ms",
+          "literal_default": "10",
+          "effective_default": "10",
+          "where_defined": "celery/app/defaults.py:230",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst"
+        }
+      ],
+      "commits": [
+        {
+          "sha": "0348d64",
+          "role_claimed": "[fix] introduced RETRYABLE_DB_ERRORS and the invalidate hook",
+          "role_actual": "other",
+          "wrote_cited_lines": true,
+          "note": "Wrote 31-36 and 122-126. Retrying every DatabaseError predates it (the old @retry decorator did the same), and the path is inactive on defaults."
+        },
+        {
+          "sha": "aa4c3b1",
+          "role_claimed": "[resilience] widened the retry policy to every DB operation",
+          "role_actual": "unrelated_change_to_file",
+          "wrote_cited_lines": false,
+          "note": "Wrote none of the cited lines. The lines that matter (70-71) were written by 0266822, which the finding does not cite."
+        }
+      ],
+      "confidence_assessment": {
+        "claimed": "medium",
+        "deserved": "low",
+        "why_claimed_was_wrong": "The finding's central premise is a default value read from a literal and a comment. It was never checked against the settings registry or run."
+      },
+      "how_to_verify": {
+        "status": "not_reproduced",
+        "what_you_ran_or_why_not": "worker/fr015_defaults.py and worker/fr015.py, re-run by me on sqlite with a real IntegrityError from a duplicate save_group. Defaults: 1 attempt, 0 dispose, raises at once. always_retry=True and max_retries=3: 4 attempts, 3 dispose calls only in a forked child. The recipe as written (PostgreSQL with max_connections just above concurrency) was not run."
+      },
+      "duplicate_of": null,
+      "detector_leads": [],
+      "root_cause_of_error": "Trusted a code comment ('We maintain this behavior by default') and a literal fallback argument. This is the clearest case where reading cannot substitute for running: one print of app.backend.always_retry refutes it."
+    },
+    {
+      "id": "FR-016",
+      "key": "d710c0302beb",
+      "hotspot_id": "H09",
+      "verdict": "correct",
+      "verdict_basis": "executed",
+      "summary": "Confirmed on defaults. If publishing the retry message fails past the publish retry policy, Task.retry raises Reject(requeue=False); the task ends FAILURE and is not retried. The window is about 0.6 to 1 s for refused connections. The memory or disk alarm example is wrong (a blocked publisher hangs, it does not raise), and the behaviour has been deliberate since 2014.",
+      "refuting_fact": {
+        "statement": null,
+        "where": null,
+        "location_kind": "none",
+        "in_bundle": null,
+        "investigator_could_have_seen": null
+      },
+      "preconditions": [
+        {
+          "setting": "task_publish_retry_policy",
+          "literal_default": "max_retries=3, interval_start=0, interval_step=0.2",
+          "effective_default": "same; 0.66 to 1.0 s measured against a refused port, 4.0 s against a blackholed host",
+          "where_defined": "celery/app/defaults.py:301-306",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:448"
+        },
+        {
+          "setting": "task_publish_retry",
+          "literal_default": "True",
+          "effective_default": "True",
+          "where_defined": "celery/app/defaults.py:298",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst"
+        }
+      ],
+      "commits": [],
+      "confidence_assessment": {
+        "claimed": "medium",
+        "deserved": "high",
+        "why_claimed_was_wrong": "Understated; the investigator capped it at medium only because no [fix] commit exists."
+      },
+      "how_to_verify": {
+        "status": "reproduced",
+        "what_you_ran_or_why_not": "amqp/fr016.py and fr016b.py, re-run by me: in-process solo worker, memory broker, retry publish mocked to raise OperationalError. State FAILURE with 'reject requeue=False: OperationalError', no re-execution, queue empty, with acks_late False and True. In my re-run the errback counter read 1 for early ack and 0 for late ack; I did not resolve that difference. Not run against a real broker failover. Origin is f05a95726 (2014, 'Do not requeue if retry fails')."
+      },
+      "duplicate_of": null,
+      "detector_leads": [],
+      "root_cause_of_error": "Right. Three adjacent lines in the hotspot file plus the default policy. It could not know the behaviour is a deliberate 2014 decision because the bundle only carries the last ten commits."
+    },
+    {
+      "id": "FR-017",
+      "key": "9be5cf13811a",
+      "hotspot_id": "H10",
+      "verdict": "correct",
+      "verdict_basis": "executed",
+      "summary": "Confirmed on defaults. When publishing the next chain step raises after the body ran, the task is stored FAILURE, the success callback already sent and the errback both run, the message is acked and the next step never runs. Overstated in two places: the chain does not hang (the remaining step is marked FAILURE) and it is logged ('raised unexpected'). Already open upstream as celery/celery#10725.",
+      "refuting_fact": {
+        "statement": null,
+        "where": null,
+        "location_kind": "none",
+        "in_bundle": null,
+        "investigator_could_have_seen": null
+      },
+      "preconditions": [
+        {
+          "setting": "task_publish_retry_policy",
+          "literal_default": "max_retries=3",
+          "effective_default": "about 0.66 s (amqp) to 1.0 s (redis) before the publish raises",
+          "where_defined": "celery/app/defaults.py:301-306",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:448"
+        }
+      ],
+      "commits": [
+        {
+          "sha": "865922a",
+          "role_claimed": "[fix] moved the main-path dispatch into _dispatch_callbacks_and_chain, error handling unchanged",
+          "role_actual": "unrelated_change_to_file",
+          "wrote_cited_lines": true,
+          "note": "Accurate statement, but it is a refactor that moved the lines. The handler that catches only EncodeError predates it, so the commit corroborates nothing."
+        }
+      ],
+      "confidence_assessment": {
+        "claimed": "medium",
+        "deserved": "high",
+        "why_claimed_was_wrong": "Understated."
+      },
+      "how_to_verify": {
+        "status": "reproduced",
+        "what_you_ran_or_why_not": "canvas/fr017_worker.py early and late, re-run by me: real solo worker, memory broker, publish of b raises OperationalError once. Executed ['a', 'eb(OperationalError)', 'cb']; a is FAILURE; b is FAILURE and never ran; queue empty; identical for early and late ack. Upstream duplicate found through the GitHub issue search."
+      },
+      "duplicate_of": null,
+      "detector_leads": [],
+      "root_cause_of_error": "Right. Control flow fully inside the bundle excerpt (460-699). It had no way to know an upstream issue already existed."
+    },
+    {
+      "id": "FR-018",
+      "key": "293417791dc2",
+      "hotspot_id": "H05",
+      "verdict": "correct_but_gated",
+      "verdict_basis": "executed",
+      "summary": "Confirmed with sent events enabled: one process-wide dispatcher holds a plain lock across the retrying event publish, so concurrent publishers serialise behind it. The hold is bounded by the publish retry policy. The cited commit reduced the exposure; it did not create it.",
+      "refuting_fact": {
+        "statement": null,
+        "where": null,
+        "location_kind": "none",
+        "in_bundle": null,
+        "investigator_could_have_seen": null
+      },
+      "preconditions": [
+        {
+          "setting": "task_send_sent_event",
+          "literal_default": "False",
+          "effective_default": "False",
+          "where_defined": "celery/app/defaults.py:314",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:3871"
+        },
+        {
+          "setting": "task_publish_retry_policy",
+          "literal_default": "max_retries=3",
+          "effective_default": "bounds the lock hold to about 0.7 s (refused) or 4 s (blackholed)",
+          "where_defined": "celery/app/defaults.py:301-306",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/configuration.rst:448"
+        }
+      ],
+      "commits": [
+        {
+          "sha": "e1dba84",
+          "role_claimed": "[resilience] gave this event publish the full merged retry policy, which sets how long the lock is held",
+          "role_actual": "added_the_mitigation",
+          "wrote_cited_lines": false,
+          "note": "Implication is backwards. Before it the event publish received retry_policy=None, which kombu treats as unlimited retries (site-packages/kombu/messaging.py:329, connection.py:621). The commit capped the hold. Wrote none of the cited lines."
+        }
+      ],
+      "confidence_assessment": {
+        "claimed": "low",
+        "deserved": "medium",
+        "why_claimed_was_wrong": "Slightly understated: lock scope and sharing are reproduced. Impact stays small."
+      },
+      "how_to_verify": {
+        "status": "reproduced",
+        "what_you_ran_or_why_not": "amqp/fr018.py, re-run by me: 8 threads, event publish mocked to take 0.5 s. Sent events off: 0.04 s wall. On: 4.03 s wall, per-call 0.51 to 4.01 s. Mocked delay, not a real degraded broker; the recipe's 32 threads and proxy were not used."
+      },
+      "duplicate_of": null,
+      "detector_leads": [],
+      "root_cause_of_error": "Right on the mechanism, which is three lines in dispatcher.py. It read the commit diff as lengthening the hold because it could not see what kombu does with retry_policy=None."
+    },
+    {
+      "id": "FR-019",
+      "key": "39e3d9a88104",
+      "hotspot_id": "H05",
+      "verdict": "correct",
+      "verdict_basis": "executed",
+      "summary": "Confirmed at the publish-argument level: a task_routes entry with only an exchange is published with exchange='' and routing_key=None, declare=None, not mandatory, and apply_async returns normally. On virtual transports the message lands in a queue named '' instead of being dropped. This is long-standing (2015) behaviour for an undocumented route form.",
+      "refuting_fact": {
+        "statement": null,
+        "where": null,
+        "location_kind": "none",
+        "in_bundle": null,
+        "investigator_could_have_seen": null
+      },
+      "preconditions": [
+        {
+          "setting": "task_routes",
+          "literal_default": "none",
+          "effective_default": "a user-authored route naming only an exchange",
+          "where_defined": "celery/app/routes.py:71-75",
+          "documented_behaviour": false,
+          "doc_ref": "docs/userguide/routing.rst (examples always pair exchange with routing_key)"
+        }
+      ],
+      "commits": [
+        {
+          "sha": "1a47689",
+          "role_claimed": "[feature] changed default-queue resolution in this branch; exchange-only path not covered",
+          "role_actual": "unrelated_change_to_file",
+          "wrote_cited_lines": true,
+          "note": "Accurate and non-corroborating. Wrote 1 line of 524-526. The anonymous-exchange rewrite is from 6946fb7 (2015)."
+        }
+      ],
+      "confidence_assessment": {
+        "claimed": "low",
+        "deserved": "medium",
+        "why_claimed_was_wrong": "Understated: the publish arguments are exactly as predicted."
+      },
+      "how_to_verify": {
+        "status": "reproduced",
+        "what_you_ran_or_why_not": "amqp/fr019.py, re-run by me, capturing Producer.publish kwargs for eight route shapes. Exchange-only: exchange '', routing_key None, memory transport queue '' received 1 message. The RabbitMQ drop was not observed (no broker); it follows from kombu turning routing_key None into '' and never setting mandatory."
+      },
+      "duplicate_of": null,
+      "detector_leads": [],
+      "root_cause_of_error": "Right. A branch-by-branch trace of code inside the bundle excerpt. It honestly marked the two things it could not check."
+    },
+    {
+      "id": "FR-020",
+      "key": "2b1793902d2d",
+      "hotspot_id": "H07",
+      "verdict": "partially_correct",
+      "verdict_basis": "read_code",
+      "summary": "A timer2 callback already running is not stopped by cancel(), so the race exists where a timer thread exists. The stated trigger is wrong: threads and solo pools on py-amqp, Redis or SQS use the hub timer on the consumer thread, so on_close and ETA callbacks cannot interleave. The window is otherwise indistinguishable from an ETA task that fired just before the connection loss.",
+      "refuting_fact": {
+        "statement": "When the worker uses the event loop the timer is the hub's kombu Timer with no dedicated thread; the timer2 thread is used only without an event loop (Windows, non-asynchronous transports, green pools with their own timer).",
+        "where": "celery/worker/components.py:36-47; celery/worker/worker.py:307-310",
+        "location_kind": "other_repo_file",
+        "in_bundle": false,
+        "investigator_could_have_seen": "Yes, one Read of worker/components.py. Not in the H07 bundle (no occurrence of use_eventloop or timer2)."
+      },
+      "preconditions": [],
+      "commits": [
+        {
+          "sha": "4d38683",
+          "role_claimed": "[fix] added the scheduled_requests cleanup to on_close",
+          "role_actual": "other",
+          "wrote_cited_lines": true,
+          "note": "Accurate. Wrote consumer.py:562-576."
+        },
+        {
+          "sha": "1cc9ecf",
+          "role_claimed": "[fix] earlier fix to on_close wiping in-flight reservations",
+          "role_actual": "unrelated_change_to_file",
+          "wrote_cited_lines": false,
+          "note": "Accurate description; wrote none of the cited lines."
+        },
+        {
+          "sha": "ab711a0",
+          "role_claimed": "[fix] removed timer.clear() from on_close; three on_close fixes in four months",
+          "role_actual": "other",
+          "wrote_cited_lines": false,
+          "note": "Accurate description. A removal leaves no blamed lines. Churn evidence only."
+        }
+      ],
+      "confidence_assessment": {
+        "claimed": "low",
+        "deserved": "low",
+        "why_claimed_was_wrong": null
+      },
+      "how_to_verify": {
+        "status": "not_attempted",
+        "what_you_ran_or_why_not": "The recipe (block apply_eta_task, run Consumer.on_close, release, inspect reserved_requests and the pool) was not run. worker/fr020.py only shows the timer2 property: a callback in flight completes after cancel, and an entry cancelled before it is due does not run. gevent and eventlet timer classes were not inspected, so whether their callbacks can interleave with on_close is undetermined."
+      },
+      "duplicate_of": null,
+      "detector_leads": [],
+      "root_cause_of_error": "Honest low-confidence hypothesis driven by churn (three on_close fixes). Same gap as FR-013: it did not establish which worker configurations have a timer thread."
+    },
+    {
+      "id": "FR-021",
+      "key": "50df890ef774",
+      "hotspot_id": "H09",
+      "verdict": "partially_correct",
+      "verdict_basis": "executed",
+      "summary": "The facts hold: manual retry() uses a fixed 180 s default delay with no jitter and max_retries=3. The failure story does not follow from them. Retries keep the spread of the original failures shifted by 180 s, nothing compresses them into one moment, and load per wave is still capped by worker concurrency. This is the documented API contract; backoff with jitter is the documented alternative. My judgement on the herd effect is reasoning, not measurement.",
+      "refuting_fact": {
+        "statement": "A constant countdown preserves the arrival spread of the failed tasks; it does not synchronise them. The task guide documents retry_backoff and retry_jitter as the pattern for this case.",
+        "where": "docs/userguide/tasks.rst:738-755; celery/app/task.py:241-245",
+        "location_kind": "docs",
+        "in_bundle": false,
+        "investigator_could_have_seen": "Partly. The docs are in the repo but .rst files are outside the scan, and the bundle excerpt (865-977) does not even contain the cited lines 842-850. The spread argument needs no file at all."
+      },
+      "preconditions": [
+        {
+          "setting": "Task.default_retry_delay",
+          "literal_default": "180",
+          "effective_default": "180",
+          "where_defined": "celery/app/task.py:245",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/tasks.rst:664"
+        },
+        {
+          "setting": "Task.max_retries",
+          "literal_default": "3",
+          "effective_default": "3",
+          "where_defined": "celery/app/task.py:241",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/tasks.rst"
+        },
+        {
+          "setting": "retry_backoff / retry_jitter",
+          "literal_default": "off / True",
+          "effective_default": "jitter has no effect unless retry_backoff is set",
+          "where_defined": "celery/app/task.py",
+          "documented_behaviour": true,
+          "doc_ref": "docs/userguide/tasks.rst:738"
+        }
+      ],
+      "commits": [],
+      "confidence_assessment": {
+        "claimed": "low",
+        "deserved": "low",
+        "why_claimed_was_wrong": null
+      },
+      "how_to_verify": {
+        "status": "reproduced",
+        "what_you_ran_or_why_not": "amqp/fr021.py, re-run by me: 300 manual retries all with countdown 180.0 s; autoretry_for without backoff also exactly 180.0 s; with retry_backoff=True 0 to 4 s jittered. That matches the recipe's prediction (retries land in a window as wide as the outage). The recipe's 503 stub and the effect on a dependency were not run."
+      },
+      "duplicate_of": null,
+      "detector_leads": [],
+      "root_cause_of_error": "Applied the catalog pattern (S02, no jitter) to an API whose delay is the caller's choice. The observation is true; the metastability story was written to fit the template's sustaining_effect field."
+    }
+  ],
+  "missed_defects": [
+    {
+      "description": "The database result backend lost its default retries. The code comment and the docs say it defaults to always_retry=True with 3 retries; at runtime it is always_retry=False, max_retries=inf, because conf.get() returns the registered global default. Enabling result_backend_always_retry alone then retries every DatabaseError (including IntegrityError) forever. Established by execution (worker/fr015_defaults.py and my own check on a live app).",
+      "where": "celery/backends/database/__init__.py:70-71; celery/app/defaults.py:229-231; docs/userguide/configuration.rst:863-869 and 1113-1117",
+      "hotspot_id": "H08",
+      "why_missed": "The investigator read the same two lines and believed the comment. Seeing it needs one executed statement or knowledge of how the settings object resolves defaults. The unit tests also set both values explicitly, so nothing in the repo contradicts the comment."
+    },
+    {
+      "description": "The Reject raised by the dedup fast path is only honoured by the prefork pool. With the solo pool it escapes the tracer and stops the worker ('CRITICAL Unrecoverable error: reject requeue=True'). With the threads pool it is lost in the executor future and the message is never acked or rejected. Established by execution (canvas/fr003_worker.py solo and threads, logs re-read by me).",
+      "where": "celery/app/trace.py:549-560",
+      "hotspot_id": "H10",
+      "why_missed": "The investigator assumed 'the worker honours exc.requeue' from request.py without tracing how each pool delivers an exception raised outside the task body."
+    },
+    {
+      "description": "Errbacks added with group.link_error() are never dispatched when a chord header fails and the body is that group. group.link_error() stores them on the children and leaves group.options empty, while the handler reads group_callback.options. Established by execution (canvas/fr009_errback.py case 1, healthy broker, nothing published).",
+      "where": "celery/backends/base.py:482; celery/canvas.py:1806-1816",
+      "hotspot_id": "H04",
+      "why_missed": "FR-009 looked at the except block the detector flagged and never checked where the errbacks it iterates come from."
+    },
+    {
+      "description": "Candidate, lower certainty: the column migration tries to add the seven extended-result columns (name, args, kwargs, worker, retries, queue, stamps) to celery_taskmeta even when result_extended is off, each with the message 'To enable storing task children'. Observed in the fr014 logs; I did not confirm that result_extended was off in that run beyond it being the default, nor whether maintainers intend this.",
+      "where": "celery/backends/database/session.py:107-136",
+      "hotspot_id": "H08",
+      "why_missed": "Only visible in the log output of a run."
+    },
+    {
+      "description": "Candidate, lower certainty: apply_async(exchange='billing') with no route silently discards the exchange and publishes to the default queue (exchange '', routing_key 'celery'). Observed in amqp/fr019.py case 4. Not checked against documented intent.",
+      "where": "celery/app/amqp.py:524-553",
+      "hotspot_id": "H05",
+      "why_missed": "Adjacent to FR-019; needs the publish arguments to be captured."
+    }
+  ],
+  "notes": "HOW THESE VERDICTS WERE ESTABLISHED. Every 'executed' basis refers to scripts in the session scratchpad (<reviewer-scratchpad>, subdirectories amqp, canvas, redis, worker, review; outputs in rerun/ and review/). Most scripts were written by parallel sub-passes during the first review; for this file I re-ran all of them myself and read the output, and added three new runs (review/recipe_fr001.py, review/real_worker.py in modes timeout, exit, sysexit). Environment: Python 3.12, celery main at 508c112, kombu 5.7.0a1, amqp 5.4.0, billiard 4.3.0, redis-py 8.1.0, SQLAlchemy 2.1.3. No real Redis or RabbitMQ: Redis runs use fakeredis behind a TCP proxy that can refuse or stall; broker runs use the memory transport or mocks; FR-014 used a real PostgreSQL 16.2. Anything depending on real RabbitMQ or SQS behaviour is from reading dependency source and is marked so in each entry. CORRECTIONS TO MY EARLIER PROSE SUMMARY. (1) I said four Verify recipes do not reproduce (FR-001, 005, 006, 009). Running FR-001's recipe literally with fresh threads DOES reproduce its stated outcome, so that claim was wrong for FR-001; it came from a run with warm connections. The accurate list is FR-005 and FR-006 not reproduced, FR-009 non-discriminating (its expected observation occurs with and without the fault, recorded here as not_reproduced), and FR-015 not reproduced on defaults. (2) I said none of the three 'high' findings is correct as written. FR-002's mechanism reproduces exactly on a real worker; its errors are in commit attribution and in which line requeues. I now rate its high as deserved. FR-001 and FR-003 remain over-rated. (3) I said five findings cite commits that neither caused nor corroborate the behaviour (FR-002, 012, 017, 018, 019). Checked with git blame: only FR-012 makes a false claim about its commit, and FR-018's implication is backwards. FR-017 and FR-019 describe their commits accurately; the commits are simply non-corroborating. FR-002's 40c2349 claim is literally true but misses the commit that actually requeues (53dc515). Additional commit errors found now: FR-005 misdates 30402bd ('9 days ago', actually 5). (4) The seven opt-in findings from the summary are FR-002, 003, 007, 010, 011, 012, 018. In this file FR-002, 007, 011, 018 are correct_but_gated; FR-003, 010, 012 are partially_correct because they also contain false claims; their gating is in preconditions. FR-019 needs a user-authored route and is recorded as correct with that precondition. (5) Tally mapping: earlier 9 confirmed = now 5 correct (FR-004, 014, 016, 017, 019) plus 4 correct_but_gated; earlier 10 partial and 2 wrong are unchanged. (6) The three missed defects are the first three entries of missed_defects; two further candidates are listed and flagged as lower certainty. SCHEMA NOTES. The pasted schema was truncated in places. I used: commits.role_actual in {introduced_mechanism, partial_fix_of_same_root_cause, added_the_mitigation, unrelated_change_to_file, other}; detector_leads.verdict in {true_lead, false_lead}; confidence values low|medium|high; why_claimed_was_wrong is null when claimed equals deserved. refuting_fact is null-filled for correct and correct_but_gated findings; their inaccuracies are in summary. location_kind has no value for git history; FR-012's commit-message evidence is filed under scanned_file because a source comment in the cited range says the same thing. wrote_cited_lines comes from git blame -L on every cited code range of the finding. DETECTOR LEADS. Five leads sit in the investigated bundles. Only S19@celery/backends/base.py:489 is cited (FR-009). The four uncited leads are attached to one finding of their hotspot for bookkeeping: S04@base.py:773 to FR-007, S19@consumer.py:435 to FR-013, S07 and S19 in database/__init__.py to FR-014. My count: 2 true leads, 3 false leads. BUNDLE OBSERVATIONS THAT AFFECT WHAT THE INVESTIGATOR COULD SEE. (a) Each bundle excerpts only the most complex function. For H02 that is RedisBackend.__init__ (lines 382-575) while all three H02/H03 Redis findings concern lines 149-311; for H09 the excerpt (865-977) omits FR-021's cited lines; for H03 the excerpt (930-1155) omits the per-thread backend property at 1640-1657. (b) Bundles carry commit subjects and trimmed diffs, no commit bodies; the bodies of 67ba9e5 and 9c8145f contain the facts that refute FR-012 and frame FR-013. (c) Diffs are trimmed mid-hunk, in 67ba9e5 across exactly the lines FR-012 reasons about. (d) The 'External boundaries' section is noise on this repository: it tags `requests.pop(r.id, None)` as HTTP and `from celery import ...` as queue/messaging (H07). These are not S-pattern leads and are not listed per finding. (e) Dependency source (amqp, kombu, billiard, redis-py, SQLAlchemy) decided FR-001 (connect timeout fallback), FR-002 (callback order), FR-003 (SQS), FR-013 (frame lock), FR-018 (retry_policy None) and is unreachable for a Read/Grep/Glob agent confined to the repository. UNDETERMINED POINTS (not whole findings): FR-001 duration for a blackholed host at defaults (extrapolated 44 min; settle by running with real timeouts); FR-003 loop rate on Redis or RabbitMQ and the quorum delivery-limit bound (settle with a real broker); FR-013 and FR-020 under gevent/eventlet against a real broker; FR-016 errback count under acks_late in my re-run; FR-019 drop on RabbitMQ."
+}

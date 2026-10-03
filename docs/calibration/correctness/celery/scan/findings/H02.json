@@ -1,0 +1,146 @@
+{
+  "hotspot_id": "H02",
+  "file": "celery/backends/redis.py",
+  "findings": [
+    {
+      "location": {
+        "file": "celery/backends/redis.py",
+        "symbol": "ResultConsumer._reconnect_pubsub",
+        "lines": "149-191"
+      },
+      "missing_patterns": [
+        "S07",
+        "S15"
+      ],
+      "failure_mode": "After a Redis outage of roughly 20 s or more, AsyncResult.get() for tasks that were already in flight never returns, or raises RuntimeError, and the process does not recover until it is restarted",
+      "trigger_condition": "The Redis result backend is unreachable for longer than the reconnect retry policy (20 retries, 1 s max interval, so about 20 s) while results are pending",
+      "amplifier": "_reconnect_pubsub sets self._pubsub = None before the mget/subscribe that fails. When ensure() gives up, reconnect_on_error raises RuntimeError and _pubsub is left None while subscribed_to still lists every old key. The next consume_from() goes through start(), which builds a fresh pubsub and subscribes only the new task's key",
+      "sustaining_effect": "subscribed_to now lists channels the new connection never subscribed to. _consume_from skips any key already in that set, so re-waiting on those tasks never subscribes again and their publishes are never received. Under gevent/eventlet the RuntimeError (not an OSError) also escapes greenletDrainer.run, so the drainer dies and stays dead. Nothing resets either state short of a restart",
+      "blast_radius": "Every caller in the client process (web workers, canvas joins) that waits on results it requested before the outage; under gevent/eventlet, every later get() in that process",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/backends/redis.py:151",
+          "note": "_pubsub cleared before the network calls that can fail"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/redis.py:155-171",
+          "note": "mget and subscribe can raise after _pubsub = None; subscribed_to is left as it was"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/redis.py:202-207",
+          "note": "start() subscribes only initial_task_id, not the existing subscribed_to"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/redis.py:305-311",
+          "note": "keys already in subscribed_to are never re-subscribed"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/asynchronous.py:358-363",
+          "note": "reconnect failure is turned into RuntimeError"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/asynchronous.py:136-155",
+          "note": "greenlet drainer catches only socket.timeout/OSError; RuntimeError ends the loop"
+        },
+        {
+          "type": "commit",
+          "ref": "d35acd7",
+          "note": "[fix] for the same problem class: subscribed_to drifting from the real subscriptions (redundant unsubscribe)"
+        },
+        {
+          "type": "commit",
+          "ref": "30402bd",
+          "note": "[fix] 9 days ago in the same subscription/lock bookkeeping; its comment at 163-167 covers stale subscribed_to only for pending unsubscribes"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "Traced the control flow through redis.py and asynchronous.py. The [fix] commits are about related subscribed_to drift, not this exact path, and the outage-past-retry trigger was not observed",
+      "how_to_verify": "Subscribe to tasks A and B, stop Redis for 30 s so _reconnect raises, restart Redis, then call apply_async for C and A.get(timeout=None) after A completes. A.get() hangs because PUBSUB CHANNELS never includes A's key",
+      "prediction": "The next Redis-backend incident report reads: get() hangs forever after a Redis failover/restart until the client is restarted",
+      "key": "bb3600c042ef",
+      "content_hash": "sha256:858b2a75d236bef42a1d04fdd15d83b057d844b171321f37f6dd5f236b72b7fb",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/backends/asynchronous.py": "sha256:85a5ee0552feaf6404def93f42efbe143cdb6a09327c6ded1be137b32a36841d",
+        "celery/backends/redis.py": "sha256:858b2a75d236bef42a1d04fdd15d83b057d844b171321f37f6dd5f236b72b7fb"
+      }
+    },
+    {
+      "location": {
+        "file": "celery/backends/redis.py",
+        "symbol": "ResultConsumer._drain_one / consume_from",
+        "lines": "267-311"
+      },
+      "missing_patterns": [
+        "S28",
+        "S01"
+      ],
+      "failure_mode": "During a Redis backend blip, apply_async() and AsyncResult subscribe calls in a client process stall for the whole reconnect cycle (tens of seconds or more) instead of failing fast",
+      "trigger_condition": "Redis connection drops while the drainer is inside _drain_one, or during any subscribe, and reconnection needs several attempts (failover, DNS change, blackholed host)",
+      "amplifier": "reconnect_on_error runs _reconnect, which is ensure() with retry sleeps, inside the _locked() block held by the drainer. _reconnect_pubsub then re-enters the RLock and does connection_pool.reset(), mget and a new connect, all while holding it. on_task_call calls consume_from on every apply_async, which waits on the same lock with no timeout",
+      "sustaining_effect": null,
+      "blast_radius": "Every thread or greenlet in the producing process that publishes a task or starts waiting on a result. Web request threads pile up behind one drainer that is sleeping between retries",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/backends/redis.py:268",
+          "note": "reconnect_on_error (retrying reconnect) inside _drain_one, which runs under _locked()"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/redis.py:150-171",
+          "note": "connection_pool.reset, mget and subscribe done while holding _pubsub_lock"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/redis.py:299-303",
+          "note": "consume_from acquires the lock with a blocking, unbounded wait"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/redis.py:675-677",
+          "note": "on_task_call puts that lock on the apply_async path"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/redis.py:685-691",
+          "note": "ensure = retry_over_time with retry sleeps"
+        },
+        {
+          "type": "commit",
+          "ref": "cd3b42e",
+          "note": "introduced the shared pubsub lock"
+        },
+        {
+          "type": "commit",
+          "ref": "3083864",
+          "note": "moved the socket wait out of the lock, but the reconnect path still holds it"
+        },
+        {
+          "type": "commit",
+          "ref": "30402bd",
+          "note": "[fix] for a deadlock on this same lock, the third change to it in 9 days"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "Lock scope and the retry inside it are clear in the code. The lock-related [fix] was a GC re-entrancy deadlock, not this convoy, and stall length depends on the configured socket timeouts",
+      "how_to_verify": "Run a client with a drainer thread and N threads calling apply_async. Drop Redis traffic with iptables for 10 s and measure apply_async latency: it should stay at about 10 s or more for all N threads, not fail fast",
+      "key": "df2cb49b3e2c",
+      "content_hash": "sha256:858b2a75d236bef42a1d04fdd15d83b057d844b171321f37f6dd5f236b72b7fb",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/backends/redis.py": "sha256:858b2a75d236bef42a1d04fdd15d83b057d844b171321f37f6dd5f236b72b7fb"
+      }
+    }
+  ],
+  "notes": "Rejected: a _pending_messages leak (fix/revert/fix in 74a7a63, 4f15954, 4a11650). REVOKED entries and results that nobody awaits still get buffered, but the buffer is a capped BufferMap, so I did not report it as unbounded growth. The __init__ config parsing (CCN 38) validates or warns on bad input and is not a runtime failure path. Default thread Drainer: the RuntimeError reaches the get() caller instead of killing a greenlet, so finding 1 shows up there as the stale-subscription hang.",
+  "bundle_hash": "sha256:0cffe66c5128d465a4f7568630040e76ea65721b50691ba9e3e778f4a2ed4db7",
+  "schema": "thunderstruck.finding/v1",
+  "validated_with": 3
+}

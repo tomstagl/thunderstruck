@@ -1,0 +1,159 @@
+{
+  "hotspot_id": "H04",
+  "file": "celery/backends/base.py",
+  "findings": [
+    {
+      "location": {
+        "file": "celery/backends/base.py",
+        "symbol": "_ensure_retryable",
+        "lines": "757-793"
+      },
+      "missing_patterns": [
+        "S10",
+        "S11",
+        "S12",
+        "S01"
+      ],
+      "failure_mode": "During a result-backend outage with result_backend_always_retry enabled, workers stop finishing tasks and AsyncResult.get(timeout=N) hangs well past N, with no upper bound. On-call sees a steady stream of 'Failed operation ... Retrying inf more times' warnings and a worker fleet that is alive but makes no progress.",
+      "trigger_condition": "result_backend_always_retry=True with result_backend_max_retries left at its default (inf), and the backend (Redis, DB) unreachable or returning retryable errors for longer than a few seconds",
+      "amplifier": "The retry loop has no attempt cap and no deadline. wait_for counts only its own sleep time toward the caller's timeout and never counts time spent inside get_task_meta, so the caller's deadline is never applied to the retry loop. store_result retries inside the worker's pool slot, so every process that finishes a task blocks in this loop.",
+      "sustaining_effect": "Each pool process stays parked in its retry loop until the backend answers, so no new tasks start and the broker queue keeps growing. When the backend recovers, every parked process and client hits it at once (jitter spreads them only across the 10s cap) on top of the backlog that built up.",
+      "blast_radius": "Every task that stores a result, and every client waiting on a result, for every queue served by workers on this backend",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/backends/base.py:235",
+          "note": "max_retries defaults to float('inf')"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/base.py:760-783",
+          "note": "while True retry loop, bounded only by max_retries; no deadline"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/base.py:881-886",
+          "note": "get_task_meta goes through the unbounded retry loop"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/base.py:1077-1091",
+          "note": "wait_for's time_elapsed adds only nap, so time spent inside get_task_meta is never counted toward the timeout"
+        },
+        {
+          "type": "commit",
+          "ref": "0266822",
+          "note": "[resilience] extended the retry wrapper to more backend operations (forget, group ops), so the unbounded loop now covers more operations"
+        },
+        {
+          "type": "commit",
+          "ref": "0348d64",
+          "note": "[fix] for DB backend connection health patched this retry loop but added no bound or deadline"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "Unbounded loop and deadline-blind timeout accounting are plain in the code; it needs a non-default opt-in (always_retry), and no [fix] commit targets this exact defect",
+      "how_to_verify": "Set result_backend_always_retry=True with Redis, stop Redis, call AsyncResult(id).get(timeout=5): it does not raise TimeoutError after 5s. A worker that finishes a task also never takes the next one.",
+      "prediction": "The next backend-outage incident shows workers hung in store_result rather than failing fast",
+      "key": "8bcddcb49b5d",
+      "content_hash": "sha256:e95308ebf79e95fb915d4ca5c227a5f0f065c04425c0b3d75630f106ddc5da91",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/backends/base.py": "sha256:e95308ebf79e95fb915d4ca5c227a5f0f065c04425c0b3d75630f106ddc5da91"
+      }
+    },
+    {
+      "location": {
+        "file": "celery/backends/base.py",
+        "symbol": "get_many",
+        "lines": "1224-1272"
+      },
+      "missing_patterns": [
+        "S08",
+        "S11",
+        "S12"
+      ],
+      "failure_mode": "Joining a large group against a slow key-value backend overruns its timeout by a multiple, and puts constant load on the backend through repeated full-set MGETs",
+      "trigger_condition": "ResultSet/GroupResult join on thousands of task ids while the backend is slow (latency in the hundreds of ms to seconds), or many clients joining at once",
+      "amplifier": "Each loop iteration issues one MGET for every still-pending id, with no batching, every 0.5s at a fixed interval that never grows. time_elapsed counts only sleep time and ignores MGET latency and the time the consumer spends between yields, so timeout=10 with a 2s MGET actually runs for about 50s.",
+      "sustaining_effect": "A slower backend makes every MGET bigger and slower, but clients keep polling at the same rate and for longer than their timeout. Callers that time out and rejoin add more pollers, so backend latency stays high after the original slowdown is gone.",
+      "blast_radius": "All result readers and writers sharing the key-value backend (for example Redis), including workers storing results",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/backends/base.py:1245-1248",
+          "note": "MGET of all pending keys every iteration, unbatched"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/base.py:1259-1269",
+          "note": "timeout compared against summed naps only, not wall clock"
+        },
+        {
+          "type": "commit",
+          "ref": "1ea3d4f",
+          "note": "[resilience] timeout=0 fix kept the sleep-only time accounting, so MGET time is still not counted"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "Timeout accounting flaw is deterministic from the code; the load-amplification part depends on group size and backend latency, which I did not observe",
+      "how_to_verify": "Mock mget to sleep 2s and return nothing ready, call list(backend.get_many(ids, timeout=3)), and measure: it raises TimeoutError after roughly 3 x (2 + 0.5)s instead of about 3s.",
+      "key": "34e3742160f1",
+      "content_hash": "sha256:e95308ebf79e95fb915d4ca5c227a5f0f065c04425c0b3d75630f106ddc5da91",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/backends/base.py": "sha256:e95308ebf79e95fb915d4ca5c227a5f0f065c04425c0b3d75630f106ddc5da91"
+      }
+    },
+    {
+      "location": {
+        "file": "celery/backends/base.py",
+        "symbol": "_handle_group_chord_error",
+        "lines": "486-491"
+      },
+      "missing_patterns": [
+        "S19"
+      ],
+      "failure_mode": "When a chord header fails and the body is a group, the group's link_error errbacks can be silently dropped with nothing in the logs, so the user-defined failure handling (alerts, compensation) never runs",
+      "trigger_condition": "Old-style or unregistered errbacks have to be dispatched via group.apply_async while the broker is unavailable, or signature resolution raises",
+      "amplifier": "_call_task_errbacks logs only new-style errback failures. Exceptions from building or publishing old-style errbacks reach this except block, which does a bare pass.",
+      "sustaining_effect": null,
+      "blast_radius": "Error-handling workflows attached to chord bodies; the divergence is found only when someone notices a missing compensation",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/backends/base.py:487-491",
+          "note": "except Exception: pass around _call_task_errbacks, no logging"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/base.py:375-388",
+          "note": "old-style errbacks are dispatched via apply_async; a publish failure propagates to the bare pass"
+        },
+        {
+          "type": "detector",
+          "ref": "S19@celery/backends/base.py:489",
+          "note": "confirmed: failure leaves no trace"
+        },
+        {
+          "type": "commit",
+          "ref": "477c816",
+          "note": "[fix] for a silent chain halt caused by errback exceptions; added logging only for new-style errbacks"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "The swallow is visible, and a prior [fix] addressed a sibling silent-failure path; the trigger needs a broker failure during chord error handling, which is uncommon",
+      "how_to_verify": "Make a chord whose header fails, with a group body that has a link_error to a single-arg errback; patch group.apply_async to raise ConnectionError. The errback never runs and no log line mentions it.",
+      "key": "25300c62e151",
+      "content_hash": "sha256:e95308ebf79e95fb915d4ca5c227a5f0f065c04425c0b3d75630f106ddc5da91",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/backends/base.py": "sha256:e95308ebf79e95fb915d4ca5c227a5f0f065c04425c0b3d75630f106ddc5da91"
+      }
+    }
+  ],
+  "notes": "Rejected S04@celery/backends/base.py:773: the broad except only guards the on_backend_retryable_error hook and is logged; retries remain gated by exception_safe_to_retry. The library-default boto3 retry layer (dynamodb) stacks under _ensure_retryable for the DynamoDB backend only; not confirmed further within the read budget.",
+  "bundle_hash": "sha256:86738cccca4b6ccedfddd24951456dd2ff3909cd6a5593a5e603cb153c5091c7",
+  "schema": "thunderstruck.finding/v1",
+  "validated_with": 3
+}

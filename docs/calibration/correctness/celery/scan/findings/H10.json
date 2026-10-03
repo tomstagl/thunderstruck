@@ -1,0 +1,107 @@
+{
+  "hotspot_id": "H10",
+  "file": "celery/app/trace.py",
+  "findings": [
+    {
+      "location": {
+        "file": "celery/app/trace.py",
+        "symbol": "build_tracer.trace_task",
+        "lines": "510-561"
+      },
+      "missing_patterns": [
+        "S02",
+        "S12",
+        "S04"
+      ],
+      "failure_mode": "A redelivered acks_late task that already succeeded can end up in a hot requeue loop. The worker logs 'Failed to dispatch chain/callbacks for deduplicated task <id>' over and over, the same message bounces between broker and worker with no delay, and every bounce does two result-backend reads (r.state and r._get_task_meta()). On brokers with no max-delivery-count, such as Redis or SQS without a redrive policy, this never ends.",
+      "trigger_condition": "worker_deduplicate_successful_tasks is on with acks_late and a persistent backend. A task whose stored state is SUCCESS but has no stored children is redelivered (worker lost or connection reset) and carries callbacks or a chain. Dispatching them then raises any exception. That can be a permanent one (a malformed or unregistered signature, a serialization error in the stored retval) or a transient one (broker connection error while publishing the next step).",
+      "amplifier": "Every Exception is turned into Reject(requeue=True) with no backoff and no attempt count. A requeued message comes back marked redelivered, so it re-enters the same fast path straight away. Errors that can never succeed are retried the same way as transient ones.",
+      "sustaining_effect": "The message requeues itself at full cost (two backend reads plus a publish attempt) every cycle. During a broker or backend brownout, every deduplicated redelivery in the backlog spins this way at once. The extra publish and read load lands on the dependencies that are trying to recover, and the loop goes on after the original trigger is gone. For permanent errors nothing stops it at all.",
+      "blast_radius": "Worker slots and prefetch capacity on the queue go to messages that make no progress. Backend and broker load rises for every task on that worker pool. Downstream chain steps for the affected workflows never run.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/app/trace.py:549-560",
+          "note": "Any Exception during the dedup dispatch is logged and raised as Reject(exc, requeue=True). The comment admits permanent failures 'will requeue indefinitely' and leaves the circuit-breaker to the broker."
+        },
+        {
+          "type": "code",
+          "ref": "celery/app/trace.py:510-516",
+          "note": "The fast path is entered whenever delivery_info.redelivered is true, and a requeued message is always redelivered. Each pass costs a backend read."
+        },
+        {
+          "type": "code",
+          "ref": "celery/worker/request.py:677-699",
+          "note": "The worker honours exc.requeue with a plain reject(requeue=True): no delay and no delivery counter."
+        },
+        {
+          "type": "commit",
+          "ref": "865922a",
+          "note": "Labelled [fix] in the bundle. It added _dispatch_callbacks_and_chain on the dedup path together with the unbounded Reject(requeue=True)."
+        }
+      ],
+      "confidence": "high",
+      "confidence_rationale": "The unbounded requeue is explicit in code that a [fix] commit added, and the worker side confirms an immediate requeue with no counter. I did not observe the rate of the loop on a real broker.",
+      "how_to_verify": "Turn on acks_late and worker_deduplicate_successful_tasks with a Redis broker. Store SUCCESS with children=[] for a task id. Deliver it with redelivered=True and a link to an unregistered or malformed signature. Count how many times the error is logged per minute: it should keep growing with no ceiling.",
+      "prediction": "The next dedup-related incident report will describe a worker stuck re-logging 'Failed to dispatch chain/callbacks for deduplicated task' for the same id.",
+      "key": "b1af3746845c",
+      "content_hash": "sha256:e1affcf2e8d0c659e5754ac27f1b439f07a728e74dba1ef2f4f9b508e7677a8e",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/app/trace.py": "sha256:e1affcf2e8d0c659e5754ac27f1b439f07a728e74dba1ef2f4f9b508e7677a8e",
+        "celery/worker/request.py": "sha256:9e9989ec68b53caf7b1b68323c1b169b513b4ee6dd33600e9fa7257bafbebee0"
+      }
+    },
+    {
+      "location": {
+        "file": "celery/app/trace.py",
+        "symbol": "build_tracer.trace_task",
+        "lines": "611-683"
+      },
+      "missing_patterns": [
+        "S07",
+        "S15"
+      ],
+      "failure_mode": "A task whose body succeeded is recorded as FAILURE with an internal error, and its chain stops. This happens when publishing the callbacks or the next chain step raises anything other than EncodeError, for example a broker connection error. Some link callbacks may already have been sent, and then errbacks fire as well. Users see a chain stuck at a step whose side effects really happened. On-call sees a 'successful' unit of work reported as failed.",
+      "trigger_condition": "A broker blip or failover between fun() returning and _dispatch_callbacks_and_chain finishing. A result-backend error in mark_as_done after the callbacks were dispatched does the same.",
+      "amplifier": "Only EncodeError is handled locally. Every other dispatch or store error falls through to the outer except, which calls report_internal_error and on_error(..., call_errbacks=True). The message is then settled as a failure instead of being retried, so success callbacks and errbacks can both run for one execution.",
+      "sustaining_effect": null,
+      "blast_radius": "Each affected chain or workflow stalls for good unless someone replays it by hand. Downstream consumers get duplicate or conflicting callback and errback side effects.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/app/trace.py:619-631",
+          "note": "Dispatch and mark_as_done sit in one try that only catches EncodeError."
+        },
+        {
+          "type": "code",
+          "ref": "celery/app/trace.py:677-683",
+          "note": "The outer handler turns any other exception into report_internal_error plus on_error with errbacks enabled, after the task's side effects have already happened."
+        },
+        {
+          "type": "code",
+          "ref": "celery/app/trace.py:435-438",
+          "note": "Its own docstring says dispatch is not atomic, so a partial callback send is possible."
+        },
+        {
+          "type": "commit",
+          "ref": "865922a",
+          "note": "Labelled [fix] in the bundle. It moved the main-path dispatch into _dispatch_callbacks_and_chain but left the error handling the same."
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "The control flow is plain in the code. I did not confirm how the worker acks the internal-error result in every pool and ack mode, or whether kombu's publish retry hides short broker blips.",
+      "how_to_verify": "Patch the chain's next-step apply_async to raise kombu OperationalError on the first call. Run chain(a.s(), b.s()). Expected result: a's stored state is FAILURE, its errback fires, and b never runs.",
+      "key": "9be5cf13811a",
+      "content_hash": "sha256:e1affcf2e8d0c659e5754ac27f1b439f07a728e74dba1ef2f4f9b508e7677a8e",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/app/trace.py": "sha256:e1affcf2e8d0c659e5754ac27f1b439f07a728e74dba1ef2f4f9b508e7677a8e"
+      }
+    }
+  ],
+  "notes": "Rejected leads: successful_requests looked like an unbounded growth risk, but it is a LimitedSet in worker state, so it is bounded. The dedup comment says children need result_extended, but base.py:717 always stores children, so that gap does not cause duplicate dispatch. When r.state raises BackendGetMetaError the task simply runs again, which matches at-least-once delivery and is not a failure. There were no detector leads for this file.",
+  "bundle_hash": "sha256:71d16727bf20b173ae3ecdb77226d9f4474d63daf80b11a1bfbb31b76290903d",
+  "schema": "thunderstruck.finding/v1",
+  "validated_with": 3
+}

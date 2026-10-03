@@ -1,0 +1,160 @@
+{
+  "hotspot_id": "H06",
+  "file": "celery/worker/request.py",
+  "findings": [
+    {
+      "location": {
+        "file": "celery/worker/request.py",
+        "symbol": "on_timeout",
+        "lines": "535-610"
+      },
+      "missing_patterns": [
+        "S07",
+        "S04",
+        "S19"
+      ],
+      "failure_mode": "A task that hits its hard time limit is stored as FAILURE and its errbacks and task_failure handlers fire. The message is then requeued and runs again. Users see FAILURE, then the task running again (and possibly SUCCESS later), and the errbacks fire once per redelivery.",
+      "trigger_condition": "acks_late=True with acks_on_timeout=False (or the legacy acks_on_failure_or_timeout=False), and a task that reliably runs past time_limit, e.g. because of a large input or a slow dependency",
+      "amplifier": "Each redelivery holds a pool slot for the whole hard time limit, then the child is killed and a new one has to be forked. on_failure skips mark_as_failure when the message is requeued (line 734), but on_timeout writes FAILURE and fires the hooks before it requeues, so the two paths disagree.",
+      "sustaining_effect": "The requeued message comes back at full cost with no attempt counter or cap. A deterministic overrun becomes a poison message that keeps using worker capacity and re-firing errbacks after the slow dependency has recovered, until someone purges the queue.",
+      "blast_radius": "Every task sharing the affected workers and queue loses capacity. Chords and workflows that react to the FAILURE result or the errbacks run their failure handling more than once.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/worker/request.py:548-551",
+          "note": "mark_as_failure runs whether or not the message will be requeued"
+        },
+        {
+          "type": "code",
+          "ref": "celery/worker/request.py:563-584",
+          "note": "task.on_failure, task_failure signal and task-failed event fire before the ack/reject decision"
+        },
+        {
+          "type": "code",
+          "ref": "celery/worker/request.py:606-610",
+          "note": "reject(requeue=True) when acks_on_timeout is False: no redelivery cap"
+        },
+        {
+          "type": "code",
+          "ref": "celery/worker/request.py:734-739",
+          "note": "on_failure deliberately skips mark_as_failure when requeued; on_timeout does not"
+        },
+        {
+          "type": "commit",
+          "ref": "7135768",
+          "note": "[fix] 'send the task failure in hard timeout' added the failure hooks ahead of the requeue branch"
+        },
+        {
+          "type": "commit",
+          "ref": "40c2349",
+          "note": "[feature] changed the timeout path from 'ack or nothing' to reject(requeue=True)"
+        }
+      ],
+      "confidence": "high",
+      "confidence_rationale": "The code clearly writes FAILURE and fires the hooks and then requeues. The [fix] commit 7135768 is the change that put the hooks ahead of the requeue. Defaults are acks_on_timeout=True (task.py:449-453), so only opt-in configurations hit this.",
+      "how_to_verify": "Set acks_late=True, acks_on_timeout=False, time_limit=1 on a task that sleeps 5s. Watch the broker redeliver it indefinitely while the result backend shows FAILURE and an errback counter increases on every attempt.",
+      "prediction": "A bug report about errbacks firing repeatedly, or a FAILURE result flipping to SUCCESS, for acks_late tasks with acks_on_timeout disabled",
+      "key": "a0ba5bc31036",
+      "content_hash": "sha256:9e9989ec68b53caf7b1b68323c1b169b513b4ee6dd33600e9fa7257bafbebee0",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/worker/request.py": "sha256:9e9989ec68b53caf7b1b68323c1b169b513b4ee6dd33600e9fa7257bafbebee0"
+      }
+    },
+    {
+      "location": {
+        "file": "celery/worker/request.py",
+        "symbol": "on_failure",
+        "lines": "677-699"
+      },
+      "missing_patterns": [
+        "S15",
+        "S07"
+      ],
+      "failure_mode": "When the result backend is unavailable, a task that raised Reject(requeue=False) is never rejected. The message stays unacked on the worker and is redelivered after the connection drops or the worker restarts. The task runs again and fails the same way. On-call sees duplicate executions and messages stuck as unacked.",
+      "trigger_condition": "Result backend outage or timeout (Redis or database down) while tasks raise Reject(requeue=False). Applies when result_backend_always_retry is off, so store_result raises.",
+      "amplifier": "mark_as_failure and the task_failure signal run before self.reject(). An exception in the backend write skips the reject, and the task_failure signal and event are lost as well.",
+      "sustaining_effect": "Each redelivery repeats the full task body and then hits the same backend write. While the backend is degraded, the backend load and the unacked backlog keep growing.",
+      "blast_radius": "Tasks that use Reject(requeue=False) on workers sharing the failing result backend. Unacked messages count against the prefetch limit and starve other tasks on that worker.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/worker/request.py:683-686",
+          "note": "backend.mark_as_failure called before the message is settled"
+        },
+        {
+          "type": "code",
+          "ref": "celery/worker/request.py:699",
+          "note": "reject() only reached if the backend write and signal dispatch succeed"
+        },
+        {
+          "type": "code",
+          "ref": "celery/worker/request.py:708-724",
+          "note": "contrast: the generic acks_late path settles the message before writing to the backend"
+        },
+        {
+          "type": "commit",
+          "ref": "e2b276e",
+          "note": "[feature] introduced the backend write ahead of reject() in the Reject branch"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "The ordering is visible in the code. I did not read the backend retry configuration or how the pool callback handles an exception raised from on_failure, so whether the message stays unacked or the worker logs and moves on is inferred.",
+      "how_to_verify": "Point the result backend at a closed port with result_backend_always_retry=False. Run a task that raises Reject(requeue=False) and check that the message stays unacked and is redelivered after a worker restart.",
+      "prediction": null,
+      "key": "6105880fd01e",
+      "content_hash": "sha256:9e9989ec68b53caf7b1b68323c1b169b513b4ee6dd33600e9fa7257bafbebee0",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/worker/request.py": "sha256:9e9989ec68b53caf7b1b68323c1b169b513b4ee6dd33600e9fa7257bafbebee0"
+      }
+    },
+    {
+      "location": {
+        "file": "celery/worker/request.py",
+        "symbol": "on_failure",
+        "lines": "663-724"
+      },
+      "missing_patterns": [
+        "S07",
+        "S14"
+      ],
+      "failure_mode": "A task that kills its child process (OOM kill, segfault, or now SystemExit) is requeued forever when reject_on_worker_lost is set. Workers keep losing children and the same message keeps coming back.",
+      "trigger_condition": "reject_on_worker_lost=True with acks_late, and a payload that always crashes the child, e.g. memory blow-up on large input or a library calling sys.exit",
+      "amplifier": "Commit 67ba9e5 converts SystemExit/KeyboardInterrupt from a child that was not cancelled into WorkerLostError, so more exit causes now take the requeue branch. Nothing counts redeliveries.",
+      "sustaining_effect": "The requeued message is redelivered at full cost and kills another child each time. Pool capacity is spent re-forking processes until the message is purged.",
+      "blast_radius": "All tasks on queues consumed by the affected workers. Throughput drops while children are repeatedly killed and re-forked.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/worker/request.py:663-674",
+          "note": "SystemExit and KeyboardInterrupt are mapped to WorkerLostError via _worker_lost_info"
+        },
+        {
+          "type": "code",
+          "ref": "celery/worker/request.py:711-717",
+          "note": "reject_on_worker_lost leads to reject(requeue=True) with no attempt limit"
+        },
+        {
+          "type": "commit",
+          "ref": "67ba9e5",
+          "note": "[feature] widened the worker-lost path to SystemExit reports"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "The requeue-without-cap is clear in the code. The docs warn about it for reject_on_worker_lost, but the newer SystemExit mapping widens the trigger. I did not confirm how billiard reports these exits.",
+      "how_to_verify": "Set acks_late=True and reject_on_worker_lost=True on a task that calls os._exit(1) or sys.exit(1). Count how often the broker redelivers it within a minute.",
+      "prediction": null,
+      "key": "6bd1a259060b",
+      "content_hash": "sha256:9e9989ec68b53caf7b1b68323c1b169b513b4ee6dd33600e9fa7257bafbebee0",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/worker/request.py": "sha256:9e9989ec68b53caf7b1b68323c1b169b513b4ee6dd33600e9fa7257bafbebee0"
+      }
+    }
+  ],
+  "notes": "Also considered: on_failure re-raises MemoryError in the parent process (line 676), which skips both the ack/reject and the backend write. Left out because I could not confirm how the pool callback handles the re-raised exception. The fix/revert pair a7d9c79/a6bc479 (chord hang on revoke) shows the revoke-to-backend path in _announce_revoked is unsettled, but the reverted code is gone and nothing that fails remains to cite.",
+  "bundle_hash": "sha256:90e6d4d845127db718a8013edafe8a64060d890c75d8b50b730553ea10463bcd",
+  "schema": "thunderstruck.finding/v1",
+  "validated_with": 3
+}

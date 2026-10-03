@@ -1,0 +1,2394 @@
+{
+  "schema": "thunderstruck.report/v1",
+  "generated_at": "2026-10-03T16:10:53+00:00",
+  "scanned_at": "2026-10-03T16:03:58+00:00",
+  "repo": {
+    "root": "<celery>",
+    "head": "508c1129269d2b1baffc516d8f5c05da06273ef0",
+    "branch": "main"
+  },
+  "window": {
+    "since": "2025-10-03",
+    "since_date": "2025-10-03",
+    "commits": 372,
+    "skipped_bot_commits": 114
+  },
+  "catalog_schema": "thunderstruck.hotspots/v1",
+  "counts": {
+    "hotspots": 10,
+    "files_considered": 107,
+    "findings": 21,
+    "clean_hotspots": 0,
+    "failed_hotspots": 0
+  },
+  "warnings": [],
+  "run_warnings": [],
+  "suppressed": [],
+  "links": {
+    "provider": "github",
+    "base_url": "https://github.com/celery/celery",
+    "sha": "508c1129269d2b1baffc516d8f5c05da06273ef0",
+    "remote": "origin"
+  },
+  "degraded": {
+    "complexity": false
+  },
+  "service_context": null,
+  "pattern_coverage": {
+    "S01": {
+      "name": "Timeouts on every external call",
+      "tier": "A",
+      "files": 0,
+      "scanned": true
+    },
+    "S02": {
+      "name": "Capped exponential backoff with full jitter",
+      "tier": "A",
+      "files": 1,
+      "scanned": true
+    },
+    "S03": {
+      "name": "Honor server pushback (Retry-After, 429/503)",
+      "tier": "A",
+      "files": 0,
+      "scanned": true
+    },
+    "S04": {
+      "name": "Retry only transient errors",
+      "tier": "A",
+      "files": 2,
+      "scanned": true
+    },
+    "S05": {
+      "name": "Client-side rate limiting / budget gating",
+      "tier": "A",
+      "files": 1,
+      "scanned": true
+    },
+    "S06": {
+      "name": "Request prioritization (interactive over background)",
+      "tier": "A",
+      "files": 2,
+      "scanned": true
+    },
+    "S07": {
+      "name": "Idempotent, resumable jobs",
+      "tier": "A",
+      "files": 2,
+      "scanned": true
+    },
+    "S08": {
+      "name": "Bounded result sets and pagination",
+      "tier": "A",
+      "files": 0,
+      "scanned": true
+    },
+    "S09": {
+      "name": "Single-flight / request coalescing plus caching",
+      "tier": "A",
+      "files": 0,
+      "scanned": true
+    },
+    "S10": {
+      "name": "Retry at one layer plus a retry budget",
+      "tier": "A",
+      "files": 1,
+      "scanned": true
+    },
+    "S11": {
+      "name": "Deadline propagation across hops",
+      "tier": "B",
+      "files": 1,
+      "scanned": true
+    },
+    "S12": {
+      "name": "Circuit breaker or retry token bucket",
+      "tier": "B",
+      "files": 0,
+      "scanned": true
+    },
+    "S13": {
+      "name": "Bulkheads (separate pools, queues, workers)",
+      "tier": "B",
+      "files": 1,
+      "scanned": true
+    },
+    "S14": {
+      "name": "Bounded queues with backpressure or load shedding",
+      "tier": "B",
+      "files": 0,
+      "scanned": true
+    },
+    "S15": {
+      "name": "Graceful degradation and fallbacks",
+      "tier": "B",
+      "files": 0,
+      "scanned": true
+    },
+    "S16": {
+      "name": "Jitter on periodic work",
+      "tier": "B",
+      "files": 1,
+      "scanned": true
+    },
+    "S17": {
+      "name": "Steady state (TTLs, cleanup, growth bounds)",
+      "tier": "B",
+      "files": 1,
+      "scanned": true
+    },
+    "S18": {
+      "name": "Fail fast (validate before expensive work)",
+      "tier": "B",
+      "files": 0,
+      "scanned": true
+    },
+    "S19": {
+      "name": "No error swallowing; failures stay observable",
+      "tier": "B",
+      "files": 6,
+      "scanned": true
+    },
+    "S27": {
+      "name": "No blocking calls on non-blocking/event-loop threads",
+      "tier": "A",
+      "files": 0,
+      "scanned": true
+    },
+    "S28": {
+      "name": "Bounded, timed lock/wait acquisition",
+      "tier": "A",
+      "files": 0,
+      "scanned": true
+    },
+    "S29": {
+      "name": "Bounded query fan-out (no N+1 lazy-loading amplification)",
+      "tier": "A",
+      "files": 0,
+      "scanned": true
+    },
+    "S30": {
+      "name": "Liveness checks only the process itself",
+      "tier": "A",
+      "files": 0,
+      "scanned": true
+    }
+  },
+  "coverage_rows": [
+    {
+      "id": "S01",
+      "name": "Timeouts on every external call",
+      "tier": "A",
+      "unconfirmed_files": 0,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 3
+    },
+    {
+      "id": "S02",
+      "name": "Capped exponential backoff with full jitter",
+      "tier": "A",
+      "unconfirmed_files": 1,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 3
+    },
+    {
+      "id": "S03",
+      "name": "Honor server pushback (Retry-After, 429/503)",
+      "tier": "A",
+      "unconfirmed_files": 0,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 0
+    },
+    {
+      "id": "S04",
+      "name": "Retry only transient errors",
+      "tier": "A",
+      "unconfirmed_files": 2,
+      "leads_read": 1,
+      "leads_confirmed": 0,
+      "findings": 3
+    },
+    {
+      "id": "S05",
+      "name": "Client-side rate limiting / budget gating",
+      "tier": "A",
+      "unconfirmed_files": 1,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 0
+    },
+    {
+      "id": "S06",
+      "name": "Request prioritization (interactive over background)",
+      "tier": "A",
+      "unconfirmed_files": 2,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 0
+    },
+    {
+      "id": "S07",
+      "name": "Idempotent, resumable jobs",
+      "tier": "A",
+      "unconfirmed_files": 2,
+      "leads_read": 1,
+      "leads_confirmed": 0,
+      "findings": 7
+    },
+    {
+      "id": "S08",
+      "name": "Bounded result sets and pagination",
+      "tier": "A",
+      "unconfirmed_files": 0,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 2
+    },
+    {
+      "id": "S09",
+      "name": "Single-flight / request coalescing plus caching",
+      "tier": "A",
+      "unconfirmed_files": 0,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 0
+    },
+    {
+      "id": "S10",
+      "name": "Retry at one layer plus a retry budget",
+      "tier": "A",
+      "unconfirmed_files": 1,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 1
+    },
+    {
+      "id": "S11",
+      "name": "Deadline propagation across hops",
+      "tier": "B",
+      "unconfirmed_files": 1,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 2
+    },
+    {
+      "id": "S12",
+      "name": "Circuit breaker or retry token bucket",
+      "tier": "B",
+      "unconfirmed_files": 0,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 4
+    },
+    {
+      "id": "S13",
+      "name": "Bulkheads (separate pools, queues, workers)",
+      "tier": "B",
+      "unconfirmed_files": 1,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 2
+    },
+    {
+      "id": "S14",
+      "name": "Bounded queues with backpressure or load shedding",
+      "tier": "B",
+      "unconfirmed_files": 0,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 2
+    },
+    {
+      "id": "S15",
+      "name": "Graceful degradation and fallbacks",
+      "tier": "B",
+      "unconfirmed_files": 0,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 5
+    },
+    {
+      "id": "S16",
+      "name": "Jitter on periodic work",
+      "tier": "B",
+      "unconfirmed_files": 1,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 0
+    },
+    {
+      "id": "S17",
+      "name": "Steady state (TTLs, cleanup, growth bounds)",
+      "tier": "B",
+      "unconfirmed_files": 1,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 1
+    },
+    {
+      "id": "S18",
+      "name": "Fail fast (validate before expensive work)",
+      "tier": "B",
+      "unconfirmed_files": 0,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 2
+    },
+    {
+      "id": "S19",
+      "name": "No error swallowing; failures stay observable",
+      "tier": "B",
+      "unconfirmed_files": 5,
+      "leads_read": 3,
+      "leads_confirmed": 1,
+      "findings": 5
+    },
+    {
+      "id": "S27",
+      "name": "No blocking calls on non-blocking/event-loop threads",
+      "tier": "A",
+      "unconfirmed_files": 0,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 1
+    },
+    {
+      "id": "S28",
+      "name": "Bounded, timed lock/wait acquisition",
+      "tier": "A",
+      "unconfirmed_files": 0,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 3
+    },
+    {
+      "id": "S29",
+      "name": "Bounded query fan-out (no N+1 lazy-loading amplification)",
+      "tier": "A",
+      "unconfirmed_files": 0,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 0
+    },
+    {
+      "id": "S30",
+      "name": "Liveness checks only the process itself",
+      "tier": "A",
+      "unconfirmed_files": 0,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 0
+    },
+    {
+      "id": "OTHER",
+      "name": "Not in the catalog",
+      "tier": null,
+      "unconfirmed_files": null,
+      "leads_read": null,
+      "leads_confirmed": null,
+      "findings": 1
+    }
+  ],
+  "files_affected": 10,
+  "coverage_gaps": {
+    "tracked": 844,
+    "considered": 107,
+    "unchanged": 150,
+    "not_citable": 0,
+    "excluded": {
+      "asset": 14,
+      "migration": 2,
+      "test": 188,
+      "tooling": 24
+    },
+    "unsupported": {
+      "(no extension)": 18,
+      ".cfg": 2,
+      ".cmd": 2,
+      ".conf": 5,
+      ".html": 4,
+      ".rst": 242,
+      ".sh": 6,
+      ".txt": 61,
+      "other": 19
+    }
+  },
+  "not_scanned": {
+    "intro": "Of 844 tracked files, 107 changed in the window in a supported language and were considered for ranking.",
+    "items": [
+      "150 in a supported language had no commit in the window, so they could not rank on churn",
+      "14 excluded: lock files and assets",
+      "2 excluded: database migrations",
+      "188 excluded: test code",
+      "24 excluded: CI and tooling configuration",
+      "no detectors for their language or format: 242 .rst, 61 .txt, 19 other, 18 (no extension), 6 .sh, 5 .conf, 4 .html, 2 .cfg, 2 .cmd"
+    ]
+  },
+  "dormant": [
+    {
+      "id": "D01",
+      "file": "examples/gevent/tasks.py",
+      "script": true,
+      "last_modified": "2020-08-12T19:36:59+06:00",
+      "patterns": [
+        "S01"
+      ],
+      "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/examples/gevent/tasks.py"
+    }
+  ],
+  "lead_precision": {
+    "S04": {
+      "read": 1,
+      "confirmed": 0
+    },
+    "S07": {
+      "read": 1,
+      "confirmed": 0
+    },
+    "S19": {
+      "read": 3,
+      "confirmed": 1
+    }
+  },
+  "findings": [
+    {
+      "location": {
+        "file": "celery/app/base.py",
+        "symbol": "send_task / producer_or_acquire",
+        "lines": "1124-1128",
+        "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/base.py#L1124-L1128"
+      },
+      "missing_patterns": [
+        "S28",
+        "S01",
+        "S13"
+      ],
+      "failure_mode": "When the Redis result backend is slow or reconnecting, every publishing thread in a client process (web app, beat, a canvas-building task) hangs inside apply_async/send_task with no error. Requests pile up behind the 10 producer slots, and broker publishing stops for the whole process even though the broker is healthy.",
+      "trigger_condition": "The Redis result backend stalls or drops its pub/sub connection while a non-worker process is publishing tasks with ignore_result=False (the default). broker_pool_acquire_timeout is left at its default of None.",
+      "amplifier": "send_task takes a pooled producer and then, while still holding it, calls backend.on_task_call(). For Redis this goes to consume_from(), which takes an unbounded RLock (_pubsub_lock) and, on error, runs a retrying reconnect (_reconnect_pubsub via retry_over_time) with the lock still held. One stalled subscriber therefore holds both the pubsub lock and a producer slot. Other threads queue on the lock while holding their own slots, until all broker_pool_limit (10) slots are taken. After that, producer_pool.acquire(block=True, timeout=None) waits forever.",
+      "sustaining_effect": "Blocked publishers keep their request threads and producer slots until the reconnect loop gives up or succeeds. Upstream HTTP clients time out and retry, which adds more blocked publishers. After Redis recovers, the backlog of convoyed threads still has to drain one at a time through the serialized pubsub lock before publishing returns to normal.",
+      "blast_radius": "Every task publish from the affected process stalls, not only publishes that need results. Callers whose results are ignored are blocked too, because they wait for the same producer slots.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/app/base.py:1124-1128",
+          "note": "backend.on_task_call() runs inside the producer_or_acquire block, so a result-backend call holds a broker producer slot",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/base.py#L1124-L1128"
+        },
+        {
+          "type": "code",
+          "ref": "celery/app/base.py:1261-1288",
+          "note": "_acquire_producer blocks with timeout=self.conf.broker_pool_acquire_timeout",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/base.py#L1261-L1288"
+        },
+        {
+          "type": "code",
+          "ref": "celery/app/defaults.py:102",
+          "note": "pool_acquire_timeout defaults to None, so the wait is unbounded unless an operator opts in",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/defaults.py#L102"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/redis.py:299-311",
+          "note": "consume_from takes _pubsub_lock without a timeout; on a subscribe error, reconnect_on_error runs the reconnect while the lock is held",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/redis.py#L299-L311"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/redis.py:149-191",
+          "note": "_reconnect_pubsub runs under _locked() and is wrapped in a retrying _ensure()",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/redis.py#L149-L191"
+        },
+        {
+          "type": "commit",
+          "ref": "1a39f8c",
+          "note": "[fix] 'add timeout to broker pool acquisition to prevent indefinite blocking' made the timeout configurable, but the default is still None, so the indefinite wait remains out of the box",
+          "subject": "fix(base): add timeout to broker pool acquisition to prevent indefinite blocking (#10174)",
+          "kind": "fix",
+          "url": "https://github.com/celery/celery/commit/1a39f8ca68a3a4c89a6d471f100cfe0b2a22e65c"
+        }
+      ],
+      "confidence": "high",
+      "confidence_rationale": "A [fix] commit targeted exactly this indefinite block. The code still defaults to an unbounded wait and still makes a lock-guarded, retrying result-backend call while holding the producer. The Redis retry-policy defaults were not checked within the read budget, so how long a stall lasts is not established.",
+      "how_to_verify": "Use the Redis result backend with broker_pool_limit=2 and the default acquire timeout. Pause Redis (CLIENT PAUSE, or drop its packets) and call apply_async from 20 threads. If the hypothesis is right, every thread blocks, including ones whose tasks have ignore_result=True, and none raises OperationalError. If those threads still publish, the hypothesis is wrong.",
+      "prediction": "The next 'apply_async hangs' report will involve a Redis result-backend blip, with thread dumps showing threads parked in ResultConsumer._locked or producer_pool.acquire.",
+      "key": "f62fb0c3468b",
+      "content_hash": "sha256:059bee09b559f4e915f08c2e3731df51df879017e4d3c1b234ba4641eb33b749",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/app/base.py": "sha256:059bee09b559f4e915f08c2e3731df51df879017e4d3c1b234ba4641eb33b749",
+        "celery/app/defaults.py": "sha256:7066721b879df620abbd5b565a01ddd2ebb39ce9ec1bb9bd0d2408653982f1dd",
+        "celery/backends/redis.py": "sha256:858b2a75d236bef42a1d04fdd15d83b057d844b171321f37f6dd5f236b72b7fb"
+      },
+      "hotspot_id": "H03",
+      "hotspot_score": 0.6764,
+      "id": "FR-001",
+      "shares_code_with": [
+        {
+          "id": "FR-005",
+          "key": "bb3600c042ef",
+          "refs": [
+            "celery/backends/redis.py:299-311",
+            "celery/backends/redis.py:149-191"
+          ]
+        },
+        {
+          "id": "FR-006",
+          "key": "df2cb49b3e2c",
+          "refs": [
+            "celery/backends/redis.py:299-311",
+            "celery/backends/redis.py:149-191"
+          ]
+        }
+      ]
+    },
+    {
+      "location": {
+        "file": "celery/worker/request.py",
+        "symbol": "on_timeout",
+        "lines": "535-610",
+        "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/worker/request.py#L535-L610"
+      },
+      "missing_patterns": [
+        "S07",
+        "S04",
+        "S19"
+      ],
+      "failure_mode": "A task that hits its hard time limit is stored as FAILURE and its errbacks and task_failure handlers fire. The message is then requeued and runs again. Users see FAILURE, then the task running again (and possibly SUCCESS later), and the errbacks fire once per redelivery.",
+      "trigger_condition": "acks_late=True with acks_on_timeout=False (or the legacy acks_on_failure_or_timeout=False), and a task that reliably runs past time_limit, e.g. because of a large input or a slow dependency",
+      "amplifier": "Each redelivery holds a pool slot for the whole hard time limit, then the child is killed and a new one has to be forked. on_failure skips mark_as_failure when the message is requeued (line 734), but on_timeout writes FAILURE and fires the hooks before it requeues, so the two paths disagree.",
+      "sustaining_effect": "The requeued message comes back at full cost with no attempt counter or cap. A deterministic overrun becomes a poison message that keeps using worker capacity and re-firing errbacks after the slow dependency has recovered, until someone purges the queue.",
+      "blast_radius": "Every task sharing the affected workers and queue loses capacity. Chords and workflows that react to the FAILURE result or the errbacks run their failure handling more than once.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/worker/request.py:548-551",
+          "note": "mark_as_failure runs whether or not the message will be requeued",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/worker/request.py#L548-L551"
+        },
+        {
+          "type": "code",
+          "ref": "celery/worker/request.py:563-584",
+          "note": "task.on_failure, task_failure signal and task-failed event fire before the ack/reject decision",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/worker/request.py#L563-L584"
+        },
+        {
+          "type": "code",
+          "ref": "celery/worker/request.py:606-610",
+          "note": "reject(requeue=True) when acks_on_timeout is False: no redelivery cap",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/worker/request.py#L606-L610"
+        },
+        {
+          "type": "code",
+          "ref": "celery/worker/request.py:734-739",
+          "note": "on_failure deliberately skips mark_as_failure when requeued; on_timeout does not",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/worker/request.py#L734-L739"
+        },
+        {
+          "type": "commit",
+          "ref": "7135768",
+          "note": "[fix] 'send the task failure in hard timeout' added the failure hooks ahead of the requeue branch",
+          "subject": "fix: send the task failure in hard timeout (#10226)",
+          "kind": "fix",
+          "url": "https://github.com/celery/celery/commit/7135768008f982f96cb11e6061d3b309be374583"
+        },
+        {
+          "type": "commit",
+          "ref": "40c2349",
+          "note": "[feature] changed the timeout path from 'ack or nothing' to reject(requeue=True)",
+          "subject": "feat(task): decouple acks_on_failure and acks_on_timeout (#10150)",
+          "kind": "feature",
+          "url": "https://github.com/celery/celery/commit/40c2349199b16d52521e9470ffa561cb903a7c86"
+        }
+      ],
+      "confidence": "high",
+      "confidence_rationale": "The code clearly writes FAILURE and fires the hooks and then requeues. The [fix] commit 7135768 is the change that put the hooks ahead of the requeue. Defaults are acks_on_timeout=True (task.py:449-453), so only opt-in configurations hit this.",
+      "how_to_verify": "Set acks_late=True, acks_on_timeout=False, time_limit=1 on a task that sleeps 5s. Watch the broker redeliver it indefinitely while the result backend shows FAILURE and an errback counter increases on every attempt.",
+      "prediction": "A bug report about errbacks firing repeatedly, or a FAILURE result flipping to SUCCESS, for acks_late tasks with acks_on_timeout disabled",
+      "key": "a0ba5bc31036",
+      "content_hash": "sha256:9e9989ec68b53caf7b1b68323c1b169b513b4ee6dd33600e9fa7257bafbebee0",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/worker/request.py": "sha256:9e9989ec68b53caf7b1b68323c1b169b513b4ee6dd33600e9fa7257bafbebee0"
+      },
+      "hotspot_id": "H06",
+      "hotspot_score": 0.3747,
+      "id": "FR-002",
+      "shares_code_with": []
+    },
+    {
+      "location": {
+        "file": "celery/app/trace.py",
+        "symbol": "build_tracer.trace_task",
+        "lines": "510-561",
+        "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/trace.py#L510-L561"
+      },
+      "missing_patterns": [
+        "S02",
+        "S12",
+        "S04"
+      ],
+      "failure_mode": "A redelivered acks_late task that already succeeded can end up in a hot requeue loop. The worker logs 'Failed to dispatch chain/callbacks for deduplicated task <id>' over and over, the same message bounces between broker and worker with no delay, and every bounce does two result-backend reads (r.state and r._get_task_meta()). On brokers with no max-delivery-count, such as Redis or SQS without a redrive policy, this never ends.",
+      "trigger_condition": "worker_deduplicate_successful_tasks is on with acks_late and a persistent backend. A task whose stored state is SUCCESS but has no stored children is redelivered (worker lost or connection reset) and carries callbacks or a chain. Dispatching them then raises any exception. That can be a permanent one (a malformed or unregistered signature, a serialization error in the stored retval) or a transient one (broker connection error while publishing the next step).",
+      "amplifier": "Every Exception is turned into Reject(requeue=True) with no backoff and no attempt count. A requeued message comes back marked redelivered, so it re-enters the same fast path straight away. Errors that can never succeed are retried the same way as transient ones.",
+      "sustaining_effect": "The message requeues itself at full cost (two backend reads plus a publish attempt) every cycle. During a broker or backend brownout, every deduplicated redelivery in the backlog spins this way at once. The extra publish and read load lands on the dependencies that are trying to recover, and the loop goes on after the original trigger is gone. For permanent errors nothing stops it at all.",
+      "blast_radius": "Worker slots and prefetch capacity on the queue go to messages that make no progress. Backend and broker load rises for every task on that worker pool. Downstream chain steps for the affected workflows never run.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/app/trace.py:549-560",
+          "note": "Any Exception during the dedup dispatch is logged and raised as Reject(exc, requeue=True). The comment admits permanent failures 'will requeue indefinitely' and leaves the circuit-breaker to the broker.",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/trace.py#L549-L560"
+        },
+        {
+          "type": "code",
+          "ref": "celery/app/trace.py:510-516",
+          "note": "The fast path is entered whenever delivery_info.redelivered is true, and a requeued message is always redelivered. Each pass costs a backend read.",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/trace.py#L510-L516"
+        },
+        {
+          "type": "code",
+          "ref": "celery/worker/request.py:677-699",
+          "note": "The worker honours exc.requeue with a plain reject(requeue=True): no delay and no delivery counter.",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/worker/request.py#L677-L699"
+        },
+        {
+          "type": "commit",
+          "ref": "865922a",
+          "note": "Labelled [fix] in the bundle. It added _dispatch_callbacks_and_chain on the dedup path together with the unbounded Reject(requeue=True).",
+          "subject": "fix(trace): dispatch chain/callbacks on dedup fast-path for redelivered tasks (#10159)",
+          "kind": "fix",
+          "url": "https://github.com/celery/celery/commit/865922abda9551876c2fd6cd7fb1ce59e7f2291a"
+        }
+      ],
+      "confidence": "high",
+      "confidence_rationale": "The unbounded requeue is explicit in code that a [fix] commit added, and the worker side confirms an immediate requeue with no counter. I did not observe the rate of the loop on a real broker.",
+      "how_to_verify": "Turn on acks_late and worker_deduplicate_successful_tasks with a Redis broker. Store SUCCESS with children=[] for a task id. Deliver it with redelivered=True and a link to an unregistered or malformed signature. Count how many times the error is logged per minute: it should keep growing with no ceiling.",
+      "prediction": "The next dedup-related incident report will describe a worker stuck re-logging 'Failed to dispatch chain/callbacks for deduplicated task' for the same id.",
+      "key": "b1af3746845c",
+      "content_hash": "sha256:e1affcf2e8d0c659e5754ac27f1b439f07a728e74dba1ef2f4f9b508e7677a8e",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/app/trace.py": "sha256:e1affcf2e8d0c659e5754ac27f1b439f07a728e74dba1ef2f4f9b508e7677a8e",
+        "celery/worker/request.py": "sha256:9e9989ec68b53caf7b1b68323c1b169b513b4ee6dd33600e9fa7257bafbebee0"
+      },
+      "hotspot_id": "H10",
+      "hotspot_score": 0.2281,
+      "id": "FR-003",
+      "shares_code_with": [
+        {
+          "id": "FR-011",
+          "key": "6105880fd01e",
+          "refs": [
+            "celery/worker/request.py:677-699"
+          ]
+        },
+        {
+          "id": "FR-016",
+          "key": "d710c0302beb",
+          "refs": [
+            "celery/worker/request.py:677-699"
+          ]
+        }
+      ]
+    },
+    {
+      "location": {
+        "file": "celery/canvas.py",
+        "symbol": "_chain.prepare_steps / chord.run",
+        "lines": "1286-1296",
+        "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/canvas.py#L1286-L1296"
+      },
+      "missing_patterns": [
+        "S08",
+        "S18"
+      ],
+      "failure_mode": "Publishing a chord whose body is a chain of further implicit chords produces header task messages that grow geometrically, roughly N^K for K nested chords with N header tasks each. Users see apply_async either spin on CPU and memory while serialising, or fail when the broker rejects an oversized message (SQS 256KB, RabbitMQ frame or Redis maxmemory limits). Workers can also OOM on deserialisation.",
+      "trigger_condition": "A canvas such as chord(g1, t1 | g2 | t2 | g3 | t3) is sent directly through chord.apply_async rather than wrapped in an outer chain. Chain.__or__ and chord.__or__ nest each further group|task pair into the previous chord's body. chord.run then calls body.freeze(), which reaches prepare_steps with clone=False. The unroll fix from 508c112 is gated on `clone and ...`, so it is skipped there and every nested chord is frozen in place. Each header task of a nested chord then carries the full remaining body in its options['chord'].",
+      "amplifier": "Signature.freeze writes opts['chord'] = body onto every header task (line 566-567), and chord.run copies the body into all N top-level header messages (line 2410). Each nesting level multiplies the serialised size by N.",
+      "sustaining_effect": null,
+      "blast_radius": "Any producer that publishes such a canvas, including tasks that build follow-up canvases on a worker. If an oversized message does get published, every worker that consumes a header task pays the deserialisation cost, and the shared broker's memory or quota suffers.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/canvas.py:1286-1296",
+          "note": "chord-body unroll only runs when clone=True; the comment itself says freezing (clone=False) keeps the chain as written",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/canvas.py#L1286-L1296"
+        },
+        {
+          "type": "code",
+          "ref": "celery/canvas.py:1154-1163",
+          "note": "_chain.freeze calls prepare_steps with clone=False, so the unroll is skipped",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/canvas.py#L1154-L1163"
+        },
+        {
+          "type": "code",
+          "ref": "celery/canvas.py:2401-2410",
+          "note": "chord.run freezes the body (a chain, so the clone=False path) and then attaches that body to every header task",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/canvas.py#L2401-L2410"
+        },
+        {
+          "type": "code",
+          "ref": "celery/canvas.py:2216-2217",
+          "note": "nested chord.freeze freezes its header with chord=self.body, so each header task embeds the rest of the canvas",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/canvas.py#L2216-L2217"
+        },
+        {
+          "type": "code",
+          "ref": "celery/canvas.py:1053-1057",
+          "note": "chain|task with a chord at the end appends to that chord's body, which builds the nested chord-in-body-chain shape",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/canvas.py#L1053-L1057"
+        },
+        {
+          "type": "commit",
+          "ref": "508c112",
+          "note": "[fix] 'Fix geometric message bloat in a chain of implicit chords', fixed only on the clone=True worker path",
+          "subject": "Fix geometric message bloat in a chain of implicit chords (#10743)",
+          "kind": "fix",
+          "url": "https://github.com/celery/celery/commit/508c1129269d2b1baffc516d8f5c05da06273ef0"
+        },
+        {
+          "type": "commit",
+          "ref": "df57d9a",
+          "note": "[fix] 'Fix O(K\u00b2) message bloat in a chain of chords': an earlier fix for the same bloat in the same area, so this is the second patch to it",
+          "subject": "Fix O(K\u00b2) message bloat in a chain of chords (#10171)",
+          "kind": "fix",
+          "url": "https://github.com/celery/celery/commit/df57d9ab919945fee49403c640f5a8c0a7c69cb3"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "Two [fix] commits for message bloat, and the code explicitly leaves the clone=False path unfixed. chord.run is shown to take that path. I did not open group.freeze or _freeze_group_tasks to confirm they set the chord option on every member, and I did not measure the size, so I am keeping this at medium.",
+      "how_to_verify": "Build sig = chord(group(a.s() for _ in range(4)), t.s() | group(a.s() for _ in range(4)) | t.s() | group(a.s() for _ in range(4)) | t.s() | group(a.s() for _ in range(4)) | t.s()). Patch the producer to record message sizes, then call sig.apply_async(). Compare len(json.dumps(header_task.options)) with the same canvas sent as chain(group, t, group, t, ...).apply_async(). If the direct-chord sizes grow linearly rather than about 4x per level, this finding is wrong.",
+      "prediction": "The next message-bloat issue will be reported for a chord applied directly, or for a frozen canvas, rather than for a chain.",
+      "key": "a4b8d7590c34",
+      "content_hash": "sha256:c13e572e5474e02468ddb7f7a0f5a0244b1282e36b450afc010824fd84ecddee",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/canvas.py": "sha256:c13e572e5474e02468ddb7f7a0f5a0244b1282e36b450afc010824fd84ecddee"
+      },
+      "hotspot_id": "H01",
+      "hotspot_score": 0.829,
+      "id": "FR-004",
+      "shares_code_with": []
+    },
+    {
+      "location": {
+        "file": "celery/backends/redis.py",
+        "symbol": "ResultConsumer._reconnect_pubsub",
+        "lines": "149-191",
+        "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/redis.py#L149-L191"
+      },
+      "missing_patterns": [
+        "S07",
+        "S15"
+      ],
+      "failure_mode": "After a Redis outage of roughly 20 s or more, AsyncResult.get() for tasks that were already in flight never returns, or raises RuntimeError, and the process does not recover until it is restarted",
+      "trigger_condition": "The Redis result backend is unreachable for longer than the reconnect retry policy (20 retries, 1 s max interval, so about 20 s) while results are pending",
+      "amplifier": "_reconnect_pubsub sets self._pubsub = None before the mget/subscribe that fails. When ensure() gives up, reconnect_on_error raises RuntimeError and _pubsub is left None while subscribed_to still lists every old key. The next consume_from() goes through start(), which builds a fresh pubsub and subscribes only the new task's key",
+      "sustaining_effect": "subscribed_to now lists channels the new connection never subscribed to. _consume_from skips any key already in that set, so re-waiting on those tasks never subscribes again and their publishes are never received. Under gevent/eventlet the RuntimeError (not an OSError) also escapes greenletDrainer.run, so the drainer dies and stays dead. Nothing resets either state short of a restart",
+      "blast_radius": "Every caller in the client process (web workers, canvas joins) that waits on results it requested before the outage; under gevent/eventlet, every later get() in that process",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/backends/redis.py:151",
+          "note": "_pubsub cleared before the network calls that can fail",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/redis.py#L151"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/redis.py:155-171",
+          "note": "mget and subscribe can raise after _pubsub = None; subscribed_to is left as it was",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/redis.py#L155-L171"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/redis.py:202-207",
+          "note": "start() subscribes only initial_task_id, not the existing subscribed_to",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/redis.py#L202-L207"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/redis.py:305-311",
+          "note": "keys already in subscribed_to are never re-subscribed",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/redis.py#L305-L311"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/asynchronous.py:358-363",
+          "note": "reconnect failure is turned into RuntimeError",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/asynchronous.py#L358-L363"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/asynchronous.py:136-155",
+          "note": "greenlet drainer catches only socket.timeout/OSError; RuntimeError ends the loop",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/asynchronous.py#L136-L155"
+        },
+        {
+          "type": "commit",
+          "ref": "d35acd7",
+          "note": "[fix] for the same problem class: subscribed_to drifting from the real subscriptions (redundant unsubscribe)",
+          "subject": "Fix Redis result consumer redundant unsubscribe (#10497)",
+          "kind": "fix",
+          "url": "https://github.com/celery/celery/commit/d35acd7f5bda45325616cfabd7a4a7b9fbddaeb9"
+        },
+        {
+          "type": "commit",
+          "ref": "30402bd",
+          "note": "[fix] 9 days ago in the same subscription/lock bookkeeping; its comment at 163-167 covers stale subscribed_to only for pending unsubscribes",
+          "subject": "fix(redis): defer re-entrant cancel_for to avoid GC-driven pub/sub deadlock (#10716)",
+          "kind": "fix",
+          "url": "https://github.com/celery/celery/commit/30402bd05d620d1bc0ecc36ac0756bf4502d9281"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "Traced the control flow through redis.py and asynchronous.py. The [fix] commits are about related subscribed_to drift, not this exact path, and the outage-past-retry trigger was not observed",
+      "how_to_verify": "Subscribe to tasks A and B, stop Redis for 30 s so _reconnect raises, restart Redis, then call apply_async for C and A.get(timeout=None) after A completes. A.get() hangs because PUBSUB CHANNELS never includes A's key",
+      "prediction": "The next Redis-backend incident report reads: get() hangs forever after a Redis failover/restart until the client is restarted",
+      "key": "bb3600c042ef",
+      "content_hash": "sha256:858b2a75d236bef42a1d04fdd15d83b057d844b171321f37f6dd5f236b72b7fb",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/backends/asynchronous.py": "sha256:85a5ee0552feaf6404def93f42efbe143cdb6a09327c6ded1be137b32a36841d",
+        "celery/backends/redis.py": "sha256:858b2a75d236bef42a1d04fdd15d83b057d844b171321f37f6dd5f236b72b7fb"
+      },
+      "hotspot_id": "H02",
+      "hotspot_score": 0.753,
+      "id": "FR-005",
+      "shares_code_with": [
+        {
+          "id": "FR-001",
+          "key": "f62fb0c3468b",
+          "refs": [
+            "celery/backends/redis.py:151",
+            "celery/backends/redis.py:155-171",
+            "celery/backends/redis.py:305-311"
+          ]
+        }
+      ]
+    },
+    {
+      "location": {
+        "file": "celery/backends/redis.py",
+        "symbol": "ResultConsumer._drain_one / consume_from",
+        "lines": "267-311",
+        "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/redis.py#L267-L311"
+      },
+      "missing_patterns": [
+        "S28",
+        "S01"
+      ],
+      "failure_mode": "During a Redis backend blip, apply_async() and AsyncResult subscribe calls in a client process stall for the whole reconnect cycle (tens of seconds or more) instead of failing fast",
+      "trigger_condition": "Redis connection drops while the drainer is inside _drain_one, or during any subscribe, and reconnection needs several attempts (failover, DNS change, blackholed host)",
+      "amplifier": "reconnect_on_error runs _reconnect, which is ensure() with retry sleeps, inside the _locked() block held by the drainer. _reconnect_pubsub then re-enters the RLock and does connection_pool.reset(), mget and a new connect, all while holding it. on_task_call calls consume_from on every apply_async, which waits on the same lock with no timeout",
+      "sustaining_effect": null,
+      "blast_radius": "Every thread or greenlet in the producing process that publishes a task or starts waiting on a result. Web request threads pile up behind one drainer that is sleeping between retries",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/backends/redis.py:268",
+          "note": "reconnect_on_error (retrying reconnect) inside _drain_one, which runs under _locked()",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/redis.py#L268"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/redis.py:150-171",
+          "note": "connection_pool.reset, mget and subscribe done while holding _pubsub_lock",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/redis.py#L150-L171"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/redis.py:299-303",
+          "note": "consume_from acquires the lock with a blocking, unbounded wait",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/redis.py#L299-L303"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/redis.py:675-677",
+          "note": "on_task_call puts that lock on the apply_async path",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/redis.py#L675-L677"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/redis.py:685-691",
+          "note": "ensure = retry_over_time with retry sleeps",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/redis.py#L685-L691"
+        },
+        {
+          "type": "commit",
+          "ref": "cd3b42e",
+          "note": "introduced the shared pubsub lock",
+          "subject": "Redis result backend: serialize pubsub access between the drainer and result cleanup (#10671)",
+          "kind": "refactor",
+          "url": "https://github.com/celery/celery/commit/cd3b42ea5086c0260ba5e59bea5f00a8f40145db"
+        },
+        {
+          "type": "commit",
+          "ref": "3083864",
+          "note": "moved the socket wait out of the lock, but the reconnect path still holds it",
+          "subject": "Redis result backend: don't hold the pubsub lock while waiting for messages (#10715)",
+          "kind": "feature",
+          "url": "https://github.com/celery/celery/commit/308386415c4355b92a975ae602d44167585b5e43"
+        },
+        {
+          "type": "commit",
+          "ref": "30402bd",
+          "note": "[fix] for a deadlock on this same lock, the third change to it in 9 days",
+          "subject": "fix(redis): defer re-entrant cancel_for to avoid GC-driven pub/sub deadlock (#10716)",
+          "kind": "fix",
+          "url": "https://github.com/celery/celery/commit/30402bd05d620d1bc0ecc36ac0756bf4502d9281"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "Lock scope and the retry inside it are clear in the code. The lock-related [fix] was a GC re-entrancy deadlock, not this convoy, and stall length depends on the configured socket timeouts",
+      "how_to_verify": "Run a client with a drainer thread and N threads calling apply_async. Drop Redis traffic with iptables for 10 s and measure apply_async latency: it should stay at about 10 s or more for all N threads, not fail fast",
+      "key": "df2cb49b3e2c",
+      "content_hash": "sha256:858b2a75d236bef42a1d04fdd15d83b057d844b171321f37f6dd5f236b72b7fb",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/backends/redis.py": "sha256:858b2a75d236bef42a1d04fdd15d83b057d844b171321f37f6dd5f236b72b7fb"
+      },
+      "hotspot_id": "H02",
+      "hotspot_score": 0.753,
+      "id": "FR-006",
+      "shares_code_with": [
+        {
+          "id": "FR-001",
+          "key": "f62fb0c3468b",
+          "refs": [
+            "celery/backends/redis.py:150-171",
+            "celery/backends/redis.py:299-303"
+          ]
+        }
+      ]
+    },
+    {
+      "location": {
+        "file": "celery/backends/base.py",
+        "symbol": "_ensure_retryable",
+        "lines": "757-793",
+        "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/base.py#L757-L793"
+      },
+      "missing_patterns": [
+        "S10",
+        "S11",
+        "S12",
+        "S01"
+      ],
+      "failure_mode": "During a result-backend outage with result_backend_always_retry enabled, workers stop finishing tasks and AsyncResult.get(timeout=N) hangs well past N, with no upper bound. On-call sees a steady stream of 'Failed operation ... Retrying inf more times' warnings and a worker fleet that is alive but makes no progress.",
+      "trigger_condition": "result_backend_always_retry=True with result_backend_max_retries left at its default (inf), and the backend (Redis, DB) unreachable or returning retryable errors for longer than a few seconds",
+      "amplifier": "The retry loop has no attempt cap and no deadline. wait_for counts only its own sleep time toward the caller's timeout and never counts time spent inside get_task_meta, so the caller's deadline is never applied to the retry loop. store_result retries inside the worker's pool slot, so every process that finishes a task blocks in this loop.",
+      "sustaining_effect": "Each pool process stays parked in its retry loop until the backend answers, so no new tasks start and the broker queue keeps growing. When the backend recovers, every parked process and client hits it at once (jitter spreads them only across the 10s cap) on top of the backlog that built up.",
+      "blast_radius": "Every task that stores a result, and every client waiting on a result, for every queue served by workers on this backend",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/backends/base.py:235",
+          "note": "max_retries defaults to float('inf')",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/base.py#L235"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/base.py:760-783",
+          "note": "while True retry loop, bounded only by max_retries; no deadline",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/base.py#L760-L783"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/base.py:881-886",
+          "note": "get_task_meta goes through the unbounded retry loop",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/base.py#L881-L886"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/base.py:1077-1091",
+          "note": "wait_for's time_elapsed adds only nap, so time spent inside get_task_meta is never counted toward the timeout",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/base.py#L1077-L1091"
+        },
+        {
+          "type": "commit",
+          "ref": "0266822",
+          "note": "[resilience] extended the retry wrapper to more backend operations (forget, group ops), so the unbounded loop now covers more operations",
+          "subject": "Database Backend Should Support the retry config parameters #6540 (#10130)",
+          "kind": "resilience",
+          "url": "https://github.com/celery/celery/commit/026682218858c574fdc1e0f4a564d18acf602311"
+        },
+        {
+          "type": "commit",
+          "ref": "0348d64",
+          "note": "[fix] for DB backend connection health patched this retry loop but added no bound or deadline",
+          "subject": "Fix 10109 db backend connection health (#10124)",
+          "kind": "fix",
+          "url": "https://github.com/celery/celery/commit/0348d6425d6ca72007b7da93645eb12037c91dec"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "Unbounded loop and deadline-blind timeout accounting are plain in the code; it needs a non-default opt-in (always_retry), and no [fix] commit targets this exact defect",
+      "how_to_verify": "Set result_backend_always_retry=True with Redis, stop Redis, call AsyncResult(id).get(timeout=5): it does not raise TimeoutError after 5s. A worker that finishes a task also never takes the next one.",
+      "prediction": "The next backend-outage incident shows workers hung in store_result rather than failing fast",
+      "key": "8bcddcb49b5d",
+      "content_hash": "sha256:e95308ebf79e95fb915d4ca5c227a5f0f065c04425c0b3d75630f106ddc5da91",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/backends/base.py": "sha256:e95308ebf79e95fb915d4ca5c227a5f0f065c04425c0b3d75630f106ddc5da91"
+      },
+      "hotspot_id": "H04",
+      "hotspot_score": 0.5851,
+      "id": "FR-007",
+      "shares_code_with": [
+        {
+          "id": "FR-015",
+          "key": "6345778fa223",
+          "refs": [
+            "celery/backends/base.py:760-783"
+          ]
+        }
+      ]
+    },
+    {
+      "location": {
+        "file": "celery/backends/base.py",
+        "symbol": "get_many",
+        "lines": "1224-1272",
+        "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/base.py#L1224-L1272"
+      },
+      "missing_patterns": [
+        "S08",
+        "S11",
+        "S12"
+      ],
+      "failure_mode": "Joining a large group against a slow key-value backend overruns its timeout by a multiple, and puts constant load on the backend through repeated full-set MGETs",
+      "trigger_condition": "ResultSet/GroupResult join on thousands of task ids while the backend is slow (latency in the hundreds of ms to seconds), or many clients joining at once",
+      "amplifier": "Each loop iteration issues one MGET for every still-pending id, with no batching, every 0.5s at a fixed interval that never grows. time_elapsed counts only sleep time and ignores MGET latency and the time the consumer spends between yields, so timeout=10 with a 2s MGET actually runs for about 50s.",
+      "sustaining_effect": "A slower backend makes every MGET bigger and slower, but clients keep polling at the same rate and for longer than their timeout. Callers that time out and rejoin add more pollers, so backend latency stays high after the original slowdown is gone.",
+      "blast_radius": "All result readers and writers sharing the key-value backend (for example Redis), including workers storing results",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/backends/base.py:1245-1248",
+          "note": "MGET of all pending keys every iteration, unbatched",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/base.py#L1245-L1248"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/base.py:1259-1269",
+          "note": "timeout compared against summed naps only, not wall clock",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/base.py#L1259-L1269"
+        },
+        {
+          "type": "commit",
+          "ref": "1ea3d4f",
+          "note": "[resilience] timeout=0 fix kept the sleep-only time accounting, so MGET time is still not counted",
+          "subject": "Honor a timeout of 0 in get_many instead of polling forever (#10524)",
+          "kind": "resilience",
+          "url": "https://github.com/celery/celery/commit/1ea3d4f6408e7521a95c6bca3bbcbf502bcb62ec"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "Timeout accounting flaw is deterministic from the code; the load-amplification part depends on group size and backend latency, which I did not observe",
+      "how_to_verify": "Mock mget to sleep 2s and return nothing ready, call list(backend.get_many(ids, timeout=3)), and measure: it raises TimeoutError after roughly 3 x (2 + 0.5)s instead of about 3s.",
+      "key": "34e3742160f1",
+      "content_hash": "sha256:e95308ebf79e95fb915d4ca5c227a5f0f065c04425c0b3d75630f106ddc5da91",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/backends/base.py": "sha256:e95308ebf79e95fb915d4ca5c227a5f0f065c04425c0b3d75630f106ddc5da91"
+      },
+      "hotspot_id": "H04",
+      "hotspot_score": 0.5851,
+      "id": "FR-008",
+      "shares_code_with": []
+    },
+    {
+      "location": {
+        "file": "celery/backends/base.py",
+        "symbol": "_handle_group_chord_error",
+        "lines": "486-491",
+        "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/base.py#L486-L491"
+      },
+      "missing_patterns": [
+        "S19"
+      ],
+      "failure_mode": "When a chord header fails and the body is a group, the group's link_error errbacks can be silently dropped with nothing in the logs, so the user-defined failure handling (alerts, compensation) never runs",
+      "trigger_condition": "Old-style or unregistered errbacks have to be dispatched via group.apply_async while the broker is unavailable, or signature resolution raises",
+      "amplifier": "_call_task_errbacks logs only new-style errback failures. Exceptions from building or publishing old-style errbacks reach this except block, which does a bare pass.",
+      "sustaining_effect": null,
+      "blast_radius": "Error-handling workflows attached to chord bodies; the divergence is found only when someone notices a missing compensation",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/backends/base.py:487-491",
+          "note": "except Exception: pass around _call_task_errbacks, no logging",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/base.py#L487-L491"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/base.py:375-388",
+          "note": "old-style errbacks are dispatched via apply_async; a publish failure propagates to the bare pass",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/base.py#L375-L388"
+        },
+        {
+          "type": "detector",
+          "ref": "S19@celery/backends/base.py:489",
+          "note": "confirmed: failure leaves no trace",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/base.py#L489"
+        },
+        {
+          "type": "commit",
+          "ref": "477c816",
+          "note": "[fix] for a silent chain halt caused by errback exceptions; added logging only for new-style errbacks",
+          "subject": "Fix: wrap new-style errback calls in try/except to prevent silent chain halt (#10214)",
+          "kind": "fix",
+          "url": "https://github.com/celery/celery/commit/477c816f9c6a4aa601825fa36d4f203dba375c48"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "The swallow is visible, and a prior [fix] addressed a sibling silent-failure path; the trigger needs a broker failure during chord error handling, which is uncommon",
+      "how_to_verify": "Make a chord whose header fails, with a group body that has a link_error to a single-arg errback; patch group.apply_async to raise ConnectionError. The errback never runs and no log line mentions it.",
+      "key": "25300c62e151",
+      "content_hash": "sha256:e95308ebf79e95fb915d4ca5c227a5f0f065c04425c0b3d75630f106ddc5da91",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/backends/base.py": "sha256:e95308ebf79e95fb915d4ca5c227a5f0f065c04425c0b3d75630f106ddc5da91"
+      },
+      "hotspot_id": "H04",
+      "hotspot_score": 0.5851,
+      "id": "FR-009",
+      "shares_code_with": []
+    },
+    {
+      "location": {
+        "file": "celery/app/amqp.py",
+        "symbol": "_create_task_sender.send_task_message",
+        "lines": "598-610",
+        "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/amqp.py#L598-L610"
+      },
+      "missing_patterns": [
+        "S19",
+        "S17",
+        "S14"
+      ],
+      "failure_mode": "With task_send_sent_event enabled, a failed task-sent event publish is not logged and not raised. It is appended to an in-memory buffer that is never flushed. Monitoring (Flower, event consumers) loses the tasks' 'sent' state, and producer processes (web workers, beat, workers that publish subtasks) grow slowly in memory.",
+      "trigger_condition": "task_send_sent_event=True and the event publish fails after the task message went out. Examples: the celeryev exchange declare fails, or the connection drops and the merged retry policy runs out.",
+      "amplifier": "Each buffered entry holds argsrepr and kwargsrepr (up to 1024 chars each, plus the event envelope). A broker outage that lasts through many apply_async calls buffers one entry per task.",
+      "sustaining_effect": "amqp._event_dispatcher is created with enabled=False, and nothing in celery/ ever calls flush() on it. The deque is unbounded and never drained, so the memory stays allocated after the broker recovers, until the process restarts.",
+      "blast_radius": "Every process that publishes tasks through app.amqp.send_task_message: lost task-sent events everywhere, and memory growth in long-lived producers.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/app/amqp.py:658-662",
+          "note": "default dispatcher is Dispatcher(enabled=False), cached for the process lifetime",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/amqp.py#L658-L662"
+        },
+        {
+          "type": "code",
+          "ref": "celery/app/amqp.py:598-608",
+          "note": "task-sent event published through default_evd after the task publish",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/amqp.py#L598-L608"
+        },
+        {
+          "type": "code",
+          "ref": "celery/events/dispatcher.py:159-162",
+          "note": "exception swallowed into _outbound_buffer when buffer_while_offline (default True)",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/events/dispatcher.py#L159-L162"
+        },
+        {
+          "type": "code",
+          "ref": "celery/events/dispatcher.py:73",
+          "note": "_outbound_buffer = deque() with no maxlen",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/events/dispatcher.py#L73"
+        },
+        {
+          "type": "commit",
+          "ref": "e1dba84",
+          "note": "[resilience] changed the retry policy of this exact event publish; the swallow-and-buffer path is unchanged",
+          "subject": "Use the merged retry policy for before_task_publish and task-sent events (#10708)",
+          "kind": "resilience",
+          "url": "https://github.com/celery/celery/commit/e1dba84f8d91d9cebf5b0fee99532b6734993d20"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "The buffer path and the missing flush are visible in code. A grep for _outbound_buffer and flush( found no caller that drains the amqp default dispatcher. The trigger needs an opt-in setting and was not observed.",
+      "how_to_verify": "Enable task_send_sent_event and make the celeryev exchange publish raise (mock producer.publish to fail only for that exchange). Call apply_async 10k times and check app.amqp._event_dispatcher._outbound_buffer: it reaches 10k entries, and nothing is logged.",
+      "prediction": "An incident report of Flower or event-based monitoring missing 'sent' tasks after a broker blip, with no error in producer logs.",
+      "key": "c15996fba8db",
+      "content_hash": "sha256:53dd85c0bfa45be48522f62425bf218ba01ece457ae7e20664771f755a685a01",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/app/amqp.py": "sha256:53dd85c0bfa45be48522f62425bf218ba01ece457ae7e20664771f755a685a01",
+        "celery/events/dispatcher.py": "sha256:46c894877cffc23d4c58037fac7a34671549301a38063b81815feed97daf6d94"
+      },
+      "hotspot_id": "H05",
+      "hotspot_score": 0.4627,
+      "id": "FR-010",
+      "shares_code_with": []
+    },
+    {
+      "location": {
+        "file": "celery/worker/request.py",
+        "symbol": "on_failure",
+        "lines": "677-699",
+        "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/worker/request.py#L677-L699"
+      },
+      "missing_patterns": [
+        "S15",
+        "S07"
+      ],
+      "failure_mode": "When the result backend is unavailable, a task that raised Reject(requeue=False) is never rejected. The message stays unacked on the worker and is redelivered after the connection drops or the worker restarts. The task runs again and fails the same way. On-call sees duplicate executions and messages stuck as unacked.",
+      "trigger_condition": "Result backend outage or timeout (Redis or database down) while tasks raise Reject(requeue=False). Applies when result_backend_always_retry is off, so store_result raises.",
+      "amplifier": "mark_as_failure and the task_failure signal run before self.reject(). An exception in the backend write skips the reject, and the task_failure signal and event are lost as well.",
+      "sustaining_effect": "Each redelivery repeats the full task body and then hits the same backend write. While the backend is degraded, the backend load and the unacked backlog keep growing.",
+      "blast_radius": "Tasks that use Reject(requeue=False) on workers sharing the failing result backend. Unacked messages count against the prefetch limit and starve other tasks on that worker.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/worker/request.py:683-686",
+          "note": "backend.mark_as_failure called before the message is settled",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/worker/request.py#L683-L686"
+        },
+        {
+          "type": "code",
+          "ref": "celery/worker/request.py:699",
+          "note": "reject() only reached if the backend write and signal dispatch succeed",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/worker/request.py#L699"
+        },
+        {
+          "type": "code",
+          "ref": "celery/worker/request.py:708-724",
+          "note": "contrast: the generic acks_late path settles the message before writing to the backend",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/worker/request.py#L708-L724"
+        },
+        {
+          "type": "commit",
+          "ref": "e2b276e",
+          "note": "[feature] introduced the backend write ahead of reject() in the Reject branch",
+          "subject": "Mark rejected tasks as failed when not requeued (#10369)",
+          "kind": "feature",
+          "url": "https://github.com/celery/celery/commit/e2b276e603b3974392d0363a76b00cb2263880a0"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "The ordering is visible in the code. I did not read the backend retry configuration or how the pool callback handles an exception raised from on_failure, so whether the message stays unacked or the worker logs and moves on is inferred.",
+      "how_to_verify": "Point the result backend at a closed port with result_backend_always_retry=False. Run a task that raises Reject(requeue=False) and check that the message stays unacked and is redelivered after a worker restart.",
+      "prediction": null,
+      "key": "6105880fd01e",
+      "content_hash": "sha256:9e9989ec68b53caf7b1b68323c1b169b513b4ee6dd33600e9fa7257bafbebee0",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/worker/request.py": "sha256:9e9989ec68b53caf7b1b68323c1b169b513b4ee6dd33600e9fa7257bafbebee0"
+      },
+      "hotspot_id": "H06",
+      "hotspot_score": 0.3747,
+      "id": "FR-011",
+      "shares_code_with": [
+        {
+          "id": "FR-003",
+          "key": "b1af3746845c",
+          "refs": [
+            "celery/worker/request.py:683-686",
+            "celery/worker/request.py:699"
+          ]
+        },
+        {
+          "id": "FR-016",
+          "key": "d710c0302beb",
+          "refs": [
+            "celery/worker/request.py:683-686",
+            "celery/worker/request.py:699"
+          ]
+        }
+      ]
+    },
+    {
+      "location": {
+        "file": "celery/worker/request.py",
+        "symbol": "on_failure",
+        "lines": "663-724",
+        "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/worker/request.py#L663-L724"
+      },
+      "missing_patterns": [
+        "S07",
+        "S14"
+      ],
+      "failure_mode": "A task that kills its child process (OOM kill, segfault, or now SystemExit) is requeued forever when reject_on_worker_lost is set. Workers keep losing children and the same message keeps coming back.",
+      "trigger_condition": "reject_on_worker_lost=True with acks_late, and a payload that always crashes the child, e.g. memory blow-up on large input or a library calling sys.exit",
+      "amplifier": "Commit 67ba9e5 converts SystemExit/KeyboardInterrupt from a child that was not cancelled into WorkerLostError, so more exit causes now take the requeue branch. Nothing counts redeliveries.",
+      "sustaining_effect": "The requeued message is redelivered at full cost and kills another child each time. Pool capacity is spent re-forking processes until the message is purged.",
+      "blast_radius": "All tasks on queues consumed by the affected workers. Throughput drops while children are repeatedly killed and re-forked.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/worker/request.py:663-674",
+          "note": "SystemExit and KeyboardInterrupt are mapped to WorkerLostError via _worker_lost_info",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/worker/request.py#L663-L674"
+        },
+        {
+          "type": "code",
+          "ref": "celery/worker/request.py:711-717",
+          "note": "reject_on_worker_lost leads to reject(requeue=True) with no attempt limit",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/worker/request.py#L711-L717"
+        },
+        {
+          "type": "commit",
+          "ref": "67ba9e5",
+          "note": "[feature] widened the worker-lost path to SystemExit reports",
+          "subject": "Keep a cancelled task unacked when the child reports SystemExit (#10667)",
+          "kind": "feature",
+          "url": "https://github.com/celery/celery/commit/67ba9e5faa51bcec1fdb42748fff18629458a95d"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "The requeue-without-cap is clear in the code. The docs warn about it for reject_on_worker_lost, but the newer SystemExit mapping widens the trigger. I did not confirm how billiard reports these exits.",
+      "how_to_verify": "Set acks_late=True and reject_on_worker_lost=True on a task that calls os._exit(1) or sys.exit(1). Count how often the broker redelivers it within a minute.",
+      "prediction": null,
+      "key": "6bd1a259060b",
+      "content_hash": "sha256:9e9989ec68b53caf7b1b68323c1b169b513b4ee6dd33600e9fa7257bafbebee0",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/worker/request.py": "sha256:9e9989ec68b53caf7b1b68323c1b169b513b4ee6dd33600e9fa7257bafbebee0"
+      },
+      "hotspot_id": "H06",
+      "hotspot_score": 0.3747,
+      "id": "FR-012",
+      "shares_code_with": []
+    },
+    {
+      "location": {
+        "file": "celery/worker/consumer/consumer.py",
+        "symbol": "call_soon_ack",
+        "lines": "273-295",
+        "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/worker/consumer/consumer.py#L273-L295"
+      },
+      "missing_patterns": [
+        "OTHER",
+        "S27"
+      ],
+      "failure_mode": "Workers that run without a hub (threads, gevent, eventlet pools) now send basic.ack/basic.reject from the task's own execution context instead of the consumer loop. Those writes can interleave with drain_events and with acks from other threads on the same broker connection. On-call sees intermittent 'UnexpectedFrame', framing or connection-reset errors, the consumer reconnects, and unacked tasks are redelivered and run twice.",
+      "trigger_condition": "--pool=threads (or a green pool whose socket write yields part-way) with concurrency > 1 on py-amqp. Two tasks finish at about the same moment, or one finishes while the main thread is inside drain_events.",
+      "amplifier": "Every task completion writes a frame from a different thread, so the collision rate grows with concurrency and throughput. Before 9c8145f, call_soon queued the ack in _pending_operations and the main loop sent it, so only one thread ever wrote.",
+      "sustaining_effect": "Each connection reset makes the broker redeliver every unacked prefetched task. Those tasks run again and finish in a burst of concurrent acks, which raises the odds of the next collision. on_connection_error_after_connected also lowers prefetch and then restores it under the same concurrent-ack path.",
+      "blast_radius": "The whole worker's consumer connection: all queues it consumes are interrupted and acks_late tasks are executed more than once.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/worker/consumer/consumer.py:288-294",
+          "note": "With no hub, p() (message.ack_log_error) runs right away in whatever thread or greenlet called it; no lock and no hand-off to the consumer thread",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/worker/consumer/consumer.py#L288-L294"
+        },
+        {
+          "type": "code",
+          "ref": "celery/worker/consumer/consumer.py:786-795",
+          "note": "Every task message's ack and reject promises are routed through call_soon_ack",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/worker/consumer/consumer.py#L786-L795"
+        },
+        {
+          "type": "code",
+          "ref": "celery/concurrency/thread.py:54-55",
+          "note": "Threads pool submits apply_target to a ThreadPoolExecutor, so its callbacks run in executor threads",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/concurrency/thread.py#L54-L55"
+        },
+        {
+          "type": "code",
+          "ref": "celery/concurrency/base.py:27-44",
+          "note": "accept_callback (early ack) and callback (on_success, which acks for acks_late) both run inside the pool thread",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/concurrency/base.py#L27-L44"
+        },
+        {
+          "type": "commit",
+          "ref": "9c8145f",
+          "note": "[fix] 'Deferred ack synloop bug' added call_soon_ack and removed the single-writer hand-off for acks",
+          "subject": "Deferred ack synloop bug (#10263)",
+          "kind": "fix",
+          "url": "https://github.com/celery/celery/commit/9c8145fc0d97b7304786c77cf16852abc8876d30"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "Code shows acks issued from pool threads with no serialization. I did not check whether py-amqp or the kombu transport locks frame writes internally (Redis acks go through a thread-safe redis-py pool, so the risk is mainly AMQP). Strictly, the [fix] commit introduced the risk rather than corroborating an observed failure.",
+      "how_to_verify": "Run a --pool=threads -c 16 worker on RabbitMQ with acks_late and 10k no-op tasks. Count consumer reconnects and duplicate task executions. Repeat with call_soon_ack forced to defer to _pending_operations and compare.",
+      "prediction": "The next synloop or threads-pool incident report is about AMQP framing errors or connection resets under high task throughput, followed by duplicate execution.",
+      "key": "5fc6c6cb450e",
+      "content_hash": "sha256:d7437464d90df4b0af74879743fc068e2d3cbc9563dec12c137e6eb29049ad4a",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/concurrency/base.py": "sha256:6ad38b0bdd0563bc21a3ffd3a2765ba5dd9ac1b3a29e48164b1de6d79320d562",
+        "celery/concurrency/thread.py": "sha256:8d586742cb69bfc5146b10ceb5d3386008e1c05c613819500af4cde202765a76",
+        "celery/worker/consumer/consumer.py": "sha256:d7437464d90df4b0af74879743fc068e2d3cbc9563dec12c137e6eb29049ad4a"
+      },
+      "hotspot_id": "H07",
+      "hotspot_score": 0.3065,
+      "id": "FR-013",
+      "shares_code_with": []
+    },
+    {
+      "location": {
+        "file": "celery/backends/database/__init__.py",
+        "symbol": "_query_task / _update_result",
+        "lines": "140-212",
+        "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/database/__init__.py#L140-L212"
+      },
+      "missing_patterns": [
+        "S19",
+        "S15"
+      ],
+      "failure_mode": "After an upgrade, every task result write fails with BackendStoreError and AsyncResult.get() raises. The only warning appears once, at startup.",
+      "trigger_condition": "The new release adds the nullable `children` column (and `stamps` with extended results). The result-DB user has no ALTER TABLE privilege, so _migrate_missing_columns fails. It logs a warning, sets prepared=True and is never retried.",
+      "amplifier": "The fallback in _query_task re-queries on the same session after the DatabaseError. On PostgreSQL that transaction is already aborted, so the fallback raises InFailedSqlTransaction. On any dialect, _update_result writes `children` (and `stamps`) whenever the model defines them, without checking the live table. It sets them even to None, so the INSERT or UPDATE names a column that does not exist.",
+      "sustaining_effect": "prepare_models never re-runs once prepared is True. Every store_result spends its 3 retries, each one disposing and rebuilding the engine, before failing. A restart does not help without manual DDL.",
+      "blast_radius": "Every task state and result stored through this backend in the affected deployment is lost. Chords and AsyncResult polling stall or error.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/backends/database/__init__.py:142-157",
+          "note": "fallback query reuses the failed session with no rollback, so it can never work on PostgreSQL",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/database/__init__.py#L142-L157"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/database/__init__.py:193-198",
+          "note": "children is written based on the model's columns, not the actual table; it is set to None even when there are no children",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/database/__init__.py#L193-L198"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/database/session.py:107-136",
+          "note": "failed column migration is downgraded to a warning, and prepared is still set to True at line 105",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/database/session.py#L107-L136"
+        },
+        {
+          "type": "commit",
+          "ref": "8244f04",
+          "note": "[fix] added the children column and the defer fallback",
+          "subject": "fix(backends.database): store task children with database backend (#8336) (#10606)",
+          "kind": "fix",
+          "url": "https://github.com/celery/celery/commit/8244f0463fa3cf7c886235460802de86f5523194"
+        },
+        {
+          "type": "commit",
+          "ref": "5cf6140",
+          "note": "[fix] a week later extended the same fallback to stamps: two fixes in the same area",
+          "subject": "fix(backends.database): store stamping metadata with extended results (#8887) (#10605)",
+          "kind": "fix",
+          "url": "https://github.com/celery/celery/commit/5cf61408bd1aa7b9af27d125cc1a39dfde489b65"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "The code path is clear from reading it. That SQLAlchemy emits the deferred column on flush, and that PostgreSQL leaves the transaction aborted, is well-known behaviour, but I did not run it. The trigger needs a DB user without DDL rights.",
+      "how_to_verify": "Against PostgreSQL, create celery_taskmeta without the children column. Grant the app user DML only. Run one task and look for BackendStoreError and UndefinedColumn or InFailedSqlTransaction in the worker log.",
+      "prediction": "Next DB-backend issue: results stopped being stored after an upgrade on a locked-down DB user.",
+      "key": "8196e104b15a",
+      "content_hash": "sha256:ca7bee8373c7b798b92e33571e32d0a77b091fc72128a4477ac3a99b8a1557a9",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/backends/database/__init__.py": "sha256:ca7bee8373c7b798b92e33571e32d0a77b091fc72128a4477ac3a99b8a1557a9",
+        "celery/backends/database/session.py": "sha256:f0228e5a7b46a4d1d8a6324068f71ba433ce9de1b97c4d4fc5a73d4890a381fc"
+      },
+      "hotspot_id": "H08",
+      "hotspot_score": 0.2598,
+      "id": "FR-014",
+      "shares_code_with": []
+    },
+    {
+      "location": {
+        "file": "celery/backends/database/__init__.py",
+        "symbol": "exception_safe_to_retry / on_backend_retryable_error",
+        "lines": "31-36",
+        "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/database/__init__.py#L31-L36"
+      },
+      "missing_patterns": [
+        "S04",
+        "S02",
+        "S12"
+      ],
+      "failure_mode": "When the result DB is overloaded, workers spam 'Failed operation ... Retrying' and then fail results with BackendStoreError. Meanwhile the DB sees a storm of new connections.",
+      "trigger_condition": "The DB returns errors such as 'too many connections' or a lock timeout (OperationalError). Non-transient errors also qualify: IntegrityError on a duplicate group_id in _save_group, DataError on an over-155-char value, ProgrammingError. All of these subclass DatabaseError.",
+      "amplifier": "Every DatabaseError is treated as retryable. always_retry defaults to True with 3 retries. The base sleep is 10 ms, so backoff with full jitter is at most 20/40/80 ms and the 3 retries finish in under about 140 ms. Before each retry, on_backend_retryable_error calls engine.dispose(), which drops the process's whole pool and forces fresh connections.",
+      "sustaining_effect": "Each prefork child disposes its pool and reconnects within milliseconds. The new connection handshakes take up the DB connection slots it needs to recover, so 'too many connections' persists while tasks keep arriving.",
+      "blast_radius": "Result storage for every worker process sharing the result DB. Any other application on the same database instance is starved of connections too.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/backends/database/__init__.py:31-36",
+          "note": "base DatabaseError (covers IntegrityError, DataError, ProgrammingError) is in the retryable set",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/database/__init__.py#L31-L36"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/database/__init__.py:122-126",
+          "note": "every retry disposes the cached engine and pool",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/database/__init__.py#L122-L126"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/database/__init__.py:70-71",
+          "note": "always_retry is on by default with 3 retries; base sleep stays at the 10 ms default",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/database/__init__.py#L70-L71"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/base.py:780-783",
+          "note": "backoff is min(10*2^n, 10000) ms with full jitter, which is milliseconds here",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/base.py#L780-L783"
+        },
+        {
+          "type": "code",
+          "ref": "celery/backends/database/__init__.py:289-298",
+          "note": "plain insert into a table with a unique taskset_id: a duplicate save_group is retried 3 times and then raises",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/database/__init__.py#L289-L298"
+        },
+        {
+          "type": "commit",
+          "ref": "0348d64",
+          "note": "[fix] for connection health introduced RETRYABLE_DB_ERRORS and the invalidate hook",
+          "subject": "Fix 10109 db backend connection health (#10124)",
+          "kind": "fix",
+          "url": "https://github.com/celery/celery/commit/0348d6425d6ca72007b7da93645eb12037c91dec"
+        },
+        {
+          "type": "commit",
+          "ref": "aa4c3b1",
+          "note": "[resilience] widened the retry policy to every DB operation",
+          "subject": "Apply backend retry policy to all DatabaseBackend DB operations (#10334)",
+          "kind": "resilience",
+          "url": "https://github.com/celery/celery/commit/aa4c3b10181057dafba229aa1bf25faff02681f8"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "The retry classifier and the per-retry pool disposal are both explicit in the code. I have not observed the connection storm. Its size depends on worker concurrency and DB connection limits.",
+      "how_to_verify": "Set PostgreSQL max_connections just above the worker concurrency and run a task burst. Count connection attempts in pg_stat_activity or the logs: expect 4 or more per failed store_result, all within about 150 ms.",
+      "key": "6345778fa223",
+      "content_hash": "sha256:ca7bee8373c7b798b92e33571e32d0a77b091fc72128a4477ac3a99b8a1557a9",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/backends/base.py": "sha256:e95308ebf79e95fb915d4ca5c227a5f0f065c04425c0b3d75630f106ddc5da91",
+        "celery/backends/database/__init__.py": "sha256:ca7bee8373c7b798b92e33571e32d0a77b091fc72128a4477ac3a99b8a1557a9"
+      },
+      "hotspot_id": "H08",
+      "hotspot_score": 0.2598,
+      "id": "FR-015",
+      "shares_code_with": [
+        {
+          "id": "FR-007",
+          "key": "8bcddcb49b5d",
+          "refs": [
+            "celery/backends/base.py:780-783"
+          ]
+        }
+      ]
+    },
+    {
+      "location": {
+        "file": "celery/app/task.py",
+        "symbol": "Task.retry",
+        "lines": "863-878",
+        "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/task.py#L863-L878"
+      },
+      "missing_patterns": [
+        "S07",
+        "S15"
+      ],
+      "failure_mode": "Tasks that call self.retry() while the broker is briefly unable to accept publishes are lost for good. They end up in FAILURE with a kombu OperationalError instead of being retried. On-call sees a burst of task-failed events and FAILURE results naming connection or publish errors, and that work never runs again.",
+      "trigger_condition": "Publishing the retry message fails for longer than the default task_publish_retry_policy window (3 retries at 0/0.2/0.4s, so roughly 0.6s), while the worker can still reject or ack the original message. Examples: a RabbitMQ node failover, a memory or disk alarm that blocks publishers but not consumers, or a Redis failover.",
+      "amplifier": "Retries cluster when a downstream dependency is failing, and that is also when broker trouble tends to coincide. Every task that hits retry() inside the window turns into Reject(requeue=False). The original message is acked or rejected without a requeue, so nothing redelivers it.",
+      "sustaining_effect": null,
+      "blast_radius": "Every in-flight task type that uses manual retry() on the affected workers. Chords and chains that contain those tasks fail through their errbacks instead of completing.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/app/task.py:872-875",
+          "note": "S.apply_async() failure is turned into Reject(exc, requeue=False): no requeue and no fallback",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/task.py#L872-L875"
+        },
+        {
+          "type": "code",
+          "ref": "celery/worker/request.py:677-699",
+          "note": "Reject without requeue is recorded as a terminal FAILURE and the message is rejected without requeue",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/worker/request.py#L677-L699"
+        },
+        {
+          "type": "code",
+          "ref": "celery/app/defaults.py:301-306",
+          "note": "default publish retry policy gives up after about 0.6s across 3 attempts",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/defaults.py#L301-L306"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "The loss path is explicit in the code and confirmed in request.py. No [fix] commit in the bundle touches retry(), so the ceiling is medium. I did not observe the trigger, and whether a blocked publish raises or hangs depends on kombu and the transport.",
+      "how_to_verify": "Under a worker with acks_late, make Producer.publish raise OperationalError for 2s, for example with a toxiproxy cut on the publish connection only. Run a task that calls self.retry(countdown=1). The task ends in FAILURE and is never re-executed, and the queue holds no retry message.",
+      "prediction": "The next broker failover incident includes reports of retried tasks marked FAILURE with connection errors that never ran again",
+      "key": "d710c0302beb",
+      "content_hash": "sha256:0816e65771ed59f59196ce22b5f03ffd1331e6b6f3505934bbf94b4d727135c3",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/app/defaults.py": "sha256:7066721b879df620abbd5b565a01ddd2ebb39ce9ec1bb9bd0d2408653982f1dd",
+        "celery/app/task.py": "sha256:0816e65771ed59f59196ce22b5f03ffd1331e6b6f3505934bbf94b4d727135c3",
+        "celery/worker/request.py": "sha256:9e9989ec68b53caf7b1b68323c1b169b513b4ee6dd33600e9fa7257bafbebee0"
+      },
+      "hotspot_id": "H09",
+      "hotspot_score": 0.2291,
+      "id": "FR-016",
+      "shares_code_with": [
+        {
+          "id": "FR-003",
+          "key": "b1af3746845c",
+          "refs": [
+            "celery/worker/request.py:677-699"
+          ]
+        },
+        {
+          "id": "FR-011",
+          "key": "6105880fd01e",
+          "refs": [
+            "celery/worker/request.py:677-699"
+          ]
+        }
+      ]
+    },
+    {
+      "location": {
+        "file": "celery/app/trace.py",
+        "symbol": "build_tracer.trace_task",
+        "lines": "611-683",
+        "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/trace.py#L611-L683"
+      },
+      "missing_patterns": [
+        "S07",
+        "S15"
+      ],
+      "failure_mode": "A task whose body succeeded is recorded as FAILURE with an internal error, and its chain stops. This happens when publishing the callbacks or the next chain step raises anything other than EncodeError, for example a broker connection error. Some link callbacks may already have been sent, and then errbacks fire as well. Users see a chain stuck at a step whose side effects really happened. On-call sees a 'successful' unit of work reported as failed.",
+      "trigger_condition": "A broker blip or failover between fun() returning and _dispatch_callbacks_and_chain finishing. A result-backend error in mark_as_done after the callbacks were dispatched does the same.",
+      "amplifier": "Only EncodeError is handled locally. Every other dispatch or store error falls through to the outer except, which calls report_internal_error and on_error(..., call_errbacks=True). The message is then settled as a failure instead of being retried, so success callbacks and errbacks can both run for one execution.",
+      "sustaining_effect": null,
+      "blast_radius": "Each affected chain or workflow stalls for good unless someone replays it by hand. Downstream consumers get duplicate or conflicting callback and errback side effects.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/app/trace.py:619-631",
+          "note": "Dispatch and mark_as_done sit in one try that only catches EncodeError.",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/trace.py#L619-L631"
+        },
+        {
+          "type": "code",
+          "ref": "celery/app/trace.py:677-683",
+          "note": "The outer handler turns any other exception into report_internal_error plus on_error with errbacks enabled, after the task's side effects have already happened.",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/trace.py#L677-L683"
+        },
+        {
+          "type": "code",
+          "ref": "celery/app/trace.py:435-438",
+          "note": "Its own docstring says dispatch is not atomic, so a partial callback send is possible.",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/trace.py#L435-L438"
+        },
+        {
+          "type": "commit",
+          "ref": "865922a",
+          "note": "Labelled [fix] in the bundle. It moved the main-path dispatch into _dispatch_callbacks_and_chain but left the error handling the same.",
+          "subject": "fix(trace): dispatch chain/callbacks on dedup fast-path for redelivered tasks (#10159)",
+          "kind": "fix",
+          "url": "https://github.com/celery/celery/commit/865922abda9551876c2fd6cd7fb1ce59e7f2291a"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "The control flow is plain in the code. I did not confirm how the worker acks the internal-error result in every pool and ack mode, or whether kombu's publish retry hides short broker blips.",
+      "how_to_verify": "Patch the chain's next-step apply_async to raise kombu OperationalError on the first call. Run chain(a.s(), b.s()). Expected result: a's stored state is FAILURE, its errback fires, and b never runs.",
+      "key": "9be5cf13811a",
+      "content_hash": "sha256:e1affcf2e8d0c659e5754ac27f1b439f07a728e74dba1ef2f4f9b508e7677a8e",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/app/trace.py": "sha256:e1affcf2e8d0c659e5754ac27f1b439f07a728e74dba1ef2f4f9b508e7677a8e"
+      },
+      "hotspot_id": "H10",
+      "hotspot_score": 0.2281,
+      "id": "FR-017",
+      "shares_code_with": []
+    },
+    {
+      "location": {
+        "file": "celery/app/amqp.py",
+        "symbol": "_create_task_sender.send_task_message",
+        "lines": "598-610",
+        "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/amqp.py#L598-L610"
+      },
+      "missing_patterns": [
+        "S28",
+        "S13"
+      ],
+      "failure_mode": "When the broker degrades, apply_async latency rises for every thread in a producer process at the same time (for example a threaded web server), not only for the thread whose publish is retrying. Requests pile up behind one lock.",
+      "trigger_condition": "task_send_sent_event=True, several threads calling apply_async at once, and the broker connection slow or flapping so that event publishes retry.",
+      "amplifier": "All threads share one cached _event_dispatcher. Dispatcher.publish holds its threading.Lock across producer.publish with retry=True and the merged task_publish_retry_policy (since e1dba84), so every retry sleep happens inside the lock.",
+      "sustaining_effect": null,
+      "blast_radius": "Every caller of apply_async/send_task in the process is serialised behind one event publish. In a web tier this becomes request latency, and timeouts once the thread pool is full.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/events/dispatcher.py:138-140",
+          "note": "with self.mutex wraps the whole publish, including kombu ensure() retries",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/events/dispatcher.py#L138-L140"
+        },
+        {
+          "type": "code",
+          "ref": "celery/app/amqp.py:608",
+          "note": "evd.publish(..., retry=retry, retry_policy=_rp) on the shared default dispatcher",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/amqp.py#L608"
+        },
+        {
+          "type": "code",
+          "ref": "celery/app/amqp.py:658-662",
+          "note": "one dispatcher per app, shared across threads",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/amqp.py#L658-L662"
+        },
+        {
+          "type": "commit",
+          "ref": "e1dba84",
+          "note": "[resilience] gave this event publish the full merged retry policy, which sets how long the lock is held",
+          "subject": "Use the merged retry policy for before_task_publish and task-sent events (#10708)",
+          "kind": "resilience",
+          "url": "https://github.com/celery/celery/commit/e1dba84f8d91d9cebf5b0fee99532b6734993d20"
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "Lock scope and sharing are confirmed in code. The task message itself is published outside the lock, so the effect depends on how long ensure() retries take and how much concurrency there is. Neither was measured.",
+      "how_to_verify": "Run 32 threads calling apply_async with sent events enabled against a broker proxy that adds 500ms latency or drops connections. Measure per-call latency with and without task_send_sent_event; with it enabled, latency should grow with thread count.",
+      "key": "293417791dc2",
+      "content_hash": "sha256:53dd85c0bfa45be48522f62425bf218ba01ece457ae7e20664771f755a685a01",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/app/amqp.py": "sha256:53dd85c0bfa45be48522f62425bf218ba01ece457ae7e20664771f755a685a01",
+        "celery/events/dispatcher.py": "sha256:46c894877cffc23d4c58037fac7a34671549301a38063b81815feed97daf6d94"
+      },
+      "hotspot_id": "H05",
+      "hotspot_score": 0.4627,
+      "id": "FR-018",
+      "shares_code_with": []
+    },
+    {
+      "location": {
+        "file": "celery/app/amqp.py",
+        "symbol": "_create_task_sender.send_task_message",
+        "lines": "524-553",
+        "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/amqp.py#L524-L553"
+      },
+      "missing_patterns": [
+        "S19",
+        "S18"
+      ],
+      "failure_mode": "Tasks routed by a task_routes entry that names only an exchange (no queue, no routing_key) are published to the default exchange with an empty routing key. The broker drops them as unroutable. apply_async returns success and the tasks never run.",
+      "trigger_condition": "A route such as {'exchange': 'billing'} (or one with an exchange but no routing_key) matches the task, so Router.route returns no 'queue' and the default-queue fallback is skipped.",
+      "amplifier": "With queue=None, exchange_type falls back to 'direct' through the AttributeError path. The anon-exchange rewrite then replaces the caller's exchange with '' and sets routing_key to qname, which is None. declare stays None, and the publish is not mandatory.",
+      "sustaining_effect": null,
+      "blast_radius": "Every task matched by that route is lost silently. Nothing is logged on either side.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/app/amqp.py:524-526",
+          "note": "default queue applied only when both queue and exchange are None",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/amqp.py#L524-L526"
+        },
+        {
+          "type": "code",
+          "ref": "celery/app/amqp.py:539-547",
+          "note": "exchange_type defaults to 'direct' on AttributeError; exchange overwritten to '' with routing_key=qname (None)",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/amqp.py#L539-L547"
+        },
+        {
+          "type": "code",
+          "ref": "celery/app/routes.py:71-75",
+          "note": "a matched route returns without the default-queue fallback",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/routes.py#L71-L75"
+        },
+        {
+          "type": "commit",
+          "ref": "1a47689",
+          "note": "[feature] changed default-queue resolution in this branch; the exchange-only path was not covered",
+          "subject": "Defer default queue lookup for explicitly routed tasks (#10357)",
+          "kind": "feature",
+          "url": "https://github.com/celery/celery/commit/1a4768959ef1b41f2c3e2b447233e90455697239"
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "The code path is traced from Router.route to the publish. How often real configurations use exchange-only routes is unknown, and kombu's handling of routing_key=None was not checked.",
+      "how_to_verify": "Set task_routes={'t.x': {'exchange': 'billing'}} and call send_task('t.x') against RabbitMQ with the billing exchange bound to a queue. Inspect the publish args (exchange='' routing_key=None) and confirm no queue receives the message.",
+      "key": "39e3d9a88104",
+      "content_hash": "sha256:53dd85c0bfa45be48522f62425bf218ba01ece457ae7e20664771f755a685a01",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/app/amqp.py": "sha256:53dd85c0bfa45be48522f62425bf218ba01ece457ae7e20664771f755a685a01",
+        "celery/app/routes.py": "sha256:a61a000b2919dc44823578795f5a00c10c22946bbed30a794d48bf71a868831f"
+      },
+      "hotspot_id": "H05",
+      "hotspot_score": 0.4627,
+      "id": "FR-019",
+      "shares_code_with": []
+    },
+    {
+      "location": {
+        "file": "celery/worker/consumer/consumer.py",
+        "symbol": "on_close",
+        "lines": "539-578",
+        "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/worker/consumer/consumer.py#L539-L578"
+      },
+      "missing_patterns": [
+        "S07"
+      ],
+      "failure_mode": "ETA/countdown tasks run twice after a broker reconnect. An ETA callback already running on the threaded timer when on_close runs is not stopped by timer.cancel(). It reserves the request after on_close has rebuilt reserved_requests and sends it to the pool. Its ack goes to the dead channel and only logs an error, while the broker redelivers the same message to this or another worker.",
+      "trigger_condition": "Broker connection loss on a synloop worker (threads/solo pool with the timer2 thread) while ETA entries are due, e.g. a burst of countdown tasks that all come due during a broker failover.",
+      "amplifier": "Deleting timer.clear() (ab711a0) left on_close responsible for each timer entry one at a time. The cancel loop runs on the main thread while the timer thread fires entries independently. apply_eta_task also calls qos.decrement_eventually() on whatever qos object exists at that moment, which after a reconnect is the new consumer's.",
+      "sustaining_effect": null,
+      "blast_radius": "Non-idempotent ETA tasks (emails, charges) handled by this worker execute twice per reconnect. The new consumer's prefetch count can also drift down because of stray decrements.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/worker/consumer/consumer.py:562-576",
+          "note": "Cancels pending timer entries and clears scheduled_requests, but a callback already running is not stopped; the comment at 570-573 concedes a same-race case",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/worker/consumer/consumer.py#L562-L576"
+        },
+        {
+          "type": "code",
+          "ref": "celery/worker/consumer/consumer.py:691-695",
+          "note": "apply_eta_task reserves the request, sends it to the pool and decrements qos with no check that the connection or channel is still current",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/worker/consumer/consumer.py#L691-L695"
+        },
+        {
+          "type": "commit",
+          "ref": "4d38683",
+          "note": "[fix] added the scheduled_requests cleanup to on_close",
+          "subject": "Fix: query_task doesn't find tasks scheduled with an ETA/countdown (#5321) (#10535)",
+          "kind": "fix",
+          "url": "https://github.com/celery/celery/commit/4d386839bd0bda0d2e15c3c9fb5f1dc92b141d0e"
+        },
+        {
+          "type": "commit",
+          "ref": "1cc9ecf",
+          "note": "[fix] earlier fix to on_close wiping in-flight reservations",
+          "subject": "Fix Consumer.on_close() wiping in-flight reservations and breaking worker_disable_prefetch (#10345)",
+          "kind": "fix",
+          "url": "https://github.com/celery/celery/commit/1cc9ecf430717b371892573ecad252929213e75e"
+        },
+        {
+          "type": "commit",
+          "ref": "ab711a0",
+          "note": "[fix] removed timer.clear() from on_close; three on_close fixes in four months",
+          "subject": "Fix: Broker heartbeats not sent during graceful shutdown (#9986)",
+          "kind": "fix",
+          "url": "https://github.com/celery/celery/commit/ab711a0b2de8fcc5aa8ec6701cdcb0530d6daebb"
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "The repeated on_close fixes show the teardown and reconnect state handling keeps breaking. This exact race needs the timer thread to be inside the callback during on_close, and I did not confirm it in timer2 within my read budget.",
+      "how_to_verify": "In a test with a threaded timer, make apply_eta_task block on an event, run on_close, then release the event. Check whether the request ends up in reserved_requests and whether it reaches pool.apply_async after on_close has returned.",
+      "key": "2b1793902d2d",
+      "content_hash": "sha256:d7437464d90df4b0af74879743fc068e2d3cbc9563dec12c137e6eb29049ad4a",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/worker/consumer/consumer.py": "sha256:d7437464d90df4b0af74879743fc068e2d3cbc9563dec12c137e6eb29049ad4a"
+      },
+      "hotspot_id": "H07",
+      "hotspot_score": 0.3065,
+      "id": "FR-020",
+      "shares_code_with": []
+    },
+    {
+      "location": {
+        "file": "celery/app/task.py",
+        "symbol": "Task.retry",
+        "lines": "842-850",
+        "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/task.py#L842-L850"
+      },
+      "missing_patterns": [
+        "S02"
+      ],
+      "failure_mode": "After a downstream outage, every task that failed during it comes back at the same moment, default_retry_delay (180s) or one fixed countdown later. The dependency sees periodic synchronized spikes, so it fails again when it should be recovering, and tasks use up max_retries (default 3) and fail permanently.",
+      "trigger_condition": "A shared dependency such as an API or database is unavailable for a short time while many tasks are in flight. Each task calls self.retry() with no countdown or a constant one.",
+      "amplifier": "The countdown is used as-is, with no jitter and no growth per attempt. N failures inside the outage window become N retries landing inside the same short window.",
+      "sustaining_effect": "Retry waves stay in phase: tasks that fail in wave k all reschedule together for wave k+1. Each wave pushes the recovering dependency back over capacity until max_retries runs out, so the outage outlasts its trigger by up to max_retries x countdown.",
+      "blast_radius": "Every caller of the shared dependency, not only Celery workers, sees the load spikes every 180s. Tasks that use up their retries are lost as FAILURE.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "celery/app/task.py:842-843",
+          "note": "countdown falls back to the fixed default_retry_delay, with no jitter or backoff in manual retry()",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/task.py#L842-L843"
+        },
+        {
+          "type": "code",
+          "ref": "celery/app/task.py:846-850",
+          "note": "the countdown is passed unchanged into the retry signature",
+          "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/task.py#L846-L850"
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "The code clearly has no jitter. autoretry_for with retry_backoff and retry_jitter exists elsewhere for users who opt in, so the impact depends on how callers use manual retry(). There is no fix history for it in the bundle.",
+      "how_to_verify": "Enqueue 1,000 tasks that all fail against a stub returning 503 for 10s and call self.retry(). Plot the ETA distribution of the retry messages. They fall inside a window of about 10s at t+180s instead of being spread out.",
+      "key": "50df890ef774",
+      "content_hash": "sha256:0816e65771ed59f59196ce22b5f03ffd1331e6b6f3505934bbf94b4d727135c3",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "celery/app/task.py": "sha256:0816e65771ed59f59196ce22b5f03ffd1331e6b6f3505934bbf94b4d727135c3"
+      },
+      "hotspot_id": "H09",
+      "hotspot_score": 0.2291,
+      "id": "FR-021",
+      "shares_code_with": []
+    }
+  ],
+  "clean": [],
+  "incomplete": [],
+  "hotspots": [
+    {
+      "id": "H01",
+      "file": "celery/canvas.py",
+      "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/canvas.py",
+      "history_url": "https://github.com/celery/celery/commits/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/canvas.py",
+      "score": 0.829,
+      "churn": {
+        "commits": 17,
+        "insertions": 206,
+        "deletions": 36,
+        "authors": 15,
+        "fix_commits": 11,
+        "resilience_commits": 0,
+        "refactor_commits": 0,
+        "fix_ratio": 0.647,
+        "last_modified": "2026-10-03T13:43:34+01:00",
+        "recent_shas": [
+          "508c1129269d2b1baffc516d8f5c05da06273ef0",
+          "55086180121b2078908be1fcfdfd1ddd80243ddb",
+          "4debc051120e0ee89fd8761128ab33e421c140f0",
+          "ff6e7b972f32f826f2d685000a3f0a07b3dced48",
+          "cdd516f71d98121d8a4a659d90d400a78b13dcd3",
+          "d98d4114e20bbd7ca83921652b427ea6b7862e80",
+          "0c950f6af4f4fd55d409e69077c9b057a51f0c22",
+          "a8e89e5418b64be1c2b31a313dbe84e40558e3a8",
+          "1d563dafb60c9fe3d2f40b416461919ab160c395",
+          "a094d2a891cb77dcaa6ee432a5102a4863e5beff",
+          "379a629dc2580380c15b6d1bd44a28db50e45288",
+          "bf1cf69e24e3ede7d7053c17d47e381be959880e",
+          "bba2acc691500bd9de4e020db657c92dd6bd2d12",
+          "72e9240aa1e22b5a124534f6b469d32629a066e2",
+          "df57d9ab919945fee49403c640f5a8c0a7c69cb3"
+        ]
+      },
+      "complexity": {
+        "nloc": 1252,
+        "functions": 128,
+        "ccn_max": 42,
+        "ccn_avg": 3.93,
+        "top_function": {
+          "name": "prepare_steps",
+          "ccn": 42,
+          "nloc": 106,
+          "lines": "1178-1387"
+        }
+      },
+      "patterns": []
+    },
+    {
+      "id": "H02",
+      "file": "celery/backends/redis.py",
+      "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/redis.py",
+      "history_url": "https://github.com/celery/celery/commits/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/redis.py",
+      "score": 0.753,
+      "churn": {
+        "commits": 17,
+        "insertions": 397,
+        "deletions": 132,
+        "authors": 15,
+        "fix_commits": 9,
+        "resilience_commits": 0,
+        "refactor_commits": 2,
+        "fix_ratio": 0.529,
+        "last_modified": "2026-09-28T15:15:02+06:00",
+        "recent_shas": [
+          "30402bd05d620d1bc0ecc36ac0756bf4502d9281",
+          "308386415c4355b92a975ae602d44167585b5e43",
+          "cd3b42ea5086c0260ba5e59bea5f00a8f40145db",
+          "28a3d87747aaace73d24ded5569a7f3ec7c3ecc9",
+          "7c846b63b10eb296e310625104e5d0ccf672d85c",
+          "d35acd7f5bda45325616cfabd7a4a7b9fbddaeb9",
+          "4a11650b11504c78f8351be836890c04c6e7a413",
+          "4f1595434b7e705e8b9de668dff40b8456621979",
+          "74a7a63bb4844f4f8e426fa1f6b6a073a89ef01d",
+          "be0e2de234324a06c61b5561fdd0ff18fabcea38",
+          "8f0842b336bb95b38e436ca0739e9646ac016ae4",
+          "0472aaccbfed884ddf96212f9b29da27ab8493f2",
+          "8eec5af31b191c113a0622326a9dbf916a5f3538",
+          "6b1fad369597e263aa231edacccbd7fe22b11551",
+          "22a03fa1315e94ddd2f26e2c7fdb64bc4c9d0767"
+        ]
+      },
+      "complexity": {
+        "nloc": 702,
+        "functions": 53,
+        "ccn_max": 38,
+        "ccn_avg": 3.74,
+        "top_function": {
+          "name": "__init__",
+          "ccn": 38,
+          "nloc": 128,
+          "lines": "397-560"
+        }
+      },
+      "patterns": []
+    },
+    {
+      "id": "H03",
+      "file": "celery/app/base.py",
+      "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/base.py",
+      "history_url": "https://github.com/celery/celery/commits/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/base.py",
+      "score": 0.6764,
+      "churn": {
+        "commits": 12,
+        "insertions": 269,
+        "deletions": 58,
+        "authors": 9,
+        "fix_commits": 6,
+        "resilience_commits": 0,
+        "refactor_commits": 0,
+        "fix_ratio": 0.5,
+        "last_modified": "2026-09-13T17:04:56+03:00",
+        "recent_shas": [
+          "ea1db4a551a40c3ec1192abeed4785853833cda5",
+          "ccf430f9b16f35c7191996155388a9c47290a51e",
+          "1a3ea2eb8b4e83085754ac4b0de397ef4cbfa31b",
+          "d1f9b4ce8d6a4e9979449a5f73986acac567b64c",
+          "afeabe2162119ae2ea17b07b755ae83c32c1906d",
+          "2c4d47da088c469db637c6be5ae9210347f7f4e8",
+          "8ea291fb43965cd1d58ad4b5689d110bcd54deaf",
+          "fbd01579c47acc8f1967ed8d5281bf41565dca8d",
+          "1a39f8ca68a3a4c89a6d471f100cfe0b2a22e65c",
+          "e49270e35bcb27e0aa6c3cf3e1103a3e56cb7571",
+          "99b0a897708f1a2188dff8b9f93fb0b8cdc6fe86",
+          "7ca0e0f18abedeba2b3142a1cdc9c1d3300cc190"
+        ]
+      },
+      "complexity": {
+        "nloc": 992,
+        "functions": 110,
+        "ccn_max": 49,
+        "ccn_avg": 2.65,
+        "top_function": {
+          "name": "send_task",
+          "ccn": 49,
+          "nloc": 147,
+          "lines": "945-1140"
+        }
+      },
+      "patterns": []
+    },
+    {
+      "id": "H04",
+      "file": "celery/backends/base.py",
+      "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/base.py",
+      "history_url": "https://github.com/celery/celery/commits/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/base.py",
+      "score": 0.5851,
+      "churn": {
+        "commits": 15,
+        "insertions": 345,
+        "deletions": 114,
+        "authors": 12,
+        "fix_commits": 4,
+        "resilience_commits": 3,
+        "refactor_commits": 0,
+        "fix_ratio": 0.267,
+        "last_modified": "2026-10-03T12:12:53+01:00",
+        "recent_shas": [
+          "bc584a2a565c519331bd97ab7839c543ed1de1da",
+          "135b83c718f63612c1f1585a3f5823edb31e2d4b",
+          "05e0ea4233c89d26465c1330c285f93859ff1b7e",
+          "e997039a296ea815f758a95e306615a33dd782fe",
+          "1ea3d4f6408e7521a95c6bca3bbcbf502bcb62ec",
+          "79f3ed8d8c82b41354c2f5c221358d2325a6ffb8",
+          "7c846b63b10eb296e310625104e5d0ccf672d85c",
+          "6e0d683085f591de55106b0de698de93d6638af0",
+          "1432d9b6c6868a77e7ee2ede1650da00a8d187ac",
+          "477c816f9c6a4aa601825fa36d4f203dba375c48",
+          "bba2acc691500bd9de4e020db657c92dd6bd2d12",
+          "72e9240aa1e22b5a124534f6b469d32629a066e2",
+          "2d560f5c16972ab542171d2e17bddd5b76a85b31",
+          "026682218858c574fdc1e0f4a564d18acf602311",
+          "0348d6425d6ca72007b7da93645eb12037c91dec"
+        ]
+      },
+      "complexity": {
+        "nloc": 962,
+        "functions": 101,
+        "ccn_max": 18,
+        "ccn_avg": 3.06,
+        "top_function": {
+          "name": "get_many",
+          "ccn": 18,
+          "nloc": 42,
+          "lines": "1224-1272"
+        }
+      },
+      "patterns": [
+        "S04",
+        "S19"
+      ]
+    },
+    {
+      "id": "H05",
+      "file": "celery/app/amqp.py",
+      "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/amqp.py",
+      "history_url": "https://github.com/celery/celery/commits/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/amqp.py",
+      "score": 0.4627,
+      "churn": {
+        "commits": 12,
+        "insertions": 48,
+        "deletions": 35,
+        "authors": 2,
+        "fix_commits": 3,
+        "resilience_commits": 1,
+        "refactor_commits": 1,
+        "fix_ratio": 0.25,
+        "last_modified": "2026-09-30T10:26:22+07:00",
+        "recent_shas": [
+          "f3f6e793ea4d4ac06cd869f3ce1429d3046609b8",
+          "e1dba84f8d91d9cebf5b0fee99532b6734993d20",
+          "7f74405ccc9619b36b4f80c1f4d32a63727072c4",
+          "6ed1ec1ad064dacb712de65daf686696aa5cc460",
+          "95c1bf2d4ded6ff682d4cd6d542862596dad4c12",
+          "a3908d4a151acb0e5da04214bbfc79ab96a060a9",
+          "898796784c34a9e28f67bbf815ba297a3304976f",
+          "51ba869946867e9165674e3dded2978e66ec1436",
+          "1a4768959ef1b41f2c3e2b447233e90455697239",
+          "2e150f8330df059858ff5d481390a29b73c59600",
+          "ece6862996dd03181e0f5c996ab0def973f27fe8",
+          "066e96e01c3eab72c1c4bf601d11c80b5ba876ef"
+        ]
+      },
+      "complexity": {
+        "nloc": 515,
+        "functions": 38,
+        "ccn_max": 33,
+        "ccn_avg": 4.29,
+        "top_function": {
+          "name": "_create_task_sender.send_task_message",
+          "ccn": 33,
+          "nloc": 93,
+          "lines": "509-610"
+        }
+      },
+      "patterns": []
+    },
+    {
+      "id": "H06",
+      "file": "celery/worker/request.py",
+      "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/worker/request.py",
+      "history_url": "https://github.com/celery/celery/commits/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/worker/request.py",
+      "score": 0.3747,
+      "churn": {
+        "commits": 11,
+        "insertions": 184,
+        "deletions": 51,
+        "authors": 11,
+        "fix_commits": 6,
+        "resilience_commits": 1,
+        "refactor_commits": 0,
+        "fix_ratio": 0.545,
+        "last_modified": "2026-09-21T11:07:05+02:00",
+        "recent_shas": [
+          "beef13ac9996b49ecc4aa9c7363cc0dd20db3da3",
+          "67ba9e5faa51bcec1fdb42748fff18629458a95d",
+          "4d386839bd0bda0d2e15c3c9fb5f1dc92b141d0e",
+          "a6bc479c51e5212c0e888cdd302b9a60f1ea58f5",
+          "a7d9c79688d3b5dd527fe2b2228b3041a6a602ac",
+          "2c42237d375718a84f01f3a7b4eb12a85e061e37",
+          "e2b276e603b3974392d0363a76b00cb2263880a0",
+          "7135768008f982f96cb11e6061d3b309be374583",
+          "b8f85213f45c937670a6a6806ce55326a0eb537f",
+          "40c2349199b16d52521e9470ffa561cb903a7c86",
+          "63c1910221d9fb8c1931ff62c80c4c37232b2d58"
+        ]
+      },
+      "complexity": {
+        "nloc": 676,
+        "functions": 71,
+        "ccn_max": 29,
+        "ccn_avg": 2.73,
+        "top_function": {
+          "name": "on_failure",
+          "ccn": 29,
+          "nloc": 86,
+          "lines": "638-762"
+        }
+      },
+      "patterns": []
+    },
+    {
+      "id": "H07",
+      "file": "celery/worker/consumer/consumer.py",
+      "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/worker/consumer/consumer.py",
+      "history_url": "https://github.com/celery/celery/commits/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/worker/consumer/consumer.py",
+      "score": 0.3065,
+      "churn": {
+        "commits": 14,
+        "insertions": 163,
+        "deletions": 41,
+        "authors": 11,
+        "fix_commits": 10,
+        "resilience_commits": 1,
+        "refactor_commits": 0,
+        "fix_ratio": 0.714,
+        "last_modified": "2026-09-30T16:40:10+03:00",
+        "recent_shas": [
+          "57cfb4629bbf919e24ff85f33d1eca038c973f4d",
+          "f7cbeadd4ae286ad9ef063334ccbae6667b10652",
+          "95c1bf2d4ded6ff682d4cd6d542862596dad4c12",
+          "4d386839bd0bda0d2e15c3c9fb5f1dc92b141d0e",
+          "e48dc8e6d90addf9af41c7422f49324f9101504d",
+          "d6131816f172750f7ba6204f903cd2fc243853ad",
+          "7f9a6e5d02f3501dd1137e7024148330c6dce804",
+          "1cc9ecf430717b371892573ecad252929213e75e",
+          "bba2acc691500bd9de4e020db657c92dd6bd2d12",
+          "9c8145fc0d97b7304786c77cf16852abc8876d30",
+          "b313b6412b4fb382fe16471c7c437cc053290477",
+          "feb789accf0dcbbe1323ab59148b9e8b1e363bdd",
+          "ab711a0b2de8fcc5aa8ec6701cdcb0530d6daebb",
+          "63c1910221d9fb8c1931ff62c80c4c37232b2d58"
+        ]
+      },
+      "complexity": {
+        "nloc": 638,
+        "functions": 50,
+        "ccn_max": 15,
+        "ccn_avg": 2.92,
+        "top_function": {
+          "name": "on_close",
+          "ccn": 15,
+          "nloc": 24,
+          "lines": "539-578"
+        }
+      },
+      "patterns": [
+        "S19"
+      ]
+    },
+    {
+      "id": "H08",
+      "file": "celery/backends/database/__init__.py",
+      "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/database/__init__.py",
+      "history_url": "https://github.com/celery/celery/commits/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/backends/database/__init__.py",
+      "score": 0.2598,
+      "churn": {
+        "commits": 9,
+        "insertions": 184,
+        "deletions": 67,
+        "authors": 7,
+        "fix_commits": 5,
+        "resilience_commits": 2,
+        "refactor_commits": 0,
+        "fix_ratio": 0.556,
+        "last_modified": "2026-09-27T01:17:23+08:00",
+        "recent_shas": [
+          "42851eaca172cc190947ddf8ebfa4364e69ec8c4",
+          "5cf61408bd1aa7b9af27d125cc1a39dfde489b65",
+          "8244f0463fa3cf7c886235460802de86f5523194",
+          "66d9602690081801e086541705d1ec4e1eb86ef6",
+          "aa4c3b10181057dafba229aa1bf25faff02681f8",
+          "f9ea6771e67205a4fbb8b4dc3890f3ad5d704924",
+          "2d560f5c16972ab542171d2e17bddd5b76a85b31",
+          "026682218858c574fdc1e0f4a564d18acf602311",
+          "0348d6425d6ca72007b7da93645eb12037c91dec"
+        ]
+      },
+      "complexity": {
+        "nloc": 261,
+        "functions": 21,
+        "ccn_max": 13,
+        "ccn_avg": 3.48,
+        "top_function": {
+          "name": "__init__",
+          "ccn": 13,
+          "nloc": 41,
+          "lines": "60-116"
+        }
+      },
+      "patterns": [
+        "S07",
+        "S19"
+      ]
+    },
+    {
+      "id": "H09",
+      "file": "celery/app/task.py",
+      "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/task.py",
+      "history_url": "https://github.com/celery/celery/commits/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/task.py",
+      "score": 0.2291,
+      "churn": {
+        "commits": 10,
+        "insertions": 119,
+        "deletions": 7,
+        "authors": 8,
+        "fix_commits": 4,
+        "resilience_commits": 0,
+        "refactor_commits": 0,
+        "fix_ratio": 0.4,
+        "last_modified": "2026-09-15T11:00:00+07:00",
+        "recent_shas": [
+          "72a968def404e63320d3b7457984296fd3d7a288",
+          "8aed8200c89fb43c783d33279da64a80c5aea7cb",
+          "01608ff3ba33f6b4887bf76bef4ec01627e1b39b",
+          "571efe81202341310b6257304980ba7898ab0f60",
+          "d96df921e2e7bf4f520295e344b094952fe1a870",
+          "066092edc2f9e34716025a9fb67462477d2309fb",
+          "1fe2a08d0c71ec83a242e1032d48fb804f92337a",
+          "7ca0e0f18abedeba2b3142a1cdc9c1d3300cc190",
+          "40c2349199b16d52521e9470ffa561cb903a7c86",
+          "41bad6f22b66a4e510a58bf7130935cf0916f9db"
+        ]
+      },
+      "complexity": {
+        "nloc": 596,
+        "functions": 52,
+        "ccn_max": 19,
+        "ccn_avg": 3.37,
+        "top_function": {
+          "name": "apply",
+          "ccn": 19,
+          "nloc": 65,
+          "lines": "880-962"
+        }
+      },
+      "patterns": []
+    },
+    {
+      "id": "H10",
+      "file": "celery/app/trace.py",
+      "url": "https://github.com/celery/celery/blob/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/trace.py",
+      "history_url": "https://github.com/celery/celery/commits/508c1129269d2b1baffc516d8f5c05da06273ef0/celery/app/trace.py",
+      "score": 0.2281,
+      "churn": {
+        "commits": 4,
+        "insertions": 141,
+        "deletions": 50,
+        "authors": 4,
+        "fix_commits": 2,
+        "resilience_commits": 0,
+        "refactor_commits": 0,
+        "fix_ratio": 0.5,
+        "last_modified": "2026-09-12T16:36:11+02:00",
+        "recent_shas": [
+          "261c33faaf1e5e9480741b36c1f56caebaa81d5c",
+          "3f2cf57d395a105dda9179b203040a1471d40a78",
+          "b8f85213f45c937670a6a6806ce55326a0eb537f",
+          "865922abda9551876c2fd6cd7fb1ce59e7f2291a"
+        ]
+      },
+      "complexity": {
+        "nloc": 598,
+        "functions": 26,
+        "ccn_max": 51,
+        "ccn_avg": 5.58,
+        "top_function": {
+          "name": "build_tracer.trace_task",
+          "ccn": 51,
+          "nloc": 166,
+          "lines": "475-684"
+        }
+      },
+      "patterns": []
+    }
+  ]
+}

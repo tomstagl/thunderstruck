@@ -1,0 +1,79 @@
+{
+  "schema": "thunderstruck.validation/v1",
+  "ok": true,
+  "checked": 10,
+  "valid": 10,
+  "findings_total": 21,
+  "results": [
+    {
+      "path": "<celery>/.thunderstruck/findings/H01.json",
+      "hotspot_id": "H01",
+      "valid": true,
+      "findings": 1,
+      "errors": []
+    },
+    {
+      "path": "<celery>/.thunderstruck/findings/H02.json",
+      "hotspot_id": "H02",
+      "valid": true,
+      "findings": 2,
+      "errors": []
+    },
+    {
+      "path": "<celery>/.thunderstruck/findings/H03.json",
+      "hotspot_id": "H03",
+      "valid": true,
+      "findings": 1,
+      "errors": []
+    },
+    {
+      "path": "<celery>/.thunderstruck/findings/H04.json",
+      "hotspot_id": "H04",
+      "valid": true,
+      "findings": 3,
+      "errors": []
+    },
+    {
+      "path": "<celery>/.thunderstruck/findings/H05.json",
+      "hotspot_id": "H05",
+      "valid": true,
+      "findings": 3,
+      "errors": []
+    },
+    {
+      "path": "<celery>/.thunderstruck/findings/H06.json",
+      "hotspot_id": "H06",
+      "valid": true,
+      "findings": 3,
+      "errors": []
+    },
+    {
+      "path": "<celery>/.thunderstruck/findings/H07.json",
+      "hotspot_id": "H07",
+      "valid": true,
+      "findings": 2,
+      "errors": []
+    },
+    {
+      "path": "<celery>/.thunderstruck/findings/H08.json",
+      "hotspot_id": "H08",
+      "valid": true,
+      "findings": 2,
+      "errors": []
+    },
+    {
+      "path": "<celery>/.thunderstruck/findings/H09.json",
+      "hotspot_id": "H09",
+      "valid": true,
+      "findings": 2,
+      "errors": []
+    },
+    {
+      "path": "<celery>/.thunderstruck/findings/H10.json",
+      "hotspot_id": "H10",
+      "valid": true,
+      "findings": 2,
+      "errors": []
+    }
+  ]
+}
