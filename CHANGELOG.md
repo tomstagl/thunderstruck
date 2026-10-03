@@ -4,6 +4,24 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.9.0
+
+A self-contained HTML report (#3).
+
+### Added
+
+- **`report.html`.** Every scan now writes the report as one page that opens offline in a browser. A rail lists the findings by hotspot, a dossier shows one at a time, and an Overview carries every section of `report.md`: run warnings and suppressed leads, not scanned, service context, pattern coverage, clean, incomplete, ranked hotspots and dormant files. Reviewers can filter by confidence, step with `j`/`k`, mark findings reviewed with `r` (kept in the browser by stable `key`) and copy the `/thunderstruck-verify` command. A report without findings says what happened, and never calls an incomplete hotspot clean.
+- **`/thunderstruck-report`** rebuilds the page from the last scan without running any analysis.
+- **`examples/sample-report.html`**, built from the fixture by the real pipeline next to `sample-report.md`; `gen_sample_report.py --check` covers both.
+
+### Security
+
+- The page reads only the validated `report.json`, inserts every value with `textContent`, links only tool-built `http(s)` URLs, and runs under a Content-Security-Policy that allows its one script by hash and no network access. It does not contain the scanned checkout's local path. The same `report.json` always gives the same file.
+
+### Changed
+
+- **`report.json` gains `scanned_at`, `run_warnings`, `suppressed`, `coverage_rows`, `files_affected`, `not_scanned` and `clean[].cited_by`.** Additive: existing fields keep their meaning, and `report.md` is unchanged.
+
 ## 0.8.2
 
 Investigator output that failed validation on shape alone.

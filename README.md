@@ -34,7 +34,8 @@ Verify   Stub the endpoint to fail for 3s, call from 10 clients, count
          upstream requests (expect 150) and assert arrival times differ
 ```
 
-A full example: [`examples/sample-report.md`](examples/sample-report.md).
+A full example: [`examples/sample-report.md`](examples/sample-report.md), and the same scan as a
+page to open in a browser: [`examples/sample-report.html`](examples/sample-report.html).
 
 ## 60-second quickstart
 
@@ -79,6 +80,7 @@ Written to `.thunderstruck/` in the scanned repository:
 | File | What it is |
 |---|---|
 | `report.md` | The human report: run header, what was *not* scanned, pattern coverage with leads read and confirmed, ranked findings, dormant integration points |
+| `report.html` | The same report as one self-contained page: go through findings one by one, filter by confidence, step with `j`/`k`, mark them reviewed with `r`, copy the verify command. Opens offline, makes no network request, and is safe to send. `/thunderstruck-report` rebuilds it |
 | `report.json` | Stable versioned schema, for diffing runs over time |
 | `index.json` | file → findings, read by the edit guardrail |
 | `hotspots.json` | The deterministic layer's output, inspectable |
@@ -137,6 +139,8 @@ investigator  read-only subagents, ≤4 in parallel, one per hotspot
 validate.py   every evidence ref resolved against the filesystem and git
      ↓        deterministic
 report.py     report.md · report.json · index.json
+     ↓        deterministic
+report_html.py  report.html, from report.json only
 ```
 
 **The rule: models for judgment, scripts for anything that must be

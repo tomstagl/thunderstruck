@@ -176,6 +176,12 @@ def short_hash(text: str, n: int = 12) -> str:
 # --------------------------------------------------------------------------
 
 
+def git_iso_date(when: str) -> str:
+    """git's %aI in one spelling. Newer git writes UTC as `Z`, older git as
+    `+00:00`; the same commit must give the same hotspots.json on both."""
+    return when[:-1] + "+00:00" if when.endswith("Z") else when
+
+
 def git(repo_root: Path, *args: str, check: bool = True, timeout: int = 180) -> str:
     proc = subprocess.run(
         ["git", "-C", str(repo_root), *args],

@@ -436,28 +436,98 @@ GAP_LABELS = {"test": "test code", "generated": "generated code", "vendored": "v
               "profile": "excluded by the repo profile", "path": "outside --path"}
 
 
-def render_not_scanned(gaps: dict | None) -> list[str]:
-    """What the scan did not look at, and why. Degradation is visible (#19 AC-1)."""
+def _plain(value) -> str:
+    return str(value)
+
+
+def not_scanned(gaps: dict | None, code=_plain, text=_plain) -> dict | None:
+    """The **Not scanned** sentences. `code` and `text` format the spans:
+    report.md passes the mdtext ones, report.json keeps plain text."""
     if not isinstance(gaps, dict):
-        return []
-    L = ["## Not scanned", "",
-         f"Of {gaps.get('tracked', 0)} tracked files, {gaps.get('considered', 0)} changed in "
-         f"the window in a supported language and were considered for ranking.", ""]
+        return None
+    items = []
     if gaps.get("unchanged"):
-        L.append(f"- {gaps['unchanged']} in a supported language had no commit in the "
-                 f"window, so they could not rank on churn")
+        items.append(f"{gaps['unchanged']} in a supported language had no commit in the "
+                     f"window, so they could not rank on churn")
     if gaps.get("not_citable"):
-        L.append(f"- {gaps['not_citable']} are not citable (symbolic links, submodules, "
-                 f"or names that are not UTF-8)")
+        items.append(f"{gaps['not_citable']} are not citable (symbolic links, submodules, "
+                     f"or names that are not UTF-8)")
     for reason, n in (gaps.get("excluded") or {}).items():
-        L.append(f"- {n} excluded: {md.text(GAP_LABELS.get(reason, reason))}")
+        items.append(f"{n} excluded: {text(GAP_LABELS.get(reason, reason))}")
     unsupported = gaps.get("unsupported") or {}
     if unsupported:
-        kinds = ", ".join(f"{n} {md.code(ext) if ext != 'other' else 'other'}"
+        kinds = ", ".join(f"{n} {code(ext) if ext != 'other' else 'other'}"
                           for ext, n in sorted(unsupported.items(), key=lambda kv: (-kv[1], kv[0])))
-        L.append(f"- no detectors for their language or format: {kinds}")
-    L.append("")
-    return L
+        items.append(f"no detectors for their language or format: {kinds}")
+    return {"intro": f"Of {gaps.get('tracked', 0)} tracked files, {gaps.get('considered', 0)} "
+                     f"changed in the window in a supported language and were considered "
+                     f"for ranking.",
+            "items": items}
+
+
+def render_not_scanned(gaps: dict | None) -> list[str]:
+    """What the scan did not look at, and why. Degradation is visible (#19 AC-1)."""
+    section = not_scanned(gaps, code=md.code, text=md.text)
+    if section is None:
+        return []
+    return ["## Not scanned", "", section["intro"], "",
+            *[f"- {item}" for item in section["items"]], ""]
+
+
+def run_warnings(data: dict) -> list[str]:
+    """The list under **Run warnings**: hotspot, context and link warnings."""
+    return (list(data["hotspots"].get("warnings") or [])
+            + list(data.get("context_warnings") or [])
+            + list(data.get("link_warnings") or []))
+
+
+def coverage_rows(data: dict) -> list[dict]:
+    """The **Pattern coverage** table, one dict per row in report.md order.
+    The OTHER row, when present, has None where report.md shows a dash."""
+    hs, findings = data["hotspots"], data["findings"]
+    lead_files = {pid: cov["files"] for pid, cov in hs["pattern_coverage"].items()}
+    per_pattern: dict[str, int] = {}
+    for f in findings:
+        for pid in f.get("missing_patterns") or []:
+            per_pattern[pid] = per_pattern.get(pid, 0) + 1
+    precision = lead_precision(data)
+    confirmed_files: dict[str, set[str]] = {}
+    ranked_files = {h["file"] for h in hs["hotspots"]}  # lead_files counts ranked candidates
+    for f in findings:
+        for ev in _evidence(f):
+            if ev.get("type") == "detector" and (m := DETECTOR_REF.match(str(ev.get("ref") or ""))):
+                if m["path"] in ranked_files:
+                    confirmed_files.setdefault(m["pid"], set()).add(m["path"])
+    rows = []
+    for pid, cov in sorted(hs["pattern_coverage"].items()):
+        if not cov.get("scanned"):
+            continue
+        p = precision.get(pid, {"read": 0, "confirmed": 0})
+        rows.append({"id": pid, "name": cov["name"], "tier": cov["tier"],
+                     "unconfirmed_files": max(0, lead_files.get(pid, 0)
+                                              - len(confirmed_files.get(pid, ()))),
+                     "leads_read": p["read"], "leads_confirmed": p["confirmed"],
+                     "findings": per_pattern.get(pid, 0)})
+    if per_pattern.get("OTHER"):
+        rows.append({"id": "OTHER", "name": "Not in the catalog", "tier": None,
+                     "unconfirmed_files": None, "leads_read": None, "leads_confirmed": None,
+                     "findings": per_pattern["OTHER"]})
+    return rows
+
+
+def clean_cited_by(findings: list[dict]) -> dict[str, list[str]]:
+    """File -> ids of findings that cite it as code evidence but are not
+    located in it: a clean hotspot with "no finding of its own"."""
+    cited_by: dict[str, list[str]] = {}
+    for f in findings:
+        for cited in _cited_code_files(f):
+            if cited != (f.get("location") or {}).get("file"):
+                cited_by.setdefault(cited, []).append(f["id"])
+    return cited_by
+
+
+def _files_affected(findings: list[dict]) -> int:
+    return len({f["location"]["file"] for f in findings if f.get("location")})
 
 
 def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
@@ -468,7 +538,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
         counts[f.get("confidence", "?")] = counts.get(f.get("confidence", "?"), 0) + 1
     breakdown = ", ".join(f"{n} {md.text(k)}" for k, n in
                           sorted(counts.items(), key=lambda kv: CONFIDENCE_RANK.get(kv[0], 9)))
-    files_affected = len({f["location"]["file"] for f in findings if f.get("location")})
+    files_affected = _files_affected(findings)
 
     L: list[str] = [
         f"# thunderstruck — {md.text(repo_name, heading=True)}",
@@ -488,8 +558,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
         "",
     ]
 
-    warnings = (list(hs.get("warnings") or []) + list(data.get("context_warnings") or [])
-                + list(data.get("link_warnings") or []))
+    warnings = run_warnings(data)
     suppressed = hs.get("suppressed") or []
     if warnings or suppressed:
         L += ["## Run warnings", ""]
@@ -504,19 +573,6 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
     L += render_service_context(data.get("context"), now or datetime.now(timezone.utc))
 
     # ---- coverage table
-    lead_files = {pid: cov["files"] for pid, cov in hs["pattern_coverage"].items()}
-    per_pattern: dict[str, int] = {}
-    for f in findings:
-        for pid in f.get("missing_patterns") or []:
-            per_pattern[pid] = per_pattern.get(pid, 0) + 1
-    precision = lead_precision(data)
-    confirmed_files: dict[str, set[str]] = {}
-    ranked_files = {h["file"] for h in hs["hotspots"]}  # lead_files counts ranked candidates
-    for f in findings:
-        for ev in _evidence(f):
-            if ev.get("type") == "detector" and (m := DETECTOR_REF.match(str(ev.get("ref") or ""))):
-                if m["path"] in ranked_files:
-                    confirmed_files.setdefault(m["pid"], set()).add(m["path"])
     L += ["## Pattern coverage", "",
           "Leads are detector hits — mechanical, noisy, and never a finding on "
           "their own. Findings are what survived an investigator reading the code. "
@@ -526,17 +582,13 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
           "| ID | Pattern | Tier | Files with an unconfirmed lead | Leads read "
           "| Leads confirmed | Findings |",
           "|---|---|---|---|---|---|---|"]
-    for pid, cov in sorted(hs["pattern_coverage"].items()):
-        if not cov.get("scanned"):
+    for row in coverage_rows(data):
+        if row["id"] == "OTHER":
+            L.append(f"| `OTHER` | Not in the catalog | — | — | — | — | {row['findings']} |")
             continue
-        p = precision.get(pid, {"read": 0, "confirmed": 0})
-        L.append(f"| {md.code(pid, cell=True)} | {md.text(cov['name'], cell=True)} | {md.text(cov['tier'], cell=True)} | "
-                 f"{max(0, lead_files.get(pid, 0) - len(confirmed_files.get(pid, ())))} | "
-                 f"{p['read']} | {p['confirmed']} | "
-                 f"{per_pattern.get(pid, 0)} |")
-    other = per_pattern.get("OTHER", 0)
-    if other:
-        L.append(f"| `OTHER` | Not in the catalog | — | — | — | — | {other} |")
+        L.append(f"| {md.code(row['id'], cell=True)} | {md.text(row['name'], cell=True)} | "
+                 f"{md.text(row['tier'], cell=True)} | {row['unconfirmed_files']} | "
+                 f"{row['leads_read']} | {row['leads_confirmed']} | {row['findings']} |")
     L += ["", "<sub>“0” leads means no file matched the detector's anchor. It "
           "does not mean the pattern is present.</sub>", ""]
 
@@ -583,11 +635,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
 
     if data["clean"]:
         L += ["## Hotspots investigated with no finding", ""]
-        cited_by: dict[str, list[str]] = {}
-        for f in findings:
-            for cited in _cited_code_files(f):
-                if cited != (f.get("location") or {}).get("file"):
-                    cited_by.setdefault(cited, []).append(f["id"])
+        cited_by = clean_cited_by(findings)
         for entry in data["clean"]:
             note = f" — {md.text(entry['notes'])}" if entry.get("notes") else ""
             if entry["file"] in cited_by:
@@ -637,9 +685,11 @@ def _hotspot_link(data: dict, hid: str, key: str) -> str | None:
 
 def render_json(data: dict) -> dict:
     hs = data["hotspots"]
+    cited_by = clean_cited_by(data["findings"])
     return {
         "schema": c.REPORT_SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "scanned_at": hs["generated_at"],
         "repo": hs["repo"],
         "window": hs["window"],
         "catalog_schema": hs.get("schema"),
@@ -651,6 +701,9 @@ def render_json(data: dict) -> dict:
             "failed_hotspots": len(data["failed"]),
         },
         "warnings": list(hs.get("warnings") or []) + list(data.get("link_warnings") or []),
+        "run_warnings": run_warnings(data),
+        "suppressed": [{"detector": r["detector"], "path": r["path"], "hits": r["hits"],
+                        "reason": r["reason"]} for r in hs.get("suppressed") or []],
         "links": data.get("links"),
         "degraded": hs.get("degraded", {}),
         "service_context": ({k: data["context"].get(k) for k in
@@ -658,7 +711,10 @@ def render_json(data: dict) -> dict:
                               "edges", "truncated")}
                             if data.get("context") else None),
         "pattern_coverage": hs["pattern_coverage"],
+        "coverage_rows": coverage_rows(data),
+        "files_affected": _files_affected(data["findings"]),
         "coverage_gaps": hs.get("coverage_gaps"),
+        "not_scanned": not_scanned(hs.get("coverage_gaps")),
         "dormant": [{"id": d["id"], "file": d["file"], "script": bool(d.get("script")),
                      "last_modified": d["churn"].get("last_modified"),
                      "patterns": d["stability"]["patterns"],
@@ -666,7 +722,7 @@ def render_json(data: dict) -> dict:
                     for d in hs.get("dormant") or []],
         "lead_precision": lead_precision(data),
         "findings": data["findings"],
-        "clean": data["clean"],
+        "clean": [{**e, "cited_by": cited_by.get(e["file"], [])} for e in data["clean"]],
         "incomplete": data["failed"],
         "hotspots": [{"id": h["id"], "file": h["file"],
                       "url": _hotspot_link(data, h["id"], "url"),

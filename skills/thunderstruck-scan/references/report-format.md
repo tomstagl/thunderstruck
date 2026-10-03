@@ -5,6 +5,7 @@ All output lives in `.thunderstruck/` in the scanned repository.
 ```
 .thunderstruck/
 ├── report.md          human report
+├── report.html        the same report as one self-contained page, for a browser
 ├── report.json        thunderstruck.report/v1 — stable, versioned
 ├── index.json         thunderstruck.index/v1 — file → findings, read by the hook
 ├── hotspots.json      thunderstruck.hotspots/v1 — deterministic layer output
@@ -15,6 +16,29 @@ All output lives in `.thunderstruck/` in the scanned repository.
 ├── bundles/           one briefing per hotspot, plus index.json
 └── findings/          per-hotspot investigator output, keyed by bundle hash
 ```
+
+## Sections of `report.md` in `report.json`
+
+Every section of `report.md` is in `report.json`, computed by `report.py`,
+so nothing that reads the JSON has to derive a number itself. These fields
+were added without a schema bump; existing fields keep their meaning.
+
+- `scanned_at`: when `signals.py` ran (`hotspots.json` `generated_at`), the
+  date `report.md` prints as *Scanned*. `generated_at` is when the report
+  was rendered.
+- `run_warnings`: exactly the list under **Run warnings**: hotspot, context
+  and link warnings, in that order. `warnings` keeps its older content
+  (hotspot and link warnings only).
+- `suppressed`: `[{detector, path, hits, reason}]`, one per suppression rule
+  in `.thunderstruck.toml`.
+- `coverage_rows`: the **Pattern coverage** table, in order:
+  `{id, name, tier, unconfirmed_files, leads_read, leads_confirmed, findings}`.
+  The `OTHER` row, when present, has `null` where `report.md` shows `—`.
+- `files_affected`: the number of distinct files the findings are located in.
+- `clean[].cited_by`: per clean hotspot, the ids of findings from other
+  hotspots that cite its file as `code` evidence (empty when none).
+- `not_scanned`: `{intro, items}`, the sentences under **Not scanned** in
+  plain text, or `null` when the scan recorded no coverage gaps.
 
 ## The finding contract
 

@@ -32,7 +32,11 @@ uv run --with pytest --with pyyaml --with lizard pytest tests/detectors -k "S02-
 
 # Regenerate the two generated artefacts (both checked in CI)
 uv run scripts/gen_catalog_docs.py          # --check exits 1 if stale
-uv run scripts/gen_sample_report.py         # runs the real pipeline over the fixture; --check diffs it
+uv run scripts/gen_sample_report.py         # runs the real pipeline over the fixture; --check diffs both samples
+
+# The HTML report in Chromium (Playwright pinned to the pre-installed browser build)
+THUNDERSTRUCK_REQUIRE_BROWSER=1 uv run --with pytest --with pyyaml --with lizard \
+  --with playwright==1.56.0 pytest tests/test_report_html_browser.py -q
 
 # Plugin manifests. validate does NOT load the plugin — install to prove that.
 # A local-directory marketplace runs this checkout in place (live), not the
@@ -46,6 +50,7 @@ uv run scripts/signals.py --repo /path/to/repo --top 10 --since 12m   # --dorman
 uv run scripts/bundle.py  --repo /path/to/repo      # --investigate-dormant N adds D bundles
 uv run scripts/validate.py --repo /path/to/repo    # exit 1 == repair round needed
 uv run scripts/report.py  --repo /path/to/repo
+uv run scripts/report_html.py --repo /path/to/repo   # report.json -> report.html
 uv run scripts/calibrate.py --repo /path/to/repo --lang java --patterns S01,S27   # every hit, every tracked file
 uv run scripts/calibrate.py --repo /path/to/repo --lang all --patterns all --summary   # counts only, safe to share
 
@@ -62,6 +67,7 @@ bundle.py     deterministic   one token-budgeted briefing per hotspot
 investigator  ← MODEL →       the only inference in the system
 validate.py   deterministic   resolves every evidence ref
 report.py     deterministic   report.md · report.json · index.json
+report_html.py deterministic  report.json → report.html (templates/report.html, stdlib only)
                                               ↓
 guardrail.py  (PreToolUse hook) reads index.json, injects findings before an edit
 ```
@@ -191,7 +197,7 @@ exercised.
 ## Generated files — never hand-edit
 
 - `skills/stability-catalog/references/patterns.md` ← `gen_catalog_docs.py`
-- `examples/sample-report.md` ← `gen_sample_report.py`
+- `examples/sample-report.md` and `examples/sample-report.html` ← `gen_sample_report.py`
 
 The sample report is produced by running the real pipeline over the fixture,
 and its findings pass the real validator. If the finding contract changes,
