@@ -41,9 +41,9 @@ With verification switched off (`--no-verify`), the skill skips the whole box be
 | `check.model` | `verify.py apply` | The model id the skeptic ran as (§6.3) |
 | `check.dependency_versions` | `verify.py apply` | `{"pypi:kombu": "5.7.0a1"}`, the packages the skeptic read (§8.4) |
 | `check.reused_from` | `verify.py apply` | `null`, or `{"scan": "<generated_at>", "head": "<sha>"}` of the scan whose skeptic produced the verdict (§10) |
-| `check.duplicate_of` | the skeptic, checked by `apply` | A key, or `null` (§8.5). **Not in #56's reserved list**: see §21 |
+| `check.duplicate_of` | the skeptic, checked by `apply` | A key, or `null` (§8.5) |
 
-Every key above except `duplicate_of` is one #56 §7.1 reserves for this ticket. `validate.py` accepts other keys under `check` unread (#56 §3.1), so `duplicate_of` works mechanically; the reservation is still #56's to record. `save_finding.py` already strips `check` from model output (#56 §3.4), so no investigator can write any of this.
+Every key above is one #56 §7.1 reserves for this ticket, `duplicate_of` included; `validate.py` accepts them under `check` and does not read them (#56 §3.1). `check` is one of the owned fields stripped from model output (#56 §3.4; the list lives in `scripts/finding_shape.py` once #5 has landed), so no investigator can write any of this.
 
 `verify.py` writes `check` into the findings file after validation, as #56 §7.1 specifies. It never edits any other investigator field (ticket, Out: the skeptic never rewrites a finding).
 
@@ -112,9 +112,9 @@ npm:@aws-sdk/client-s3@3.500.0:dist-cjs/index.js:10
 maven:org.apache.httpcomponents/httpclient@4.5.14:org/apache/http/impl/client/HttpClientBuilder.java:120
 ```
 
-It resolves when `<ecosystem>:<name>` is `available` in `deps/index.json` at exactly `<version>`, `<path>` passes `_common.path_problem` (relative, no `..`, no backslash), the file exists as a regular file under that package's snapshot, and the range is inside it. The check lives in `deps.py` (`resolve_dependency_ref`) and is called by `Validator.check_ref` (#56 §3.1) when the Validator is built with a dependency index.
+It resolves when `<ecosystem>:<name>` is `available` in `deps/index.json` at exactly `<version>`, `<path>` passes `_common.path_problem` (relative, no `..`, no backslash), the file exists as a regular file under that package's snapshot, and the range is inside it. The check lives in `deps.py` (`resolve_dependency_ref`) and is called by `Validator.check_ref` (#56 §3.1) when the Validator is built with a dependency index. Because `validate.py` imports `deps.py` on every scan, `--no-verify` included, `deps.py` imports only the standard library and `_common` at module level; `packaging` (and `yaml` for `pnpm-lock.yaml`) are imported inside the discoverers that need them, and a test pins it.
 
-**Where it is accepted.** In a verdict's evidence, and in a `default_ref` the skeptic writes (#57, §16). It is **not** accepted in investigator findings in this ticket: the snapshot is made only when verification runs, after investigation, so an investigator never saw it, and accepting it there would make validation depend on whether an earlier run left a snapshot behind. `check_ref(..., allow_dependency=False)` is the default; `verify.py` passes `True`. #56 §7.1 anticipated `default_ref` accepting dependency refs; the function does, and §21 records that investigator findings do not yet.
+**Where it is accepted.** In a verdict's evidence, and in a `default_ref` the skeptic writes (#57, §16). It is **not** accepted in investigator findings in this ticket: the snapshot is made only when verification runs, after investigation, so an investigator never saw it, and accepting it there would make validation depend on whether an earlier run left a snapshot behind. `check_ref(..., allow_dependency=False)` is the default; `verify.py` passes `True`. This is #56 §7.1's settled split: investigator `default_ref` and `doc_ref` stay repository-only, `check_ref` is the one function that would change if they ever cite a dependency, and whether they should is #57's question (#56 §7.2).
 
 ## 5. `verify.py prepare` (AC-2, AC-9)
 
@@ -387,7 +387,7 @@ The budget, from Task 0's figures: #5's target leaves a scan at ≤ 826,341.5, s
 The default skeptic model is a function of two measurements, in this order:
 
 1. **Correctness** (#55): for each candidate in ascending weight order — `haiku` (`claude-haiku-4-5`), `sonnet` (`claude-sonnet-5-5`), `opus` (`claude-opus-5-5`) — run the skeptics on #55's frozen Celery set (§13) and score. A candidate qualifies when it reaches **at least 15 of 21** same verdict class and refutes **no** correct finding. Fable is not a candidate: it labelled the set, and #55's independence rule would exclude all 21.
-2. **Cost**: the cheapest qualifying candidate must also meet §12.2's ceiling. If it does not, no default is set and the ticket stops for a product decision (the ticket's open product question); the pass does not ship on by default above the ceiling.
+2. **Cost**: the cheapest qualifying candidate must also meet §12.2's ceiling. If it does not, no default is set and the ticket stops for a product decision (the ticket's open product question); the pass does not ship on by default above the ceiling. Both measurements need the maintainer (a Claude Code session with the plugin installed, a Celery checkout); the plan's last three tasks are theirs, run on the same branch before merge, so the pass never ships on by default unmeasured.
 
 The chosen alias goes into the skeptic's frontmatter and the scan's `--verify-model` default; the PR records every candidate's figures as `benchmark.py` prints them, and the ceiling run.
 
@@ -414,9 +414,9 @@ This needs #55's `scripts/benchmark.py` and the Celery `labels.json` on `main`.
 
 #55 scores only findings that carry a verdict. AC-12's threshold is read as a count over all 21 labelled findings, so an `inconclusive` finding counts as not reaching the same class: a model cannot meet the bar by declining to decide. The PR quotes `benchmark.py`'s lines (which carry `n=… of 21`) and the count over 21.
 
-## 14. Gate from a setting the skeptic found (AC-5 of #56)
+## 14. Gate from a setting the skeptic found
 
-A finding narrowed because it needs a setting changed is, for a reader, a finding that needs a non-default setting: the product decision puts those after default-path findings, marked. #56's `finding_gate` reads only the investigator's `preconditions`. This ticket extends it: `finding_gate` also returns `non_default_setting` when `check.status` is `narrowed` and a kept `check.refuted_claims` item has `field: preconditions` and a `setting`. The investigator's text is untouched; the gate reads the check. The marker reads the same ("needs a non-default setting"), and §11.2's Check block names the setting. This changes a #56 function; §21 records it for #56's owner.
+A finding narrowed because it needs a setting changed is, for a reader, a finding that needs a non-default setting: the product decision puts those after default-path findings, marked. #56 §7.1 specifies this ticket's extension of `finding_gate`: it also returns `non_default_setting` when `check.status` is `narrowed` and a kept `check.refuted_claims` item has `field: preconditions` and a `setting`. The investigator's text is untouched; the gate reads the check. Everything downstream (sort key, marker, `counts.gate`, `index.json`'s `gate`, the guardrail) reads the function's result, so no renderer changes; §11.2's Check block names the setting.
 
 ## 15. Security
 
@@ -425,7 +425,7 @@ A finding narrowed because it needs a setting changed is, for a reader, a findin
 - **Dependency refs** resolve only inside a snapshot directory `deps.py` made, after `path_problem`; the snapshot never contains a symlink, so the validator never reads outside `.thunderstruck/deps/`. Package names and versions are checked against `^[A-Za-z0-9@._/+-]+$` with no `..` segment before they become directory names.
 - **Nothing executed, nothing fetched.** `deps.py` reads manifests, lock files, metadata and archives as data; it runs no package manager and opens no network connection.
 - **Inert output.** Every model-written string is rendered through `mdtext` or `textContent` (§11); the existing hostile-text tests extend to `reason`, `holds`, `claim`, `fact` and verdict evidence `note`s.
-- **A model cannot settle its own finding.** `save_finding.py` strips `check` (#56); a skeptic cannot write `by`, `model`, `reused_from` or `dependency_versions` (apply derives them; the contract has no such keys).
+- **A model cannot settle its own finding.** `check` is an owned field stripped from model output (#56 §3.4); a skeptic cannot write `by`, `model`, `reused_from` or `dependency_versions` (apply derives them; the contract has no such keys).
 
 ## 16. For #57 (confirmed defaults)
 
@@ -497,7 +497,4 @@ A finding narrowed because it needs a setting changed is, for a reader, a findin
 
 ## 21. Open design questions
 
-1. **#56's reserved keys.** This design writes `check.duplicate_of` (§2, §8.5), which #56 §7.1 does not reserve. `validate.py` accepts it, so nothing breaks; #56's spec should list it before either ticket ships. Owner: #56.
-2. **`finding_gate` reads the check** (§14). #56 defines the gate from investigator `preconditions` only and anticipates #57 extending it; this ticket extends it too. If #56's owner prefers the gate to stay investigator-only, a skeptic-found setting would leave the finding narrowed and one level down, but sorted with default-path findings, and the benchmark mapping (§13) would be unchanged. Owner: #56.
-3. **Dependency refs in investigator `default_ref`.** #56 §7.1 expects `default_ref` to accept dependency refs once #37 adds them; §4.5 accepts them in verdicts only, because investigators run before the snapshot exists. #57 decides whether the skeptic's `confirmation` is the place a dependency default is cited (this design's assumption) or whether investigators get the snapshot too.
-4. **Search inside an ignored directory.** `.thunderstruck/` is usually in `.gitignore`. `Read` of a snapshot path works regardless; whether the subagent `Grep`/`Glob` tools search inside an ignored directory when given its path explicitly is not documented. The plugin install check in the plan records the behaviour; if they do not, the brief tells the skeptic to pass the snapshot path explicitly and to rely on `Read`, and the verification log says so.
+1. **Search inside an ignored directory.** `.thunderstruck/` is usually in `.gitignore`. `Read` of a snapshot path works regardless; whether the subagent `Grep`/`Glob` tools search inside an ignored directory when given its path explicitly is not documented. The plugin install check in the plan records the behaviour; if they do not, the brief tells the skeptic to pass the snapshot path explicitly and to rely on `Read`, and the verification log says so.
