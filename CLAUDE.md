@@ -228,6 +228,24 @@ report prints. Hotspots whose analysis failed appear under **Incomplete** with
 the reason. A partial report that states what is missing beats a retry loop or
 a quietly truncated one.
 
+## Measuring a scan
+
+Consumption and correctness figures are only worth comparing when the runs
+behind them are the runs the brief names. `docs/calibration/consumption.md`
+has the method; the rules that kept breaking it:
+
+- **Name the runs, never infer them.** A scan is identified by its session
+  transcript and its `hotspots.json` `generated_at`, which starts the window.
+  "The two most recent sessions" picked the wrong pair once.
+- **Check a run is a scan before measuring it.** It ran in a fresh session
+  with an empty `findings/`, spawned one investigator per ranked hotspot, and
+  its outputs are saved. A run with no `Agent` calls is not a scan; stop and
+  say so rather than measure it.
+- **Measure the plugin under test.** An unreleased change is measured from
+  this checkout installed as a local-directory marketplace (see Commands), not
+  from an update off the published marketplace, and the doc records the
+  version and commit it ran.
+
 ## Tickets, specs and plans
 
 Every feature has three artefacts. Each answers one question, and nothing is
