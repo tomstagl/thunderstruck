@@ -118,6 +118,7 @@ Each finding's result is a function of its own label and its own run record only
 - Every field of a finding record is optional. Each measure (§4) scores the findings that carry its field and ignores the rest, so #37 can submit verdicts alone and #56 confidences alone.
 - `verdict` is `upheld` · `upheld_but_gated` · `narrowed` · `refuted`, the vocabulary the spike's refuters used. #37 either writes it or ships a converter; the scorer does not learn a second vocabulary.
 - `duplicate_of` is a key. A run that names findings by display id is converted before it is scored; the scorer never maps ids.
+- A precondition may also carry `confirmation`, the state #57 derives (`confirmed` or `unconfirmed`). It is reserved for #57, whose spec owns its design; this scorer ignores it until #57 extends §4.5.
 
 ### 3.2 `--report` adapter
 
@@ -192,6 +193,8 @@ A value is one of:
 | `text` | `{"type": "text", "value": "max_retries=20, interval 1 s"}` | anything else, compared case-folded with whitespace collapsed |
 
 Two numbers match when their values are equal and their units are equal or either is absent, so a run's bare `120.0` matches a label's `120 s`. Other types match on type and value. Settings match on case-folded name. Per `kind: setting` precondition the run is: *matches effective*, *matches literal only*, *matches neither*, or *not stated*. Where literal equals effective, a match counts as effective. The headline is reported over the **discriminating** preconditions, those whose literal and effective differ, because only they can show the difference AC-5 asks about; the rest are counted beside it. On Celery the discriminating ones are `redis_socket_connect_timeout` (FR-001), `task_acks_on_timeout` (FR-002), `result_backend_always_retry` (FR-014, FR-015) and `result_backend_max_retries` (FR-015).
+
+#57 extends this measure with two figures, `confirmed_not_effective` and `upheld_on_wrong_default`, both read from the run's `preconditions[].confirmation` and verdicts. Their names are reserved here; their definitions are in #57's spec (§13.2).
 
 ## 5. Output
 
