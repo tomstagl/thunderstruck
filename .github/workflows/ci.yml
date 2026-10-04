@@ -134,8 +134,12 @@ jobs:
       - name: Install Claude Code
         run: npm install -g @anthropic-ai/claude-code
 
+      - uses: astral-sh/setup-uv@v5
+
+      # --strict, allowing only the known CLAUDE.md-at-the-plugin-root warning
+      # (CLAUDE.md, "Plugin manifest").
       - name: Validate the plugin and marketplace manifests
-        run: claude plugin validate . --strict
+        run: uv run scripts/validate_plugin.py
 
       # validate checks the manifests; it does not load the plugin. A
       # duplicate hooks declaration passes validation and then fails at
