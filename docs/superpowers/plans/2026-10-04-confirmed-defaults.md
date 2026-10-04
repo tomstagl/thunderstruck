@@ -32,7 +32,7 @@ New tests go in `tests/test_confirmed_defaults.py` (every task but Task 11) and 
 
 - One confirmation rule (`_common.confirm`), one reliance rule (`_common.unconfirmed_defaults`), one derivation (`_common.with_confirmations`), one gate rule (`_common.finding_gate`). Nothing else decides any of them (§1).
 - `confirmed` only with a check's item whose `default_ref` resolves, names the setting (§4.3) and is not a fallback read, and whose `found` is `same` (§3.2). The validator alone never confirms.
-- Vocabularies exactly as the spec: `state` ∈ `confirmed unconfirmed`; `basis` ∈ `registered contradicted call_site_fallback not_found unresolved not_checked`; `found` ∈ `same different not_found`; `GATES == ("none", "unconfirmed_default", "non_default_setting")`; marker "relies on an unconfirmed default"; verdict key `confirmations`; item keys `setting claim stated_ref found default default_ref reason`.
+- Vocabularies exactly as the spec: `state` ∈ `confirmed unconfirmed`; `basis` ∈ `registered contradicted call_site_fallback not_found unresolved not_checked`; `found` ∈ `same different not_found`; `GATES == ("none", "unconfirmed_default", "non_default_setting")`; gate marker "relies on a doubtful default"; badge "default unconfirmed" for an ungated finding with an unconfirmed default; `DOUBTFUL_BASES == ("call_site_fallback", "contradicted", "not_found", "unresolved")`; verdict key `confirmations`; item keys `setting claim stated_ref found default default_ref reason`.
 - `preconditions[].confirmation` is never taken from a model: `finding_shape.py`'s owned-field strip removes it (for `save_finding.py` and the capture hook alike), `validate.py` overwrites it, `report.py` re-derives it (§5.3, §9).
 - `verify.settle` refuses `upheld` on an unconfirmed default on every path, reuse included (§7.1).
 - `VALIDATION_RULES` does not change (Decision 12). `REPORT_SCHEMA_VERSION` stays `thunderstruck.report/v2`; `index.json` stays `thunderstruck.index/v1`.
@@ -41,7 +41,7 @@ New tests go in `tests/test_confirmed_defaults.py` (every task but Task 11) and 
 - `guardrail.py` stays stdlib-only, always exits 0, states facts, under 100 ms median.
 - Bundles stay byte-identical; briefs and `checks/plan.json` stay deterministic.
 - The examples are regenerated once, in Task 12. From Task 5 (which changes the fixture and the canned verdicts) to Task 12 `gen_sample_report.py --check` may report them stale; Task 12 ends it. The generator itself must keep running from Task 5 on (`expect` on canned verdicts, Task 5).
-- Which unconfirmed defaults gate the finding is an open product question (ticket; spec §8, §19 q4). Build the spec's current choice (every unconfirmed `needs: default` default); do not change it without the maintainer's answer.
+- Only doubtful defaults gate (product decision, spec §8): `finding_gate` reads `doubtful_defaults`; §7.1's no-`upheld` rule reads `unconfirmed_defaults` (every unconfirmed `needs: default` default, `not_checked` included).
 - Public repository: no organisation-specific names, hosts, credentials or local paths in any file.
 
 ## Review Focus
@@ -89,7 +89,7 @@ Expected: every grep prints a line, and `ok`. **This task blocks.** If any line 
 
 **Interfaces:**
 - Consumes: #56's `GATES`, `GATE_MARKERS`, `finding_gate`; #37's extension of `finding_gate`.
-- Produces, in `_common`: `CONFIRMATION_STATES`, `CONFIRMATION_BASES`, `CONFIRMATION_FOUND`, `CONFIRMATION_REASONS: dict[str, str]`; `confirm(call_site: bool | None, item: dict | None = None) -> dict` (`{"state", "basis", "reason"}`); `confirmation_state(conf) -> str`; `with_confirmations(finding: dict, items: list[dict] | None) -> dict` (a shallow copy whose `preconditions[j].confirmation` and `check.confirmations[k].confirmation` are derived); `unconfirmed_defaults(finding: dict) -> list[dict]`; `GATES == ("none", "unconfirmed_default", "non_default_setting")`; `GATE_MARKERS["unconfirmed_default"]`.
+- Produces, in `_common`: `CONFIRMATION_STATES`, `CONFIRMATION_BASES`, `CONFIRMATION_FOUND`, `CONFIRMATION_REASONS: dict[str, str]`; `confirm(call_site: bool | None, item: dict | None = None) -> dict` (`{"state", "basis", "reason"}`); `confirmation_state(conf) -> str`; `with_confirmations(finding: dict, items: list[dict] | None) -> dict` (a shallow copy whose `preconditions[j].confirmation` and `check.confirmations[k].confirmation` are derived); `unconfirmed_defaults(finding: dict) -> list[dict]`; `DOUBTFUL_BASES`; `doubtful_defaults(finding: dict) -> list[dict]`; `DEFAULT_UNCONFIRMED_MARKER = "default unconfirmed"`; `GATES == ("none", "unconfirmed_default", "non_default_setting")`; `GATE_MARKERS["unconfirmed_default"]`.
 
 - [ ] **Step 1: Write the failing tests.** Create `tests/test_confirmed_defaults.py`:
 
@@ -150,7 +150,9 @@ def test_vocabularies_are_the_spec_spelling():
     assert c.CONFIRMATION_FOUND == ("same", "different", "not_found")
     assert set(c.CONFIRMATION_REASONS) == set(c.CONFIRMATION_BASES)
     assert c.GATES == ("none", "unconfirmed_default", "non_default_setting")
-    assert c.GATE_MARKERS["unconfirmed_default"] == "relies on an unconfirmed default"
+    assert c.GATE_MARKERS["unconfirmed_default"] == "relies on a doubtful default"
+    assert c.DOUBTFUL_BASES == ("call_site_fallback", "contradicted", "not_found", "unresolved")
+    assert c.DEFAULT_UNCONFIRMED_MARKER == "default unconfirmed"
 
 
 def _pre(needs="default", call_site=False, setting="s") -> dict:
@@ -191,11 +193,18 @@ def test_unconfirmed_defaults_counts_needs_default_and_unlisted_only():
 @pytest.mark.parametrize("finding, gate", [
     ({"preconditions": []}, "none"),
     ({"preconditions": [{**_pre(), "confirmation": {"state": "confirmed"}}]}, "none"),
-    ({"preconditions": [_pre()]}, "unconfirmed_default"),
-    ({"preconditions": [{"setting": "s", "default": "1", "needs": "default"}]}, "unconfirmed_default"),
+    ({"preconditions": [_pre()]}, "none"),                                  # not_checked: not doubtful
+    ({"preconditions": [{"setting": "s", "default": "1", "needs": "default"}]}, "none"),
+    *[({"preconditions": [{**_pre(), "confirmation": {"state": "unconfirmed", "basis": b}}]}, "unconfirmed_default")
+      for b in ("call_site_fallback", "contradicted", "not_found", "unresolved")],
+    ({"preconditions": [{**_pre(), "confirmation": {"state": "unconfirmed", "basis": "not_checked"}}]}, "none"),
     ({"preconditions": [_pre(), _pre("changed", setting="t")]}, "non_default_setting"),
     ({"preconditions": [], "check": {"confirmations": [
-        {"setting": "u", "precondition": None, "confirmation": {"state": "unconfirmed"}}]}}, "unconfirmed_default"),
+        {"setting": "u", "precondition": None, "confirmation": {"state": "unconfirmed", "basis": "contradicted"}}]}},
+     "unconfirmed_default"),
+    ({"preconditions": [], "check": {"confirmations": [
+        {"setting": "u", "precondition": None, "confirmation": {"state": "unconfirmed", "basis": "not_checked"}}]}},
+     "none"),
 ])
 def test_finding_gate_has_three_gates_in_precedence(finding, gate):
     assert c.finding_gate(finding) == gate
@@ -206,17 +215,17 @@ def test_finding_gate_has_three_gates_in_precedence(finding, gate):
 - [ ] **Step 3: Write the implementation.** In `scripts/_common.py`, change #56's two constants:
 
 ```python
-# Report order: default-path findings first, then findings resting on an
-# unconfirmed default (#57), then findings that need a non-default setting.
+# Report order: default-path findings first, then findings resting on a
+# doubtful default (#57, only doubtful bases gate), then findings that need a non-default setting.
 GATES = ("none", "unconfirmed_default", "non_default_setting")
-GATE_MARKERS = {"unconfirmed_default": "relies on an unconfirmed default",
+GATE_MARKERS = {"unconfirmed_default": "relies on a doubtful default",
                 "non_default_setting": "needs a non-default setting"}
 ```
 
 In `finding_gate`, replace the final `return "none"` (after #56's `needs: changed` test and #37's narrowed-setting test) with:
 
 ```python
-    return "unconfirmed_default" if unconfirmed_defaults(finding) else "none"
+    return "unconfirmed_default" if doubtful_defaults(finding) else "none"
 ```
 
 and directly after `finding_gate` add:
@@ -308,11 +317,22 @@ def unconfirmed_defaults(finding: dict) -> list[dict]:
             if isinstance(it, dict) and it.get("precondition") is None
             and confirmation_state(it.get("confirmation")) != "confirmed"]
     return out
+
+
+# Product decision (#57): only these move a finding behind the default-path ones.
+DOUBTFUL_BASES = ("call_site_fallback", "contradicted", "not_found", "unresolved")
+DEFAULT_UNCONFIRMED_MARKER = "default unconfirmed"
+
+
+def doubtful_defaults(finding: dict) -> list[dict]:
+    """The unconfirmed defaults with a reason to doubt them; `not_checked` is not one."""
+    return [d for d in unconfirmed_defaults(finding)
+            if isinstance(d.get("confirmation"), dict) and d["confirmation"].get("basis") in DOUBTFUL_BASES]
 ```
 
-In `tests/test_checked_confidence.py`: in `test_finding_gate`, the row `([{"needs": "default"}, {"needs": "default"}], "none")` becomes `"unconfirmed_default"` (an item with no confirmation is unconfirmed), and in `test_vocabularies_are_the_spec_spelling` `c.GATES` is `("none", "unconfirmed_default", "non_default_setting")`.
+In `tests/test_checked_confidence.py`, in `test_vocabularies_are_the_spec_spelling`, `c.GATES` is `("none", "unconfirmed_default", "non_default_setting")`. `test_finding_gate`'s rows stay as they are: an item with no confirmation is `not_checked`, which does not gate.
 
-- [ ] **Step 4: Run the tests and the full suite.** Expected: PASS, `exit=0`. Report-order tests from #56 and #37 that build findings with `needs: default` items and expect them first may now expect them after default-path findings; where a test exists to pin #56's order of a default-path finding, give its items `"confirmation": {"state": "confirmed"}` rather than changing the expected order.
+- [ ] **Step 4: Run the tests and the full suite.** Expected: PASS, `exit=0`. #56's and #37's report-order tests are unaffected: their `needs: default` items carry no doubtful basis.
 
 - [ ] **Step 5: Commit**
 
@@ -1355,7 +1375,7 @@ def test_report_md_states_every_default_and_shows_both_when_they_differ(validate
     text = _md(validated_repo, validated_env)
     assert text.count("**Unconfirmed**") + text.count("**Confirmed**") >= 1
     assert "a check found a different default registered: `500` at" in text
-    assert "relies on an unconfirmed default" in text
+    assert "relies on a doubtful default" in text
     assert "Check's note: “The registry holds 500.”" in text
     assert text.startswith("#") and "Defaults: " in text
 
@@ -1366,7 +1386,7 @@ def test_defaults_line_counts_bases():
         "not_checked": 0}}, "gate": {"none": 1, "unconfirmed_default": 2, "non_default_setting": 0}}}
     assert report.defaults_line(data) == (
         "Defaults: 1 confirmed · 3 unconfirmed (2 stated where the setting is read, 1 contradicted by a check)"
-        " · 2 findings rely on an unconfirmed default and are listed after default-path findings")
+        " · 2 findings rely on a doubtful default and are listed after default-path findings")
     assert report.defaults_line({"findings": [], "counts": {"defaults": {"confirmed": 0, "unconfirmed": 0,
                                                                          "basis": {}}, "gate": {}}}) is None
 ```
@@ -1393,7 +1413,7 @@ def defaults_line(data: dict) -> str | None:
     line += f" ({', '.join(parts)})" if parts else ""
     gated = ((data.get("counts") or {}).get("gate") or {}).get("unconfirmed_default", 0)
     if gated:
-        line += (f" · {gated} {'finding relies' if gated == 1 else 'findings rely'} on an unconfirmed "
+        line += (f" · {gated} {'finding relies' if gated == 1 else 'findings rely'} on a doubtful "
                  f"default and {'is' if gated == 1 else 'are'} listed after default-path findings")
     return line
 
@@ -1419,7 +1439,15 @@ def _confirmation_clause(conf: dict, item: dict | None) -> str:
 - shows "The failure happens on default settings and rests on these defaults:" when `f["gate"]` is `none` **or** `unconfirmed_default`;
 - after the listed lines, when unlisted items exist, adds "Defaults the check found this claim rests on:" and per item `f"- {md.code(item['setting'])}: the finding says “{md.text(item['claim'])}”;"` + `_confirmation_clause(item["confirmation"], item)`; a `stated_ref` is appended as " (stated at " + the linked ref, or `md.code` for a dependency ref, + ")".
 
-In `render_markdown`, after #56's check-status line (and #37's verification line), add `defaults_line(data)` when it is not `None`. The badge marker comes from `c.GATE_MARKERS` already (#56), so `relies on an unconfirmed default` appears without further change; confirm by the test.
+In `render_markdown`, after #56's check-status line (and #37's verification line), add `defaults_line(data)` when it is not `None`. The gate marker comes from `c.GATE_MARKERS` already (#56), so `relies on a doubtful default` appears without further change. Where #56 builds the badge line, append `· ` + `c.DEFAULT_UNCONFIRMED_MARKER` when `f["gate"] == "none"` and `c.unconfirmed_defaults(f)` is non-empty. Add to this task's tests:
+
+```python
+def test_an_ungated_finding_with_an_unchecked_default_is_marked(validated_repo, validated_env):
+    text = _md(validated_repo, validated_env)  # no verification: the api.ts-style needs:default items are not_checked
+    data = json.loads((validated_repo / ".thunderstruck" / "report.json").read_text())
+    if any(f["gate"] == "none" and c.unconfirmed_defaults(f) for f in data["findings"]):
+        assert "· default unconfirmed" in text
+```
 
 - [ ] **Step 4: Run the tests and the full suite.** Expected: PASS, `exit=0`.
 
@@ -1798,13 +1826,13 @@ def test_the_sample_shows_confirmed_contradicted_and_call_site_defaults():
     text = SAMPLE()
     assert "**Confirmed**" in text
     assert "a check found a different default registered" in text
-    assert "relies on an unconfirmed default" in text
+    assert "relies on a doubtful default" in text
     assert "rests on a default no one confirmed: sync.pageSize" in text
     assert "Defaults: " in text
 
 
 def test_the_unconfirmed_default_finding_is_listed_after_default_path_ones():
-    """Badge lines in finding order: no marker, then the unconfirmed default, then the setting."""
+    """Badge lines in finding order: no marker, then the doubtful default, then the setting."""
     badges = [l for l in SAMPLE().splitlines() if l.startswith("**") and " confidence** · " in l]
     rank = [2 if c.GATE_MARKERS["non_default_setting"] in l
             else 1 if c.GATE_MARKERS["unconfirmed_default"] in l else 0 for l in badges]
@@ -1999,7 +2027,7 @@ git commit -m "Confirmed defaults: carry confirmations into benchmark runs (#57)
 **Files:**
 - Modify: `README.md` (*Findings are falsifiable, and checked*; *Privacy*), `CLAUDE.md`, `skills/thunderstruck-scan/references/report-format.md`, `skills/thunderstruck-verify/SKILL.md` (one sentence), `CHANGELOG.md`, `pyproject.toml`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`
 
-- [ ] **Step 1: README.** Under *Findings are falsifiable, and checked*, a paragraph: every default a finding relies on is shown as confirmed or unconfirmed with why; a default stated at the line that reads the setting with a fallback argument is flagged mechanically, because a settings layer may hold another value; a finding resting on an unconfirmed default is never reported upheld and is listed after default-path findings, marked. Under *Privacy*: thunderstruck never runs, imports, installs or builds the project it scans; it starts `git`, and the catalog command you approved by hash (even when that command is a script in the repository, it runs only as approved); its hooks start Python with `-S`.
+- [ ] **Step 1: README.** Under *Findings are falsifiable, and checked*, a paragraph: every default a finding relies on is shown as confirmed or unconfirmed with why; a default stated at the line that reads the setting with a fallback argument is flagged mechanically, because a settings layer may hold another value; a finding resting on an unconfirmed default is never reported upheld; when the default is doubtful (stated at a fallback read, contradicted, not found, unresolved) the finding is listed after default-path findings, marked, and when it was merely not checked it keeps its place, marked "default unconfirmed". Under *Privacy*: thunderstruck never runs, imports, installs or builds the project it scans; it starts `git`, and the catalog command you approved by hash (even when that command is a script in the repository, it runs only as approved); its hooks start Python with `-S`.
 
 - [ ] **Step 2: CLAUDE.md.** In *Things that will bite you*, a paragraph:
 
@@ -2011,14 +2039,15 @@ skeptic's item whose location resolves, is not a fallback read and says
 `same` confirms one (`_common.confirm`, the one rule). `report.py` re-derives
 confirmations from stored facts; never read a stored state. `verify.settle`
 turns `upheld` into `inconclusive` when a `needs: default` precondition is
-unconfirmed. Gates sort `none`, `unconfirmed_default`, `non_default_setting`.
+unconfirmed. Only doubtful bases gate (`DOUBTFUL_BASES`); `not_checked` does
+not. Gates sort `none`, `unconfirmed_default`, `non_default_setting`.
 ```
 
-In *The catalog is the source of truth*, one line: `setting_reads` patterns follow the negative-control discipline; every language needs a positive and a negative case in `READS`. In *Architecture*, after the pipeline diagram: "No stage runs, imports or builds the scanned project; `tests/test_no_execution.py` holds every script to that."
+In *The catalog is the source of truth*, one line: `setting_reads` patterns follow the negative-control discipline; every language needs a positive and a negative case in `READS`. In *Architecture*, after the pipeline diagram: "No scan stage and not the guardrail runs, imports or builds the scanned project (the approved catalog command excepted); `tests/test_no_execution.py` holds every script and hook to that. `/thunderstruck-verify` runs a test only when the user asks."
 
 - [ ] **Step 3: report-format.md.** Document `preconditions[].confirmation` (keys, states, bases), `check.confirmations[]` (keys, `precondition`, `default_url`), the verdict key `confirmations`, `counts.defaults`, the third gate and its marker, and `index.json`'s `confirmation`.
 
-- [ ] **Step 4: thunderstruck-verify.** One sentence at the top of its *Scope*: "This skill runs the project's tests because you asked; it is not part of a scan, and nothing it produces feeds one." (Pending the ticket's open product question; if the maintainer decides otherwise, this step follows the decision.)
+- [ ] **Step 4: thunderstruck-verify.** One sentence at the top of its *Scope*: "This skill runs the project's tests because you asked, under Claude Code's permission prompts; it is not part of a scan, and nothing it produces feeds one." (Product decision: the no-execution rule binds the scan pipeline and the edit guardrail, not this skill; spec §11.1.)
 
 - [ ] **Step 5: Version and CHANGELOG.** Bump the minor version in all four places (the next minor above `main`'s) and add under it:
 
@@ -2028,7 +2057,9 @@ In *The catalog is the source of truth*, one line: `setting_reads` patterns foll
   A default stated at a fallback argument where the setting is read is flagged
   mechanically; the skeptic confirms a default only by citing where it is registered.
 - Findings resting on an unconfirmed default are never `upheld`, and are listed after
-  default-path findings, marked "relies on an unconfirmed default".
+  default-path findings when the default is doubtful (stated at a fallback read, contradicted,
+  not found or unresolved), marked "relies on a doubtful default"; an unchecked default
+  is marked "default unconfirmed" and keeps its place.
 - A test proves no scan stage runs, imports or builds the scanned project.
 ```
 
