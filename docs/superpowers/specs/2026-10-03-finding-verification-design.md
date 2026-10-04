@@ -26,7 +26,7 @@ report.py · report_html.py · guardrail.py   render the check (§11)
 
 The skeptic is the second model step in the system and, like the investigator, only judges. Which findings it sees, what it is shown, whether its evidence resolves, what status follows from its verdict, which findings are the same defect, whether a verdict can be reused and how it is rendered are all decided by scripts. CLAUDE.md's governing rule holds.
 
-With verification switched off (`--no-verify`), the skill skips the whole box between `validate.py` and `report.py`: no script of this ticket runs, no subagent is spawned, and `report.py` reports every finding `unchecked` (§11.1, AC-1).
+Whether verification runs by default is one constant, `_common.VERIFY_BY_DEFAULT`, set by measurement (§12.3): on when a skeptic model meets both AC-12 and the cost ceiling, off otherwise (AC-16). `--no-verify` switches it off for one scan, `--verify` on. With verification off, the skill skips the whole box between `validate.py` and `report.py`: no script of this ticket runs, no subagent is spawned, and `report.py` reports every finding `unchecked` (§11.1, AC-1).
 
 ## 2. Who writes what
 
@@ -169,7 +169,7 @@ Model-written text in the brief (the claim, notes, other findings' failure modes
 
 ## 7. Orchestration and capture (AC-2, AC-6)
 
-New **step 4b** of `skills/thunderstruck-scan/SKILL.md`, after the repair round and before step 5, skipped entirely with `--no-verify`:
+New **step 4b** of `skills/thunderstruck-scan/SKILL.md`, after the repair round and before step 5. It runs when the user gave `--verify`, or when verification is on by default and they did not give `--no-verify`; the skill's argument table states the default, and a test pins the table to `VERIFY_BY_DEFAULT`:
 
 1. `uv run verify.py prepare --model <--verify-model>`.
 2. Read `checks/plan.json`. For each entry with `action: check`, one `thunderstruck-skeptic` `Agent` call with the task "Check finding `<key>` for thunderstruck. Read the brief at `<brief>`. Follow your system prompt. Return only the JSON object it specifies." At most four calls per message, foreground, waiting for each batch (#5 §4.1's rules apply unchanged: no background agents, no polling, never read a brief or a result).
@@ -295,7 +295,7 @@ All model-written values (`reason`, `holds`, `claim`, `fact`, evidence `note`s) 
 Verification: ran on 21 findings, 18 checked by `claude-haiku-4-5` and 3 reused — 12 upheld · 4 narrowed · 2 refuted (listed separately) · 2 inconclusive · 1 unchecked
 ```
 
-or `Verification: not run for this scan; every finding is unchecked.`
+or `Verification: not run for this scan; every finding is unchecked.` When verification is off by default (AC-16), that line continues: "It is off by default; `--verify` runs it, measured at <`VERIFY_MEASURED_COST`>.", the measured cost recorded by §12.3, so a reader sees what switching it on costs.
 
 **Run warnings** gain one line per `unavailable` declared package ("Dependency source not available for `pypi:kombu` (declared `>=5.6,<6`): no installed copy in .venv, venv or $VIRTUAL_ENV. Verification continued without it.") and one line when no manifest was found. This is AC-8's "the report says so".
 
@@ -362,7 +362,7 @@ Refuted findings are left out, so the guardrail never warns about them (AC-4). A
 
 Unchanged in mechanism (stdlib, exit 0, facts not instructions, under 100 ms). A `narrowed` entry adds one line: "What still holds, per a check: <holds>." An entry filed `via: duplicate` is stated as "the same defect as a finding in <anchor>". Refuted findings never reach it (§11.4).
 
-## 12. Consumption (AC-10, AC-15)
+## 12. Consumption (AC-10, AC-15, AC-16)
 
 ### 12.1 Measured
 
@@ -387,7 +387,12 @@ The budget, from Task 0's figures: #5's target leaves a scan at ≤ 826,341.5, s
 The default skeptic model is a function of two measurements, in this order:
 
 1. **Correctness** (#55): for each candidate in ascending weight order — `haiku` (`claude-haiku-4-5`), `sonnet` (`claude-sonnet-5-5`), `opus` (`claude-opus-5-5`) — run the skeptics on #55's frozen Celery set (§13) and score. A candidate qualifies when it reaches **at least 15 of 21** same verdict class and refutes **no** correct finding. Fable is not a candidate: it labelled the set, and #55's independence rule would exclude all 21.
-2. **Cost**: the cheapest qualifying candidate must also meet §12.2's ceiling. If it does not, no default is set and the ticket stops for a product decision (the ticket's open product question); the pass does not ship on by default above the ceiling. Both measurements need the maintainer (a Claude Code session with the plugin installed, a Celery checkout); the plan's last three tasks are theirs, run on the same branch before merge, so the pass never ships on by default unmeasured.
+2. **Cost**: the cheapest qualifying candidate must also meet §12.2's ceiling, measured with that model as the skeptic.
+3. **The outcome** (product decision, AC-15, AC-16):
+   - A candidate qualifies and meets the ceiling: it is the default model and `VERIFY_BY_DEFAULT = True`.
+   - Otherwise verification ships **off by default**, opt-in with `--verify`. The ceiling stays binding: nothing switches it on by default above the ceiling, and switching it on later is a separate decision made with new measurements. The opt-in default model is the cheapest qualifying candidate; when none qualifies, the candidate with the most same-class verdicts among those that refuted no correct finding, the cheaper on a tie. A pass that refutes a correct finding removes a true finding from the report, which opting in does not make acceptable, so when every candidate refuted one, the pass does not merge and the maintainer reports the table on the ticket. The cost of a scan with verification on, as measured by §12.2's procedure with that model, is recorded as `_common.VERIFY_MEASURED_COST` (one line, e.g. "about 640k weighted tokens per scan on celery/celery, docs/calibration/consumption.md") and stated in the README and in the report's header line (§11.2).
+
+Both measurements need the maintainer (a Claude Code session with the plugin installed, a Celery checkout); the plan's last three tasks are theirs, run on the same branch before merge, so the default is never set unmeasured.
 
 The chosen alias goes into the skeptic's frontmatter and the scan's `--verify-model` default; the PR records every candidate's figures as `benchmark.py` prints them, and the ceiling run.
 
@@ -443,7 +448,7 @@ The rule can turn some verdicts on #55's frozen set from `upheld` into `inconclu
 
 | Condition | Behaviour |
 |---|---|
-| `--no-verify` | Step 4b skipped; no script of this ticket runs; every finding `unchecked`; header "not run" (§11.1) |
+| `--no-verify`, or off by default (AC-16) without `--verify` | Step 4b skipped; no script of this ticket runs; every finding `unchecked`; header "not run", with the measured cost when off by default (§11.1, §11.2) |
 | No manifest, or no installed copy of any declared package | `deps/index.json` warns; run warnings say so; skeptics run on the repository alone (AC-8) |
 | A package installed at another version than locked or declared | `unavailable` with both versions; a run warning |
 | A skeptic fails, stops, times out or returns prose | Its finding `unchecked` with the reason (§9, AC-6) |
@@ -478,7 +483,7 @@ The rule can turn some verdicts on #55's frozen set from `upheld` into `inconclu
 - **AC-1**: on the fixture, the report of a scan that did not verify is byte-identical (`report.md`, `report.json`) whether or not an earlier verified run left verdicts in the findings files and the ledger. What differs from a report made before this change is only the header's verification line and the new zero-valued keys; the regenerated sample's diff in the PR shows exactly that.
 - **Inert text**: `test_inert_report.py` and `test_report_html.py` extend `MODEL_FIELDS` to `check.reason`, `check.holds`, `refuted_claims[].claim`, `.fact`, verdict evidence `note`.
 - **Guardrail**: the narrowed and duplicate lines; refuted never stated; phrasing; latency.
-- **Skill text**: step 4b present, with "at most four", "never re-spawn", `--no-verify`, `--verify-model`; the skeptic prompt's contract test (`test_skeptic_contract.py`) pins `VERDICT_KEYS`, the evidence types, the withheld fields, and the data rule.
+- **Skill text**: step 4b present, with "at most four", "never re-spawn", `--verify`, `--no-verify`, `--verify-model`; the table's stated default equals `VERIFY_BY_DEFAULT`; the skeptic prompt's contract test (`test_skeptic_contract.py`) pins `VERDICT_KEYS`, the evidence types, the withheld fields, and the data rule.
 - **Sample**: `gen_sample_report.py --check`.
 - **Benchmark export**: every row of §13's mapping; `inconclusive` carries no verdict.
 
@@ -499,6 +504,7 @@ The rule can turn some verdicts on #55's frozen set from `upheld` into `inconclu
 13. **The verified/not-verified decision is `run.json` for this scan.** It makes AC-1 hold whatever older verdicts the findings files carry, without `report.py` rewriting them.
 14. **The default model is measured, cheapest first.** AC-12 and the cost ceiling both bind; trying the cheapest qualifying model first is the only order in which the first pass that qualifies is also the answer.
 15. **AC-12 counts over 21.** #55 leaves a verdict-less finding unscored; counting it as not same keeps `inconclusive` from being a way to meet the bar.
+16. **The default is one measured constant.** `VERIFY_BY_DEFAULT` and `VERIFY_MEASURED_COST` live in `_common`, set by the maintainer's measurement task; the skill's table, the report's header and the README read or are tested against them, so the shipped default and its stated cost cannot drift from what was measured.
 
 ## 21. Open design questions
 
