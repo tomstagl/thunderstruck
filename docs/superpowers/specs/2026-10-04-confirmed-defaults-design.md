@@ -43,7 +43,7 @@ report.py         derives confirmation again from what was stored, gates,
 report_html.py · guardrail.py   render what report.json / index.json carry        (§9)
 ```
 
-One function decides a confirmation (`_common.confirm`), one decides whether a finding relies on an unconfirmed default (`_common.unconfirmed_defaults`), and `_common.finding_gate` (#56 §5, extended by #37) gains the third gate. `guardrail.py` cannot import `_common`; it reads states already decided in `index.json` and carries only the gate order, which a test pins (§9.5).
+One function decides a confirmation (`_common.confirm`), one decides whether a finding relies on an unconfirmed default (`_common.unconfirmed_defaults`, which drives §7.1's no-`upheld` rule), one picks the doubtful ones among them (`_common.doubtful_defaults`, which drives the gate), and `_common.finding_gate` (#56 §5, extended by #37) gains the third gate. `guardrail.py` cannot import `_common`; it reads states already decided in `index.json` and carries only the gate order, which a test pins (§9.5).
 
 The governing rule holds. The investigator and the skeptic state defaults and locations. Whether a location resolves, whether it is a fallback read, which state and basis follow, whether a finding can be upheld, and where it sorts are computed. Nothing in this ticket runs, imports or builds the scanned project (§11).
 
@@ -229,7 +229,7 @@ The kept items, with `precondition` (the index of the listed precondition, or `n
 
 ### 7.1 The rule
 
-A finding **relies on an unconfirmed default** when any precondition with `needs: default`, or any unlisted item in `check.confirmations`, is `unconfirmed`. `_common.unconfirmed_defaults(finding) -> list[dict]` returns those, from the confirmations already derived on the finding; it is the one definition (`settle`, `finding_gate`, the report and the benchmark export all use it).
+A finding **relies on an unconfirmed default** when any precondition with `needs: default`, or any unlisted item in `check.confirmations`, is `unconfirmed`. `_common.unconfirmed_defaults(finding) -> list[dict]` returns those, from the confirmations already derived on the finding; it is the one definition for AC-3 (`settle`, the report's marker and the benchmark export use it). `_common.doubtful_defaults(finding)` is its subset whose basis is in `DOUBTFUL_BASES = ("call_site_fallback", "contradicted", "not_found", "unresolved")`; only it moves a finding in the list (§8).
 
 At the end of `verify.settle` (#37 §9), after #37's table has decided a status, and on **every** path that yields a status (fresh verdict and `reuse` alike):
 
@@ -252,17 +252,18 @@ Applying it to the reuse path matters: a ledger entry written by #37 before this
 
 With `prepare --frozen` (#37 §5) the findings come from a report and carry no `preconditions`; every confirmation is unlisted, `stated_ref` is resolved against the frozen finding's code refs in the repository checkout, and `verdicts.json` carries `check.confirmations`. Nothing is written to findings files, as #37 specifies.
 
-## 8. Gate and order
+## 8. Gate and order (AC-8)
 
-`GATES = ("none", "unconfirmed_default", "non_default_setting")`, `GATE_MARKERS["unconfirmed_default"] = "relies on an unconfirmed default"`. `finding_gate` returns, in this precedence: `non_default_setting` (#56's rule and #37's extension), else `unconfirmed_default` when `unconfirmed_defaults(finding)` is non-empty, else `none`. One gate per finding; a finding that needs a setting changed is marked as that, and its unconfirmed defaults are still shown in its Preconditions block.
+`GATES = ("none", "unconfirmed_default", "non_default_setting")`, `GATE_MARKERS["unconfirmed_default"] = "relies on a doubtful default"`. `finding_gate` returns, in this precedence: `non_default_setting` (#56's rule and #37's extension), else `unconfirmed_default` when `doubtful_defaults(finding)` is non-empty, else `none`. One gate per finding; a finding that needs a setting changed is marked as that, and its unconfirmed defaults are still shown in its Preconditions block.
 
-**Unconfirmed defaults sort before findings that need a non-default setting.** The product decision puts both after default-path findings; between them, this design orders by how many deployments a finding would reach if it holds:
+**Only doubtful defaults move a finding** (product decision). A default is doubtful when its basis is `call_site_fallback`, `contradicted`, `not_found` or `unresolved`: something specific says it may not be the value in effect. A `not_checked` default (every default with verification off, a default whose language the rule cannot read, and a default with no settings layer that no check confirmed) leaves its finding among the default-path findings. Gating those too would sort every finding that honestly lists a `needs: default` precondition behind findings that list none, which rewards leaving preconditions out, against #56's intent; Celery alone has about 26 `conf.get(name, fallback)` reads whose fallback equals the registered default. Such a finding is still marked: its badge line carries `default unconfirmed` (`_common.DEFAULT_UNCONFIRMED_MARKER`) whenever `unconfirmed_defaults(finding)` is non-empty and its gate is `none`, and each default's line says **Unconfirmed** and why. AC-3 is unaffected: §7.1 uses `unconfirmed_defaults`, so a finding resting on a `not_checked` default is never `upheld`.
 
-- A finding resting on an unconfirmed default *claims the default path*. If its default holds, it reaches every deployment, and the reader's check is one lookup the report hands them: the setting, the stated location and, after a check, the location the check found.
+**Doubtful defaults sort before findings that need a non-default setting.** The product decision puts both after default-path findings; between them, this design orders by how many deployments a finding would reach if it holds:
+
+- A finding resting on a doubtful default *claims the default path*. If its default holds, it reaches every deployment, and the reader's check is one lookup the report hands them: the setting, the stated location and, after a check, the location the check found.
 - A finding that needs a non-default setting reaches only deployments that changed it, and a reader rules it in or out from their own configuration.
-**Which unconfirmed defaults gate is an open product question** (ticket; §19 q4). This design gates every unconfirmed `needs: default` default, `not_checked` included. That has a cost: with `--no-verify`, and for a default with no settings layer behind it, every finding that honestly lists a `needs: default` precondition sorts behind findings that list none, which rewards omitting preconditions, against #56's intent; Celery alone has about 26 `conf.get(name, fallback)` reads whose fallback equals the registered default. The alternative gates only the doubtful bases (`call_site_fallback`, `contradicted`, `not_found`, `unresolved`) and leaves `not_checked` defaults with the default-path findings, still marked unconfirmed in their Preconditions block. The current choice stays the default until the maintainer answers; switching changes only what `finding_gate` reads (a filter of `unconfirmed_defaults` to the doubtful bases); §7.1's no-`upheld` rule keeps using `unconfirmed_defaults` unchanged, because a `not_checked` default is still unconfirmed.
 
-#56 §7.2 says #57 "appends" the value and leaves the position to #57; inserting it in the middle is that decision. Nothing else changes: the sort key, the marker, `counts.gate`, `index.json`'s `gate` and the guardrail's order all read `GATES` (#56 §5).
+#56 §7.2 leaves the position to #57; inserting it in the middle is that decision. Nothing else changes: the sort key, the marker, `counts.gate`, `index.json`'s `gate` and the guardrail's order all read `GATES` (#56 §5).
 
 ## 9. Outputs (AC-1, AC-4)
 
@@ -275,10 +276,10 @@ All model-written values (`default`, `claim`, the skeptic's `reason`) are inert 
 **Header**, after #56's check-status line:
 
 ```
-Defaults: 4 confirmed · 6 unconfirmed (2 stated where the setting is read, 1 contradicted by a check, 3 not checked) · 2 findings rely on an unconfirmed default and are listed after default-path findings
+Defaults: 4 confirmed · 6 unconfirmed (2 stated where the setting is read, 1 contradicted by a check, 3 not checked) · 2 findings rely on a doubtful default and are listed after default-path findings
 ```
 
-**Badge line** for a gated finding: `· relies on an unconfirmed default` (from `GATE_MARKERS`).
+**Badge line** for a gated finding: `· relies on a doubtful default` (from `GATE_MARKERS`); for a finding with gate `none` and an unconfirmed default: `· default unconfirmed`.
 
 **Preconditions** (#56 §6.1), each line gains its confirmation; when a check gave a default, both are shown with where each was found (AC-4):
 
@@ -326,7 +327,7 @@ The precondition line (#56 §6.5) names the state: "It happens on default settin
 
 Every stage of a scan (`signals.py`, `context.py`, `bundle.py`, the investigators, `save_finding.py`, `validate.py`, `verify.py` and `deps.py`, the skeptics, `report.py`, `report_html.py`, #5's capture hook and `usage.py`) and the edit guardrail. They may read the repository, its history and installed dependency source as data. They may start exactly two kinds of process: `git`, and the service-catalog command the user approved by hash on this machine (#1's trust model in `context.py`). That command is the one exception to AC-5, and it holds **even when the command is a script committed in the scanned repository**: `context.py` hashes such repo-local files into the approval (`_local_files`: a committed wrapper script is part of what will run), so it runs only what the user approved, byte for byte, and nothing else in the repository. The ticket's AC-5 names the exception. `gen_sample_report.py` runs thunderstruck's own scripts on the fixture and is not a stage.
 
-`/thunderstruck-verify` writes and runs a test at the user's explicit request; it is not a scan stage and nothing it produces is read by one. That reading is recorded in the ticket's open product questions for the maintainer to confirm.
+**The boundary** (product decision): the rule binds the scan pipeline and the edit guardrail. `/thunderstruck-verify` is outside it. It writes a test for one finding and runs it only at the user's explicit request, under Claude Code's permission prompts, and no scan stage reads what it produces. `tests/test_no_execution.py` therefore covers every script and hook a scan or the guardrail runs, and not that skill's instructions.
 
 ### 11.2 The test (`tests/test_no_execution.py`)
 
@@ -404,7 +405,7 @@ No model call is added. The skeptic reads more on findings that rely on defaults
 
 ## 17. Test strategy
 
-- **The rule tables.** `confirm` over every combination of `call_site` (true/false/null) and item (none; each `found`; with `default_ref_error`; with `default_call_site`); `unconfirmed_defaults` on listed and unlisted, `needs: changed` ignored; `finding_gate` precedence over all three gates and #37's narrowed-setting case; vocabularies spelled as the spec.
+- **The rule tables.** `confirm` over every combination of `call_site` (true/false/null) and item (none; each `found`; with `default_ref_error`; with `default_call_site`); `unconfirmed_defaults` on listed and unlisted, `needs: changed` ignored; `finding_gate` precedence over all three gates and #37's narrowed-setting case, with a `not_checked`-only finding staying `none` and each doubtful basis gating; vocabularies spelled as the spec.
 - **Fallback reads.** A table of (language, text, setting, expected) with, per language in `setting_reads`, the positive shapes of §4.1 (including Celery's line verbatim and a call split over lines) and the negative shapes of §4.2 (registrations, reads without fallback, another setting's read, the read inside a comment, a setting name with whitespace, regex metacharacters in a name); a test that every `setting_reads` language has both polarities; the alias (`javascript` → `typescript`). `names_setting` on the full name, a two-segment suffix (`backend_always_retry`), a one-segment suffix (`retry`, rejected), a one-segment name, and a name only in a comment (rejected).
 - **Validator.** `confirmation` written on a passing document; `call_site` true at a fallback read, false at a registration, null on an unreadable file; an investigator-written `confirmation: confirmed` is overwritten; `finding_shape.py` strips it for `save_finding.py` and the capture hook; re-validation recomputes after the file changes.
 - **Settle.** Every rule of §6.3 (drop and name, unlisted with and without a quoting claim, `stated_ref` not among the finding's refs, unresolved kept); §7.1's table including the reuse path with a pre-#57 ledger entry; `claim_hash` unchanged by a confirmation rewrite; ledger `files` gains the registry file and a change to it forces `check`.
@@ -437,4 +438,3 @@ No model call is added. The skeptic reads more on findings that rely on defaults
 1. **Defaults with no settings layer.** `process.env.TIMEOUT_MS ?? 30000` is a fallback read with nowhere else to register the value, unless the project ships an `.env` or a chart. Under §3.2 such a default can be confirmed only by a check citing another registration, so a finding resting on it can never be `upheld`. That is deliberate (the escape hatch would be the judgement Spike 2 found unreliable), but it caps every such finding at `medium`. `counts.defaults`' `call_site_fallback` share in dogfood runs decides whether a narrower exception is worth designing (e.g. a check that cites the absence of any configuration file for the setting). Owner: this ticket, after dogfood.
 2. **Interaction with #37 AC-12.** §7.1 turns some `upheld` verdicts into `inconclusive`, which #37 §13 counts as not reaching the same class. If the frozen run (§13.2) shows that this moves #37 below 15 of 21 because correct findings rest on defaults the skeptic did not confirm, the fix is in the skeptic's prompt, not in relaxing §7.1; the PR reports the findings affected so the maintainer can see it. Owner: #37 and this ticket together.
 3. **Celery-style settings names.** A frozen finding states `always_retry`, the registry spells `backend_always_retry` inside a namespace, and the full name is `result_backend_always_retry`. The fallback-read rule matches the name the location is checked for, so a skeptic must give the name the read uses; the prompt says so. §4.3's suffix rule accepts the namespaced registration. Whether names should be normalised further (prefix stripping, case styles) is left until a second repository (#59) shows a miss.
-4. **Which unconfirmed defaults gate the finding** (ticket, open product question). §8's choice, every unconfirmed `needs: default` default including `not_checked`, is the default until the maintainer decides between it and gating only the doubtful bases. Owner: the maintainer.
