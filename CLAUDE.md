@@ -41,7 +41,7 @@ THUNDERSTRUCK_REQUIRE_BROWSER=1 uv run --with pytest --with pyyaml --with lizard
 # Plugin manifests. validate does NOT load the plugin — install to prove that.
 # A local-directory marketplace runs this checkout in place (live), not the
 # cached copy: edits here change the installed plugin. signals.py warns.
-claude plugin validate . --strict
+uv run scripts/validate_plugin.py   # validate --strict, allowing the CLAUDE.md warning
 claude plugin marketplace add "$PWD" && claude plugin install thunderstruck@thunderstruck
 claude plugin list          # must say "enabled", not "failed to load"
 
@@ -217,6 +217,14 @@ discovered file rather than replacing it — declaring `hooks` loads
 `hooks/hooks.json` twice and the plugin fails to load at runtime while
 `claude plugin validate` still passes clean. There are regression tests for
 this, and CI installs the plugin to catch it.
+
+`claude plugin validate . --strict` warns that this file, CLAUDE.md, is not
+loaded as plugin context. That is intended: it is context for working on
+thunderstruck, not for its users. `scripts/validate_plugin.py` runs the same
+validation and allows exactly that warning; any other warning or error still
+fails. Wherever a plan or checklist says `claude plugin validate . --strict`,
+run `uv run scripts/validate_plugin.py` instead (exit 2 means `claude` is not
+on `PATH`: not run, never passed).
 
 Versions must agree across `plugin.json`, `marketplace.json`, `pyproject.toml`
 and the top `CHANGELOG.md` heading (`test_versions_agree`).

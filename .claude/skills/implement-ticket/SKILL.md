@@ -141,10 +141,12 @@ THUNDERSTRUCK_REQUIRE_RENDERER=1 uv run --with pytest --with pyyaml --with lizar
   pytest tests/ -q; echo "exit=$?"
 uv run scripts/gen_catalog_docs.py --check; echo "exit=$?"
 uv run scripts/gen_sample_report.py --check; echo "exit=$?"
-claude plugin validate . --strict; echo "exit=$?"
+uv run scripts/validate_plugin.py; echo "exit=$?"
 ```
 
-If `claude` is not on `PATH`, record the last check as *not run*, never as passed.
+The last check is `claude plugin validate . --strict` allowing only the known
+CLAUDE.md warning (CLAUDE.md, *Plugin manifest*). Exit 2 means `claude` is not
+on `PATH`: record it as *not run*, never as passed.
 
 Next, invoke the `code-review` skill with `high` on the branch diff, if it is
 available. Fix what it confirms, commit, and run the four checks above once more.
