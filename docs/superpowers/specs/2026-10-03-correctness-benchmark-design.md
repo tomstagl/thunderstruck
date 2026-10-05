@@ -118,6 +118,7 @@ Each finding's result is a function of its own label and its own run record only
 - Every field of a finding record is optional. Each measure (§4) scores the findings that carry its field and ignores the rest, so #37 can submit verdicts alone and #56 confidences alone.
 - `verdict` is `upheld` · `upheld_but_gated` · `narrowed` · `refuted`, the vocabulary the spike's refuters used. #37 either writes it or ships a converter; the scorer does not learn a second vocabulary.
 - `duplicate_of` is a key. A run that names findings by display id is converted before it is scored; the scorer never maps ids.
+- `bundle` is `{"file": path, "shown": [[start, end], …] | null}`: the hotspot file of the finding's bundle and the line ranges its Source block shows (§3.3), or `null` when the block is unreadable. The `--bundles` adapter writes it; a run file may carry it too, so a checked-in run can be scored for §4.4 without its scan directory.
 - A precondition may also carry `confirmation`, the state #57 derives (`confirmed` or `unconfirmed`). It is reserved for #57, whose spec owns its design; this scorer ignores it until #57 extends §4.5.
 
 ### 3.2 `--report` adapter
