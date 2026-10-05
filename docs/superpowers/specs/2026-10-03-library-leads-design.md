@@ -21,9 +21,16 @@ scripts/detectors/__init__.py
   _run_regex, _run_file_absent   honour absent_before
   find_boundaries()              NEW · the only boundary matcher
 
+scripts/_common.py
+  own_packages()                 NEW · the scanned project's own package names (§2.3)
+
+scripts/signals.py
+  hotspots.json                  + own_packages                            (§2.3)
+
 scripts/bundle.py
   BOUNDARY_PATTERNS              removed
-  section_boundaries()           calls find_boundaries(); says when a language has no rules
+  section_boundaries()           calls find_boundaries(); says when a language has no rules,
+                                 and when the own package names are unknown
 
 scripts/report.py, templates/report.html
   "Pattern coverage"             reworded as "Detector leads by pattern" (§4)
@@ -50,6 +57,7 @@ The other 13 are identifiers and strings: `requests.pop(r.id, None)` (a worker-s
 A boundary is a **call**: a line where the code invokes a client library, or a method whose name only a boundary client has. Two kinds of rule, and the difference is the whole design:
 
 - **Through a library name** (`requests.get(`, `axios.post(`, `boto3.client(`, `task.delay(`): counts only when the file imports that library (`require`). A variable that happens to share the library's name (`requests.pop(…)` on a dict, AC-2) never matches twice over: the rule names the library's own verbs (`get`, `post`, …, never `pop`), and it runs only in a file that imports `requests`, which Celery's consumer does not. In Java every type is imported, so every Java rule that names a client is gated this way; the one ungated Java rule is upper-case SQL text, which names no library (it is a string, whichever client sends it).
+- **Inside the library itself, the gate is closed.** An import of the scanned project's own package never satisfies a `require` (§2.3). When the repository *is* the library, every file imports it, so without this rule the gate filters nothing: on Celery, `B-py-celery-send` tagged `self.apply_async(` in `celery/canvas.py`, `celery/app/task.py:545` and `celery/app/trace.py:450–469`, which is Celery calling its own code, not a client sending a message. A file that also imports the library from outside (an application's `from celery import shared_task`) still opens the gate (AC-2's "a real call through that library still is").
 - **A boundary-shaped method on any receiver** (`.execute(`, `session.query(`, `.publish(`, `.drain_events(`, `.chat.completions.create(`, a Prisma-shaped `db.<model>.findMany(`): no import gate, because service code reaches these through an injected client (`self.client`, `this.prisma`, a `broker` passed in) whose file imports nothing recognisable. These method names are rare outside boundary clients; generic ones (`.get(`, `.send(`, `.create(`, `.add(`) are never in this kind.
 
 Then, for both kinds:
@@ -82,7 +90,25 @@ boundaries:
 | `id` | Unique across all languages; `B-<lang>-<what>`. Named in test failures, never in a bundle. |
 | `label` | One of `HTTP`, `database`, `queue/messaging`, `LLM`, `cloud SDK`, `filesystem`, `scheduler`: today's labels, so the investigator's vocabulary does not change. |
 | `pattern` | Matched per line of comment-stripped text. |
-| `require` | Optional. Compiled `MULTILINE` and searched in the comment-stripped file; the rule is skipped when it matches nowhere, exactly as `require` on a detector. |
+| `require` | Optional. Compiled `MULTILINE` and searched in the comment-stripped file with every import of the project's own packages removed (below); the rule is skipped when it matches nowhere. |
+
+**The project's own packages.** `signals.py` works them out once per run from the git index (`_common.tracked_index`, which it already reads), and writes them to `hotspots.json` as `own_packages`, sorted lists keyed by detector language:
+
+| Language | Own package names | Celery at `508c112` |
+|---|---|---|
+| `python` | every directory at the repository root, or directly under a root `src/`, that holds a tracked `__init__.py` (or `__init__.pyi`) | `celery`, `t` |
+| `typescript` | the `name` of every tracked `package.json`, wherever it is | none |
+| `java` | the `package` line of every tracked `.java` file: the first line that starts with `package <name>;`, read no further | none |
+
+Only tracked files count, and only regular ones are read (a tracked symlink is never followed), so the list is a function of the commit and bundles stay byte-identical. Python stops at the root and `src/` on evidence: Celery tracks `examples/pydantic/__init__.py`, and counting every package root would make `pydantic`, and in another repository `requests`, the project's own. TypeScript reads every `package.json` because a monorepo's packages import each other by name (`@aws-sdk/client-s3` inside aws-sdk-js-v3). Java reads declarations rather than guessing a source root from the path, because Gradle and Maven layouts vary.
+
+**What is removed before a gate is searched**, in the comment-stripped text only (the lines matched against `pattern` are untouched):
+
+- Python: a `from M import …` line whose `M`'s first dotted segment is an own name (`celery`, `celery.app.task`, not `celery_extras`); in an `import A, B as c` line, every such module, the rest kept (`import celery, os` leaves `import os`).
+- TypeScript and JavaScript: the specifier of `from '…'`, `import '…'`, `import('…')` and `require('…')` when it is an own name or starts with an own name and `/`; it becomes `''`.
+- Java: an `import` (static or not, wildcard or not) when any dotted prefix of its name is an own package (`org.springframework.web.client.RestTemplate` inside spring-framework).
+
+**When the names are unknown.** `hotspots.json` without `own_packages` (written before this change) or with a value that is not an object means nobody worked them out. `find_boundaries` then skips every rule with a `require`, the ungated rules still run, the bundle says so under the boundaries heading (§2.5), and `bundle.py` prints a warning to re-run `signals.py`. Skipping rather than gating on every import: a false boundary on correct code is the worse error, and the section says which calls were not looked for. A tracked `package.json` that does not parse, or a file that cannot be read, is skipped, and `signals.py` adds one warning to `hotspots.json`'s `warnings` (which the report prints), naming the count and the first such file: a call through a package that file declares may still be listed.
 
 Language resolution uses `_common.detector_language`, so `javascript` uses the `typescript` rules as detectors do. `yaml` and `properties` have no rules: configuration declares boundaries, it does not call them.
 
@@ -112,10 +138,11 @@ class Boundary:
     line: int
     snippet: str   # the raw line, stripped, at most 120 characters
 
-def find_boundaries(catalog: dict, rel_path: str, text: str, lang: str) -> list[Boundary] | None
+def find_boundaries(catalog: dict, rel_path: str, text: str, lang: str,
+                    own: dict[str, list[str]] | None) -> list[Boundary] | None
 ```
 
-`None` means the language has no boundary rules; `[]` means rules ran and nothing matched. It reuses `build_context` and `_rx`; a rule whose regex does not compile is skipped, as a detector's is. Hits are in line order. It lives beside the detector engine because it is the same kind of thing: a catalog rule matched against comment-stripped text.
+`own` is `hotspots.json`'s `own_packages`: `{}` means the project owns no package, `None` means the names are unknown and gated rules are skipped (§2.3). It is a required argument, so no caller can forget it. `None` as the result means the language has no boundary rules; `[]` means rules ran and nothing matched. It reuses `build_context` and `_rx`; a rule whose regex does not compile is skipped, as a detector's is. Hits are in line order. It lives beside the detector engine because it is the same kind of thing: a catalog rule matched against comment-stripped text.
 
 ### 2.5 In the bundle
 
@@ -127,6 +154,10 @@ and, for a language with no rules:
 
 > `## External boundaries` / Not looked for: no boundary rules exist for yaml files.
 
+When the own package names are unknown (§2.3), one more paragraph follows the explanatory sentence, or `None detected in this file.` when nothing matched:
+
+> Calls through a library's own name were not looked for: the project's own package names are not recorded with the hotspots.
+
 That is the degradation rule applied to the section: the investigator is told what was not looked at instead of reading "None detected" on a file nobody searched. `BOUNDARY_PATTERNS` is deleted; the catalog is the only source.
 
 ### 2.6 Measured effect
@@ -134,11 +165,11 @@ That is the degradation rule applied to the section: the investigator is told wh
 | | Celery, 10 bundles | Fixture, 10 code files |
 |---|---|---|
 | Lines shown, today | 68 (51 from a comment, docstring or import) | 20 |
-| Lines shown, after | 27 (0 from a comment, docstring or import) | 7 |
+| Lines shown, after | 11 (0 from a comment, docstring or import) | 7 |
 
-All 27 Celery lines are calls: Celery's own `apply_async`/`delay`/`send_task` (which publish a task message), kombu `producer.publish(`, Redis `pipe.execute()`, SQLAlchemy `session.query/add/flush(`. The fixture keeps every `fetch(`, `broker.publish(` and `db.release.create(`, and loses the `setTimeout` sleeps and `fetchRelease(`. The bundles also shrink: Celery's ten go from 50,076 to 49,085 estimated tokens, with the new explanatory sentence included.
+Re-measured on main at `d22e182` with the rules of §2.2–2.3 prototyped, over Celery at `508c112` with `signals.py --top 10 --since 2025-10-03`; main reproduces the frozen bundles' 68 exactly. The 11 Celery lines are Redis `pipe.publish(` and four `pipeline.execute()` (`backends/redis.py`), kombu `producer.publish(` and `evd.publish(` (`app/amqp.py`), and SQLAlchemy `session.query/add/flush(` (`backends/database/__init__.py`). The first version of this spec counted 27: the other 16 were Celery's own `apply_async`/`delay`/`send_task` in `canvas.py`, `app/task.py`, `app/trace.py`, `backends/base.py` and `backends/redis.py:837`, tagged because every Celery file imports `celery` (§2.2). With `own_packages` set to `{}` the prototype gives 27 and 49,085 tokens again, so the difference is the own-package rule alone. The fixture owns `fixture` (its `package.json`) and imports nothing by that name, so its seven lines are unchanged: it keeps every `fetch(`, `broker.publish(` and `db.release.create(`, and loses the `setTimeout` sleeps and `fetchRelease(`. The bundles also shrink: Celery's ten go from 50,076 to 48,637 estimated tokens, with the new explanatory sentence included.
 
-**What this costs.** A call through a wrapper (`withRetry(() => …)` around a `fetch` still matches; a project's own `api.get(` does not), through an injected client with a generic method (`self.client.get(key)`), or through a Spring Data repository method is not listed. On Celery, `consumer.py`, `app/base.py` and `worker/request.py` show no boundary at all. That is the trade the ticket makes: an empty, honest section rather than a full, false one. The detectors (S01, S05, S11, S15) keep their own anchors and are unaffected.
+**What this costs.** A call through a wrapper (`withRetry(() => …)` around a `fetch` still matches; a project's own `api.get(` does not), through an injected client with a generic method (`self.client.get(key)`), or through a Spring Data repository method is not listed. On Celery, seven of the ten bundles show no boundary at all: `canvas.py`, `app/base.py`, `app/task.py`, `app/trace.py`, `backends/base.py`, `worker/request.py` and `consumer.py`. The own-package rule also means a library's tests that call it by its public name (`from celery import Celery` in `t/`) show no call through it: inside the repository there is no telling a test of the library from the library. That is the trade the ticket makes: an empty, honest section rather than a full, false one. The detectors (S01, S05, S11, S15) keep their own anchors and are unaffected.
 
 ## 3. Detector corrections
 
@@ -206,7 +237,7 @@ The Celery log is the judgment record; `python.md` keeps its own and gains one l
 
 ## 6. Determinism and caching
 
-- Boundary rules and `absent_before` are pure functions of the file text and the catalog; output order is line order. `test_bundles_are_within_budget_and_deterministic` covers it.
+- Boundary rules and `absent_before` are pure functions of the file text and the catalog; output order is line order. `own_packages` is a function of the tracked files at the commit, written as sorted lists. `test_bundles_are_within_budget_and_deterministic` covers it.
 - Every bundle with a boundaries section changes once, so every cached finding is re-investigated on the first scan after upgrade. That is the correct invalidation: the investigator read a different briefing. `VALIDATION_RULES` does not change, because no validator rule does. The release note says so.
 - The sample report (`examples/sample-report.md`, `.html`) changes in the coverage wording only; its findings are canned and do not depend on bundle bytes.
 
@@ -216,6 +247,7 @@ The Celery log is the judgment record; `python.md` keeps its own and gains one l
 - The coverage wording is the tool's own text. Nothing a repository wrote enters it.
 - `absent_before` can only drop a hit. It cannot add one, and suppression via the profile is unchanged.
 - A catalog regex is plugin content, not repository content; a malformed one is skipped, never fatal.
+- `own_packages` reads repository text (`package.json` names, `package` lines). The names are only compared with import names; none reaches a bundle or the report. A repository can make a library look like its own by tracking a package of that name, which hides calls through it: that only removes boundary lines, the safe direction.
 
 ## 8. Degradation
 
@@ -224,24 +256,32 @@ The Celery log is the judgment record; `python.md` keeps its own and gains one l
 | A language with no boundary rules | The section says boundaries were not looked for, naming the language |
 | A boundary rule's regex does not compile | That rule is skipped; the catalog tests fail in CI |
 | `absent_before` without `absent_before_window` | A catalog test fails; at runtime the window defaults to 1 rather than crashing a scan |
+| `hotspots.json` has no `own_packages`, or it is not an object | Rules with a `require` are skipped; the bundle says calls through a library's own name were not looked for, and `bundle.py` warns to re-run `signals.py` (§2.3) |
+| A tracked `package.json` does not parse, or a file cannot be read, while working out own packages | That file is skipped; one warning in `hotspots.json` names the count and the first file |
 
 ## 9. Test strategy
 
 - **Engine** (`tests/test_engine_v2.py`): `absent_before` on a `regex` detector (excused inside the window, fires outside it, the hit's own line is part of the text), on a `file_absent` detector (first anchor excused and second not: the hit lands on the second; every anchor excused: no hit), and a detector without it unchanged.
-- **Detector samples** (`tests/detectors/samples/`): the three negative and four positive samples of §3.2. The existing suite must stay green; `test_every_catalog_regex_compiles` also compiles `require` and `absent_before`, and a new test requires an integer `absent_before_window` ≥ 1 wherever `absent_before` appears.
-- **Boundary samples** (`tests/boundaries/`), discovered from the tree like detector samples: `samples/<label-slug>/<language>/{positive,negative}[_<shape>].<ext>` (slugs `http`, `database`, `queue-messaging`, `llm`, `cloud-sdk`, `filesystem`, `scheduler`). A positive asserts that label is tagged on some line; a negative asserts it is not. `samples/none/<language>/negative_<shape>.<ext>` assert no boundary at all, for comments, docstrings, imports and definitions. A test requires a positive and a negative for every (label, language) that has a rule, and one `none` negative per language for each of comment, import and (Python) docstring. AC-2's pair is `http/python/negative_dict_named_requests.py` (Celery's `requests.pop(r.id, None)` without `import requests`) and `http/python/positive_requests_get.py`.
+- **Detector samples** (`tests/detectors/samples/`): the three negative and four positive samples of §3.2, and the two S19 positives from Celery below. The existing suite must stay green; `test_every_catalog_regex_compiles` also compiles `require` and `absent_before`, and a new test requires an integer `absent_before_window` ≥ 1 wherever `absent_before` appears.
+- **Boundary samples** (`tests/boundaries/`), discovered from the tree like detector samples: `samples/<label-slug>/<language>/{positive,negative}[_<shape>].<ext>` (slugs `http`, `database`, `queue-messaging`, `llm`, `cloud-sdk`, `filesystem`, `scheduler`). In a positive, every line that must be tagged ends with a `boundary: <label>` comment (`# boundary: HTTP`, `// boundary: database`), and the test requires exactly the marked lines with exactly those labels, at least one of them the directory's; a label tagged on the wrong line, or an extra line, fails. A negative carries no marker and asserts its directory's label is not tagged. An `own-packages: a, b` comment names the packages the sample's project owns (none without it). Both markers are comments, which the matcher sees blank, so neither can change what it finds. The own-package pair is `queue-messaging/python/negative_own_package_apply_async.py` (Celery's `Signature.delay` calling `self.apply_async(` with `own-packages: celery`) and `queue-messaging/python/positive_celery_delay.py` (an application that owns `proj` and imports `celery`). `samples/none/<language>/negative_<shape>.<ext>` assert no boundary at all, for comments, docstrings, imports and definitions. A test requires a positive and a negative for every (label, language) that has a rule, and one `none` negative per language for each of comment, import and (Python) docstring. AC-2's pair is `http/python/negative_dict_named_requests.py` (Celery's `requests.pop(r.id, None)` without `import requests`) and `http/python/positive_requests_get.py`.
 - **Boundary catalog**: ids unique, labels from §2.3's set, every `pattern` and `require` compiles.
+- **Own packages**: `find_boundaries` with an own package closes the gate for every import form of §2.3 in each language, and opens it again with `{}`; a library import beside an own one still opens it; `None` skips only the gated rules. `_common.own_packages` on a temporary repository: root and `src/` packages counted, `examples/requests/__init__.py` and untracked packages not, a scoped `package.json` name read, a broken one warned about once, a symlinked one not followed, a `package` line found after a licence comment. `hotspots.json` from the fixture carries `own_packages`.
+- **S19 true leads**: Celery's two true S19 leads at the benchmark commit become permanent positive samples, cut down from the real code: `positive_errback_loop.py` (`celery/backends/base.py:489`, a group task's errback failure swallowed inside the loop) and `positive_decode_swallow.py` (`celery/backends/database/__init__.py:240`, a stored value that fails to decode, swallowed). Today only a manual `calibrate.py` run checks them; both fire on main and with §3.2's S19 correction.
 - **Bundle**: the fixture's YAML hotspot says boundaries were not looked for; a TypeScript hotspot lists `fetch(` and no `setTimeout(`; the existing heading test still passes.
 - **Report**: the section heading, intro and footnote are present in `report.md` and `report.html`, and the word "coverage" appears in neither section; the constants appear verbatim in the template. The existing coverage-table tests follow the new heading.
 - **Celery** is not in CI. The figures of §2.6 and §3.3 are produced by the plan's scratch procedure and recorded in the log and the PR.
 
 ## 10. Consumption
 
-No model call is added. The investigator reads slightly less: Celery's ten bundles shrink by about 1,000 estimated tokens in total (50,076 to 49,085).
+No model call is added. The investigator reads slightly less: Celery's ten bundles shrink by about 1,400 estimated tokens in total (50,076 to 48,637). Working out own packages reads every tracked `package.json` and the head of every tracked `.java` file once per `signals.py` run.
 
 ## 11. Decisions
 
 - **Boundary rules in the catalog, not in `bundle.py`.** They need negative samples (AC-2) and calibration like detectors, and CLAUDE.md makes the catalog the source of truth for anything matched against code. A correction becomes a catalog edit plus a sample.
+- **An import of the project's own package never opens a gate.** Without it the gate means nothing on the library itself: 16 of Celery's 27 lines were Celery calling its own code. The names come from what the repository tracks, not from a declaration, so no configuration is needed and a scan of the library and a scan of an application that uses it get the right answer from the same rule.
+- **Own Python packages at the root and under `src/` only.** Every package root anywhere was prototyped first and made `pydantic` Celery's own (`examples/pydantic/`). A monorepo with packages deeper down (`libs/foo/foo/`) keeps today's behaviour for them: their own imports open the gate.
+- **Unknown own packages skip gated rules rather than gate on every import.** Gating on every import is exactly the false boundary this change removes; skipping loses calls, and the bundle says which.
+- **Per-line markers in positive boundary samples.** A sample that passed when its label appeared anywhere would pass with the label on the wrong line.
 - **Import-gate calls through a library name; leave boundary-shaped methods ungated.** Gating everything on imports was prototyped first. It removed every false line on Celery, and also `broker.publish(` and `db.release.create(` from the fixture, which are the injected-client shapes services use. Gating only where the receiver is the library's own name is what AC-2 needs and loses neither.
 - **Per-language rules.** The language-agnostic list is why `got` (a Node library) matched Python f-strings.
 - **`setTimeout` is not a scheduler.** In the fixture and in the TypeScript samples every one is a sleep, and S02 reports sleeps.
@@ -255,4 +295,5 @@ No model call is added. The investigator reads slightly less: Celery's ten bundl
 ## 12. Open design questions
 
 - Should the boundary section list the calls a detector already anchors on (S01's `requests.get(url)` without a timeout) even when the file reaches them through a wrapper? That needs cross-file resolution, which the matcher deliberately does not do.
+- The own-package rule covers only gated rules. An ungated method rule still matches a library's own method of that name: on Celery, `evd.publish(` in `app/amqp.py` is Celery's `EventDispatcher.publish`, which does publish through kombu, so it stays. Excluding receivers whose type the project defines needs type resolution, which the matcher deliberately does not do.
 - `B-py-execute` is ungated and labels a Redis pipeline's `.execute()` as `database`. A `cache/key-value` label would be more exact; it is left until a repository shows the investigator misreading it.
