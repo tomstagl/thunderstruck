@@ -109,11 +109,24 @@ with no reason, because a draft is not *meant* to be ready (AC-3 covers non-draf
 | 10 | no label `agent:in-progress` | `already claimed` |
 | 11 | no label `agent:blocked` | `blocked, see ticket comments` |
 | 12 | no open PR whose title or body contains `#<n>` as a whole token | `open PR #<m> references it` |
+| 13 | no ticket named on a `Depends on:` line of the body is still open | `waits for #<a>, #<b>` (the open ones, ascending) |
 
 Among the tickets that pass every rule, the lowest `number` wins (AC-2). Rule 4's
 pattern ignores placeholders such as `YYYY-MM-DD-…` (see #37), so a ticket whose
 spec is "to be written" fails with `no spec path in ticket`, which is the true
 reason.
+
+Rule 13 orders a chain of tickets. A line counts when it *starts* with
+`Depends on` (case-insensitive; a list marker, `>` or bold around it are
+allowed), and every `#<m>` on that line is a dependency; the ticket's own
+number is ignored. "Depends on #56 merging" in the middle of a sentence is
+prose and never counts, so a dependency is always a deliberate line. Only open
+issues are gathered (§2 *Input*), so a dependency that is not among them has
+closed, which for a ticket built through this agent means its PR merged with
+`Closes #<m>`. A waiting ticket carries no label: it becomes eligible the
+night after its last dependency closes, with nothing for a human to clear.
+Rule 13 can only hold a ticket back, never release one, so it widens nothing
+at the trust boundary below.
 
 Rules 8 and 9 are what make "merged into `main`" mean *this ticket's* spec. A
 ticket can't point at an unrelated spec that happens to exist, whether by
@@ -300,6 +313,11 @@ run is the acceptance test for AC-5 to AC-12, and that run is recorded on #39.
   taking the ticket by hand.
 - **Lowest number first**, not "most recently readied". It is simple, stable,
   and it matches the order tickets were agreed in.
+- **Dependencies wait, they do not block.** A plan's Task 0 can still stop a
+  run on a missing prerequisite, but that costs a night and an `agent:blocked`
+  label someone must remove after the prerequisite merges. Declaring the order
+  in the ticket (`Depends on: #55, #56`) lets the picker skip the ticket
+  until then, and `agent:blocked` stays for gaps only a human can close.
 - **Model gathers, script decides.** The session has no `gh` and no GitHub
   token outside MCP. A script that called the API would need one.
 

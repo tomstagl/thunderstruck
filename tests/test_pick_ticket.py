@@ -25,6 +25,8 @@ SPEC = "docs/superpowers/specs/2026-09-25-agent-design.md"
 PLAN = "docs/superpowers/plans/2026-09-25-agent.md"
 OTHER_SPEC = "docs/superpowers/specs/2026-09-25-other-design.md"
 OTHER_PLAN = "docs/superpowers/plans/2026-09-25-other.md"
+NEXT_SPEC = "docs/superpowers/specs/2026-09-25-next-design.md"
+NEXT_PLAN = "docs/superpowers/plans/2026-09-25-next.md"
 BODY = f"- **Design (spec):** `{SPEC}`\n- **Implementation plan:** `{PLAN}`\n"
 
 
@@ -44,6 +46,8 @@ def repo(tmp_path_factory) -> Path:
         PLAN: "# Agent plan\n\nRequirements AC-1…AC-3 are in GitHub issue #39.\n",
         OTHER_SPEC: "**Requirements:** [#390](https://example.com/issues/390).\n",
         OTHER_PLAN: "Requirements are in GitHub issue #390.\n",
+        NEXT_SPEC: "**Requirements:** [#41](https://example.com/issues/41).\n",
+        NEXT_PLAN: "Requirements are in GitHub issue #41.\n",
     }
     for rel, text in files.items():
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -233,6 +237,57 @@ def test_an_open_pr_for_a_longer_number_does_not_count(repo, tmp_path):
     pr = {"number": 40, "title": "Fix #390", "body": "", "head": "claude/x"}
     _, out, _ = run(repo, tmp_path, candidates(issue(), prs=[pr]))
     assert out["picked"]["number"] == 39
+
+
+# -- rule 13: every ticket it depends on is closed -----------------------------------------
+
+def test_a_ticket_waits_for_an_open_dependency(repo, tmp_path):
+    t = issue(body=BODY + "- **Depends on:** #5, #56\n")
+    dep = issue(number=56, title="DRAFT: the prerequisite")
+    _, out, _ = run(repo, tmp_path, candidates(t, dep))
+    assert out["picked"] is None
+    assert out["skipped"] == [{"number": 39, "reason": "waits for #56"}]
+
+
+def test_every_open_dependency_is_named(repo, tmp_path):
+    t = issue(body=BODY + "Depends on: #56 and #55\n")
+    deps = [issue(number=n, title=f"DRAFT: {n}") for n in (55, 56)]
+    _, out, _ = run(repo, tmp_path, candidates(t, *deps))
+    assert out["skipped"][0]["reason"] == "waits for #55, #56"
+
+
+def test_a_closed_dependency_does_not_hold_the_ticket(repo, tmp_path):
+    # Only open issues are gathered, so a dependency that is absent has closed.
+    t = issue(body=BODY + "**Depends on:** #5\n")
+    _, out, _ = run(repo, tmp_path, candidates(t, issue(number=5, state="CLOSED")))
+    assert out["picked"]["number"] == 39
+
+
+def test_the_next_ticket_is_picked_while_one_waits(repo, tmp_path):
+    waiting = issue(body=BODY + "Depends on: #56\n")
+    ready = issue(number=41, body=f"`{NEXT_SPEC}`\n`{NEXT_PLAN}`\n")
+    dep = issue(number=56, title="DRAFT: prerequisite")
+    _, out, _ = run(repo, tmp_path, candidates(waiting, ready, dep))
+    assert out["picked"] == {"number": 41, "title": "A ready ticket",
+                             "spec": NEXT_SPEC, "plan": NEXT_PLAN}
+    assert out["skipped"] == [{"number": 39, "reason": "waits for #56"}]
+
+
+def test_a_dependency_mentioned_in_prose_is_not_a_dependency(repo, tmp_path):
+    t = issue(body=BODY + "This builds on #56's contract.\nIt depends on #56 merging first.\n")
+    _, out, _ = run(repo, tmp_path, candidates(t, issue(number=56, title="DRAFT: x")))
+    assert out["picked"]["number"] == 39
+
+
+def test_a_ticket_never_waits_for_itself(repo, tmp_path):
+    _, out, _ = run(repo, tmp_path, candidates(issue(body=BODY + "Depends on: #39\n")))
+    assert out["picked"]["number"] == 39
+
+
+def test_a_longer_number_on_the_depends_line_is_its_own_number(repo, tmp_path):
+    t = issue(body=BODY + "Depends on: #390\n")
+    _, out, _ = run(repo, tmp_path, candidates(t, issue(number=39 * 10, title="DRAFT: x")))
+    assert out["skipped"][0]["reason"] == "waits for #390"
 
 
 # -- the first failing rule is the reason ------------------------------------------------

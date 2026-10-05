@@ -286,6 +286,10 @@ ticket back, and no open PR for it. `pick_ticket.py` decides that, and
 the rules are in the spec (`2026-09-25-daily-ticket-agent-design.md` §2). So a
 plan is only ready to build once it has merged.
 
+- `Depends on: #55, #56` on its own line in a ticket body: the picker skips the
+  ticket ("waits for #55") until every ticket on that line has closed. No
+  label, nothing to clear. Use it for every ticket whose plan's Task 0 checks
+  another ticket's work.
 - `agent:in-progress`: the agent has claimed the ticket. A claim that
   outlives its run is reported as stale every night and never cleared
   automatically.

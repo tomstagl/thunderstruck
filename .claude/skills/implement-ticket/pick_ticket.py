@@ -29,6 +29,10 @@ STALE_AFTER = timedelta(hours=24)
 _EDGE = r"(?<![\w.-])"  # a "/" may precede: a blob URL names the same path
 SPEC_RE = re.compile(_EDGE + r"docs/superpowers/specs/\d{4}-\d{2}-\d{2}-[a-z0-9-]+-design\.md")
 PLAN_RE = re.compile(_EDGE + r"docs/superpowers/plans/\d{4}-\d{2}-\d{2}-[a-z0-9-]+\.md")
+# A line that starts "Depends on" (list marker and bold allowed), never prose
+# that happens to say "depends on #56" mid-sentence.
+DEPENDS_RE = re.compile(r"^[ \t>*_-]*depends on\b[*_: \t]*(.*)$", re.IGNORECASE | re.MULTILINE)
+NUMBER_RE = re.compile(r"(?<![\w#/])#(\d+)(?!\w)")
 
 
 class BadInput(Exception):
@@ -72,9 +76,15 @@ def _one_path(pattern: re.Pattern, body: str, kind: str) -> tuple[str | None, st
     return found[0], None
 
 
+def depends_on(body: str, number: int) -> list[int]:
+    """The ticket numbers on the body's `Depends on:` lines, never the ticket itself."""
+    found = {int(m) for line in DEPENDS_RE.findall(body or "") for m in NUMBER_RE.findall(line)}
+    return sorted(found - {number})
+
+
 def skip_reason(issue: dict, writers: set[str], prs: list[dict], ref: Ref,
-                now: datetime) -> tuple[str | None, dict]:
-    """The first rule the ticket fails (spec §2, rules 3–12), or None."""
+                now: datetime, open_issues: set[int]) -> tuple[str | None, dict]:
+    """The first rule the ticket fails (spec §2, rules 3–13), or None."""
     n = issue["number"]
     author = str(issue.get("author") or "")
     if author.casefold() not in writers:
@@ -112,6 +122,11 @@ def skip_reason(issue: dict, writers: set[str], prs: list[dict], ref: Ref,
         if mentions(pr.get("title") or "", n) or mentions(pr.get("body") or "", n):
             return f"open PR #{pr['number']} references it", {}
 
+    # Only open issues are gathered, so a dependency that is not among them has closed.
+    waiting = [d for d in depends_on(body, n) if d in open_issues]
+    if waiting:
+        return "waits for " + ", ".join(f"#{d}" for d in waiting), {}
+
     return None, {"spec": spec, "plan": plan}
 
 
@@ -141,6 +156,8 @@ def _load(path: str) -> dict:
 def pick(data: dict, ref: Ref, now: datetime) -> dict:
     writers = {str(w).casefold() for w in data["writers"]}
     picked, skipped, drafts = None, [], []
+    open_issues = {i["number"] for i in data["issues"]
+                   if str(i.get("state", "open")).lower() == "open"}
     for issue in sorted(data["issues"], key=lambda i: i["number"]):
         if str(issue.get("state", "open")).lower() != "open":
             continue
@@ -149,7 +166,7 @@ def pick(data: dict, ref: Ref, now: datetime) -> dict:
             continue
         if picked is not None:
             continue  # not skipped, just not first (AC-2)
-        why, paths = skip_reason(issue, writers, data["open_prs"], ref, now)
+        why, paths = skip_reason(issue, writers, data["open_prs"], ref, now, open_issues)
         if why:
             skipped.append({"number": issue["number"], "reason": why})
         else:

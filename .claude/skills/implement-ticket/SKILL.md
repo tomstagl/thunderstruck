@@ -64,6 +64,10 @@ python3 $T/pick_ticket.py $S/candidates.json --ref origin/main --now "$(date -u 
   its claim comment.
 - Otherwise continue with the picked ticket `#n` and its `spec` and `plan` paths.
 
+A `waits for #m` reason is not a block: the ticket's `Depends on:` line names
+a ticket that is still open, and the picker takes it once that one closes.
+Never label it.
+
 The picker's decision is final. Don't second-guess it, and don't pick a
 different ticket.
 
