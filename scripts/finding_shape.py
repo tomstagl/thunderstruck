@@ -163,8 +163,7 @@ def find_entry(index: dict, hotspot_id: Any) -> dict | None:
     return None
 
 
-def record_agent(out: Path, entry: dict, agent: dict) -> None:
-    """Append to agents/<ID>.json, starting afresh for a different bundle."""
+def _record(out: Path, entry: dict) -> tuple[Path, dict]:
     path = Path(out) / "agents" / f"{entry['id']}.json"
     try:
         rec = json.loads(path.read_text(encoding="utf-8"))
@@ -173,5 +172,18 @@ def record_agent(out: Path, entry: dict, agent: dict) -> None:
     if not isinstance(rec, dict) or rec.get("bundle_hash") != entry["bundle_hash"] \
             or not isinstance(rec.get("agents"), list):
         rec = {"hotspot_id": entry["id"], "bundle_hash": entry["bundle_hash"], "agents": []}
+    return path, rec
+
+
+def record_agent(out: Path, entry: dict, agent: dict) -> None:
+    """Append to agents/<ID>.json, starting afresh for a different bundle."""
+    path, rec = _record(out, entry)
     rec["agents"].append(agent)
+    write_json_atomic(path, rec)
+
+
+def annotate_record(out: Path, entry: dict, fields: dict) -> None:
+    """Set fields on agents/<ID>.json, starting afresh for a different bundle."""
+    path, rec = _record(out, entry)
+    rec.update(fields)
     write_json_atomic(path, rec)

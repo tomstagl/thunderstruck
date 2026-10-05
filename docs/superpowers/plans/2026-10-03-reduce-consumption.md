@@ -163,11 +163,11 @@ def main(stdin_text: str) -> None:
   - `--usage '<json>'` with `--id` records `{"relayed_usage": {…}}` in `agents/<ID>.json`, keeping only the four integer keys `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens` plus a string `model`; an absent key stays absent (§2.5). Malformed JSON is a `c.die` with exit 2.
   - `--id` is no longer required when `--check` is given; `--check` and `--id` together are an error.
 
-- [ ] Write `tests/test_save_finding_check.py`, failing: `saved` after a normal save; `missing` before any save; `missing` for a finding whose `bundle_hash` is from an older bundle (edit the bundle's source line and re-run `bundle.py`); `failed` after `--failed`; `missing` for `H99`; `--fallback` and `--usage '{"input_tokens": 5, "output_tokens": 2, "note": "x"}'` record `fallback: true` and `relayed_usage == {"input_tokens": 5, "output_tokens": 2}`; Review Focus 3: a prose-first result through `--from` exits 2 and `--check` still says `missing`.
-- [ ] Run them; they fail (`unrecognized arguments: --check`).
-- [ ] Implement in `save_finding.main`.
-- [ ] Run the new tests and the full suite.
-- [ ] Commit: `Check which investigator results reached disk (#5)`.
+- [x] Write `tests/test_save_finding_check.py`, failing: `saved` after a normal save; `missing` before any save; `missing` for a finding whose `bundle_hash` is from an older bundle (edit the bundle's source line and re-run `bundle.py`); `failed` after `--failed`; `missing` for `H99`; `--fallback` and `--usage '{"input_tokens": 5, "output_tokens": 2, "note": "x"}'` record `fallback: true` and `relayed_usage == {"input_tokens": 5, "output_tokens": 2}`; Review Focus 3: a prose-first result through `--from` exits 2 and `--check` still says `missing`.
+- [x] Run them; they fail (`unrecognized arguments: --check`).
+- [x] Implement in `save_finding.main`.
+- [x] Run the new tests and the full suite.
+- [x] Commit: `Check which investigator results reached disk (#5)`.
 
 ### Task 4: `usage.py` (AC-1, AC-2)
 
