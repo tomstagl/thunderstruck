@@ -195,8 +195,8 @@ def main(stdin_text: str) -> None:
 5. Orchestrator: the first readable `transcript_path` among the records, `read_entries(path, since, until)`. None readable: `missing` gets `"orchestrator: session transcript not readable"`.
 6. `source`: `transcripts` when `missing` is empty, `unavailable` when no entry at all was read, otherwise `partial`.
 
-- [ ] Write the transcript fixtures as small JSONL files built by a helper in the test (not checked-in blobs), under a temp `CLAUDE_CONFIG_DIR`: a session file with entries before and inside the window, a split response (three lines, same `message.id`), a `<synthetic>` line, a user line and a tool-result line; two subagent files.
-- [ ] Write `tests/test_usage.py`, failing:
+- [x] Write the transcript fixtures as small JSONL files built by a helper in the test (not checked-in blobs), under a temp `CLAUDE_CONFIG_DIR`: a session file with entries before and inside the window, a split response (three lines, same `message.id`), a `<synthetic>` line, a user line and a tool-result line; two subagent files.
+- [x] Write `tests/test_usage.py`, failing:
   - weights: one `claude-sonnet-5-5` entry with 1000 tokens in each bucket gives `weighted == 1000 + 1250 + 2000 + 100 + 5000`; the same on `claude-opus-5-5` gives `2000 + 2500 + 4000 + 100 + 10000`; `cache_creation_input_tokens` without a `cache_creation` split is weighted as 5-minute; a model `claude-future-9` gives `weighted is None`, its raw counts kept, `source: partial` and a `missing` line naming it;
   - `TOKEN_WEIGHTS` equals spec §2.3's table: parse the table from the spec file and compare, so the two can never drift;
   - the split response counts once; `<synthetic>`, user and tool lines count zero (Review Focus 4); entries before `generated_at` are excluded from the orchestrator and subagent entries are never windowed;
@@ -207,10 +207,10 @@ def main(stdin_text: str) -> None:
   - no agent records at all gives `source: unavailable`;
   - a `transcript_path` outside `projects_root()` (e.g. `/etc/passwd`, or a `.jsonl` in the temp dir but outside it) is never opened: patch `Path.open` to fail the test if called with it;
   - `usage.json` serialised contains none of the fixture's message text strings.
-- [ ] Run them; they fail (`ModuleNotFoundError: usage`).
-- [ ] Implement `usage.py` with PEP 723 metadata like the other scripts.
-- [ ] Run the new tests and the full suite.
-- [ ] Commit: `Measure a scan's consumption from Claude Code transcripts (#5)`.
+- [x] Run them; they fail (`ModuleNotFoundError: usage`).
+- [x] Implement `usage.py` with PEP 723 metadata like the other scripts.
+- [x] Run the new tests and the full suite.
+- [x] Commit: `Measure a scan's consumption from Claude Code transcripts (#5)`.
 
 ### Task 5: The Consumption section (AC-1, AC-2, AC-9)
 
