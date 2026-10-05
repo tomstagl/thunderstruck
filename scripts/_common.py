@@ -48,8 +48,8 @@ MODEL_ALIASES = {"haiku": "claude-haiku-4-5", "sonnet": "claude-sonnet-5-5",
                  "opus": "claude-opus-5-5"}
 # Weighted tokens (Sonnet 5.5 row) one investigator consumes per token of
 # its bundle: the dry-run estimate's only assumption. Measured in
-# docs/calibration/consumption.md (Task 0 baseline, #5); Task N updates it.
-INVESTIGATOR_TOKENS_PER_BUNDLE_TOKEN = 10.9
+# docs/calibration/consumption.md (Task 0 baseline and Task N, #5).
+INVESTIGATOR_TOKENS_PER_BUNDLE_TOKEN = 6.4
 CALIBRATION_DOC = "docs/calibration/consumption.md"
 CONTEXT_SCHEMA = "thunderstruck.context/v1"
 CONTEXT_FILENAME = "context.json"
