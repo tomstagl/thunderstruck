@@ -220,7 +220,7 @@ def main(stdin_text: str) -> None:
 - Consumes: `usage.json` (Task 4).
 - Produces: `collect()` adds `data["usage"]` (the document, or `None`); `render_consumption(usage: dict | None) -> list[str]`; `render_json` adds `"consumption": usage or None`; one new run warning text.
 
-- [ ] Write `tests/test_report_consumption.py`, failing:
+- [x] Write `tests/test_report_consumption.py`, failing:
   - with a `transcripts` `usage.json` whose `window.from` equals `generated_at`, `report.md` has `## Consumption` right after Run warnings (or after the header block when there are none), in the §2.6 wording: totals in thousands with a `k` suffix (`round(n / 1000)`), the orchestrator's models and call count, the investigator total, agent count, models, repairs and re-spawns, and the weights line;
   - `fallback_saves > 0` adds `N result(s) saved by the orchestrator because the hook did not deliver them.`;
   - `partial` prints `Covers: <parts measured>. Not measured: <each missing line>.` instead of presenting a total as complete (AC-2);
@@ -228,11 +228,11 @@ def main(stdin_text: str) -> None:
   - a `usage.json` whose `window.from` differs from `generated_at`: no section, and the run warning `usage.json is from an earlier scan and was ignored` (Review Focus 2);
   - no `usage.json`: `report.md` byte-identical to the same run without the feature (compare against `render_markdown` with `data["usage"] = None`), and `report.json` has `"consumption": null`;
   - model names render through `md.code`: a model `"[x](http://e)"` appears as inert code, checked with the rendering helpers in `tests/test_inert_report.py`.
-- [ ] Run them; they fail.
-- [ ] Implement. `render_consumption` builds every value with `md.code` or plain integers. `report.html` (#3) is not changed: it reads `report.json`, ignores the new `consumption` key, and `tests/test_report_html.py` must pass unchanged.
+- [x] Run them; they fail.
+- [x] Implement. `render_consumption` builds every value with `md.code` or plain integers. `report.html` (#3) is not changed: it reads `report.json`, ignores the new `consumption` key, and `tests/test_report_html.py` must pass unchanged.
 - [ ] In Task 8's step 5 edit, keep #3's order: `usage.py`, then `report.py`, then `report_html.py` (`test_scan_step_5_renders_html_after_the_markdown_and_never_fails`).
-- [ ] Run the new tests, the full suite and `uv run scripts/gen_sample_report.py --check`.
-- [ ] Commit: `Report what a scan consumed (#5)`.
+- [x] Run the new tests, the full suite and `uv run scripts/gen_sample_report.py --check`.
+- [x] Commit: `Report what a scan consumed (#5)`.
 
 ### Task 6: Quieter scripts and the estimate line (AC-3, AC-7)
 
