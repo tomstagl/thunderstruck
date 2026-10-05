@@ -255,18 +255,18 @@ def main(stdin_text: str) -> None:
 
 **Files:** `agents/thunderstruck-investigator.md`, `tests/test_investigator_contract.py`.
 
-- [ ] Add failing tests to `tests/test_investigator_contract.py`:
+- [x] Add failing tests to `tests/test_investigator_contract.py`:
   - the frontmatter parses (split on the `---` lines, `yaml.safe_load`) and has `model: sonnet`, and still `tools: Read, Grep, Glob`;
   - the prompt contains `up to **<Read cap>** additional files`, where `<Read cap>` is the integer from `docs/calibration/consumption.md`'s `Read cap:` line (skip if the file is absent, so the suite runs before Task 0 lands);
   - the prompt contains the sentences on not re-reading a full-source bundle file and preferring `Grep`, and the output-length rule;
   - `test_the_prompt_example_is_a_complete_valid_shape` still passes unchanged.
-- [ ] Run them; they fail.
-- [ ] Edit the agent file (§5):
+- [x] Run them; they fail.
+- [x] Edit the agent file (§5):
   - frontmatter: add `model: sonnet`;
   - "Your inputs": replace the 10-file paragraph with: "The bundle's Source section holds the hotspot file, and says when it was trimmed. Do not Read a file whose full source is already in the bundle. Re-read a trimmed file only for the line range a lead needs. You may open up to **<Read cap>** additional files with Read/Grep/Glob to confirm or reject a lead; prefer a `Grep` with a narrow pattern over reading a whole file. Prefer the files the bundle names as imports, call sites or temporally coupled. If <Read cap> reads are not enough to settle a lead, say so in `confidence_rationale` rather than guessing.";
   - "Output": add "Keep each evidence `note` to one short sentence and `confidence_rationale` to at most two sentences."
-- [ ] Run the contract tests and the full suite.
-- [ ] Commit: `Pin investigators to Sonnet and have them read less (#5)`.
+- [x] Run the contract tests and the full suite.
+- [x] Commit: `Pin investigators to Sonnet and have them read less (#5)`.
 
 ### Task 8: Orchestration rules, `--model`, docs and release (AC-4, AC-6, AC-7)
 
