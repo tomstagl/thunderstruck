@@ -45,7 +45,9 @@ Every command in this plan uses the fixed scratch path `/tmp/thunderstruck-58`, 
 2. **A Windows checkout with CRLF line endings.** `absent_before` and boundary rules match per line; a stray `\r` must not stop `try:\s*$` or `.add(task)` from matching. Pinned in Task 1 (`test_absent_before_tolerates_crlf`) and Task 5 (`test_crlf_lines_still_match`).
 3. **A `file_absent` detector whose every anchor is excused.** No hit at all, never a hit on the first anchor. Pinned in Task 1.
 4. **A JavaScript file (`.js`, `.mjs`).** It uses the TypeScript rules through the catalog's `aliases`, never "Not looked for". Pinned in Task 5.
-5. **A config file ranked as a hotspot** (the fixture's `deploy/releases-virtualservice.yaml`). Its bundle says boundaries were not looked for, naming the language, instead of "None detected". Pinned in Task 6 (`test_bundle_says_when_a_language_has_no_boundary_rules`).
+5. **A library scanned as itself** (Celery). Every file imports `celery`, so a gate on that import must not open on Celery's own imports: `self.apply_async(` in `celery/canvas.py` is Celery calling itself. An application that owns `proj` and imports `celery` still opens it. Pinned in Task 5 (`negative_own_package_apply_async.py`, `positive_celery_delay.py`, `test_an_import_of_the_projects_own_package_never_satisfies_a_gate`).
+6. **A fixture's or test helper's copy of a library's name** (`test/fixtures/node_modules/axios/package.json`, a helper declared `package org.springframework.web.client;` under `src/test/java/`). Neither makes that library the project's own, so calls through it in main code stay boundaries. Pinned in Task 5 (`test_test_and_fixture_directories_are_not_own`).
+7. **A config file ranked as a hotspot** (the fixture's `deploy/releases-virtualservice.yaml`). Its bundle says boundaries were not looked for, naming the language, instead of "None detected". Pinned in Task 6 (`test_bundle_says_when_a_language_has_no_boundary_rules`).
 
 ---
 
@@ -299,6 +301,8 @@ git commit -m "S04: an except inside a discriminating retry branch is not the re
 - Create: `tests/detectors/samples/S19/python/negative_teardown_after_logged_error.py`
 - Create: `tests/detectors/samples/S19/python/positive_write_after_logged_error.py`
 - Create: `tests/detectors/samples/S19/python/positive_teardown_without_log.py`
+- Create: `tests/detectors/samples/S19/python/positive_errback_loop.py`
+- Create: `tests/detectors/samples/S19/python/positive_decode_swallow.py`
 - Modify: `catalog/stability.yaml` (`S19-py-except-pass`)
 
 - [ ] **Step 1: Write the samples.** `negative_teardown_after_logged_error.py`:
@@ -345,10 +349,48 @@ def finish(conn):
         pass
 ```
 
+Celery's two true S19 leads at the benchmark commit, cut down from the real code, so a correction that silences them fails the suite instead of a manual `calibrate.py` run (spec §9). `positive_errback_loop.py`:
+
+```python
+# celery/backends/base.py at 508c112 (#58): one task's errback failing is
+# swallowed with no trace, and the loop goes on to the next task.
+def fail_group_tasks(backend, frozen_group, group_callback, original_exc):
+    for result in frozen_group.results:
+        fake_request = make_request(
+            task_id=result.id,
+            errbacks=group_callback.options.get("link_error", []),
+        )
+        try:
+            backend._call_task_errbacks(fake_request, original_exc, None)
+        except Exception:  # pylint: disable=broad-except
+            # continue on exception to be sure to iter to all the group tasks
+            pass
+        backend.fail_from_current_stack(result.id, exc=original_exc)
+```
+
+`positive_decode_swallow.py`:
+
+```python
+# celery/backends/database/__init__.py at 508c112 (#58): a stored value that
+# fails to decode is dropped without a trace, and the result is returned
+# without it.
+def meta_from_row(self, data):
+    raw_stamps = data.pop("stamps", None)
+    if raw_stamps is not None:
+        try:
+            stamps_info = self.decode(raw_stamps)
+            if isinstance(stamps_info, dict):
+                if "stamped_headers" in stamps_info:
+                    data["stamped_headers"] = stamps_info["stamped_headers"]
+        except Exception:
+            pass
+    return self.meta_from_decoded(data)
+```
+
 - [ ] **Step 2: Run them to verify the negative fails**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/detectors -q -k "S19-python"`
-Expected: FAIL on `S19-python-negative_teardown_after_logged_error`; both new positives PASS.
+Expected: FAIL on `S19-python-negative_teardown_after_logged_error`; all four new positives PASS (the two Celery ones fire on line 11 and line 12).
 
 - [ ] **Step 3: Correct the detector.** In `catalog/stability.yaml`, under `S19-py-except-pass`, after its `note:` line add:
 
@@ -369,7 +411,7 @@ Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/detectors -q
 Expected: PASS.
 
 Run: `uv run scripts/calibrate.py --repo "/tmp/thunderstruck-58/celery" --lang python --patterns S19`
-Expected: 8 hits; `celery/worker/consumer/consumer.py:435` is gone, `celery/backends/base.py:489` and `celery/backends/database/__init__.py:240` remain.
+Expected: 8 hits; `celery/worker/consumer/consumer.py:435` is gone, `celery/backends/base.py:489` and `celery/backends/database/__init__.py:240` remain, as their samples already show.
 
 - [ ] **Step 5: Commit**
 
@@ -459,19 +501,22 @@ git commit -m "S07: a get-or-create on the row's own key is not a duplicate inse
 
 ### Task 5: Boundary rules in the catalog, and the matcher
 
-**Satisfies:** AC-1 (no boundary from a comment, docstring or import), AC-2 (a variable named like a library is not a boundary; a real call is).
+**Satisfies:** AC-1 (no boundary from a comment, docstring or import), AC-2 (a variable named like a library is not a boundary; a real call is). The own-package rule serves #58's Goal ("every boundary … lead in a briefing is one a reviewer would accept as real, on library code as on services") and its investigator story ("the boundaries listed are calls that cross a boundary"); no AC names it.
 
 **Files:**
-- Modify: `scripts/detectors/__init__.py` (add `Boundary`, `find_boundaries`)
+- Modify: `scripts/detectors/__init__.py` (add `Boundary`, `find_boundaries`, `_without_own_imports`)
+- Modify: `scripts/_common.py` (add `own_packages`)
+- Modify: `scripts/signals.py` (`build`: `own_packages` in `hotspots.json`, its warning in `warnings`)
 - Modify: `catalog/stability.yaml` (append the `boundaries:` section)
 - Create: `tests/boundaries/test_boundaries.py`
-- Create: `tests/boundaries/samples/**` (48 files, Step 1)
+- Create: `tests/boundaries/samples/**` (50 files, Step 1)
+- Create: `tests/test_own_packages.py`
 
 **Interfaces:**
-- Produces: `Boundary(label: str, rule_id: str, line: int, snippet: str)` (frozen dataclass); `find_boundaries(catalog: dict, rel_path: str, text: str, lang: str) -> list[Boundary] | None` (`None`: the language has no rules; otherwise every line that matches, in line order, one rule per line).
-- Consumes: `build_context`, `_rx`, `_snippet` and `_common.detector_language` from the same module.
+- Produces: `Boundary(label: str, rule_id: str, line: int, snippet: str)` (frozen dataclass); `find_boundaries(catalog: dict, rel_path: str, text: str, lang: str, own: dict[str, list[str]] | None) -> list[Boundary] | None` (`None`: the language has no rules; otherwise every line that matches, in line order, one rule per line; `own` as in spec §2.4); `_common.own_packages(repo_root: Path, index: dict[str, str]) -> tuple[dict[str, list[str]], list[str]]`; `hotspots.json` key `own_packages` (`{"python": [...], "typescript": [...], "java": [...]}`, sorted).
+- Consumes: `build_context`, `_rx`, `_snippet` and `_common.detector_language` from the same module; `_common.tracked_index`.
 
-- [ ] **Step 1: Write the samples.** Each path is under `tests/boundaries/samples/`. A `positive_*` sample must be tagged with its directory's label; any other stem must not be; files under `none/` must cross no boundary.
+- [ ] **Step 1: Write the samples.** Each path is under `tests/boundaries/samples/`. In a `positive_*` sample every line that must be tagged ends with a `boundary: <label>` comment, and exactly those lines must be tagged, with exactly those labels; any other stem carries no marker and must not be tagged with its directory's label; files under `none/` must cross no boundary. An `own-packages: …` comment names the packages the sample's project owns (spec §9).
 
 `http/python/positive_requests_get.py`:
 ```python
@@ -479,7 +524,7 @@ import requests
 
 
 def fetch_profile(user_id):
-    return requests.get(f"https://api.example.com/users/{user_id}", timeout=5).json()
+    return requests.get(f"https://api.example.com/users/{user_id}", timeout=5).json()  # boundary: HTTP
 ```
 
 `http/python/negative_dict_named_requests.py` (Celery's worker state, AC-2):
@@ -497,7 +542,7 @@ from sqlalchemy.orm import Session
 
 
 def load(session: Session, task_id):
-    return session.query(Task).filter(Task.task_id == task_id).first()
+    return session.query(Task).filter(Task.task_id == task_id).first()  # boundary: database
 ```
 
 `database/python/negative_execute_definition.py`:
@@ -511,7 +556,7 @@ class Request:
 `queue-messaging/python/positive_producer_publish.py`:
 ```python
 def send(producer, body, routing_key):
-    return producer.publish(body, routing_key=routing_key, retry=True)
+    return producer.publish(body, routing_key=routing_key, retry=True)  # boundary: queue/messaging
 ```
 
 `queue-messaging/python/negative_pool_apply_async.py`:
@@ -523,10 +568,43 @@ def run(pool, fn, args):
     return pool.apply_async(fn, args)
 ```
 
+`queue-messaging/python/negative_own_package_apply_async.py` (Celery's own canvas, spec §2.2; fails without the own-package rule):
+```python
+# own-packages: celery
+# Celery's own canvas: inside the library, `self.apply_async(` calls Celery's
+# own code, so its import of itself is not a client import (#58).
+from celery._state import current_app
+from celery.utils.functional import maybe_list
+
+
+class Signature(dict):
+    def delay(self, *partial_args, **partial_kwargs):
+        return self.apply_async(partial_args, partial_kwargs)
+```
+
+`queue-messaging/python/positive_celery_delay.py` (an application that owns `proj` still calls through `celery`):
+```python
+# own-packages: proj
+from celery import shared_task
+
+from proj.models import User
+
+
+@shared_task
+def send_welcome(user_id):
+    return user_id
+
+
+def register(email):
+    user = User.create(email)
+    send_welcome.delay(user.id)  # boundary: queue/messaging
+    return user
+```
+
 `llm/python/positive_messages_create.py`:
 ```python
 def ask(client, prompt):
-    return client.messages.create(model="m", max_tokens=100, messages=[{"role": "user", "content": prompt}])
+    return client.messages.create(model="m", max_tokens=100, messages=[{"role": "user", "content": prompt}])  # boundary: LLM
 ```
 
 `llm/python/negative_message_list.py`:
@@ -542,7 +620,7 @@ import boto3
 
 
 def table():
-    return boto3.client("dynamodb", region_name="eu-west-1")
+    return boto3.client("dynamodb", region_name="eu-west-1")  # boundary: cloud SDK
 ```
 
 `cloud-sdk/python/negative_boto3_in_string.py`:
@@ -554,7 +632,7 @@ def explain():
 `filesystem/python/positive_open.py`:
 ```python
 def read_pid(path):
-    with open(path) as fh:
+    with open(path) as fh:  # boundary: filesystem
         return int(fh.read())
 ```
 
@@ -568,7 +646,7 @@ class Pidfile:
 `scheduler/python/positive_call_later.py`:
 ```python
 def arm(hub, job, timeout, on_timeout):
-    return hub.call_later(timeout, on_timeout, job)
+    return hub.call_later(timeout, on_timeout, job)  # boundary: scheduler
 ```
 
 `scheduler/python/negative_schedule_identifier.py`:
@@ -612,7 +690,7 @@ def open(path):
 `http/typescript/positive_fetch.ts`:
 ```typescript
 export async function getRelease(id: string) {
-  const res = await fetch(`https://api.example.com/releases/${id}`);
+  const res = await fetch(`https://api.example.com/releases/${id}`);  // boundary: HTTP
   return res.json();
 }
 ```
@@ -627,7 +705,7 @@ export async function batch(ids: string[]) {
 `database/typescript/positive_prisma.ts`:
 ```typescript
 export async function save(item: Item) {
-  await db.release.create({ data: item });
+  await db.release.create({ data: item });  // boundary: database
 }
 ```
 
@@ -641,7 +719,7 @@ export function build() {
 `queue-messaging/typescript/positive_publish.ts`:
 ```typescript
 export async function enqueue(message: unknown): Promise<void> {
-  await broker.publish({ body: JSON.stringify(message) });
+  await broker.publish({ body: JSON.stringify(message) });  // boundary: queue/messaging
 }
 ```
 
@@ -655,7 +733,7 @@ export async function retry(job: Job) {
 `llm/typescript/positive_completions.ts`:
 ```typescript
 export async function ask(client: OpenAI, prompt: string) {
-  return client.chat.completions.create({ model: "m", messages: [{ role: "user", content: prompt }] });
+  return client.chat.completions.create({ model: "m", messages: [{ role: "user", content: prompt }] });  // boundary: LLM
 }
 ```
 
@@ -671,7 +749,7 @@ export function draft(text: string) {
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 
 export async function get(client: S3Client, key: string) {
-  return client.send(new GetObjectCommand({ Bucket: "b", Key: key }));
+  return client.send(new GetObjectCommand({ Bucket: "b", Key: key }));  // boundary: cloud SDK
 }
 ```
 
@@ -687,7 +765,7 @@ export function notify(bus: Bus) {
 import { readFile } from "node:fs/promises";
 
 export async function load(path: string) {
-  return JSON.parse(await readFile(path, "utf8"));
+  return JSON.parse(await readFile(path, "utf8"));  // boundary: filesystem
 }
 ```
 
@@ -701,7 +779,7 @@ export function parse(reader: Reader) {
 `scheduler/typescript/positive_set_interval.ts`:
 ```typescript
 export function start(poll: () => void) {
-  return setInterval(poll, 60_000);
+  return setInterval(poll, 60_000);  // boundary: scheduler
 }
 ```
 
@@ -738,7 +816,7 @@ class Client {
     private final RestTemplate rest;
 
     Profile get(String id) {
-        return rest.getForObject("https://api.example.com/users/" + id, Profile.class);
+        return rest.getForObject("https://api.example.com/users/" + id, Profile.class);  // boundary: HTTP
     }
 }
 ```
@@ -760,7 +838,7 @@ class Repo {
     private final JdbcTemplate jdbc;
 
     int count() {
-        return jdbc.queryForObject("SELECT count(*) FROM orders", Integer.class);
+        return jdbc.queryForObject("SELECT count(*) FROM orders", Integer.class);  // boundary: database
     }
 }
 ```
@@ -782,7 +860,7 @@ class Publisher {
     private final KafkaTemplate<String, String> kafka;
 
     void publish(String event) {
-        kafka.send("events", event);
+        kafka.send("events", event);  // boundary: queue/messaging
     }
 }
 ```
@@ -802,7 +880,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 
 class Storage {
     S3Client client() {
-        return S3Client.builder().build();
+        return S3Client.builder().build();  // boundary: cloud SDK
     }
 }
 ```
@@ -823,7 +901,7 @@ import java.nio.file.Path;
 
 class Config {
     String load(Path p) throws Exception {
-        return Files.readString(p);
+        return Files.readString(p);  // boundary: filesystem
     }
 }
 ```
@@ -842,7 +920,7 @@ class Upload {
 import org.springframework.scheduling.annotation.Scheduled;
 
 class Cleanup {
-    @Scheduled(fixedRate = 60000)
+    @Scheduled(fixedRate = 60000)  // boundary: scheduler
     void run() {
         purge();
     }
@@ -882,10 +960,15 @@ class Imports {}
 ```python
 """Boundary rules (#58): a boundary is a call, never a name.
 
-Samples live in tests/boundaries/samples/<label-slug>/<language>/. A
-positive_<shape> sample must be tagged with the directory's label; any other
-stem must not be. Samples under none/ must not be tagged at all. Samples are
-discovered from the tree; there is no list to update.
+Samples live in tests/boundaries/samples/<label-slug>/<language>/. In a
+positive_<shape> sample every line that must be tagged ends with a
+`boundary: <label>` comment, and the matcher must tag exactly those lines
+with exactly those labels. Any other stem must not be tagged with the
+directory's label, and samples under none/ must not be tagged at all. An
+`own-packages: a, b` comment names the packages the sample's project owns;
+without it the project owns none. Comments are blank to the matcher, so
+neither marker can change what it finds. Samples are discovered from the
+tree; there is no list to update.
 """
 
 from __future__ import annotations
@@ -906,6 +989,20 @@ NONE_SHAPES = {"python": ("comment", "docstring", "import"),
                "typescript": ("comment", "import"), "java": ("comment", "import")}
 
 
+MARK = re.compile(r"(?:#|//)\s*boundary:\s*(.+?)\s*$")
+OWN = re.compile(r"^\s*(?:#|//)\s*own-packages:\s*(.+?)\s*$", re.M)
+
+
+def _marked(text: str) -> set[tuple[int, str]]:
+    return {(i, m.group(1)) for i, line in enumerate(text.split("\n"), 1)
+            if (m := MARK.search(line))}
+
+
+def _own(text: str, lang: str) -> dict[str, list[str]]:
+    m = OWN.search(text)
+    return {lang: m.group(1).replace(",", " ").split()} if m else {}
+
+
 def _cases() -> list[tuple[str, str, str, Path]]:
     return [(p.parent.parent.name, p.parent.name, p.stem, p)
             for p in sorted(SAMPLES.glob("*/*/*")) if p.suffix in EXT_LANG]
@@ -917,16 +1014,22 @@ CASES = _cases()
 @pytest.mark.parametrize("slug,lang,stem,path", CASES,
                          ids=[f"{s}-{lang}-{stem}" for s, lang, stem, _ in CASES])
 def test_sample(catalog, slug, lang, stem, path):
-    found = find_boundaries(catalog, f"src/{path.name}", path.read_text(encoding="utf-8"), lang)
+    text = path.read_text(encoding="utf-8")
+    found = find_boundaries(catalog, f"src/{path.name}", text, lang, _own(text, lang))
     assert found is not None, f"no boundary rules for {lang}"
-    labels = {b.label for b in found}
+    got = {(b.line, b.label) for b in found}
     seen = [(b.label, b.rule_id, b.line) for b in found]
+    marked = _marked(text)
     if slug == "none":
-        assert not found, f"{path} must cross no boundary, got {seen}"
+        assert not found and not marked, f"{path} must cross no boundary, got {seen}"
     elif stem.startswith("positive"):
-        assert LABELS[slug] in labels, f"{path} is not tagged {LABELS[slug]!r}: {seen}"
+        assert any(label == LABELS[slug] for _, label in marked), (
+            f"{path} marks no line {LABELS[slug]!r}")
+        assert got == marked, f"{path}: marked {sorted(marked)}, tagged {seen}"
     else:
-        assert LABELS[slug] not in labels, f"{path} is wrongly tagged {LABELS[slug]!r}: {seen}"
+        assert not marked, f"{path}: a negative sample marks no line"
+        assert LABELS[slug] not in {b.label for b in found}, (
+            f"{path} is wrongly tagged {LABELS[slug]!r}: {seen}")
 
 
 def test_every_label_with_a_rule_has_both_samples(catalog):
@@ -964,11 +1067,11 @@ def test_boundary_rules_are_well_formed(catalog):
 
 
 def test_a_language_without_rules_is_not_looked_at(catalog):
-    assert find_boundaries(catalog, "deploy/values.yaml", "url: http://x\n", "yaml") is None
+    assert find_boundaries(catalog, "deploy/values.yaml", "url: http://x\n", "yaml", {}) is None
 
 
 def test_javascript_uses_the_typescript_rules(catalog):
-    found = find_boundaries(catalog, "a.mjs", "const r = await fetch(url);\n", "javascript")
+    found = find_boundaries(catalog, "a.mjs", "const r = await fetch(url);\n", "javascript", {})
     assert [(b.label, b.line) for b in found] == [("HTTP", 1)]
 
 
@@ -977,7 +1080,7 @@ def test_one_label_per_line_and_line_order(catalog):
            "def sync(session):\n"
            "    rows = session.query(Row).all()\n"
            "    requests.post('https://x', json=rows, timeout=3)\n")
-    found = find_boundaries(catalog, "a.py", src, "python")
+    found = find_boundaries(catalog, "a.py", src, "python", {})
     assert [(b.label, b.line, b.rule_id) for b in found] == [
         ("database", 3, "B-py-session"), ("HTTP", 4, "B-py-requests")]
     assert found[1].snippet == "requests.post('https://x', json=rows, timeout=3)"
@@ -989,13 +1092,13 @@ def test_library_name_with_a_non_http_method_is_not_http(catalog):
            "active.pop(r.id, None)\n"
            "requests.pop(r.id, None)\n"
            "requests.get(url, timeout=3)\n")
-    found = find_boundaries(catalog, "a.py", src, "python")
+    found = find_boundaries(catalog, "a.py", src, "python", {})
     assert [(b.label, b.line) for b in found] == [("HTTP", 5)]
 
 
 def test_crlf_lines_still_match(catalog):
     src = "import requests\r\nrequests.get(url, timeout=3)\r\n"
-    found = find_boundaries(catalog, "a.py", src, "python")
+    found = find_boundaries(catalog, "a.py", src, "python", {})
     assert [(b.label, b.line) for b in found] == [("HTTP", 2)]
 
 
@@ -1003,14 +1106,135 @@ def test_a_malformed_rule_is_skipped(catalog):
     broken = {"boundaries": {"python": [{"id": "B-x", "label": "HTTP", "pattern": "("},
                                         *catalog["boundaries"]["python"]]},
               "aliases": {}}
-    found = find_boundaries(broken, "a.py", "import requests\nrequests.get(u)\n", "python")
+    found = find_boundaries(broken, "a.py", "import requests\nrequests.get(u)\n", "python", {})
     assert [b.rule_id for b in found] == ["B-py-requests"]
+
+
+@pytest.mark.parametrize("lang,src,own", [
+    ("python", "import celery\nfrom celery.app import task\nx.apply_async()\n", ["celery"]),
+    ("python", "import celery.app.task as t\nx.delay()\n", ["celery"]),
+    ("python", "import celery, os\nx.delay()\n", ["celery"]),
+    ("python", "import celery\r\nx.delay()\r\n", ["celery"]),
+    ("typescript", 'import { S3Client } from "@aws-sdk/client-s3";\n'
+                   'await client.send(new GetObjectCommand({}));\n', ["@aws-sdk/client-s3"]),
+    ("typescript", 'const s3 = require("@aws-sdk/client-s3");\n'
+                   'await client.send(new GetObjectCommand({}));\n', ["@aws-sdk/client-s3"]),
+    ("java", "import org.springframework.web.client.RestTemplate;\n"
+             "class A { P g() { return rest.getForObject(u, P.class); } }\n",
+     ["org.springframework.web.client"]),
+    ("java", "import org.springframework.web.client.*;\n"
+             "class A { P g() { return rest.getForObject(u, P.class); } }\n",
+     ["org.springframework.web.client"]),
+])
+def test_an_import_of_the_projects_own_package_never_satisfies_a_gate(catalog, lang, src, own):
+    assert find_boundaries(catalog, "a", src, lang, {lang: own}) == []
+    assert find_boundaries(catalog, "a", src, lang, {}), "the gate opens without own packages"
+
+
+def test_a_library_import_beside_an_own_import_still_satisfies_the_gate(catalog):
+    src = "import proj, requests\nfrom proj import api\nrequests.get(u, timeout=3)\n"
+    found = find_boundaries(catalog, "a.py", src, "python", {"python": ["proj"]})
+    assert [(b.label, b.line) for b in found] == [("HTTP", 3)]
+
+
+def test_unknown_own_packages_skip_gated_rules_only(catalog):
+    src = "import requests\nrequests.get(u, timeout=3)\ncur.execute(q)\n"
+    found = find_boundaries(catalog, "a.py", src, "python", None)
+    assert [(b.rule_id, b.line) for b in found] == [("B-py-execute", 3)]
+```
+
+Create `tests/test_own_packages.py`:
+
+```python
+"""The scanned project's own package names (#58): an import of one never
+opens a boundary rule's `require` gate, so a library calling its own code is
+not a call through that library."""
+
+from __future__ import annotations
+
+import json
+import subprocess
+from pathlib import Path
+
+import _common
+
+
+def _git_repo(root: Path, files: dict[str, str]) -> Path:
+    root.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.name", "T"], cwd=root, check=True)
+    for rel, text in files.items():
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(text.encode("utf-8"))
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=root, check=True)
+    return root
+
+
+def test_own_packages_come_from_tracked_files(tmp_path):
+    repo = _git_repo(tmp_path / "repo", {
+        "celery/__init__.py": "",
+        "celery/app/__init__.py": "",
+        "src/kit/__init__.py": "",
+        "examples/requests/__init__.py": "",   # an example named like a library
+        "docs/conf.py": "",
+        "package.json": '{"name": "@acme/web"}',
+        "packages/db/package.json": '{"name": "@acme/db", "private": true}',
+        "broken/package.json": "{not json",
+        "src/main/java/com/acme/A.java": (
+            "/*\r\npackage com.wrong;\r\n */\r\n@Generated\r\npackage com.acme;\r\n\r\nclass A {}\r\n"),
+        "src/main/java/com/acme/B.java": "/* licence */ package com.acme.b; // b\nclass B {}\n",
+        "Default.java": "import java.util.List;\nclass Default {}\npackage com.never;\n",
+        "deep/package.json": "[" * 200000,
+    })
+    (repo / "untracked").mkdir()
+    (repo / "untracked" / "__init__.py").write_text("")
+    # a tracked symlink is never followed, even to a well-formed package.json
+    (tmp_path / "outside.json").write_text('{"name": "leaked"}')
+    (repo / "link").mkdir()
+    (repo / "link" / "package.json").symlink_to(tmp_path / "outside.json")
+    subprocess.run(["git", "add", "link"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "link"], cwd=repo, check=True)
+    own, warnings = _common.own_packages(repo, _common.tracked_index(repo))
+    assert own == {"python": ["celery", "kit"], "typescript": ["@acme/db", "@acme/web"],
+                   "java": ["com.acme", "com.acme.b"]}
+    assert len(warnings) == 1 and "2 tracked file(s)" in warnings[0], warnings
+    assert "broken/package.json" in warnings[0], warnings
+
+
+def test_test_and_fixture_directories_are_not_own(tmp_path):
+    # A fixture's copy of axios must not hide axios calls in src/, and a test
+    # helper declared in Spring's package must not hide RestTemplate calls.
+    repo = _git_repo(tmp_path / "repo", {
+        "package.json": '{"name": "web"}',
+        "test/fixtures/node_modules/axios/package.json": '{"name": "axios"}',
+        "examples/basic/package.json": '{"name": "got"}',
+        "src/main/java/com/acme/Client.java": "package com.acme;\nclass Client {}\n",
+        "src/test/java/org/springframework/web/client/Helper.java": (
+            "package org.springframework.web.client;\nclass Helper {}\n"),
+    })
+    own, warnings = _common.own_packages(repo, _common.tracked_index(repo))
+    assert own == {"python": [], "typescript": ["web"], "java": ["com.acme"]}, own
+    assert warnings == []
+
+
+def test_a_repository_with_no_packages_owns_none(tmp_path):
+    repo = _git_repo(tmp_path / "repo", {"app.py": "print(1)\n"})
+    assert _common.own_packages(repo, _common.tracked_index(repo)) == (
+        {"python": [], "typescript": [], "java": []}, [])
+
+
+def test_hotspots_record_own_packages(scanned_repo):
+    data = json.loads((scanned_repo / ".thunderstruck" / "hotspots.json").read_text())
+    assert data["own_packages"] == {"python": [], "typescript": ["fixture"], "java": []}
 ```
 
 - [ ] **Step 3: Run them to verify they fail**
 
-Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/boundaries -q`
-Expected: collection error, `ImportError: cannot import name 'find_boundaries' from 'detectors'`.
+Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/boundaries tests/test_own_packages.py -q`
+Expected: collection error, `ImportError: cannot import name 'find_boundaries' from 'detectors'`; `tests/test_own_packages.py` fails with `AttributeError: module '_common' has no attribute 'own_packages'` and `KeyError: 'own_packages'`.
 
 - [ ] **Step 4: Write the matcher.** Append to `scripts/detectors/__init__.py`:
 
@@ -1029,19 +1253,75 @@ class Boundary:
     snippet: str
 
 
+# An import of the scanned project's own package never opens a `require`
+# gate: inside Celery every file imports `celery`, and `self.apply_async(` there
+# is Celery calling itself, not a client sending a message (#58).
+_PY_FROM = re.compile(r"^[ \t]*from[ \t]+([\w.]+)[ \t]+import\b")
+_PY_IMPORT = re.compile(r"^([ \t]*import[ \t]+)([\w. \t,]+?)[ \t]*$")
+_JAVA_IMPORT = re.compile(r"^[ \t]*import[ \t]+(?:static[ \t]+)?([\w.]+?)(?:\.\*)?[ \t]*;")
+_TS_SPECIFIER = re.compile(r"""(\b(?:from|import|require)\s*\(?\s*)(['"])([^'"\n]+)\2""")
+
+
+def _own_module(module: str, own: frozenset[str]) -> bool:
+    return module.split(".")[0] in own
+
+
+def _without_own_imports(code: str, det_lang: str, own: frozenset[str]) -> str:
+    """`code` with every import of the project's own packages removed: what a
+    boundary rule's `require` is searched in."""
+    if not own:
+        return code
+    if det_lang == "typescript":
+        def blank(m: re.Match) -> str:
+            spec = m.group(3)
+            if any(spec == n or spec.startswith(n + "/") for n in own):
+                return m.group(1) + "''"
+            return m.group(0)
+        return _TS_SPECIFIER.sub(blank, code)
+    out = []
+    for line in code.split("\n"):
+        line = line.rstrip("\r")
+        if det_lang == "python":
+            m = _PY_FROM.match(line)
+            if m and _own_module(m.group(1), own):
+                line = ""
+            elif (m := _PY_IMPORT.match(line)):
+                # `import celery, os` keeps `import os`
+                items = [x.strip() for x in m.group(2).split(",") if x.strip()]
+                kept = [x for x in items if not _own_module(x.split()[0], own)]
+                if len(kept) < len(items):
+                    line = m.group(1) + ", ".join(kept) if kept else ""
+        elif det_lang == "java":
+            m = _JAVA_IMPORT.match(line)
+            if m:
+                parts = m.group(1).split(".")
+                if any(".".join(parts[:k]) in own for k in range(1, len(parts) + 1)):
+                    line = ""
+        out.append(line)
+    return "\n".join(out)
+
+
 def find_boundaries(catalog: dict[str, Any], rel_path: str, text: str,
-                    lang: str) -> list[Boundary] | None:
+                    lang: str, own: dict[str, list[str]] | None) -> list[Boundary] | None:
     """Every line that calls across a boundary, by the catalog's `boundaries`
     rules, in line order and one rule per line (the first that matches).
-    None when the language has no rules, so a caller can say it never looked."""
-    rules = (catalog.get("boundaries") or {}).get(_common.detector_language(catalog, lang))
+    None when the language has no rules, so a caller can say it never looked.
+
+    `own` is hotspots.json's `own_packages`. None means the project's own
+    package names are unknown: every rule with a `require` is skipped rather
+    than opened by the project's imports of itself."""
+    det_lang = _common.detector_language(catalog, lang)
+    rules = (catalog.get("boundaries") or {}).get(det_lang)
     if not rules:
         return None
     ctx = build_context(rel_path, text, lang)
+    gate = (None if own is None else
+            _without_own_imports(ctx.code_text, det_lang, frozenset(own.get(det_lang) or ())))
     active: list[tuple[str, str, re.Pattern]] = []
     for rule in rules:
         try:
-            if rule.get("require") and not _rx(rule["require"], True).search(ctx.code_text):
+            if rule.get("require") and (gate is None
+                                        or not _rx(rule["require"], True).search(gate)):
                 continue  # the call goes through a library this file never imports
             active.append((rule["label"], rule["id"], _rx(rule["pattern"])))
         except re.error:
@@ -1058,7 +1338,112 @@ def find_boundaries(catalog: dict[str, Any], rel_path: str, text: str,
     return out
 ```
 
-- [ ] **Step 5: Add the rules.** Append to the end of `catalog/stability.yaml`:
+- [ ] **Step 5: Work out the project's own packages (spec §2.3).** Append to `scripts/_common.py` (it already imports `json` and `re`):
+
+```python
+# ---------------------------------------------------------- own packages --
+# The scanned project's own package names, per detector language (#58): an
+# import of one never opens a boundary rule's `require` gate, so a library
+# calling its own code (`self.apply_async(` inside Celery) is not a call
+# through that library. Worked out from tracked files only, so it is a
+# function of the commit.
+_JAVA_PACKAGE = re.compile(r"package[ \t]+([\w.]+)[ \t]*;")
+_REGULAR_FILE = ("100644", "100755")
+# Directories whose package.json or .java files are not the project's own: a
+# fixture's node_modules/axios/package.json must not make `axios` own (#58).
+NOT_OWN_DIRS = frozenset({
+    "node_modules", "test", "tests", "__tests__", "testing", "testdata",
+    "fixture", "fixtures", "example", "examples", "sample", "samples", "demo", "demos"})
+
+
+def _java_package(lines) -> str | None:
+    """The `package` declaration: the first line that is not blank, a
+    comment or an annotation, when it is one. Reads no further."""
+    in_block = False
+    for raw in lines:
+        line = raw.strip()
+        while line:
+            if in_block:
+                end = line.find("*/")
+                if end < 0:
+                    line = ""
+                else:
+                    line, in_block = line[end + 2:].strip(), False
+            elif line.startswith("/*"):
+                line, in_block = line[2:], True
+            elif line.startswith("//"):
+                line = ""
+            else:
+                break
+        if not line or line.startswith("@"):
+            continue
+        m = _JAVA_PACKAGE.match(line)
+        return m.group(1) if m else None
+    return None
+
+
+def own_packages(repo_root: Path, index: dict[str, str]) -> tuple[dict[str, list[str]], list[str]]:
+    """({"python": [...], "typescript": [...], "java": [...]}, warnings), each
+    list sorted.
+
+    python      every directory at the root, or directly under a root src/,
+                that holds a tracked __init__.py
+    typescript  the "name" of every tracked package.json
+    java        the `package` declaration of every tracked .java file
+    TypeScript and Java skip any file with a NOT_OWN_DIRS segment in its path.
+    Only regular files are read; a symlink is never followed. A file that
+    cannot be read or parsed is skipped, and one warning names the first.
+    """
+    py: set[str] = set()
+    ts: set[str] = set()
+    java: set[str] = set()
+    unreadable: list[str] = []
+    for rel in sorted(index):
+        parts = rel.split("/")
+        if parts[-1] in ("__init__.py", "__init__.pyi"):
+            if (len(parts) == 2 or (len(parts) == 3 and parts[0] == "src")) \
+                    and parts[-2].isidentifier():
+                py.add(parts[-2])
+            continue
+        if index[rel] not in _REGULAR_FILE or any(p.lower() in NOT_OWN_DIRS for p in parts[:-1]):
+            continue
+        if parts[-1] == "package.json":
+            try:
+                doc = json.loads((repo_root / rel).read_text(encoding="utf-8"))
+            except (OSError, ValueError, RecursionError):
+                unreadable.append(rel)
+                continue
+            name = doc.get("name") if isinstance(doc, dict) else None
+            if isinstance(name, str) and name.strip():
+                ts.add(name.strip())
+        elif rel.endswith(".java"):
+            try:
+                with open(repo_root / rel, encoding="utf-8", errors="replace") as fh:
+                    package = _java_package(fh)
+            except OSError:
+                unreadable.append(rel)
+                continue
+            if package:
+                java.add(package)
+    warnings = []
+    if unreadable:
+        warnings.append(
+            f"{len(unreadable)} tracked file(s) could not be read for the project's own "
+            f"package names (first: {unreadable[0]}); a call through a package one of "
+            f"them declares may be listed as a library boundary.")
+    return {"python": sorted(py), "typescript": sorted(ts), "java": sorted(java)}, warnings
+```
+
+In `scripts/signals.py`, in `build`, directly after `index = c.tracked_index(repo)` add:
+
+```python
+    own, own_warnings = c.own_packages(repo, index)
+    warnings.extend(own_warnings)
+```
+
+and in the returned dict, directly after `"warnings": warnings,` add `"own_packages": own,`.
+
+- [ ] **Step 6: Add the rules.** Append to the end of `catalog/stability.yaml`:
 
 ```yaml
 
@@ -1196,15 +1581,15 @@ boundaries:
       require: '^\s*import\s+(?:org\.springframework\.scheduling|java\.util\.concurrent)\b'
 ```
 
-- [ ] **Step 6: Run the tests to verify they pass**
+- [ ] **Step 7: Run the tests to verify they pass**
 
-Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/boundaries tests/detectors -q`
-Expected: PASS (48 sample cases plus the rule tests; the detector suite is unaffected, since `run_detectors` reads only `patterns`).
+Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/boundaries tests/test_own_packages.py tests/detectors -q`
+Expected: PASS (50 sample cases plus the rule and own-package tests; the detector suite is unaffected, since `run_detectors` reads only `patterns`).
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add scripts/detectors/__init__.py catalog/stability.yaml tests/boundaries/
+git add scripts/detectors/__init__.py scripts/_common.py scripts/signals.py catalog/stability.yaml tests/boundaries/ tests/test_own_packages.py
 git commit -m "Boundaries: call-shaped catalog rules with samples, not vocabularies (#58)"
 ```
 
@@ -1215,12 +1600,12 @@ git commit -m "Boundaries: call-shaped catalog rules with samples, not vocabular
 **Satisfies:** AC-1.
 
 **Files:**
-- Modify: `scripts/bundle.py` (delete `BOUNDARY_PATTERNS`; rewrite `section_boundaries`; its call in `build_bundle`; the import block)
+- Modify: `scripts/bundle.py` (delete `BOUNDARY_PATTERNS`; rewrite `section_boundaries`; its call in `build_bundle`; a warning in `main`; the import block)
 - Modify: `tests/test_pipeline.py`
 
 **Interfaces:**
-- Consumes: `detectors.find_boundaries`, `detectors.Boundary` (Task 5).
-- Produces: `section_boundaries(text: str, rel: str, lang: str, catalog: dict) -> str`.
+- Consumes: `detectors.find_boundaries`, `detectors.Boundary`, `hotspots.json`'s `own_packages` (Task 5).
+- Produces: `section_boundaries(text: str, rel: str, lang: str, catalog: dict, own: dict[str, list[str]] | None) -> str`.
 
 - [ ] **Step 1: Write the failing tests.** Append to `tests/test_pipeline.py`:
 
@@ -1244,7 +1629,8 @@ def test_bundle_says_when_a_language_has_no_boundary_rules(catalog):
     # scanned_repo uses, so the section is built directly.
     import bundle
     text = "kind: VirtualService\nspec:\n  http:\n    - route: []\n"
-    section = bundle.section_boundaries(text, "deploy/releases-virtualservice.yaml", "yaml", catalog)
+    section = bundle.section_boundaries(text, "deploy/releases-virtualservice.yaml", "yaml",
+                                       catalog, {})
     assert section == ("## External boundaries\n\nNot looked for: no boundary rules exist "
                        "for yaml files.\n\n")
 
@@ -1252,12 +1638,23 @@ def test_bundle_says_when_a_language_has_no_boundary_rules(catalog):
 def test_bundle_shows_no_boundary_from_a_comment(scanned_repo):
     section = _boundaries_section(scanned_repo, "src/sync/scheduler.ts")
     assert "None detected in this file." in section
+
+
+def test_bundle_boundaries_say_when_own_packages_are_unknown(catalog):
+    import bundle
+    text = "import requests\n\n\ndef get(u):\n    return requests.get(u, timeout=3)\n"
+    assert bundle.section_boundaries(text, "src/a.py", "python", catalog, None) == (
+        "## External boundaries\n\nNone detected in this file.\n\n"
+        "Calls through a library's own name were not looked for: the project's "
+        "own package names are not recorded with the hotspots.\n\n")
+    assert "requests.get(u, timeout=3)" in bundle.section_boundaries(
+        text, "src/a.py", "python", catalog, {})
 ```
 
 - [ ] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_pipeline.py -q -k "boundar"`
-Expected: FAIL on all three (today `releases.ts` lists `setTimeout` under **scheduler**, `section_boundaries` takes two arguments, and `scheduler.ts` tags `fetchRelease(` and a comment).
+Expected: FAIL on all four (today `releases.ts` lists `setTimeout` under **scheduler**, `section_boundaries` takes two arguments, and `scheduler.ts` tags `fetchRelease(` and a comment).
 
 - [ ] **Step 3: Rewrite the section.** In `scripts/bundle.py`:
 
@@ -1266,22 +1663,27 @@ Expected: FAIL on all three (today `releases.ts` lists `setTimeout` under **sche
 3. Replace `section_boundaries` entirely with:
 
 ```python
-def section_boundaries(text: str, rel: str, lang: str, catalog: dict) -> str:
-    found = find_boundaries(catalog, rel, text, lang)
+def section_boundaries(text: str, rel: str, lang: str, catalog: dict,
+                       own: dict[str, list[str]] | None) -> str:
+    found = find_boundaries(catalog, rel, text, lang, own)
     if found is None:
         return (f"## External boundaries\n\nNot looked for: no boundary rules exist "
                 f"for {lang} files.\n\n")
+    gap = ([] if own is not None else
+           ["Calls through a library's own name were not looked for: the project's "
+            "own package names are not recorded with the hotspots.", ""])
     shown: dict[str, list[Boundary]] = {}
     for b in found:
         shown.setdefault(b.label, [])
         if len(shown[b.label]) < 4:
             shown[b.label].append(b)
     if not shown:
-        return "## External boundaries\n\nNone detected in this file.\n\n"
+        return "\n".join(["## External boundaries", "", "None detected in this file.", "",
+                          *gap, ""])
     out = ["## External boundaries crossed in this file", "",
            "Calls that match a boundary rule: a client library's call, or a method "
            "only a boundary client has. A call through a wrapper or an injected "
-           "client of another name is not listed.", ""]
+           "client of another name is not listed.", "", *gap]
     for label, entries in shown.items():
         out.append(f"**{label}**")
         for b in entries:
@@ -1290,8 +1692,24 @@ def section_boundaries(text: str, rel: str, lang: str, catalog: dict) -> str:
     return "\n".join(out)
 ```
 
-4. In `build_bundle`, change `section_boundaries(text, hs["file"]),` to `section_boundaries(text, hs["file"], hs["language"], catalog),`.
-5. In the module docstring, change "the boundaries it crosses" to "the boundary calls the catalog's rules find".
+4. In `build_bundle`, directly after `text = c.read_text(repo / hs["file"]) or ""` add
+
+```python
+    own = data.get("own_packages")
+    own = own if isinstance(own, dict) else None  # None: gated boundary rules skipped
+```
+
+and change `section_boundaries(text, hs["file"]),` to `section_boundaries(text, hs["file"], hs["language"], catalog, own),`.
+5. In `main`, directly before `dest_dir = c.out_dir(repo) / "bundles"` add (spec §8):
+
+```python
+    if not isinstance(data.get("own_packages"), dict):
+        print("warning: hotspots.json records no own package names (written before "
+              "#58); calls through a library's own name are not listed as boundaries. "
+              "Re-run signals.py.", file=sys.stderr)
+```
+
+6. In the module docstring, change "the boundaries it crosses" to "the boundary calls the catalog's rules find".
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -1350,7 +1768,7 @@ uv run scripts/bundle.py --repo "/tmp/thunderstruck-58/celery"
 uv run --no-project --with pyyaml python "/tmp/thunderstruck-58/count_boundaries.py" . "/tmp/thunderstruck-58/celery" "/tmp/thunderstruck-58/celery/.thunderstruck/bundles"
 ```
 
-Expected: `total: 68 shown, 51 from a comment, docstring or import` for the frozen bundles, and `total: 27 shown, 0 from a comment, docstring or import` after (spec §2.6). Keep both outputs for Task 8 and the PR.
+Expected: `total: 68 shown, 51 from a comment, docstring or import` for the frozen bundles, and `total: 11 shown, 0 from a comment, docstring or import` after, with `hotspots.json`'s `own_packages` `{"python": ["celery", "t"], "typescript": [], "java": []}` and the ten bundles at 48,637 estimated tokens in total (`index.json`'s `tokens_estimated`), the figure with Tasks 2–4's detector corrections applied before this task; the boundary rules alone give 48,901 (spec §2.6). Keep both outputs for Task 8 and the PR.
 
 - [ ] **Step 6: Commit**
 
@@ -1657,7 +2075,9 @@ The bundle's **External boundaries** also come from the catalog
 (`boundaries:`, per language, matched by `detectors.find_boundaries`), with
 samples under `tests/boundaries/samples/`. A boundary is a call, never a
 name: a call through a library's own name needs that library's import, so a
-dict called `requests` is not HTTP.
+dict called `requests` is not HTTP. An import of the scanned project's own
+package never counts (`own_packages` in `hotspots.json`), so a library
+calling itself is not a call through it.
 ```
 
 - [ ] **Step 2: Version and CHANGELOG.** Bump the minor version in all four places (the next minor above `main`'s at the time; `0.10.0` if `main` is still `0.9.x`), and add, with `<version>` the version just set:
@@ -1669,7 +2089,7 @@ Detector and boundary leads that hold up on library code (#58).
 
 ### Changed
 
-- **External boundaries are calls, not names.** The bundle's boundaries come from per-language rules in the catalog, matched on comment-stripped code: no comment, docstring, import or definition is listed, and a variable that shares a library's name (`requests.pop(…)` on a dict) is not a call through that library. On Celery's benchmark scan the ten bundles list 27 lines instead of 68, none from a comment, docstring or import. A language without rules says so. **Every bundle changes once, so cached findings are re-investigated on the first scan after upgrading.**
+- **External boundaries are calls, not names.** The bundle's boundaries come from per-language rules in the catalog, matched on comment-stripped code: no comment, docstring, import or definition is listed, and a variable that shares a library's name (`requests.pop(…)` on a dict) is not a call through that library. An import of the scanned project's own package never counts as importing a library, so a library calling its own code is not a boundary. On Celery's benchmark scan the ten bundles list 11 lines instead of 68, none from a comment, docstring or import. A language without rules says so. **Every bundle changes once, so cached findings are re-investigated on the first scan after upgrading.**
 - **Three false-lead shapes from Celery are corrected**, each with a negative sample: an `except` guarding a hook inside a retry branch that already discriminates (S04), best-effort teardown after a logged failure (S19), and a get-or-create on the row's own key (S07). Detectors gain `absent_before`.
 - **The report's lead table says what it means.** *Pattern coverage* is now *Detector leads by pattern*: a lead is a place to read, never proof a pattern is missing, and describes the default when code leaves a setting to its caller; no lead does not mean the pattern is present.
 
@@ -1708,6 +2128,8 @@ git commit -m "Library leads: docs and release note (#58)"
 The PR description states, from Tasks 6 and 8: the boundary count before and after (AC-1), lead precision before and after in the investigated bundles and across the repository (AC-6), and the hotspot list before and after with the two rank swaps (spec §3.3).
 
 ## Acceptance criteria coverage
+
+The own-package pair (`negative_own_package_apply_async`, `positive_celery_delay`, Task 5) serves #58's Goal and investigator story, not an AC.
 
 | AC | Tasks |
 |---|---|
