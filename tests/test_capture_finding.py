@@ -146,3 +146,14 @@ def test_hook_imports_the_stdlib_and_finding_shape_only():
             names.add(node.module.split(".")[0])
     outside = names - set(sys.stdlib_module_names) - {"__future__", "finding_shape"}
     assert not outside, f"capture_finding.py imports {outside}"
+
+
+def test_a_new_session_starts_a_fresh_record(scanned_copy):
+    """A later scan of an unchanged repo (findings/ deleted, or a bundle
+    requeued under newer rules) is a first delivery, not a re-spawn."""
+    out = scanned_copy / ".thunderstruck"
+    _run(_payload("valid", scanned_copy))
+    _run(_payload("valid", scanned_copy, session_id="s-2", agent_id="b-1"))
+    rec = json.loads((out / "agents" / "H01.json").read_text())
+    assert [(a["agent_id"], a["kind"]) for a in rec["agents"]] == [("b-1", "first")]
+    assert not (out / "agents" / "H01.attempt1.json").exists()

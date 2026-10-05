@@ -79,14 +79,22 @@ def main(stdin_text: str) -> None:
     if entry is None:
         return
     dest = out / "findings" / f"{entry['id']}.json"
+    # A finding with this bundle hash may be from an earlier scan of an
+    # unchanged repo (findings/ deleted, or requeued under newer rules). Only
+    # an agent already recorded from this session makes this a second delivery.
+    rec = _load(out / "agents" / f"{entry['id']}.json") or {}
+    earlier = [a for a in rec.get("agents") or [] if isinstance(a, dict)] \
+        if rec.get("bundle_hash") == entry["bundle_hash"] else []
+    this_run = any(a.get("session_id") == payload.get("session_id") for a in earlier)
     previous = _load(dest)
     kind = "first"
-    if previous and previous.get("bundle_hash") == entry["bundle_hash"]:
+    if this_run and previous and previous.get("bundle_hash") == entry["bundle_hash"]:
         finding_shape.write_json_atomic(out / "agents" / f"{entry['id']}.attempt1.json", previous)
         kind = "repair" if _listed_invalid(out, entry["id"]) else "respawn"
     finding_shape.write_json_atomic(dest, finding_shape.shape(doc, entry))
     agent = {k: payload.get(k) for k in ("agent_id", "session_id", "transcript_path", "stop_reason")}
-    finding_shape.record_agent(out, entry, {**agent, "kind": kind})
+    finding_shape.record_agent(out, entry, {**agent, "kind": kind},
+                               reset=bool(earlier) and not this_run)
 
 
 if __name__ == "__main__":

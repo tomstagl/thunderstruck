@@ -250,3 +250,22 @@ def test_without_hotspots_json_it_exits_2(scan):
     proc = subprocess.run([sys.executable, str(ROOT / "scripts" / "usage.py"),
                            "--repo", str(scan["repo"])], capture_output=True, text=True)
     assert proc.returncode == 2
+
+
+def test_a_session_with_nothing_in_the_window_is_not_the_orchestrator(scan):
+    _jsonl(scan["session"], [
+        _assistant("m0", "2026-10-03T08:00:00Z", {"input_tokens": 5}, "claude-opus-5-5")])
+    doc = _build(scan)
+    assert "orchestrator: session transcript not readable" in doc["missing"]
+    assert doc["source"] == "partial"
+
+
+def test_relayed_usage_beside_readable_transcripts_is_an_extra_agent(scan):
+    _record(scan["out"], "H01", [{"agent_id": "a1", "transcript_path": str(scan["session"]),
+                                  "kind": "first"}],
+            fallback=True, relayed_usage={"input_tokens": 40, "model": "sonnet"})
+    doc = _build(scan)
+    hs = doc["investigators"]["by_hotspot"]["H01"]
+    assert hs["agents"] == 2 and hs["weighted"] == 300 + 40
+    assert doc["source"] == "partial"
+    assert any(m.startswith("H01:") and "relayed" in m for m in doc["missing"])

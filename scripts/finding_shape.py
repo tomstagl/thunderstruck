@@ -175,9 +175,12 @@ def _record(out: Path, entry: dict) -> tuple[Path, dict]:
     return path, rec
 
 
-def record_agent(out: Path, entry: dict, agent: dict) -> None:
-    """Append to agents/<ID>.json, starting afresh for a different bundle."""
+def record_agent(out: Path, entry: dict, agent: dict, reset: bool = False) -> None:
+    """Append to agents/<ID>.json, starting afresh for a different bundle or
+    when reset (the record is from an earlier scan of the same bundle)."""
     path, rec = _record(out, entry)
+    if reset:
+        rec = {"hotspot_id": entry["id"], "bundle_hash": entry["bundle_hash"], "agents": []}
     rec["agents"].append(agent)
     write_json_atomic(path, rec)
 

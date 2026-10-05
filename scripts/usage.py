@@ -222,24 +222,30 @@ def build(repo: Path, now: str) -> dict:
                                f"transcript were not readable")
             hs_entries.extend(entries)
         n_agents = len(listed)
-        if not listed:
-            relayed = _relayed(rec)
-            if relayed is not None:
-                hs_entries.append(relayed)
-                n_agents = 1
-            else:
-                missing.append(f"{hid}: no agent recorded")
+        relayed = None if relayed_used else _relayed(rec)
+        if relayed is not None:
+            # a fallback save: an agent the hook never recorded
+            hs_entries.append(relayed)
+            n_agents += 1
+            if listed:
+                missing.append(f"{hid}: one agent measured from the usage the "
+                               f"orchestrator relayed")
+        elif not listed:
+            missing.append(f"{hid}: no agent recorded")
         agents += n_agents
         inv_entries.extend(hs_entries)
         hs = tally(hs_entries)
         by_hotspot[hid] = {"agents": n_agents, "calls": hs["calls"], "weighted": _total(hs)}
 
     investigators = tally(inv_entries, missing)
+    # An earlier session can be recorded for a bundle this scan did not
+    # re-investigate; only a session with calls in the window ran this scan.
     orch_entries = None
     for path in dict.fromkeys(sessions):
         orch_entries = read_entries(Path(path), since, now)
-        if orch_entries is not None:
+        if orch_entries:
             break
+    orch_entries = orch_entries or None
     if orch_entries is None:
         missing.append("orchestrator: session transcript not readable")
         orchestrator = tally([])
