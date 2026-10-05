@@ -91,8 +91,8 @@ A refactor with no behaviour change, so Task 2's hook and `save_finding.py` prod
 - Consumes: Task 1's `parse_result`, `shape`, `find_entry`, `write_json_atomic`, `record_agent`.
 - Produces: `capture_finding.main(stdin_text: str) -> None` and the script entry point. Writes `findings/<ID>.json`, `agents/<ID>.json`, and on a second delivery `agents/<ID>.attempt1.json`.
 
-- [ ] Add payload fixtures, each a `SubagentStop` input with `session_id`, `transcript_path`, `cwd` (rewritten by the test to its temp repo), `hook_event_name`, `agent_id`, `agent_type: "plugin:thunderstruck:thunderstruck-investigator"`, `stop_reason: "completed"` and `last_assistant_message`: `valid.json` (a canned finding for `H01`), `fenced.json`, `prose_first.json` (Review Focus 3), `unknown_id.json` (`H99`), `path_id.json` (`"../../etc/x"`), `other_agent.json` (`agent_type: "Explore"`), `not_json.json`, `no_fields.json` (no `agent_type`, no `last_assistant_message`, the pre-2.1.206 shape).
-- [ ] Write `tests/test_capture_finding.py`, failing. Each test builds the fixture repo, runs `signals.py` and `bundle.py`, then runs the hook as `python3 scripts/capture_finding.py` with the payload on stdin:
+- [x] Add payload fixtures, each a `SubagentStop` input with `session_id`, `transcript_path`, `cwd` (rewritten by the test to its temp repo), `hook_event_name`, `agent_id`, `agent_type: "plugin:thunderstruck:thunderstruck-investigator"`, `stop_reason: "completed"` and `last_assistant_message`: `valid.json` (a canned finding for `H01`), `fenced.json`, `prose_first.json` (Review Focus 3), `unknown_id.json` (`H99`), `path_id.json` (`"../../etc/x"`), `other_agent.json` (`agent_type: "Explore"`), `not_json.json`, `no_fields.json` (no `agent_type`, no `last_assistant_message`, the pre-2.1.206 shape).
+- [x] Write `tests/test_capture_finding.py`, failing. Each test builds the fixture repo, runs `signals.py` and `bundle.py`, then runs the hook as `python3 scripts/capture_finding.py` with the payload on stdin:
   - `valid` writes `findings/H01.json` byte-identical to `save_finding.py --id H01 --from <same JSON>`, and `agents/H01.json` with one agent;
   - `fenced` is the same as `valid`;
   - `prose_first`, `unknown_id`, `path_id`, `other_agent`, `not_json`, `no_fields`: nothing is written anywhere under `.thunderstruck/`;
@@ -103,8 +103,8 @@ A refactor with no behaviour change, so Task 2's hook and `save_finding.py` prod
   - every case exits 0 with empty stdout and stderr;
   - median of 20 runs of `valid` under 100 ms (copy the guardrail's latency test);
   - the source contains none of `import yaml`, `import lizard`, `from yaml`, `import _common`, and its AST imports only stdlib names and `finding_shape`.
-- [ ] Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_capture_finding.py -q`. Expected: failures, the script does not exist.
-- [ ] Implement `scripts/capture_finding.py` (§3.2), with the shebang and `# /// script` header of `guardrail.py` and the whole body in one `try/except BaseException: pass`, then `sys.exit(0)`:
+- [x] Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_capture_finding.py -q`. Expected: failures, the script does not exist.
+- [x] Implement `scripts/capture_finding.py` (§3.2), with the shebang and `# /// script` header of `guardrail.py` and the whole body in one `try/except BaseException: pass`, then `sys.exit(0)`:
 
 ```python
 def _root(cwd: str) -> Path | None:
@@ -147,9 +147,9 @@ def main(stdin_text: str) -> None:
 ```
 
   `_load` returns `None` on any read or parse error. `_listed_invalid(out, hid)` is true when `out/validation.json`'s `results` has an entry with `hotspot_id == hid` and `valid: false`; false on any read error. `entry["id"]` comes from the index, so the destination never contains payload text.
-- [ ] Add the `SubagentStop` entry to `hooks/hooks.json` exactly as §3.1. Extend `test_hooks_json_matches_current_tool_names` (or add a sibling test) to assert `hooks.json` has exactly the keys `PreToolUse` and `SubagentStop`, one entry each, and that the `SubagentStop` command runs `capture_finding.py` with `|| exit 0`.
-- [ ] Run the new tests, the full suite, and `claude plugin validate . --strict`.
-- [ ] Commit: `Save investigator results from a SubagentStop hook (#5)`.
+- [x] Add the `SubagentStop` entry to `hooks/hooks.json` exactly as §3.1. Extend `test_hooks_json_matches_current_tool_names` (or add a sibling test) to assert `hooks.json` has exactly the keys `PreToolUse` and `SubagentStop`, one entry each, and that the `SubagentStop` command runs `capture_finding.py` with `|| exit 0`.
+- [x] Run the new tests, the full suite, and `claude plugin validate . --strict`.
+- [x] Commit: `Save investigator results from a SubagentStop hook (#5)`.
 
 ### Task 3: `save_finding.py --check`, `--fallback` and `--usage` (AC-5, AC-6)
 
