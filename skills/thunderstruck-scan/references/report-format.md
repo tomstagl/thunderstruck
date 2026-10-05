@@ -10,10 +10,12 @@ All output lives in `.thunderstruck/` in the scanned repository.
 ├── index.json         thunderstruck.index/v1 — file → findings, read by the hook
 ├── hotspots.json      thunderstruck.hotspots/v1 — deterministic layer output
 ├── validation.json    thunderstruck.validation/v1 — what passed, what failed and why
+├── usage.json         thunderstruck.usage/v1 — what the scan consumed, counts only
 ├── catalog-brief.md   the Tier A/B catalog the investigator reads
 ├── context.json       thunderstruck.context/v1 — service context used by this scan
 ├── context/raw/       raw catalog responses, kept for audit, never read by bundles
 ├── bundles/           one briefing per hotspot, plus index.json
+├── agents/            per hotspot: which investigators delivered, and a replaced first attempt
 └── findings/          per-hotspot investigator output, keyed by bundle hash
 ```
 
@@ -26,8 +28,8 @@ were added without a schema bump; existing fields keep their meaning.
 - `scanned_at`: when `signals.py` ran (`hotspots.json` `generated_at`), the
   date `report.md` prints as *Scanned*. `generated_at` is when the report
   was rendered.
-- `run_warnings`: exactly the list under **Run warnings**: hotspot, context
-  and link warnings, in that order. `warnings` keeps its older content
+- `run_warnings`: exactly the list under **Run warnings**: hotspot, context,
+  link and usage warnings, in that order. `warnings` keeps its older content
   (hotspot and link warnings only).
 - `suppressed`: `[{detector, path, hits, reason}]`, one per suppression rule
   in `.thunderstruck.toml`.
@@ -39,6 +41,10 @@ were added without a schema bump; existing fields keep their meaning.
   hotspots that cite its file as `code` evidence (empty when none).
 - `not_scanned`: `{intro, items}`, the sentences under **Not scanned** in
   plain text, or `null` when the scan recorded no coverage gaps.
+- `consumption`: the `usage.json` behind the **Consumption** section, with
+  per-hotspot figures under `investigators.by_hotspot`, or `null` when this
+  scan was not measured. A `usage.json` from an earlier scan is ignored with
+  a run warning.
 
 ## The finding contract
 

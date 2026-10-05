@@ -230,7 +230,7 @@ def main(stdin_text: str) -> None:
   - model names render through `md.code`: a model `"[x](http://e)"` appears as inert code, checked with the rendering helpers in `tests/test_inert_report.py`.
 - [x] Run them; they fail.
 - [x] Implement. `render_consumption` builds every value with `md.code` or plain integers. `report.html` (#3) is not changed: it reads `report.json`, ignores the new `consumption` key, and `tests/test_report_html.py` must pass unchanged.
-- [ ] In Task 8's step 5 edit, keep #3's order: `usage.py`, then `report.py`, then `report_html.py` (`test_scan_step_5_renders_html_after_the_markdown_and_never_fails`).
+- [x] In Task 8's step 5 edit, keep #3's order: `usage.py`, then `report.py`, then `report_html.py` (`test_scan_step_5_renders_html_after_the_markdown_and_never_fails`).
 - [x] Run the new tests, the full suite and `uv run scripts/gen_sample_report.py --check`.
 - [x] Commit: `Report what a scan consumed (#5)`.
 
@@ -272,13 +272,13 @@ def main(stdin_text: str) -> None:
 
 **Files:** `skills/thunderstruck-scan/SKILL.md`, `skills/thunderstruck-scan/references/orchestration.md`, `skills/thunderstruck-scan/references/report-format.md`, `CHANGELOG.md`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `pyproject.toml`, `tests/test_docs_in_sync.py`.
 
-- [ ] Add failing tests to `tests/test_docs_in_sync.py`:
+- [x] Add failing tests to `tests/test_docs_in_sync.py`:
   - `SKILL.md`'s argument table has a `--model` row with default `sonnet`;
   - step 3 names `save_finding.py" --check`, `--fallback` and `model:`, and contains each of `SendMessage`, `ListAgents` and `agent teams` only in a "never" sentence (assert the sentence containing each also contains `Never`);
   - step 5 runs `usage.py` before `report.py`;
   - `orchestration.md` no longer contains `about 80k tokens`.
-- [ ] Run them; they fail.
-- [ ] Edit `SKILL.md`:
+- [x] Run them; they fail.
+- [x] Edit `SKILL.md`:
   - arguments: `| --model M | sonnet | Model for the investigators: haiku, sonnet or opus. The repair round uses the same one. |`;
   - step 2: pass `--model M` to `bundle.py` (estimate only), and in the dry-run paragraph relay its estimate lines;
   - the fallback's `--usage` JSON carries `"model": "<the --model value>"`;
@@ -286,10 +286,10 @@ def main(stdin_text: str) -> None:
   - step 4: the hook captures the repair; after it, `--check` and the same fallback;
   - step 5: run `uv run "${CLAUDE_PLUGIN_ROOT}/scripts/usage.py"` first; its failure never stops the report, and step 6 then says consumption was not measured, quoting its error line;
   - step 6: summarise from `report.json` (`counts`, the top findings, `consumption`), and include the Consumption line.
-- [ ] Rewrite `orchestration.md`'s Cost control with Task 0's measured figures and the weighted-token table, and add a row to "When things fail": *Hook did not save a result → `--check` says `missing`; save it with `--fallback`; the report counts it.* Add `usage.json` and `agents/` to `report-format.md`'s output list, and add a line under "What leaves the machine": `usage.py` reads Claude Code's own transcripts on this machine and writes counts only.
-- [ ] Bump the minor version in all four places (the next minor above `main`'s at the time; `0.10.0` if `main` is still `0.9.0`) and add a CHANGELOG entry in the 0.8.2 entry's form: *Added* (Consumption section and `usage.py`; the capture hook; `--model`; the dry-run estimate), *Changed* (investigators default to Sonnet and read at most <Read cap> extra files; `bundle.py` and `validate.py` print summaries unless `--verbose`; orchestration rules).
-- [ ] Run the full suite, `gen_catalog_docs.py --check`, `gen_sample_report.py --check`, `claude plugin validate . --strict`, then install from this checkout and confirm `claude plugin list` says `enabled`.
-- [ ] Commit: `Orchestration rules, --model and docs for consumption (#5)`.
+- [x] Rewrite `orchestration.md`'s Cost control with Task 0's measured figures and the weighted-token table, and add a row to "When things fail": *Hook did not save a result → `--check` says `missing`; save it with `--fallback`; the report counts it.* Add `usage.json` and `agents/` to `report-format.md`'s output list, and add a line under "What leaves the machine": `usage.py` reads Claude Code's own transcripts on this machine and writes counts only.
+- [x] Bump the minor version in all four places (the next minor above `main`'s at the time; `0.10.0` if `main` is still `0.9.0`) and add a CHANGELOG entry in the 0.8.2 entry's form: *Added* (Consumption section and `usage.py`; the capture hook; `--model`; the dry-run estimate), *Changed* (investigators default to Sonnet and read at most <Read cap> extra files; `bundle.py` and `validate.py` print summaries unless `--verbose`; orchestration rules).
+- [x] Run the full suite, `gen_catalog_docs.py --check`, `gen_sample_report.py --check`, `claude plugin validate . --strict`, then install from this checkout and confirm `claude plugin list` says `enabled`.
+- [x] Commit: `Orchestration rules, --model and docs for consumption (#5)`.
 
 ### Task N: Comparison measurement (maintainer, after merge)
 

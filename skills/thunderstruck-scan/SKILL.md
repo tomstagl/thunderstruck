@@ -20,6 +20,7 @@ Parse these from the user's invocation. All optional.
 | `--path P` | — | Restrict to a subdirectory. |
 | `--dry-run` | off | Steps 1–2 only. Print the plan and stop. |
 | `--include-tests` | off | Rank test files too. |
+| `--model M` | sonnet | Model for the investigators: haiku, sonnet or opus. The repair round uses the same one. |
 | `--refresh-context` | off | Fetch the service context even if the cached copy is fresh. |
 | `--investigate-dormant N` | 0 | Also investigate the first N dormant integration points (files untouched in the window that carry timeout/retry/pushback leads). They are always listed in the report; investigating them costs N more subagents, inside the same cap of 4 in parallel. |
 
@@ -77,19 +78,23 @@ runs exactly as it would have without it.
 ## Step 2 — bundles
 
 ```bash
-uv run "${CLAUDE_PLUGIN_ROOT}/scripts/bundle.py" [--investigate-dormant N]
+uv run "${CLAUDE_PLUGIN_ROOT}/scripts/bundle.py" --model M [--investigate-dormant N]
 ```
 
-Pass `--investigate-dormant N` only when the user gave it. Writes one
-briefing per hotspot (and per investigated dormant file, ids `D01`…) plus `.thunderstruck/catalog-brief.md`. Its
-last line reports how many need investigating and how many were reused from
+Pass `--investigate-dormant N` only when the user gave it; `--model M` only
+changes the estimate. Writes one
+briefing per hotspot (and per investigated dormant file, ids `D01`…) plus `.thunderstruck/catalog-brief.md`. It
+prints a short summary. Its counts line reports how many need investigating
+and how many were reused from
 cache — a bundle whose content hash is unchanged already has a valid finding.
 Findings validated by an older version of the plugin are re-checked here:
 those that fail today's rules are investigated again, and the line before the
-counts says how many.
+counts says how many. The last two lines estimate what the investigators will
+consume, and on what assumption.
 
 **If `--dry-run`: stop here.** Report the ranked hotspots, how many
-investigators would run, and the total bundle size. Nothing else.
+investigators would run, the total bundle size, and the two estimate lines
+as printed. Nothing else.
 
 ## Step 3 — investigate
 
@@ -99,6 +104,21 @@ Read `.thunderstruck/bundles/index.json`. For every entry with
 **At most 4 in parallel.** This tool is about systems that fall over when
 everything retries at once; it does not get to be one. Run them in batches of
 four, waiting for each batch before starting the next.
+
+### How to run them
+
+Everything you read or print here is charged again on every later call, so
+the orchestrating session stays small:
+
+- Run each batch as up to four `Agent` calls in **one message**, in the
+  foreground, with `subagent_type: thunderstruck-investigator` and
+  `model: <the --model value>`. Their results return inline.
+- Never use agent teams, `SendMessage`, `ListAgents` or background agents for investigators, and never poll.
+- Never read a bundle, a finding file or `catalog-brief.md`. Read
+  `bundles/index.json` for ids and paths, and the last lines of each script's
+  output.
+- Never re-spawn an investigator. A hotspot gets one investigation and at
+  most one repair round.
 
 Give each investigator exactly this task, substituting the real values:
 
@@ -112,18 +132,28 @@ a `commit:` prefix, a `location` string) and prints each rewrite as
 `normalised:`. It never adds a missing field or drops anything; `validate.py`
 still resolves every ref.
 
-Save each result immediately — do not batch them up, so an interrupted scan
-keeps what it has:
+A hook saves each investigator's result to `.thunderstruck/findings/` the
+moment it finishes, so you do not re-type it. After each batch, check which
+results reached disk:
 
 ```bash
-uv run "${CLAUDE_PLUGIN_ROOT}/scripts/save_finding.py" --id H01 --from /path/to/result.json
+uv run "${CLAUDE_PLUGIN_ROOT}/scripts/save_finding.py" --check H01 H02 H03 H04
 ```
 
-If an investigator returns nothing usable, record it and move on. Never retry
-it more than the one repair round in step 4:
+It prints `saved`, `missing` or `failed` per id. For each `missing` one, save
+the result the `Agent` call returned yourself, with `--fallback` so the report
+counts it, and `--usage` with the token usage the `Agent` result reported
+plus `"model": "<the --model value>"`:
 
 ```bash
-uv run "${CLAUDE_PLUGIN_ROOT}/scripts/save_finding.py" --id H01 --failed
+uv run "${CLAUDE_PLUGIN_ROOT}/scripts/save_finding.py" --id H01 --from /path/to/result.json --fallback --usage '{"input_tokens": 1200, "output_tokens": 900, "model": "sonnet"}'
+```
+
+If that fails too, or an investigator returned nothing usable, record it and
+move on. Never retry it more than the one repair round in step 4:
+
+```bash
+uv run "${CLAUDE_PLUGIN_ROOT}/scripts/save_finding.py" --id H01 --failed --fallback
 ```
 
 ## Step 4 — validate, with exactly one repair round
@@ -153,10 +183,22 @@ its errors to the task:
 > its Service context section. If you cannot support a claim with
 > evidence that resolves, drop that finding.
 
-Save and re-validate. If it still fails, record it with `--failed` and move
-on. **No further retries.** A partial report that says so beats a loop.
+Run the repair with the same `model:` as step 3. The hook captures the
+repaired result and keeps the first attempt; run `save_finding.py --check`
+for the repaired ids and apply the same fallback. Then re-validate. If it
+still fails, record it with `--failed` and move on. **No further retries.** A
+partial report that says so beats a loop.
 
 ## Step 5 — report
+
+First measure what the scan consumed, from Claude Code's own transcripts:
+
+```bash
+uv run "${CLAUDE_PLUGIN_ROOT}/scripts/usage.py"
+```
+
+It never stops the report. If it exits non-zero, note its error line for
+step 6 and carry on. Then:
 
 ```bash
 uv run "${CLAUDE_PLUGIN_ROOT}/scripts/report.py"
@@ -178,7 +220,9 @@ non-zero, note its last line for step 6 and carry on. Do not retry it.
 
 ## Step 6 — tell the user
 
-Summarise in the conversation. Lead with the finding, not the file:
+Summarise in the conversation from `.thunderstruck/report.json` (`counts`,
+the top findings and `consumption`), not from `report.md`. Lead with the
+finding, not the file:
 
 - How many findings at what confidence, across how many files.
 - The top two or three in one line each — failure mode, trigger, what keeps it
@@ -186,6 +230,8 @@ Summarise in the conversation. Lead with the finding, not the file:
   `.thunderstruck/report.html` to review them one by one in a browser. If the
   HTML step failed, say so in one line, with its reason.
 - Anything incomplete or degraded, plainly.
+- What the scan consumed: the Consumption line from the report. If `usage.py`
+  failed, say consumption was not measured, quoting its error line.
 - That findings are hypotheses with a `Verify` line, and that
   `/thunderstruck-verify FR-001` turns one into a failing test.
 
