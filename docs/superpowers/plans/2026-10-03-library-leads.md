@@ -46,7 +46,8 @@ Every command in this plan uses the fixed scratch path `/tmp/thunderstruck-58`, 
 3. **A `file_absent` detector whose every anchor is excused.** No hit at all, never a hit on the first anchor. Pinned in Task 1.
 4. **A JavaScript file (`.js`, `.mjs`).** It uses the TypeScript rules through the catalog's `aliases`, never "Not looked for". Pinned in Task 5.
 5. **A library scanned as itself** (Celery). Every file imports `celery`, so a gate on that import must not open on Celery's own imports: `self.apply_async(` in `celery/canvas.py` is Celery calling itself. An application that owns `proj` and imports `celery` still opens it. Pinned in Task 5 (`negative_own_package_apply_async.py`, `positive_celery_delay.py`, `test_an_import_of_the_projects_own_package_never_satisfies_a_gate`).
-6. **A config file ranked as a hotspot** (the fixture's `deploy/releases-virtualservice.yaml`). Its bundle says boundaries were not looked for, naming the language, instead of "None detected". Pinned in Task 6 (`test_bundle_says_when_a_language_has_no_boundary_rules`).
+6. **A fixture's or test helper's copy of a library's name** (`test/fixtures/node_modules/axios/package.json`, a helper declared `package org.springframework.web.client;` under `src/test/java/`). Neither makes that library the project's own, so calls through it in main code stay boundaries. Pinned in Task 5 (`test_test_and_fixture_directories_are_not_own`).
+7. **A config file ranked as a hotspot** (the fixture's `deploy/releases-virtualservice.yaml`). Its bundle says boundaries were not looked for, naming the language, instead of "None detected". Pinned in Task 6 (`test_bundle_says_when_a_language_has_no_boundary_rules`).
 
 ---
 
@@ -500,7 +501,7 @@ git commit -m "S07: a get-or-create on the row's own key is not a duplicate inse
 
 ### Task 5: Boundary rules in the catalog, and the matcher
 
-**Satisfies:** AC-1 (no boundary from a comment, docstring or import), AC-2 (a variable named like a library is not a boundary, nor is a library calling its own code; a real call through the library is).
+**Satisfies:** AC-1 (no boundary from a comment, docstring or import), AC-2 (a variable named like a library is not a boundary; a real call is). The own-package rule serves #58's Goal ("every boundary … lead in a briefing is one a reviewer would accept as real, on library code as on services") and its investigator story ("the boundaries listed are calls that cross a boundary"); no AC names it.
 
 **Files:**
 - Modify: `scripts/detectors/__init__.py` (add `Boundary`, `find_boundaries`, `_without_own_imports`)
@@ -1183,8 +1184,10 @@ def test_own_packages_come_from_tracked_files(tmp_path):
         "packages/db/package.json": '{"name": "@acme/db", "private": true}',
         "broken/package.json": "{not json",
         "src/main/java/com/acme/A.java": (
-            "/*\r\n * package com.wrong;\r\n */\r\npackage com.acme;\r\n\r\nclass A {}\r\n"),
-        "Default.java": "class Default {}\n",
+            "/*\r\npackage com.wrong;\r\n */\r\n@Generated\r\npackage com.acme;\r\n\r\nclass A {}\r\n"),
+        "src/main/java/com/acme/B.java": "/* licence */ package com.acme.b; // b\nclass B {}\n",
+        "Default.java": "import java.util.List;\nclass Default {}\npackage com.never;\n",
+        "deep/package.json": "[" * 200000,
     })
     (repo / "untracked").mkdir()
     (repo / "untracked" / "__init__.py").write_text("")
@@ -1196,8 +1199,25 @@ def test_own_packages_come_from_tracked_files(tmp_path):
     subprocess.run(["git", "commit", "-q", "-m", "link"], cwd=repo, check=True)
     own, warnings = _common.own_packages(repo, _common.tracked_index(repo))
     assert own == {"python": ["celery", "kit"], "typescript": ["@acme/db", "@acme/web"],
-                   "java": ["com.acme"]}
-    assert len(warnings) == 1 and "broken/package.json" in warnings[0], warnings
+                   "java": ["com.acme", "com.acme.b"]}
+    assert len(warnings) == 1 and "2 tracked file(s)" in warnings[0], warnings
+    assert "broken/package.json" in warnings[0], warnings
+
+
+def test_test_and_fixture_directories_are_not_own(tmp_path):
+    # A fixture's copy of axios must not hide axios calls in src/, and a test
+    # helper declared in Spring's package must not hide RestTemplate calls.
+    repo = _git_repo(tmp_path / "repo", {
+        "package.json": '{"name": "web"}',
+        "test/fixtures/node_modules/axios/package.json": '{"name": "axios"}',
+        "examples/basic/package.json": '{"name": "got"}',
+        "src/main/java/com/acme/Client.java": "package com.acme;\nclass Client {}\n",
+        "src/test/java/org/springframework/web/client/Helper.java": (
+            "package org.springframework.web.client;\nclass Helper {}\n"),
+    })
+    own, warnings = _common.own_packages(repo, _common.tracked_index(repo))
+    assert own == {"python": [], "typescript": ["web"], "java": ["com.acme"]}, own
+    assert warnings == []
 
 
 def test_a_repository_with_no_packages_owns_none(tmp_path):
@@ -1327,8 +1347,39 @@ def find_boundaries(catalog: dict[str, Any], rel_path: str, text: str,
 # calling its own code (`self.apply_async(` inside Celery) is not a call
 # through that library. Worked out from tracked files only, so it is a
 # function of the commit.
-_JAVA_PACKAGE = re.compile(r"^package[ \t]+([\w.]+)[ \t]*;")
+_JAVA_PACKAGE = re.compile(r"package[ \t]+([\w.]+)[ \t]*;")
 _REGULAR_FILE = ("100644", "100755")
+# Directories whose package.json or .java files are not the project's own: a
+# fixture's node_modules/axios/package.json must not make `axios` own (#58).
+NOT_OWN_DIRS = frozenset({
+    "node_modules", "test", "tests", "__tests__", "testing", "testdata",
+    "fixture", "fixtures", "example", "examples", "sample", "samples", "demo", "demos"})
+
+
+def _java_package(lines) -> str | None:
+    """The `package` declaration: the first line that is not blank, a
+    comment or an annotation, when it is one. Reads no further."""
+    in_block = False
+    for raw in lines:
+        line = raw.strip()
+        while line:
+            if in_block:
+                end = line.find("*/")
+                if end < 0:
+                    line = ""
+                else:
+                    line, in_block = line[end + 2:].strip(), False
+            elif line.startswith("/*"):
+                line, in_block = line[2:], True
+            elif line.startswith("//"):
+                line = ""
+            else:
+                break
+        if not line or line.startswith("@"):
+            continue
+        m = _JAVA_PACKAGE.match(line)
+        return m.group(1) if m else None
+    return None
 
 
 def own_packages(repo_root: Path, index: dict[str, str]) -> tuple[dict[str, list[str]], list[str]]:
@@ -1338,8 +1389,8 @@ def own_packages(repo_root: Path, index: dict[str, str]) -> tuple[dict[str, list
     python      every directory at the root, or directly under a root src/,
                 that holds a tracked __init__.py
     typescript  the "name" of every tracked package.json
-    java        the first `package <name>;` line of every tracked .java file
-
+    java        the `package` declaration of every tracked .java file
+    TypeScript and Java skip any file with a NOT_OWN_DIRS segment in its path.
     Only regular files are read; a symlink is never followed. A file that
     cannot be read or parsed is skipped, and one warning names the first.
     """
@@ -1354,12 +1405,12 @@ def own_packages(repo_root: Path, index: dict[str, str]) -> tuple[dict[str, list
                     and parts[-2].isidentifier():
                 py.add(parts[-2])
             continue
-        if index[rel] not in _REGULAR_FILE:
+        if index[rel] not in _REGULAR_FILE or any(p.lower() in NOT_OWN_DIRS for p in parts[:-1]):
             continue
         if parts[-1] == "package.json":
             try:
                 doc = json.loads((repo_root / rel).read_text(encoding="utf-8"))
-            except (OSError, ValueError):
+            except (OSError, ValueError, RecursionError):
                 unreadable.append(rel)
                 continue
             name = doc.get("name") if isinstance(doc, dict) else None
@@ -1368,12 +1419,12 @@ def own_packages(repo_root: Path, index: dict[str, str]) -> tuple[dict[str, list
         elif rel.endswith(".java"):
             try:
                 with open(repo_root / rel, encoding="utf-8", errors="replace") as fh:
-                    m = next((m for m in map(_JAVA_PACKAGE.match, fh) if m), None)
+                    package = _java_package(fh)
             except OSError:
                 unreadable.append(rel)
                 continue
-            if m:
-                java.add(m.group(1))
+            if package:
+                java.add(package)
     warnings = []
     if unreadable:
         warnings.append(
@@ -1589,7 +1640,7 @@ def test_bundle_shows_no_boundary_from_a_comment(scanned_repo):
     assert "None detected in this file." in section
 
 
-def test_bundle_says_when_own_packages_are_unknown(catalog):
+def test_bundle_boundaries_say_when_own_packages_are_unknown(catalog):
     import bundle
     text = "import requests\n\n\ndef get(u):\n    return requests.get(u, timeout=3)\n"
     assert bundle.section_boundaries(text, "src/a.py", "python", catalog, None) == (
@@ -1717,7 +1768,7 @@ uv run scripts/bundle.py --repo "/tmp/thunderstruck-58/celery"
 uv run --no-project --with pyyaml python "/tmp/thunderstruck-58/count_boundaries.py" . "/tmp/thunderstruck-58/celery" "/tmp/thunderstruck-58/celery/.thunderstruck/bundles"
 ```
 
-Expected: `total: 68 shown, 51 from a comment, docstring or import` for the frozen bundles, and `total: 11 shown, 0 from a comment, docstring or import` after, with `hotspots.json`'s `own_packages` `{"python": ["celery", "t"], "typescript": [], "java": []}` and the ten bundles at 48,637 estimated tokens in total (`index.json`'s `tokens_estimated`; spec §2.6). Keep both outputs for Task 8 and the PR.
+Expected: `total: 68 shown, 51 from a comment, docstring or import` for the frozen bundles, and `total: 11 shown, 0 from a comment, docstring or import` after, with `hotspots.json`'s `own_packages` `{"python": ["celery", "t"], "typescript": [], "java": []}` and the ten bundles at 48,637 estimated tokens in total (`index.json`'s `tokens_estimated`), the figure with Tasks 2–4's detector corrections applied before this task; the boundary rules alone give 48,901 (spec §2.6). Keep both outputs for Task 8 and the PR.
 
 - [ ] **Step 6: Commit**
 
@@ -2078,10 +2129,12 @@ The PR description states, from Tasks 6 and 8: the boundary count before and aft
 
 ## Acceptance criteria coverage
 
+The own-package pair (`negative_own_package_apply_async`, `positive_celery_delay`, Task 5) serves #58's Goal and investigator story, not an AC.
+
 | AC | Tasks |
 |---|---|
 | AC-1 | 5 (no comment, docstring or import is ever a boundary), 6 (the bundle uses it; Celery count), 8 (recorded) |
-| AC-2 | 5 (`negative_dict_named_requests` and `positive_requests_get`; `negative_own_package_apply_async` and `positive_celery_delay`) |
+| AC-2 | 5 (`negative_dict_named_requests` and `positive_requests_get`) |
 | AC-3 | 1 (mechanism), 2, 3, 4 (one shape each), 8 (no true positive lost elsewhere) |
 | AC-4 | 8 |
 | AC-5 | 7 |
