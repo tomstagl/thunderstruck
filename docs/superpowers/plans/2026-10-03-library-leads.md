@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.11+, PyYAML, `uv`, pytest.
 
-**Spec:** `docs/superpowers/specs/2026-10-03-library-leads-design.md` (§n below refers to it). Requirements AC-1…AC-7 and the product decisions are in GitHub issue #58, part of #54.
+**Spec:** `docs/superpowers/specs/2026-10-03-library-leads-design.md` (§n below refers to it). Requirements AC-1…AC-8 and the product decisions are in GitHub issue #58, part of #54.
 
 **Branch:** `feat/library-leads`. One commit per task. The full suite passes on every commit, and its real exit code is checked, never piped through `tail`:
 
@@ -501,7 +501,7 @@ git commit -m "S07: a get-or-create on the row's own key is not a duplicate inse
 
 ### Task 5: Boundary rules in the catalog, and the matcher
 
-**Satisfies:** AC-1 (no boundary from a comment, docstring or import), AC-2 (a variable named like a library is not a boundary; a real call is). The own-package rule serves #58's Goal ("every boundary … lead in a briefing is one a reviewer would accept as real, on library code as on services") and its investigator story ("the boundaries listed are calls that cross a boundary"); no AC names it.
+**Satisfies:** AC-1 (no boundary from a comment, docstring or import), AC-2 (a variable named like a library is not a boundary; a real call is), AC-8 (a library's call into its own code is not a boundary; the own-package pair).
 
 **Files:**
 - Modify: `scripts/detectors/__init__.py` (add `Boundary`, `find_boundaries`, `_without_own_imports`)
@@ -1597,7 +1597,7 @@ git commit -m "Boundaries: call-shaped catalog rules with samples, not vocabular
 
 ### Task 6: The bundle uses the catalog's boundaries
 
-**Satisfies:** AC-1.
+**Satisfies:** AC-1, AC-8 (the bundle says which calls were not looked for when own packages are unknown; Celery count).
 
 **Files:**
 - Modify: `scripts/bundle.py` (delete `BOUNDARY_PATTERNS`; rewrite `section_boundaries`; its call in `build_bundle`; a warning in `main`; the import block)
@@ -1945,7 +1945,7 @@ git commit -m "Report: the lead table says what a lead and no lead mean (#58)"
 
 ### Task 8: The Celery calibration log and the measurements
 
-**Satisfies:** AC-1 (count recorded), AC-3 (no true positive lost elsewhere), AC-4, AC-6.
+**Satisfies:** AC-1 and AC-8 (count recorded), AC-3 (no true positive lost elsewhere), AC-4, AC-6.
 
 **Files:**
 - Create: `docs/calibration/celery.md`
@@ -2129,8 +2129,6 @@ The PR description states, from Tasks 6 and 8: the boundary count before and aft
 
 ## Acceptance criteria coverage
 
-The own-package pair (`negative_own_package_apply_async`, `positive_celery_delay`, Task 5) serves #58's Goal and investigator story, not an AC.
-
 | AC | Tasks |
 |---|---|
 | AC-1 | 5 (no comment, docstring or import is ever a boundary), 6 (the bundle uses it; Celery count), 8 (recorded) |
@@ -2140,3 +2138,4 @@ The own-package pair (`negative_own_package_apply_async`, `positive_celery_delay
 | AC-5 | 7 |
 | AC-6 | 8, and the PR description (Task 9) |
 | AC-7 | 9 |
+| AC-8 | 5 (`negative_own_package_apply_async` and `positive_celery_delay`; own packages never open a gate), 6 (unknown own packages stated in the bundle; Celery count), 8 (recorded) |
