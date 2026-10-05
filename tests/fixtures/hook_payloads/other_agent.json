@@ -1,0 +1,10 @@
+{
+  "session_id": "s-1",
+  "transcript_path": "/tmp/projects/x/s-1.jsonl",
+  "cwd": "REPLACED_BY_TEST",
+  "hook_event_name": "SubagentStop",
+  "agent_id": "a-1",
+  "agent_type": "Explore",
+  "stop_reason": "completed",
+  "last_assistant_message": "{\n  \"hotspot_id\": \"H01\",\n  \"findings\": [\n    {\n      \"location\": \"src/client/releases.ts:10-24\",\n      \"missing_patterns\": [\n        \"S02\"\n      ],\n      \"failure_mode\": \"Retries on a fixed schedule re-form the herd\",\n      \"trigger_condition\": \"Upstream returns 500 to many clients at once\",\n      \"amplifier\": \"Every client waits the same 2s\",\n      \"sustaining_effect\": \"Synchronised retries keep the upstream saturated\",\n      \"blast_radius\": \"All callers of this client\",\n      \"evidence\": [\n        {\n          \"type\": \"code\",\n          \"ref\": {\n            \"file\": \"src/client/releases.ts\",\n            \"line\": 12\n          },\n          \"note\": \"fixed delay\"\n        }\n      ],\n      \"confidence\": \"medium\",\n      \"confidence_rationale\": \"The delay is constant.\",\n      \"how_to_verify\": \"Assert successive delays differ across clients\"\n    }\n  ]\n}"
+}

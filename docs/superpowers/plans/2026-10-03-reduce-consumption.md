@@ -71,17 +71,17 @@ A refactor with no behaviour change, so Task 2's hook and `save_finding.py` prod
   - `record_agent(out: Path, entry: dict, agent: dict) -> None` — writes `out/agents/<entry id>.json` as `{"hotspot_id", "bundle_hash", "agents": [...]}`; appends `agent` when the stored `bundle_hash` equals `entry["bundle_hash"]`, otherwise starts a new list.
 - `save_finding.py` keeps `from finding_shape import normalise` at module level, so `tests/test_investigator_contract.py:23` keeps working.
 
-- [ ] Write `tests/test_finding_shape.py`, failing:
+- [x] Write `tests/test_finding_shape.py`, failing:
   - `parse_result` accepts a fenced and an unfenced object, and raises `ValueError` for `"Here is the result:\n{}"`, for `[]` and for invalid JSON;
   - `shape` on the fixture's canned findings (from `tests/test_pipeline.py`'s `_valid_finding`) equals what today's `save_finding.py --from` writes, byte for byte, through `write_json_atomic`;
   - `write_json_atomic` refuses to write through a symlinked destination directory (`OSError`) and leaves no `.tmp` behind;
   - `find_entry` returns `None` for `"../H01"`, `"H01 "`, `1` and an absent id;
   - `record_agent` appends for the same `bundle_hash` and resets for a different one;
   - an AST test that `finding_shape.py` imports nothing outside `sys.stdlib_module_names`.
-- [ ] Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_finding_shape.py -q`. Expected: `ModuleNotFoundError: finding_shape`.
-- [ ] Create `finding_shape.py` by moving the code; make `save_finding.main` call `parse_result`, `shape`, `failed_doc` and `c.write_json`. Its printed output is unchanged.
-- [ ] Run the new tests, then the full suite, then `uv run scripts/gen_sample_report.py --check`.
-- [ ] Commit: `Move finding shaping into a stdlib module (#5)`.
+- [x] Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_finding_shape.py -q`. Expected: `ModuleNotFoundError: finding_shape`.
+- [x] Create `finding_shape.py` by moving the code; make `save_finding.main` call `parse_result`, `shape`, `failed_doc` and `c.write_json`. Its printed output is unchanged.
+- [x] Run the new tests, then the full suite, then `uv run scripts/gen_sample_report.py --check`.
+- [x] Commit: `Move finding shaping into a stdlib module (#5)`.
 
 ### Task 2: The `SubagentStop` capture hook (AC-5, AC-10)
 
@@ -91,8 +91,8 @@ A refactor with no behaviour change, so Task 2's hook and `save_finding.py` prod
 - Consumes: Task 1's `parse_result`, `shape`, `find_entry`, `write_json_atomic`, `record_agent`.
 - Produces: `capture_finding.main(stdin_text: str) -> None` and the script entry point. Writes `findings/<ID>.json`, `agents/<ID>.json`, and on a second delivery `agents/<ID>.attempt1.json`.
 
-- [ ] Add payload fixtures, each a `SubagentStop` input with `session_id`, `transcript_path`, `cwd` (rewritten by the test to its temp repo), `hook_event_name`, `agent_id`, `agent_type: "plugin:thunderstruck:thunderstruck-investigator"`, `stop_reason: "completed"` and `last_assistant_message`: `valid.json` (a canned finding for `H01`), `fenced.json`, `prose_first.json` (Review Focus 3), `unknown_id.json` (`H99`), `path_id.json` (`"../../etc/x"`), `other_agent.json` (`agent_type: "Explore"`), `not_json.json`, `no_fields.json` (no `agent_type`, no `last_assistant_message`, the pre-2.1.206 shape).
-- [ ] Write `tests/test_capture_finding.py`, failing. Each test builds the fixture repo, runs `signals.py` and `bundle.py`, then runs the hook as `python3 scripts/capture_finding.py` with the payload on stdin:
+- [x] Add payload fixtures, each a `SubagentStop` input with `session_id`, `transcript_path`, `cwd` (rewritten by the test to its temp repo), `hook_event_name`, `agent_id`, `agent_type: "plugin:thunderstruck:thunderstruck-investigator"`, `stop_reason: "completed"` and `last_assistant_message`: `valid.json` (a canned finding for `H01`), `fenced.json`, `prose_first.json` (Review Focus 3), `unknown_id.json` (`H99`), `path_id.json` (`"../../etc/x"`), `other_agent.json` (`agent_type: "Explore"`), `not_json.json`, `no_fields.json` (no `agent_type`, no `last_assistant_message`, the pre-2.1.206 shape).
+- [x] Write `tests/test_capture_finding.py`, failing. Each test builds the fixture repo, runs `signals.py` and `bundle.py`, then runs the hook as `python3 scripts/capture_finding.py` with the payload on stdin:
   - `valid` writes `findings/H01.json` byte-identical to `save_finding.py --id H01 --from <same JSON>`, and `agents/H01.json` with one agent;
   - `fenced` is the same as `valid`;
   - `prose_first`, `unknown_id`, `path_id`, `other_agent`, `not_json`, `no_fields`: nothing is written anywhere under `.thunderstruck/`;
@@ -103,8 +103,8 @@ A refactor with no behaviour change, so Task 2's hook and `save_finding.py` prod
   - every case exits 0 with empty stdout and stderr;
   - median of 20 runs of `valid` under 100 ms (copy the guardrail's latency test);
   - the source contains none of `import yaml`, `import lizard`, `from yaml`, `import _common`, and its AST imports only stdlib names and `finding_shape`.
-- [ ] Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_capture_finding.py -q`. Expected: failures, the script does not exist.
-- [ ] Implement `scripts/capture_finding.py` (§3.2), with the shebang and `# /// script` header of `guardrail.py` and the whole body in one `try/except BaseException: pass`, then `sys.exit(0)`:
+- [x] Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_capture_finding.py -q`. Expected: failures, the script does not exist.
+- [x] Implement `scripts/capture_finding.py` (§3.2), with the shebang and `# /// script` header of `guardrail.py` and the whole body in one `try/except BaseException: pass`, then `sys.exit(0)`:
 
 ```python
 def _root(cwd: str) -> Path | None:
@@ -147,9 +147,9 @@ def main(stdin_text: str) -> None:
 ```
 
   `_load` returns `None` on any read or parse error. `_listed_invalid(out, hid)` is true when `out/validation.json`'s `results` has an entry with `hotspot_id == hid` and `valid: false`; false on any read error. `entry["id"]` comes from the index, so the destination never contains payload text.
-- [ ] Add the `SubagentStop` entry to `hooks/hooks.json` exactly as §3.1. Extend `test_hooks_json_matches_current_tool_names` (or add a sibling test) to assert `hooks.json` has exactly the keys `PreToolUse` and `SubagentStop`, one entry each, and that the `SubagentStop` command runs `capture_finding.py` with `|| exit 0`.
-- [ ] Run the new tests, the full suite, and `claude plugin validate . --strict`.
-- [ ] Commit: `Save investigator results from a SubagentStop hook (#5)`.
+- [x] Add the `SubagentStop` entry to `hooks/hooks.json` exactly as §3.1. Extend `test_hooks_json_matches_current_tool_names` (or add a sibling test) to assert `hooks.json` has exactly the keys `PreToolUse` and `SubagentStop`, one entry each, and that the `SubagentStop` command runs `capture_finding.py` with `|| exit 0`.
+- [x] Run the new tests, the full suite, and `claude plugin validate . --strict`.
+- [x] Commit: `Save investigator results from a SubagentStop hook (#5)`.
 
 ### Task 3: `save_finding.py --check`, `--fallback` and `--usage` (AC-5, AC-6)
 
@@ -163,11 +163,11 @@ def main(stdin_text: str) -> None:
   - `--usage '<json>'` with `--id` records `{"relayed_usage": {…}}` in `agents/<ID>.json`, keeping only the four integer keys `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens` plus a string `model`; an absent key stays absent (§2.5). Malformed JSON is a `c.die` with exit 2.
   - `--id` is no longer required when `--check` is given; `--check` and `--id` together are an error.
 
-- [ ] Write `tests/test_save_finding_check.py`, failing: `saved` after a normal save; `missing` before any save; `missing` for a finding whose `bundle_hash` is from an older bundle (edit the bundle's source line and re-run `bundle.py`); `failed` after `--failed`; `missing` for `H99`; `--fallback` and `--usage '{"input_tokens": 5, "output_tokens": 2, "note": "x"}'` record `fallback: true` and `relayed_usage == {"input_tokens": 5, "output_tokens": 2}`; Review Focus 3: a prose-first result through `--from` exits 2 and `--check` still says `missing`.
-- [ ] Run them; they fail (`unrecognized arguments: --check`).
-- [ ] Implement in `save_finding.main`.
-- [ ] Run the new tests and the full suite.
-- [ ] Commit: `Check which investigator results reached disk (#5)`.
+- [x] Write `tests/test_save_finding_check.py`, failing: `saved` after a normal save; `missing` before any save; `missing` for a finding whose `bundle_hash` is from an older bundle (edit the bundle's source line and re-run `bundle.py`); `failed` after `--failed`; `missing` for `H99`; `--fallback` and `--usage '{"input_tokens": 5, "output_tokens": 2, "note": "x"}'` record `fallback: true` and `relayed_usage == {"input_tokens": 5, "output_tokens": 2}`; Review Focus 3: a prose-first result through `--from` exits 2 and `--check` still says `missing`.
+- [x] Run them; they fail (`unrecognized arguments: --check`).
+- [x] Implement in `save_finding.main`.
+- [x] Run the new tests and the full suite.
+- [x] Commit: `Check which investigator results reached disk (#5)`.
 
 ### Task 4: `usage.py` (AC-1, AC-2)
 
@@ -195,8 +195,8 @@ def main(stdin_text: str) -> None:
 5. Orchestrator: the first readable `transcript_path` among the records, `read_entries(path, since, until)`. None readable: `missing` gets `"orchestrator: session transcript not readable"`.
 6. `source`: `transcripts` when `missing` is empty, `unavailable` when no entry at all was read, otherwise `partial`.
 
-- [ ] Write the transcript fixtures as small JSONL files built by a helper in the test (not checked-in blobs), under a temp `CLAUDE_CONFIG_DIR`: a session file with entries before and inside the window, a split response (three lines, same `message.id`), a `<synthetic>` line, a user line and a tool-result line; two subagent files.
-- [ ] Write `tests/test_usage.py`, failing:
+- [x] Write the transcript fixtures as small JSONL files built by a helper in the test (not checked-in blobs), under a temp `CLAUDE_CONFIG_DIR`: a session file with entries before and inside the window, a split response (three lines, same `message.id`), a `<synthetic>` line, a user line and a tool-result line; two subagent files.
+- [x] Write `tests/test_usage.py`, failing:
   - weights: one `claude-sonnet-5-5` entry with 1000 tokens in each bucket gives `weighted == 1000 + 1250 + 2000 + 100 + 5000`; the same on `claude-opus-5-5` gives `2000 + 2500 + 4000 + 100 + 10000`; `cache_creation_input_tokens` without a `cache_creation` split is weighted as 5-minute; a model `claude-future-9` gives `weighted is None`, its raw counts kept, `source: partial` and a `missing` line naming it;
   - `TOKEN_WEIGHTS` equals spec §2.3's table: parse the table from the spec file and compare, so the two can never drift;
   - the split response counts once; `<synthetic>`, user and tool lines count zero (Review Focus 4); entries before `generated_at` are excluded from the orchestrator and subagent entries are never windowed;
@@ -207,10 +207,10 @@ def main(stdin_text: str) -> None:
   - no agent records at all gives `source: unavailable`;
   - a `transcript_path` outside `projects_root()` (e.g. `/etc/passwd`, or a `.jsonl` in the temp dir but outside it) is never opened: patch `Path.open` to fail the test if called with it;
   - `usage.json` serialised contains none of the fixture's message text strings.
-- [ ] Run them; they fail (`ModuleNotFoundError: usage`).
-- [ ] Implement `usage.py` with PEP 723 metadata like the other scripts.
-- [ ] Run the new tests and the full suite.
-- [ ] Commit: `Measure a scan's consumption from Claude Code transcripts (#5)`.
+- [x] Run them; they fail (`ModuleNotFoundError: usage`).
+- [x] Implement `usage.py` with PEP 723 metadata like the other scripts.
+- [x] Run the new tests and the full suite.
+- [x] Commit: `Measure a scan's consumption from Claude Code transcripts (#5)`.
 
 ### Task 5: The Consumption section (AC-1, AC-2, AC-9)
 
@@ -220,7 +220,7 @@ def main(stdin_text: str) -> None:
 - Consumes: `usage.json` (Task 4).
 - Produces: `collect()` adds `data["usage"]` (the document, or `None`); `render_consumption(usage: dict | None) -> list[str]`; `render_json` adds `"consumption": usage or None`; one new run warning text.
 
-- [ ] Write `tests/test_report_consumption.py`, failing:
+- [x] Write `tests/test_report_consumption.py`, failing:
   - with a `transcripts` `usage.json` whose `window.from` equals `generated_at`, `report.md` has `## Consumption` right after Run warnings (or after the header block when there are none), in the §2.6 wording: totals in thousands with a `k` suffix (`round(n / 1000)`), the orchestrator's models and call count, the investigator total, agent count, models, repairs and re-spawns, and the weights line;
   - `fallback_saves > 0` adds `N result(s) saved by the orchestrator because the hook did not deliver them.`;
   - `partial` prints `Covers: <parts measured>. Not measured: <each missing line>.` instead of presenting a total as complete (AC-2);
@@ -228,11 +228,11 @@ def main(stdin_text: str) -> None:
   - a `usage.json` whose `window.from` differs from `generated_at`: no section, and the run warning `usage.json is from an earlier scan and was ignored` (Review Focus 2);
   - no `usage.json`: `report.md` byte-identical to the same run without the feature (compare against `render_markdown` with `data["usage"] = None`), and `report.json` has `"consumption": null`;
   - model names render through `md.code`: a model `"[x](http://e)"` appears as inert code, checked with the rendering helpers in `tests/test_inert_report.py`.
-- [ ] Run them; they fail.
-- [ ] Implement. `render_consumption` builds every value with `md.code` or plain integers. `report.html` (#3) is not changed: it reads `report.json`, ignores the new `consumption` key, and `tests/test_report_html.py` must pass unchanged.
-- [ ] In Task 8's step 5 edit, keep #3's order: `usage.py`, then `report.py`, then `report_html.py` (`test_scan_step_5_renders_html_after_the_markdown_and_never_fails`).
-- [ ] Run the new tests, the full suite and `uv run scripts/gen_sample_report.py --check`.
-- [ ] Commit: `Report what a scan consumed (#5)`.
+- [x] Run them; they fail.
+- [x] Implement. `render_consumption` builds every value with `md.code` or plain integers. `report.html` (#3) is not changed: it reads `report.json`, ignores the new `consumption` key, and `tests/test_report_html.py` must pass unchanged.
+- [x] In Task 8's step 5 edit, keep #3's order: `usage.py`, then `report.py`, then `report_html.py` (`test_scan_step_5_renders_html_after_the_markdown_and_never_fails`).
+- [x] Run the new tests, the full suite and `uv run scripts/gen_sample_report.py --check`.
+- [x] Commit: `Report what a scan consumed (#5)`.
 
 ### Task 6: Quieter scripts and the estimate line (AC-3, AC-7)
 
@@ -241,44 +241,44 @@ def main(stdin_text: str) -> None:
 **Interfaces:**
 - Produces: `--verbose` on `bundle.py` and `validate.py`; `--model` on `bundle.py` (estimate only, default `sonnet`, never affects bundle bytes); `INVESTIGATOR_TOKENS_PER_BUNDLE_TOKEN: float` in `_common.py`, set to Task 0's recorded value with a comment citing `docs/calibration/consumption.md`; `bundle.estimate_line(todo_tokens: list[int]) -> list[str]`.
 
-- [ ] Write `tests/test_quiet_output.py`, failing:
+- [x] Write `tests/test_quiet_output.py`, failing:
   - `bundle.py` default stdout has no line matching `^[HD]\d\d  ~`, still has the `need investigating` line, and ends with the two §2.7 estimate lines; with `--verbose` the per-bundle lines are back;
   - the estimate is `round(sum(todo tokens) × INVESTIGATOR_TOKENS_PER_BUNDLE_TOKEN / 1000)` thousand on sonnet; `bundle.py --model opus` (the skill passes its `--model` through) multiplies by `TOKEN_WEIGHTS[MODEL_ALIASES["opus"]]["input"]` and names the model; with zero bundles to investigate it reads `estimate: no investigators to run`;
   - `validate.py` default stdout has no `ok  ` line, has every `FAIL` line with each error indented beneath it, and the summary line; `--verbose` restores `ok  ` lines; `--quiet` still prints nothing;
   - bundle files and `index.json` are byte-identical with and without `--verbose`.
-- [ ] Run them; they fail.
-- [ ] Implement; update the existing tests that read the removed lines to pass `--verbose`.
-- [ ] Run the full suite and `gen_sample_report.py --check`.
-- [ ] Commit: `Print summaries by default and estimate investigator consumption (#5)`.
+- [x] Run them; they fail.
+- [x] Implement; update the existing tests that read the removed lines to pass `--verbose`.
+- [x] Run the full suite and `gen_sample_report.py --check`.
+- [x] Commit: `Print summaries by default and estimate investigator consumption (#5)`.
 
 ### Task 7: The investigator prompt (AC-4, AC-8)
 
 **Files:** `agents/thunderstruck-investigator.md`, `tests/test_investigator_contract.py`.
 
-- [ ] Add failing tests to `tests/test_investigator_contract.py`:
+- [x] Add failing tests to `tests/test_investigator_contract.py`:
   - the frontmatter parses (split on the `---` lines, `yaml.safe_load`) and has `model: sonnet`, and still `tools: Read, Grep, Glob`;
   - the prompt contains `up to **<Read cap>** additional files`, where `<Read cap>` is the integer from `docs/calibration/consumption.md`'s `Read cap:` line (skip if the file is absent, so the suite runs before Task 0 lands);
   - the prompt contains the sentences on not re-reading a full-source bundle file and preferring `Grep`, and the output-length rule;
   - `test_the_prompt_example_is_a_complete_valid_shape` still passes unchanged.
-- [ ] Run them; they fail.
-- [ ] Edit the agent file (§5):
+- [x] Run them; they fail.
+- [x] Edit the agent file (§5):
   - frontmatter: add `model: sonnet`;
   - "Your inputs": replace the 10-file paragraph with: "The bundle's Source section holds the hotspot file, and says when it was trimmed. Do not Read a file whose full source is already in the bundle. Re-read a trimmed file only for the line range a lead needs. You may open up to **<Read cap>** additional files with Read/Grep/Glob to confirm or reject a lead; prefer a `Grep` with a narrow pattern over reading a whole file. Prefer the files the bundle names as imports, call sites or temporally coupled. If <Read cap> reads are not enough to settle a lead, say so in `confidence_rationale` rather than guessing.";
   - "Output": add "Keep each evidence `note` to one short sentence and `confidence_rationale` to at most two sentences."
-- [ ] Run the contract tests and the full suite.
-- [ ] Commit: `Pin investigators to Sonnet and have them read less (#5)`.
+- [x] Run the contract tests and the full suite.
+- [x] Commit: `Pin investigators to Sonnet and have them read less (#5)`.
 
 ### Task 8: Orchestration rules, `--model`, docs and release (AC-4, AC-6, AC-7)
 
 **Files:** `skills/thunderstruck-scan/SKILL.md`, `skills/thunderstruck-scan/references/orchestration.md`, `skills/thunderstruck-scan/references/report-format.md`, `CHANGELOG.md`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `pyproject.toml`, `tests/test_docs_in_sync.py`.
 
-- [ ] Add failing tests to `tests/test_docs_in_sync.py`:
+- [x] Add failing tests to `tests/test_docs_in_sync.py`:
   - `SKILL.md`'s argument table has a `--model` row with default `sonnet`;
   - step 3 names `save_finding.py" --check`, `--fallback` and `model:`, and contains each of `SendMessage`, `ListAgents` and `agent teams` only in a "never" sentence (assert the sentence containing each also contains `Never`);
   - step 5 runs `usage.py` before `report.py`;
   - `orchestration.md` no longer contains `about 80k tokens`.
-- [ ] Run them; they fail.
-- [ ] Edit `SKILL.md`:
+- [x] Run them; they fail.
+- [x] Edit `SKILL.md`:
   - arguments: `| --model M | sonnet | Model for the investigators: haiku, sonnet or opus. The repair round uses the same one. |`;
   - step 2: pass `--model M` to `bundle.py` (estimate only), and in the dry-run paragraph relay its estimate lines;
   - the fallback's `--usage` JSON carries `"model": "<the --model value>"`;
@@ -286,10 +286,10 @@ def main(stdin_text: str) -> None:
   - step 4: the hook captures the repair; after it, `--check` and the same fallback;
   - step 5: run `uv run "${CLAUDE_PLUGIN_ROOT}/scripts/usage.py"` first; its failure never stops the report, and step 6 then says consumption was not measured, quoting its error line;
   - step 6: summarise from `report.json` (`counts`, the top findings, `consumption`), and include the Consumption line.
-- [ ] Rewrite `orchestration.md`'s Cost control with Task 0's measured figures and the weighted-token table, and add a row to "When things fail": *Hook did not save a result → `--check` says `missing`; save it with `--fallback`; the report counts it.* Add `usage.json` and `agents/` to `report-format.md`'s output list, and add a line under "What leaves the machine": `usage.py` reads Claude Code's own transcripts on this machine and writes counts only.
-- [ ] Bump the minor version in all four places (the next minor above `main`'s at the time; `0.10.0` if `main` is still `0.9.0`) and add a CHANGELOG entry in the 0.8.2 entry's form: *Added* (Consumption section and `usage.py`; the capture hook; `--model`; the dry-run estimate), *Changed* (investigators default to Sonnet and read at most <Read cap> extra files; `bundle.py` and `validate.py` print summaries unless `--verbose`; orchestration rules).
-- [ ] Run the full suite, `gen_catalog_docs.py --check`, `gen_sample_report.py --check`, `claude plugin validate . --strict`, then install from this checkout and confirm `claude plugin list` says `enabled`.
-- [ ] Commit: `Orchestration rules, --model and docs for consumption (#5)`.
+- [x] Rewrite `orchestration.md`'s Cost control with Task 0's measured figures and the weighted-token table, and add a row to "When things fail": *Hook did not save a result → `--check` says `missing`; save it with `--fallback`; the report counts it.* Add `usage.json` and `agents/` to `report-format.md`'s output list, and add a line under "What leaves the machine": `usage.py` reads Claude Code's own transcripts on this machine and writes counts only.
+- [x] Bump the minor version in all four places (the next minor above `main`'s at the time; `0.10.0` if `main` is still `0.9.0`) and add a CHANGELOG entry in the 0.8.2 entry's form: *Added* (Consumption section and `usage.py`; the capture hook; `--model`; the dry-run estimate), *Changed* (investigators default to Sonnet and read at most <Read cap> extra files; `bundle.py` and `validate.py` print summaries unless `--verbose`; orchestration rules).
+- [x] Run the full suite, `gen_catalog_docs.py --check`, `gen_sample_report.py --check`, `claude plugin validate . --strict`, then install from this checkout and confirm `claude plugin list` says `enabled`.
+- [x] Commit: `Orchestration rules, --model and docs for consumption (#5)`.
 
 ### Task N: Comparison measurement (maintainer, after merge)
 

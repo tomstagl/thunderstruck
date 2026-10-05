@@ -201,6 +201,18 @@ def test_hooks_json_matches_current_tool_names():
     assert "exit 0" in command, "the hook command must fail open"
 
 
+def test_hooks_json_declares_each_event_once():
+    root = GUARDRAIL.parent.parent
+    hooks = json.loads((root / "hooks" / "hooks.json").read_text())["hooks"]
+    assert set(hooks) == {"PreToolUse", "SubagentStop"}
+    assert all(len(entries) == 1 for entries in hooks.values())
+    stop = hooks["SubagentStop"][0]
+    assert stop["matcher"] == "thunderstruck-investigator"
+    command = stop["hooks"][0]["command"]
+    assert "${CLAUDE_PLUGIN_ROOT}/scripts/capture_finding.py" in command
+    assert command.endswith("|| exit 0"), "the hook command must fail open"
+
+
 def test_cited_neighbours_are_named(project):
     context = json.loads(run_hook(project, "src/linked.ts").stdout)[
         "hookSpecificOutput"]["additionalContext"]

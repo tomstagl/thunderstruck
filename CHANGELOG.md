@@ -4,6 +4,23 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.10.0
+
+Scans that cost less and say what they consumed (#5).
+
+### Added
+
+- **A Consumption section in `report.md`.** `usage.py` reads Claude Code's own transcripts and writes `usage.json`: tokens by type and model for the orchestrating session and the investigators, re-spawns, repairs and one weighted total (each token weighted by its published price relative to Claude Sonnet 5.5 input). `report.json` carries it as `consumption`, with per-hotspot figures. Whatever could not be measured is named; a partial total never passes for the whole.
+- **A `SubagentStop` hook saves each investigator's result.** `capture_finding.py` writes the finding the moment the investigator finishes, byte-identical to `save_finding.py`, so results no longer depend on the orchestrator relaying or re-typing them. `save_finding.py --check` says which results reached disk, and `--fallback` / `--usage` record the cases where the orchestrator had to save one itself.
+- **`--model haiku|sonnet|opus`** chooses the investigators' model for one scan.
+- **An estimate in `--dry-run`.** `bundle.py` ends with the weighted tokens the investigators are expected to consume, and the assumption behind it.
+
+### Changed
+
+- **Investigators default to Sonnet**, whatever model the session runs, and read at most 9 extra files. They no longer re-read a file the bundle holds in full, and keep evidence notes short.
+- **`bundle.py` and `validate.py` print summaries** unless `--verbose`. Failures and their errors are always printed.
+- **Orchestration rules.** Investigators run in the foreground in batches of up to four per message; the scan never polls, never uses agent teams or messaging for them, never reads bundles or findings, and never re-spawns an investigator.
+
 ## 0.9.0
 
 A self-contained HTML report (#3).

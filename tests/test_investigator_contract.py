@@ -210,3 +210,38 @@ def test_the_example_confidence_rule_matches_the_classifier():
     classifier's kind in exactly that form."""
     assert c.classify_commit("fix hung sync") == "fix"
     assert "[{kind}]" in (ROOT / "scripts" / "bundle.py").read_text(encoding="utf-8")
+
+
+# --- consumption (#5) -------------------------------------------------------
+
+CALIBRATION = ROOT / "docs" / "calibration" / "consumption.md"
+
+
+def _frontmatter() -> dict:
+    import yaml
+    text = AGENT.read_text()
+    return yaml.safe_load(text.split("---\n", 2)[1])
+
+
+def test_investigators_default_to_sonnet():
+    fm = _frontmatter()
+    assert fm["model"] == "sonnet"
+    assert fm["tools"] == "Read, Grep, Glob"
+
+
+def test_the_read_cap_is_the_calibrated_one():
+    if not CALIBRATION.is_file():
+        pytest.skip("docs/calibration/consumption.md is not recorded yet")
+    cap = re.search(r"^Read cap: (\d+)$", CALIBRATION.read_text(), re.M)
+    assert cap, "consumption.md has no 'Read cap:' line"
+    prompt = " ".join(AGENT.read_text().split())
+    assert f"up to **{cap[1]}** additional files" in prompt
+    assert "10 additional files" not in prompt
+
+
+def test_the_prompt_limits_reading_and_output():
+    prompt = " ".join(AGENT.read_text().split())
+    assert "Do not Read a file whose full source is already in the bundle." in prompt
+    assert "prefer a `Grep` with a narrow pattern over reading a whole file" in prompt
+    assert ("Keep each evidence `note` to one short sentence and `confidence_rationale` "
+            "to at most two sentences.") in prompt

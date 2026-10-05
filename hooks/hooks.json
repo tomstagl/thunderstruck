@@ -11,6 +11,18 @@
           }
         ]
       }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "thunderstruck-investigator",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/capture_finding.py\" 2>/dev/null || exit 0",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }

@@ -191,7 +191,7 @@ def _top_level_imports(path: Path) -> set[str]:
 
 
 def test_report_html_is_stdlib_only():
-    local = {"_common", "context_extract"}
+    local = {"_common", "context_extract", "finding_shape"}
     assert _imports(SCRIPT) - set(sys.stdlib_module_names) <= {"_common"}
     for module in local:
         extra = _top_level_imports(ROOT / "scripts" / f"{module}.py")

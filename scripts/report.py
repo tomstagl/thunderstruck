@@ -108,6 +108,7 @@ def collect(repo: Path) -> dict[str, Any]:
         repo, hotspots["repo"]["head"], findings, hotspots["hotspots"] + dormant,
         clean + failed)
     failed_ids = {e["hotspot_id"] for e in failed}
+    usage, usage_warnings = _usage(out, hotspots["generated_at"])
     return {"hotspots": hotspots, "findings": findings,
             "failed": failed, "clean": clean, "validation": validation,
             # what an investigator actually read: briefed, and not incomplete
@@ -115,7 +116,19 @@ def collect(repo: Path) -> dict[str, Any]:
             "context": c.load_service_context(repo),
             "context_warnings": _context_warnings(raw_warnings),
             "links": link_meta, "link_warnings": link_warnings,
-            "hotspot_links": hotspot_links}
+            "hotspot_links": hotspot_links,
+            "usage": usage, "usage_warnings": usage_warnings}
+
+
+def _usage(out: Path, generated_at: str) -> tuple[dict | None, list[str]]:
+    """usage.json, if usage.py measured this scan; an older one is ignored."""
+    doc = c.load_json(out / "usage.json", None)
+    if doc is None:
+        return None, []
+    window = doc.get("window") if isinstance(doc, dict) else None
+    if not isinstance(window, dict) or window.get("from") != generated_at:
+        return None, ["usage.json is from an earlier scan and was ignored"]
+    return doc, []
 
 
 def _attach_commit_subjects(repo: Path, findings: list[dict]) -> None:
@@ -478,7 +491,57 @@ def run_warnings(data: dict) -> list[str]:
     """The list under **Run warnings**: hotspot, context and link warnings."""
     return (list(data["hotspots"].get("warnings") or [])
             + list(data.get("context_warnings") or [])
-            + list(data.get("link_warnings") or []))
+            + list(data.get("link_warnings") or [])
+            + list(data.get("usage_warnings") or []))
+
+
+def _k(n: int) -> str:
+    return f"{round(n / 1000)}k"
+
+
+def _plural(n: int, word: str) -> str:
+    return f"{n} {word}" if n == 1 else f"{n} {word}s"
+
+
+def _part(part: dict) -> tuple[int, str]:
+    by_model = part.get("by_model") or {}
+    weighted = sum(row.get("weighted") or 0 for row in by_model.values())
+    return weighted, ", ".join(md.code(m) for m in by_model)
+
+
+def render_consumption(usage: dict | None) -> list[str]:
+    """## Consumption: what the scan consumed, or why it was not measured (#5)."""
+    if not usage:
+        return []
+    missing = [md.text(m) for m in usage.get("missing") or []]
+    if usage.get("source") == "unavailable":
+        return ["## Consumption", "", f"Consumption was not measured: {'; '.join(missing)}.", ""]
+    orch, inv = usage.get("orchestrator") or {}, usage.get("investigators") or {}
+    o_weighted, o_models = _part(orch)
+    i_weighted, i_models = _part(inv)
+    partial = usage.get("source") != "transcripts"
+    total = f"{_k(usage.get('total_weighted') or 0)} weighted tokens"
+    lines = [f"Signals to report, measured parts only: {total}." if partial
+             else f"Signals to report: {total}."]
+    if orch.get("by_model"):
+        lines.append(f"Orchestrator {_k(o_weighted)} ({o_models}, "
+                     f"{_plural(orch.get('calls') or 0, 'call')}).")
+    else:
+        lines.append("Orchestrator not measured.")
+    lines.append(f"Investigators {_k(i_weighted)} across "
+                 f"{_plural(inv.get('agents') or 0, 'agent')} ({i_models or 'none measured'}), "
+                 f"{_plural(inv.get('repairs') or 0, 'repair')}, "
+                 f"{_plural(inv.get('respawns') or 0, 're-spawn')}.")
+    if inv.get("fallback_saves"):
+        lines.append(f"{inv['fallback_saves']} result(s) saved by the orchestrator because "
+                     f"the hook did not deliver them.")
+    if partial:
+        covers = (["the orchestrator"] if orch.get("by_model") else []) + \
+            [f"investigators for {_plural(len(inv.get('by_hotspot') or {}), 'hotspot')}"]
+        lines.append(f"Covers: {' and '.join(covers)}. Not measured: {'; '.join(missing)}.")
+    lines.append("Weighted by published price per model and token type, "
+                 "Claude Sonnet 5.5 input = 1.")
+    return ["## Consumption", "", *[f"{line}  " for line in lines[:-1]], lines[-1], ""]
 
 
 def coverage_rows(data: dict) -> list[dict]:
@@ -569,6 +632,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
             L += [f"  - {md.code(r['detector'])} on {md.code(r['path'])}: "
                   f"{r['hits']} hit(s) — {md.text(r['reason'])}" for r in suppressed]
         L.append("")
+    L += render_consumption(data.get("usage"))
     L += render_not_scanned(hs.get("coverage_gaps"))
     L += render_service_context(data.get("context"), now or datetime.now(timezone.utc))
 
@@ -721,6 +785,7 @@ def render_json(data: dict) -> dict:
                      "url": _hotspot_link(data, d["id"], "url")}
                     for d in hs.get("dormant") or []],
         "lead_precision": lead_precision(data),
+        "consumption": data.get("usage") or None,
         "findings": data["findings"],
         "clean": [{**e, "cited_by": cited_by.get(e["file"], [])} for e in data["clean"]],
         "incomplete": data["failed"],

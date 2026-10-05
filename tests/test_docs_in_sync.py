@@ -184,3 +184,41 @@ def test_ci_trust_override_is_documented():
     service = readme.split("### Service context")[1].split("\n## ")[0]
     for doc in (service, config):
         assert "THUNDERSTRUCK_TRUST_CONTEXT=1" in doc and "CI" in doc
+
+
+# --- consumption (#5) -------------------------------------------------------
+
+SCAN_SKILL = ROOT / "skills" / "thunderstruck-scan" / "SKILL.md"
+
+
+def _step(n: str) -> str:
+    text = SCAN_SKILL.read_text()
+    return text.split(f"## Step {n} ", 1)[1].split("\n## ", 1)[0]
+
+
+def test_scan_takes_a_model_for_the_investigators():
+    rows = [line for line in SCAN_SKILL.read_text().splitlines()
+            if line.startswith("| `--model")]
+    assert len(rows) == 1 and "| sonnet |" in rows[0], rows
+
+
+def test_step_3_checks_results_and_never_polls_or_messages():
+    step3 = _step("3")
+    assert 'save_finding.py" --check' in step3
+    assert "--fallback" in step3 and "model:" in step3
+    sentences = re.split(r"(?<=[.!?])\s+|\n\s*[-*] ", " ".join(step3.split("\n\n")))
+    for word in ("SendMessage", "ListAgents", "agent teams"):
+        hits = [s for s in sentences if word in s]
+        assert hits, f"step 3 does not mention {word}"
+        assert all("Never" in s for s in hits), (word, hits)
+
+
+def test_step_5_measures_consumption_before_the_report():
+    step5 = _step("5")
+    assert step5.index("scripts/usage.py") < step5.index("scripts/report.py")
+
+
+def test_cost_control_uses_measured_figures():
+    text = (ROOT / "skills" / "thunderstruck-scan" / "references"
+            / "orchestration.md").read_text()
+    assert "about 80k tokens" not in " ".join(text.split())

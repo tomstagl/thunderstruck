@@ -1,0 +1,10 @@
+{
+  "session_id": "s-1",
+  "transcript_path": "/tmp/projects/x/s-1.jsonl",
+  "cwd": "REPLACED_BY_TEST",
+  "hook_event_name": "SubagentStop",
+  "agent_id": "a-1",
+  "agent_type": "plugin:thunderstruck:thunderstruck-investigator",
+  "stop_reason": "completed",
+  "last_assistant_message": "{ this is not json"
+}

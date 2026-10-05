@@ -21,11 +21,36 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from context_extract import ATTRIBUTE_VALUE, DIRECTIONS, ENTITY_REF, LABEL, RELATION_TYPE
+from finding_shape import FINDING_SCHEMA_VERSION  # noqa: F401  (re-exported)
 
 OUTPUT_DIRNAME = ".thunderstruck"
 PROFILE_FILENAME = ".thunderstruck.toml"
 REPORT_SCHEMA_VERSION = "thunderstruck.report/v1"
-FINDING_SCHEMA_VERSION = "thunderstruck.finding/v1"
+USAGE_SCHEMA = "thunderstruck.usage/v1"
+
+# Every token weighted by its published price relative to Claude Sonnet 5.5
+# base input = 1, per model and token type (cache-read pricing differs by
+# model, so one factor per model would mislead). From
+# https://www.anthropic.com/pricing#api, read 2026-10-03. A model without a
+# row is counted raw and never weighted by a guess (spec §2.3, #5).
+TOKEN_WEIGHTS: dict[str, dict[str, float]] = {
+    "claude-sonnet-5-5": {"input": 1, "cache_write_5m": 1.25, "cache_write_1h": 2,
+                          "cache_read": 0.1, "output": 5},
+    "claude-opus-5-5": {"input": 2, "cache_write_5m": 2.5, "cache_write_1h": 4,
+                        "cache_read": 0.1, "output": 10},
+    "claude-haiku-4-5": {"input": 0.5, "cache_write_5m": 0.625, "cache_write_1h": 1,
+                         "cache_read": 0.05, "output": 2.5},
+    "claude-fable-5-1": {"input": 5, "cache_write_5m": 6.25, "cache_write_1h": 10,
+                         "cache_read": 0.125, "output": 25},
+}
+# The scan's --model values, as the ids TOKEN_WEIGHTS is keyed by.
+MODEL_ALIASES = {"haiku": "claude-haiku-4-5", "sonnet": "claude-sonnet-5-5",
+                 "opus": "claude-opus-5-5"}
+# Weighted tokens (Sonnet 5.5 row) one investigator consumes per token of
+# its bundle: the dry-run estimate's only assumption. Measured in
+# docs/calibration/consumption.md (Task 0 baseline, #5); Task N updates it.
+INVESTIGATOR_TOKENS_PER_BUNDLE_TOKEN = 10.9
+CALIBRATION_DOC = "docs/calibration/consumption.md"
 CONTEXT_SCHEMA = "thunderstruck.context/v1"
 CONTEXT_FILENAME = "context.json"
 CONTEXT_USABLE = ("fresh", "cached", "stale")
