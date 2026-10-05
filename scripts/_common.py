@@ -21,11 +21,11 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from context_extract import ATTRIBUTE_VALUE, DIRECTIONS, ENTITY_REF, LABEL, RELATION_TYPE
+from finding_shape import FINDING_SCHEMA_VERSION  # noqa: F401  (re-exported)
 
 OUTPUT_DIRNAME = ".thunderstruck"
 PROFILE_FILENAME = ".thunderstruck.toml"
 REPORT_SCHEMA_VERSION = "thunderstruck.report/v1"
-FINDING_SCHEMA_VERSION = "thunderstruck.finding/v1"
 CONTEXT_SCHEMA = "thunderstruck.context/v1"
 CONTEXT_FILENAME = "context.json"
 CONTEXT_USABLE = ("fresh", "cached", "stale")

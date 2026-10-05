@@ -71,17 +71,17 @@ A refactor with no behaviour change, so Task 2's hook and `save_finding.py` prod
   - `record_agent(out: Path, entry: dict, agent: dict) -> None` — writes `out/agents/<entry id>.json` as `{"hotspot_id", "bundle_hash", "agents": [...]}`; appends `agent` when the stored `bundle_hash` equals `entry["bundle_hash"]`, otherwise starts a new list.
 - `save_finding.py` keeps `from finding_shape import normalise` at module level, so `tests/test_investigator_contract.py:23` keeps working.
 
-- [ ] Write `tests/test_finding_shape.py`, failing:
+- [x] Write `tests/test_finding_shape.py`, failing:
   - `parse_result` accepts a fenced and an unfenced object, and raises `ValueError` for `"Here is the result:\n{}"`, for `[]` and for invalid JSON;
   - `shape` on the fixture's canned findings (from `tests/test_pipeline.py`'s `_valid_finding`) equals what today's `save_finding.py --from` writes, byte for byte, through `write_json_atomic`;
   - `write_json_atomic` refuses to write through a symlinked destination directory (`OSError`) and leaves no `.tmp` behind;
   - `find_entry` returns `None` for `"../H01"`, `"H01 "`, `1` and an absent id;
   - `record_agent` appends for the same `bundle_hash` and resets for a different one;
   - an AST test that `finding_shape.py` imports nothing outside `sys.stdlib_module_names`.
-- [ ] Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_finding_shape.py -q`. Expected: `ModuleNotFoundError: finding_shape`.
-- [ ] Create `finding_shape.py` by moving the code; make `save_finding.main` call `parse_result`, `shape`, `failed_doc` and `c.write_json`. Its printed output is unchanged.
-- [ ] Run the new tests, then the full suite, then `uv run scripts/gen_sample_report.py --check`.
-- [ ] Commit: `Move finding shaping into a stdlib module (#5)`.
+- [x] Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_finding_shape.py -q`. Expected: `ModuleNotFoundError: finding_shape`.
+- [x] Create `finding_shape.py` by moving the code; make `save_finding.main` call `parse_result`, `shape`, `failed_doc` and `c.write_json`. Its printed output is unchanged.
+- [x] Run the new tests, then the full suite, then `uv run scripts/gen_sample_report.py --check`.
+- [x] Commit: `Move finding shaping into a stdlib module (#5)`.
 
 ### Task 2: The `SubagentStop` capture hook (AC-5, AC-10)
 
