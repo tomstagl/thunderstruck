@@ -508,6 +508,21 @@ def _still_valid(validator, doc: dict) -> bool:
         return False
 
 
+def estimate_line(todo_tokens: list[int], model: str = "sonnet") -> list[str]:
+    """What the investigators will roughly consume, and the assumption behind it."""
+    if not todo_tokens:
+        return ["estimate: no investigators to run"]
+    ratio = c.INVESTIGATOR_TOKENS_PER_BUNDLE_TOKEN
+    factor = c.TOKEN_WEIGHTS[c.MODEL_ALIASES[model]]["input"]
+    k = round(sum(todo_tokens) * ratio * factor / 1000)
+    n = len(todo_tokens)
+    scaled = "" if model == "sonnet" else f", x{factor:g} for {model}"
+    return [f"estimate: ~{k}k weighted tokens for {n} investigator{'s' * (n != 1)} "
+            f"on {model}, plus the orchestrator",
+            f"  assumes ~{ratio:g} weighted tokens per bundle token on sonnet{scaled} "
+            f"({c.CALIBRATION_DOC})"]
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="bundle.py",
                                  description="build per-hotspot context bundles")
@@ -517,6 +532,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--commits", type=int, default=DEFAULT_COMMITS)
     ap.add_argument("--investigate-dormant", type=int, default=0, metavar="N",
                     help="also brief the first N dormant integration points (D bundles)")
+    ap.add_argument("--model", choices=sorted(c.MODEL_ALIASES), default="sonnet",
+                    help="investigator model, for the estimate only")
+    ap.add_argument("--verbose", action="store_true", help="also print one line per bundle")
     args = ap.parse_args(argv)
 
     try:
@@ -576,11 +594,13 @@ def main(argv: list[str] | None = None) -> int:
                       "cached": cached,
                       "context_hash": ctx["context_hash"] if ctx else None,
                       "findings_path": str(findings_dir / f"{hs['id']}.json")})
-        flag = "cached" if cached else "     "
-        print(f"{hs['id']}  ~{c.estimate_tokens(body):>5} tokens  {flag}  {hs['file']}")
+        if args.verbose:
+            flag = "cached" if cached else "     "
+            print(f"{hs['id']}  ~{c.estimate_tokens(body):>5} tokens  {flag}  {hs['file']}")
 
     brief = write_catalog_brief(c.out_dir(repo), catalog, profile)
-    print(f"catalog brief -> {brief}")
+    if args.verbose:
+        print(f"catalog brief -> {brief}")
     if ctx:
         print(f"service context: {len(ctx['edges'])} edge(s) for {ctx['entity_ref']}")
 
@@ -595,6 +615,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{requeued} bundle(s) had findings that fail today's validation rules "
               f"(v{c.VALIDATION_RULES}) and are investigated again")
     print(f"{len(todo)} need investigating, {len(index) - len(todo)} reused from cache")
+    for line in estimate_line([b["tokens_estimated"] for b in todo], args.model):
+        print(line)
     return 0
 
 

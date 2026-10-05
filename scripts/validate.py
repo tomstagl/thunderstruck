@@ -493,6 +493,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--repo", default=None)
     ap.add_argument("--file", default=None, help="validate a single findings file")
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--verbose", action="store_true", help="also print the valid hotspots")
     args = ap.parse_args(argv)
 
     try:
@@ -555,6 +556,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.quiet:
         for r in results:
+            if r["valid"] and not args.verbose:
+                continue
             mark = "ok  " if r["valid"] else "FAIL"
             print(f"{mark} {r['hotspot_id']}  {r['findings']} finding(s)")
             for err in r["errors"]:

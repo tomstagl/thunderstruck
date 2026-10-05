@@ -356,7 +356,10 @@ def test_findings_from_older_rules_that_now_fail_are_reinvestigated(scanned_copy
     bundles, out = _bundle(scanned_copy, plugin_root)
     assert bundles[hid]["cached"] is False
     assert "1 bundle(s) had findings that fail today's validation rules" in out
-    assert out.strip().splitlines()[-1].endswith("reused from cache"), "the skill reads the last line"
+    lines = out.strip().splitlines()
+    # the skill reads the counts, then relays the estimate that follows them (#5)
+    assert lines[-3].endswith("reused from cache"), "the counts end the summary"
+    assert lines[-2].startswith("estimate: ")
 
 
 def test_clean_and_failed_files_are_reused_as_before(scanned_copy, plugin_root):

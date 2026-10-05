@@ -241,15 +241,15 @@ def main(stdin_text: str) -> None:
 **Interfaces:**
 - Produces: `--verbose` on `bundle.py` and `validate.py`; `--model` on `bundle.py` (estimate only, default `sonnet`, never affects bundle bytes); `INVESTIGATOR_TOKENS_PER_BUNDLE_TOKEN: float` in `_common.py`, set to Task 0's recorded value with a comment citing `docs/calibration/consumption.md`; `bundle.estimate_line(todo_tokens: list[int]) -> list[str]`.
 
-- [ ] Write `tests/test_quiet_output.py`, failing:
+- [x] Write `tests/test_quiet_output.py`, failing:
   - `bundle.py` default stdout has no line matching `^[HD]\d\d  ~`, still has the `need investigating` line, and ends with the two §2.7 estimate lines; with `--verbose` the per-bundle lines are back;
   - the estimate is `round(sum(todo tokens) × INVESTIGATOR_TOKENS_PER_BUNDLE_TOKEN / 1000)` thousand on sonnet; `bundle.py --model opus` (the skill passes its `--model` through) multiplies by `TOKEN_WEIGHTS[MODEL_ALIASES["opus"]]["input"]` and names the model; with zero bundles to investigate it reads `estimate: no investigators to run`;
   - `validate.py` default stdout has no `ok  ` line, has every `FAIL` line with each error indented beneath it, and the summary line; `--verbose` restores `ok  ` lines; `--quiet` still prints nothing;
   - bundle files and `index.json` are byte-identical with and without `--verbose`.
-- [ ] Run them; they fail.
-- [ ] Implement; update the existing tests that read the removed lines to pass `--verbose`.
-- [ ] Run the full suite and `gen_sample_report.py --check`.
-- [ ] Commit: `Print summaries by default and estimate investigator consumption (#5)`.
+- [x] Run them; they fail.
+- [x] Implement; update the existing tests that read the removed lines to pass `--verbose`.
+- [x] Run the full suite and `gen_sample_report.py --check`.
+- [x] Commit: `Print summaries by default and estimate investigator consumption (#5)`.
 
 ### Task 7: The investigator prompt (AC-4, AC-8)
 
