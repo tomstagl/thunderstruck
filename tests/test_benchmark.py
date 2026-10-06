@@ -223,3 +223,51 @@ def test_an_invalid_run_is_refused(tmp_path, doc, needle):
     with pytest.raises(b.InputError) as e:
         b.load_run(p)
     assert any(needle in x for x in e.value.problems)
+
+
+# --- Task 4 -----------------------------------------------------------------
+TRUTH = ("correct", "correct_but_gated", "partially_correct", "wrong")
+EXPECTED_MATRIX = {
+    "upheld": ("same", "one step", "wrong direction", "wrong direction"),
+    "upheld_but_gated": ("one step", "same", "wrong direction", "wrong direction"),
+    "narrowed": ("one step", "one step", "same", "one step"),
+    "refuted": ("correct refuted", "correct refuted", "one step", "same"),
+}
+
+
+@pytest.mark.parametrize("run_verdict", list(EXPECTED_MATRIX))
+@pytest.mark.parametrize("truth", TRUTH)
+def test_every_matrix_cell(run_verdict, truth):
+    assert b.verdict_outcome(run_verdict, truth) == EXPECTED_MATRIX[run_verdict][TRUTH.index(truth)]
+
+
+def test_spike_refuter_baseline():
+    run = b.load_run(CELERY / "runs" / "spike-refuter.json")
+    records, unlabelled, excluded = b.split_run(run, _celery())
+    v = b.score_verdicts(records, _celery())
+    assert v["counts"] == {"same": 15, "one step": 4, "wrong direction": 2, "correct refuted": 0}
+    assert sorted(k for k, x in v["rows"].items() if x["outcome"] == "wrong direction") == \
+        sorted([_key("FR-003"), _key("FR-009")])
+    d = b.score_duplicates(records, _celery())
+    assert d["found"] == [_key("FR-006")] and d["missed"] == [] and d["false"] == []
+    assert unlabelled == [] and excluded == []
+
+
+def test_spike_run_is_the_spike_files_mapped_to_keys():
+    report = json.loads((CELERY / "scan" / "report.json").read_text())
+    key_of = {f["id"]: f["key"] for f in report["findings"]}
+    expected = {}
+    for src in sorted((CELERY / "spikes" / "refute").glob("refute_*.json")):
+        for f in json.loads(src.read_text())["findings"]:
+            expected[key_of[f["id"]]] = {"verdict": f["verdict"],
+                                        "duplicate_of": key_of[f["duplicate_of"]] if f.get("duplicate_of") else None}
+    run = b.load_run(CELERY / "runs" / "spike-refuter.json")
+    assert run["findings"] == expected
+    assert run["commit"] == SHA and run["produced_by"]["model"] is None
+
+
+def test_duplicates_missed_and_false():
+    s = _celery()
+    k1, k6, k2 = _key("FR-001"), _key("FR-006"), _key("FR-002")
+    d = b.score_duplicates({k6: {"duplicate_of": None}, k2: {"duplicate_of": k1}}, s)
+    assert d["found"] == [] and d["missed"] == [k6] and d["false"] == [k2]

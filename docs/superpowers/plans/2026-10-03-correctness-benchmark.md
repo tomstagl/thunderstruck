@@ -747,7 +747,7 @@ git commit -m "Benchmark: runs, the report adapter and confidence scoring (#55)"
 - Consumes: `VERDICTS`, `load_run`, `split_run`.
 - Produces: `SAME`, `ONE_STEP`, `WRONG_DIRECTION`, `CORRECT_REFUTED`, `VERDICT_OUTCOMES`, `VERDICT_MATRIX`; `verdict_outcome(run_verdict: str, label_verdict: str) -> str`; `score_verdicts(records, label_set) -> dict` with `rows`, `counts`, `keys`; `score_duplicates(records, label_set) -> dict` with `found`, `missed`, `false`, `keys`.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 4 -----------------------------------------------------------------
@@ -798,12 +798,12 @@ def test_duplicates_missed_and_false():
     assert d["found"] == [] and d["missed"] == [k6] and d["false"] == [k2]
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_benchmark.py -q -k "matrix or spike or duplicates"`
 Expected: FAIL, `AttributeError: ... 'verdict_outcome'`.
 
-- [ ] **Step 3: Write the implementation.** Append to `scripts/benchmark.py`:
+- [x] **Step 3: Write the implementation.** Append to `scripts/benchmark.py`:
 
 ```python
 
@@ -841,7 +841,7 @@ def score_duplicates(records: dict, label_set: dict) -> dict:
     return {"found": found, "missed": missed, "false": false, "keys": sorted(stated)}
 ```
 
-- [ ] **Step 4: Generate the spike run file.** Save this one-off converter in your scratch directory and run it (spec §6.2):
+- [x] **Step 4: Generate the spike run file.** Save this one-off converter in your scratch directory and run it (spec §6.2):
 
 ```python
 """One-off: spikes/refute/*.json -> runs/spike-refuter.json (spec §6.2)."""
@@ -871,9 +871,9 @@ print(len(findings))
 Run: `uv run --no-project python "$SCRATCH/build_spike_run.py" docs/calibration/correctness/celery`
 Expected: `21`.
 
-- [ ] **Step 5: Run the tests to verify they pass** (same command as Step 2). Expected: PASS, including all 16 matrix cells.
+- [x] **Step 5: Run the tests to verify they pass** (same command as Step 2). Expected: PASS, including all 16 matrix cells.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/benchmark.py tests/test_benchmark.py docs/calibration/correctness/celery/runs/spike-refuter.json

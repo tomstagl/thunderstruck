@@ -251,3 +251,36 @@ def score_confidence(records: dict, label_set: dict) -> dict:
               "under": sum(1 for x in rows.values() if x["step"] < 0)}
     high_above = sorted(k for k, x in rows.items() if x["run"] == "high" and x["step"] > 0)
     return {"rows": rows, "counts": counts, "high_above_deserved": high_above, "keys": sorted(rows)}
+
+
+SAME, ONE_STEP, WRONG_DIRECTION, CORRECT_REFUTED = "same", "one step", "wrong direction", "correct refuted"
+VERDICT_OUTCOMES = (SAME, ONE_STEP, WRONG_DIRECTION, CORRECT_REFUTED)
+VERDICT_MATRIX = {
+    #                   correct          correct_but_gated  partially_correct  wrong
+    "upheld":           (SAME,            ONE_STEP,          WRONG_DIRECTION,   WRONG_DIRECTION),
+    "upheld_but_gated": (ONE_STEP,        SAME,              WRONG_DIRECTION,   WRONG_DIRECTION),
+    "narrowed":         (ONE_STEP,        ONE_STEP,          SAME,              ONE_STEP),
+    "refuted":          (CORRECT_REFUTED, CORRECT_REFUTED,   ONE_STEP,          SAME),
+}
+
+
+def verdict_outcome(run_verdict: str, label_verdict: str) -> str:
+    return VERDICT_MATRIX[run_verdict][VERDICTS.index(label_verdict)]
+
+
+def score_verdicts(records: dict, label_set: dict) -> dict:
+    rows = {k: {"run": r["verdict"], "label": label_set["_by_key"][k]["verdict"],
+                "outcome": verdict_outcome(r["verdict"], label_set["_by_key"][k]["verdict"])}
+            for k, r in records.items() if r.get("verdict")}
+    counts = {o: sum(1 for x in rows.values() if x["outcome"] == o) for o in VERDICT_OUTCOMES}
+    return {"rows": rows, "counts": counts, "keys": sorted(rows)}
+
+
+def score_duplicates(records: dict, label_set: dict) -> dict:
+    stated = {k: r.get("duplicate_of") for k, r in records.items() if "duplicate_of" in r}
+    labelled = {k: lb["duplicate_of"] for k, lb in label_set["_by_key"].items()
+                if lb.get("duplicate_of") and k in stated}
+    found = sorted(k for k, d in labelled.items() if stated.get(k) == d)
+    missed = sorted(k for k, d in labelled.items() if stated.get(k) != d)
+    false = sorted(k for k, d in stated.items() if d and labelled.get(k) != d)
+    return {"found": found, "missed": missed, "false": false, "keys": sorted(stated)}

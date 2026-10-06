@@ -1,0 +1,95 @@
+{
+  "schema": "thunderstruck.benchmark-run/v1",
+  "commit": "508c1129269d2b1baffc516d8f5c05da06273ef0",
+  "produced_by": {
+    "stage": "refuter",
+    "model": null,
+    "source": "spikes/refute/refute_H01-H05.json and refute_H06-H10.json, ids mapped to keys through scan/report.json; the spike files do not record the refuters' model, so independence is not checked"
+  },
+  "findings": {
+    "25300c62e151": {
+      "verdict": "upheld",
+      "duplicate_of": null
+    },
+    "293417791dc2": {
+      "verdict": "upheld_but_gated",
+      "duplicate_of": null
+    },
+    "2b1793902d2d": {
+      "verdict": "narrowed",
+      "duplicate_of": null
+    },
+    "34e3742160f1": {
+      "verdict": "narrowed",
+      "duplicate_of": null
+    },
+    "39e3d9a88104": {
+      "verdict": "narrowed",
+      "duplicate_of": null
+    },
+    "50df890ef774": {
+      "verdict": "narrowed",
+      "duplicate_of": null
+    },
+    "5fc6c6cb450e": {
+      "verdict": "refuted",
+      "duplicate_of": null
+    },
+    "6105880fd01e": {
+      "verdict": "narrowed",
+      "duplicate_of": null
+    },
+    "6345778fa223": {
+      "verdict": "narrowed",
+      "duplicate_of": null
+    },
+    "6bd1a259060b": {
+      "verdict": "narrowed",
+      "duplicate_of": null
+    },
+    "8196e104b15a": {
+      "verdict": "upheld_but_gated",
+      "duplicate_of": null
+    },
+    "8bcddcb49b5d": {
+      "verdict": "upheld_but_gated",
+      "duplicate_of": null
+    },
+    "9be5cf13811a": {
+      "verdict": "upheld",
+      "duplicate_of": null
+    },
+    "a0ba5bc31036": {
+      "verdict": "upheld_but_gated",
+      "duplicate_of": null
+    },
+    "a4b8d7590c34": {
+      "verdict": "upheld",
+      "duplicate_of": null
+    },
+    "b1af3746845c": {
+      "verdict": "upheld_but_gated",
+      "duplicate_of": null
+    },
+    "bb3600c042ef": {
+      "verdict": "narrowed",
+      "duplicate_of": null
+    },
+    "c15996fba8db": {
+      "verdict": "narrowed",
+      "duplicate_of": null
+    },
+    "d710c0302beb": {
+      "verdict": "upheld",
+      "duplicate_of": null
+    },
+    "df2cb49b3e2c": {
+      "verdict": "narrowed",
+      "duplicate_of": "f62fb0c3468b"
+    },
+    "f62fb0c3468b": {
+      "verdict": "narrowed",
+      "duplicate_of": null
+    }
+  }
+}
