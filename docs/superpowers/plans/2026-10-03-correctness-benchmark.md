@@ -1516,7 +1516,7 @@ git commit -m "Benchmark: the command, per-set and pooled figures, holdout (#55)
 **Interfaces:**
 - Consumes: `main` via the CLI, `evaluate`, `load_label_sets`, `load_run`, `run_from_report`, `add_bundles`.
 
-- [ ] **Step 1: Write the tests.** Append:
+- [x] **Step 1: Write the tests.** Append:
 
 ```python
 # --- Task 8 -----------------------------------------------------------------
@@ -1613,12 +1613,12 @@ def test_labels_never_reach_the_pipeline():
     assert hits == []
 ```
 
-- [ ] **Step 2: Run them**
+- [x] **Step 2: Run them**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_benchmark.py -q -k "second or pooled or adding_labels or standard_library or never_reach"`
 Expected: PASS. These pin behaviour Tasks 1–7 already built; if any fails, the defect is in the scorer, and the fix goes there, not in the test. Check the second set's figures by hand against the run: same = s1 and s4 (2/4), pooled with Celery 17/25.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add tests/test_benchmark.py

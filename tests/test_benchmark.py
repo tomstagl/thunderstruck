@@ -442,3 +442,97 @@ def test_a_malformed_run_file_is_refused_without_a_traceback(tmp_path):
     run.write_text("{not json")
     r = _cli("--run", str(run))
     assert r.returncode == 2 and str(run) in r.stderr and "Traceback" not in r.stderr
+
+
+# --- Task 8 -----------------------------------------------------------------
+SECOND = "b" * 40
+
+
+def _second_set(tmp_path: Path, role: str = "holdout") -> Path:
+    labels = [
+        {"key": "s1", "display": "FR-001", "verdict": "correct", "basis": "executed", "labelled_by": "a-person",
+         "established_by": "repro/s1.sh", "deserved_confidence": "high", "duplicate_of": None,
+         "refuting_fact": None, "preconditions": []},
+        {"key": "s2", "display": "FR-002", "verdict": "correct_but_gated", "basis": "read", "labelled_by": "a-person",
+         "deserved_confidence": "medium", "duplicate_of": None, "refuting_fact": None,
+         "preconditions": [{"setting": "pool_size", "kind": "setting", "literal": {"type": "number", "value": 10},
+                            "effective": {"type": "number", "value": 5}}]},
+        {"key": "s3", "display": "FR-003", "verdict": "partially_correct", "basis": "reasoned",
+         "labelled_by": "claude-sonnet-5-5", "deserved_confidence": "low", "duplicate_of": "s1",
+         "refuting_fact": {"ranges": [{"file": "svc/pool.py", "lo": 10, "hi": 12, "kind": "repo"}]},
+         "preconditions": []},
+        {"key": "s4", "display": "FR-004", "verdict": "wrong", "basis": "executed", "labelled_by": "a-person",
+         "established_by": "repro/s4.sh", "deserved_confidence": "low", "duplicate_of": None,
+         "refuting_fact": {"ranges": [{"file": "docs/x.rst", "kind": "docs"}]}, "preconditions": []},
+    ]
+    return _write_set(tmp_path, _set(repo="example/service", commit=SECOND, role=role, labels=labels), "service")
+
+
+def _second_run(tmp_path: Path) -> Path:
+    p = tmp_path / "second-run.json"
+    p.write_text(json.dumps(_run({
+        "s1": {"verdict": "upheld", "confidence": "high", "duplicate_of": None},
+        "s2": {"verdict": "narrowed", "confidence": "high", "duplicate_of": None,
+               "preconditions": [{"setting": "pool_size", "default": "5"}]},
+        "s3": {"verdict": "upheld", "confidence": "low", "duplicate_of": "s1"},
+        "s4": {"verdict": "refuted", "confidence": "medium", "duplicate_of": None},
+    }, model="claude-opus-5-5", commit=SECOND)))
+    return p
+
+
+def test_a_second_repository_is_data_only_and_pools_beside_celery(tmp_path):
+    _second_set(tmp_path)
+    p = _cli("--labels", str(CELERY), "--labels", str(tmp_path / "service"),
+             "--run", str(CELERY / "runs" / "spike-refuter.json"), "--run", str(_second_run(tmp_path)))
+    assert p.returncode == 0, p.stderr
+    out = p.stdout
+    assert "# example/service@bbbbbbb (holdout)" in out
+    assert re.search(r"verdict: same\s+2/4 .*example/service@bbbbbbb · n=4 findings · labels: 3 a-person "
+                     r"\(2 executed, 1 read\); 1 claude-sonnet-5-5 \(1 reasoned\)", out)
+    assert "## pooled verdicts" in out
+    assert re.search(r"verdict: same\s+17/25 .*pooled", out)
+    assert "  FR-001 (s1)" not in out and "found: FR-003" not in out  # holdout detail hidden without --reveal
+    revealed = _cli("--labels", str(CELERY), "--labels", str(tmp_path / "service"),
+                    "--run", str(_second_run(tmp_path)), "--reveal")
+    assert "  FR-001 (s1): upheld vs correct → same" in revealed.stdout
+    assert "  found: FR-003 (s3)" in revealed.stdout
+    assert all(ln.endswith("· revealed") for ln in revealed.stdout.splitlines() if re.search(r" \d+/\d+  \(", ln))
+
+
+def test_runs_on_one_set_are_never_pooled():
+    p = _cli("--run", str(CELERY / "runs" / "spike-refuter.json"), "--report", str(CELERY / "scan" / "report.json"))
+    assert p.returncode == 0 and "pooled" not in p.stdout
+
+
+def test_adding_labels_never_changes_an_existing_findings_result(tmp_path):
+    base = json.loads((CELERY / "labels.json").read_text())
+    run = b.load_run(CELERY / "runs" / "spike-refuter.json")
+    run_c = b.run_from_report(CELERY / "scan" / "report.json")
+    b.add_bundles(run_c, CELERY / "scan" / "bundles", CELERY / "scan" / "report.json")
+    before = b.evaluate([run, run_c], b.load_label_sets([CELERY / "labels.json"]))
+    grown = copy.deepcopy(base)
+    grown["labels"].append({"key": "ffffffffffff", "display": "FR-099", "verdict": "wrong", "basis": "read",
+                            "labelled_by": "a-person", "deserved_confidence": "low", "duplicate_of": None,
+                            "refuting_fact": None, "preconditions": []})
+    after = b.evaluate([run, run_c], b.load_label_sets([_write_set(tmp_path, grown, "celery")]))
+    for r0, r1 in zip(before["runs"], after["runs"]):
+        for name, m in r0["measures"].items():
+            per_finding = lambda x: {k: v for k, v in x.items() if k in ("rows", "found", "missed", "false")}
+            assert json.dumps(per_finding(m), sort_keys=True) == json.dumps(per_finding(r1["measures"][name]), sort_keys=True)
+
+
+def test_benchmark_imports_only_the_standard_library():
+    tree = ast.parse((ROOT / "scripts" / "benchmark.py").read_text())
+    names = {a.name.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
+    names |= {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
+    assert names <= set(sys.stdlib_module_names) | {"__future__"}, names - set(sys.stdlib_module_names)
+
+
+def test_labels_never_reach_the_pipeline():
+    hits = []
+    for d in ("agents", "skills", "catalog", "scripts", "hooks", "templates"):
+        for p in (ROOT / d).rglob("*"):
+            if p.is_file() and p.name != "benchmark.py" and p.suffix in (".py", ".md", ".yaml", ".json", ".html"):
+                if "calibration/correctness" in p.read_text(errors="ignore"):
+                    hits.append(str(p.relative_to(ROOT)))
+    assert hits == []
