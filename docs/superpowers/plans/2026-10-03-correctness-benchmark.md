@@ -579,7 +579,7 @@ git commit -m "Benchmark: the Celery label set from the executed review (#55)"
 - Consumes: `InputError`, `RUN_SCHEMA`, `RUN_VERDICTS`, `CONFIDENCE`, `load_label_sets`.
 - Produces: `validate_run(doc: dict, where: str) -> list[str]`; `load_run(path: Path) -> dict`; `run_from_report(report_path: Path) -> dict` (a run with `produced_by.model` None); `split_run(run: dict, label_set: dict) -> tuple[dict, list[str], list[str]]` returning (records by key, unlabelled keys, excluded keys); `score_confidence(records: dict, label_set: dict) -> dict` with `rows`, `counts` (`exact`, `within one`, `over`, `under`), `high_above_deserved`, `keys`.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 3 -----------------------------------------------------------------
@@ -636,12 +636,12 @@ def test_an_invalid_run_is_refused(tmp_path, doc, needle):
     assert any(needle in x for x in e.value.problems)
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_benchmark.py -q -k "confidence or unlabelled or display_id or labeller or invalid_run"`
 Expected: FAIL, `AttributeError: module 'benchmark' has no attribute 'run_from_report'` (and the like).
 
-- [ ] **Step 3: Write the implementation.** Append to `scripts/benchmark.py`:
+- [x] **Step 3: Write the implementation.** Append to `scripts/benchmark.py`:
 
 ```python
 
@@ -725,9 +725,9 @@ def score_confidence(records: dict, label_set: dict) -> dict:
     return {"rows": rows, "counts": counts, "high_above_deserved": high_above, "keys": sorted(rows)}
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass** (same command as Step 2). Expected: PASS.
+- [x] **Step 4: Run the tests to verify they pass** (same command as Step 2). Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/benchmark.py tests/test_benchmark.py

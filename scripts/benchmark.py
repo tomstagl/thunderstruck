@@ -172,3 +172,82 @@ def format_figure(fig: dict, revealed: bool = False) -> str:
     lo, hi = fig["interval"]
     tail = " · revealed" if revealed else ""
     return f"{fig['name']:<28} {fig['k']}/{fig['n']}  ({lo}–{hi}%)  {format_basis(fig['basis'])}{tail}"
+
+
+# --------------------------------------------------------------------- runs
+def validate_run(doc: dict, where: str) -> list[str]:
+    if doc.get("schema") != RUN_SCHEMA:
+        return [f"{where}: schema is not {RUN_SCHEMA}"]
+    p = []
+    if not doc.get("commit"):
+        p.append(f"{where}: commit is missing")
+    if not isinstance(doc.get("produced_by"), dict) or not doc["produced_by"].get("stage"):
+        p.append(f"{where}: produced_by.stage is missing")
+    if not isinstance(doc.get("findings"), dict):
+        return p + [f"{where}: findings is not an object keyed by finding key"]
+    for key, rec in sorted(doc["findings"].items()):
+        v = rec.get("verdict")
+        if v is not None and v not in RUN_VERDICTS:
+            p.append(f"{where}: {key}: verdict {v!r} is not one of {', '.join(RUN_VERDICTS)}")
+        c = rec.get("confidence")
+        if c is not None and c not in CONFIDENCE:
+            p.append(f"{where}: {key}: confidence {c!r} is not one of {', '.join(CONFIDENCE)}")
+    return p
+
+
+def load_run(path: Path) -> dict:
+    try:
+        doc = json.loads(path.read_text())
+    except (OSError, ValueError) as e:
+        raise InputError([f"{path}: {e}"]) from None
+    problems = validate_run(doc, str(path))
+    if problems:
+        raise InputError(problems)
+    return doc
+
+
+def run_from_report(report_path: Path) -> dict:
+    """--report: a scan's confidences as a run."""
+    try:
+        report = json.loads(report_path.read_text())
+    except (OSError, ValueError) as e:
+        raise InputError([f"{report_path}: {e}"]) from None
+    findings = {}
+    for f in report.get("findings") or []:
+        if f.get("key"):
+            findings[f["key"]] = {"confidence": f.get("confidence")}
+    return {"schema": RUN_SCHEMA, "commit": (report.get("repo") or {}).get("head", ""),
+            "produced_by": {"stage": "investigator", "model": None, "source": str(report_path)},
+            "findings": findings}
+
+
+def split_run(run: dict, label_set: dict) -> tuple[dict, list[str], list[str]]:
+    """(scored records by key, unlabelled keys, keys excluded by independence)."""
+    model = (run.get("produced_by") or {}).get("model")
+    scored, unlabelled, excluded = {}, [], []
+    for key, rec in sorted(run["findings"].items()):
+        lb = label_set["_by_key"].get(key)
+        if lb is None:
+            unlabelled.append(key)
+        elif model and lb["labelled_by"] == model:
+            excluded.append(key)
+        else:
+            scored[key] = rec
+    return scored, unlabelled, excluded
+
+
+# ------------------------------------------------------------------ scoring
+def score_confidence(records: dict, label_set: dict) -> dict:
+    rows = {}
+    for k, r in records.items():
+        deserved = label_set["_by_key"][k].get("deserved_confidence")
+        if not r.get("confidence") or not deserved:
+            continue
+        step = CONFIDENCE.index(r["confidence"]) - CONFIDENCE.index(deserved)
+        rows[k] = {"run": r["confidence"], "deserved": deserved, "step": step}
+    counts = {"exact": sum(1 for x in rows.values() if x["step"] == 0),
+              "within one": sum(1 for x in rows.values() if abs(x["step"]) <= 1),
+              "over": sum(1 for x in rows.values() if x["step"] > 0),
+              "under": sum(1 for x in rows.values() if x["step"] < 0)}
+    high_above = sorted(k for k, x in rows.items() if x["run"] == "high" and x["step"] > 0)
+    return {"rows": rows, "counts": counts, "high_above_deserved": high_above, "keys": sorted(rows)}

@@ -169,3 +169,57 @@ def test_celery_has_exactly_five_discriminating_preconditions():
     env = sorted((lb["display"], p["setting"]) for lb in s["labels"] for p in lb["preconditions"]
                  if p["kind"] == "environment")
     assert env == [("FR-014", "database user privileges"), ("FR-014", "result_backend"), ("FR-019", "task_routes")]
+
+
+# --- Task 3 -----------------------------------------------------------------
+def _run(findings: dict, model=None, commit=SHA) -> dict:
+    return {"schema": b.RUN_SCHEMA, "commit": commit, "produced_by": {"stage": "test", "model": model},
+            "findings": findings}
+
+
+def test_today_confidences_baseline():
+    run = b.run_from_report(CELERY / "scan" / "report.json")
+    assert run["commit"] == SHA and run["produced_by"]["model"] is None
+    records, unlabelled, excluded = b.split_run(run, _celery())
+    m = b.score_confidence(records, _celery())
+    assert m["counts"] == {"exact": 8, "within one": 20, "over": 6, "under": 7}
+    assert m["high_above_deserved"] == sorted([_key("FR-001"), _key("FR-003")])
+    assert unlabelled == [] and excluded == []
+
+
+def test_unlabelled_keys_are_listed_and_never_scored():
+    run = _run({"000000000000": {"confidence": "high"}, _key("FR-002"): {"confidence": "high"}})
+    records, unlabelled, _ = b.split_run(run, _celery())
+    assert unlabelled == ["000000000000"]
+    assert b.score_confidence(records, _celery())["counts"]["exact"] == 1
+
+
+def test_findings_are_matched_on_key_never_on_display_id():
+    # A run whose records carry another finding's display id still scores by its key.
+    run = _run({_key("FR-002"): {"confidence": "high", "display": "FR-003"}})
+    records, _, _ = b.split_run(run, _celery())
+    rows = b.score_confidence(records, _celery())["rows"]
+    assert rows[_key("FR-002")] == {"run": "high", "deserved": "high", "step": 0}
+
+
+def test_labeller_scoring_its_own_labels_is_excluded():
+    run = _run({_key("FR-002"): {"confidence": "high"}}, model="claude-fable-5-1")
+    records, _, excluded = b.split_run(run, _celery())
+    assert records == {} and excluded == [_key("FR-002")]
+
+
+@pytest.mark.parametrize("doc, needle", [
+    ({"schema": "x"}, "schema is not"),
+    ({"schema": b.RUN_SCHEMA, "commit": SHA, "produced_by": {}, "findings": {}}, "produced_by.stage"),
+    ({"schema": b.RUN_SCHEMA, "commit": SHA, "produced_by": {"stage": "s"}, "findings": []}, "keyed by finding key"),
+    ({"schema": b.RUN_SCHEMA, "commit": SHA, "produced_by": {"stage": "s"},
+      "findings": {"k": {"verdict": "maybe"}}}, "verdict 'maybe'"),
+    ({"schema": b.RUN_SCHEMA, "commit": SHA, "produced_by": {"stage": "s"},
+      "findings": {"k": {"confidence": "certain"}}}, "confidence 'certain'"),
+])
+def test_an_invalid_run_is_refused(tmp_path, doc, needle):
+    p = tmp_path / "run.json"
+    p.write_text(json.dumps(doc))
+    with pytest.raises(b.InputError) as e:
+        b.load_run(p)
+    assert any(needle in x for x in e.value.problems)
