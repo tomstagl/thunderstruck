@@ -536,3 +536,93 @@ def test_labels_never_reach_the_pipeline():
                 if "calibration/correctness" in p.read_text(errors="ignore"):
                     hits.append(str(p.relative_to(ROOT)))
     assert hits == []
+
+
+# --- Review fixes -----------------------------------------------------------
+def test_a_fence_inside_the_source_does_not_hide_the_clip_marker(tmp_path):
+    import bundle
+    lines = [f"x_{i:04d} = {i}  # line {i}" for i in range(1, 401)]
+    lines[89] = "```python"  # a fence opening a line, as in a docstring example
+    (tmp_path / "m.py").write_text("\n".join(lines) + "\n")
+    hs = {"file": "m.py", "language": "python", "complexity": {"top_function": {"name": "f", "lines": "100-250"}}}
+    text = bundle.section_source(tmp_path, hs, 200) + "## Change history — last 1 commits touching this file\n"
+    _, ranges = b.shown_lines(text)
+    assert len(ranges) == 2, ranges
+
+
+def test_a_precondition_without_a_default_is_not_stated():
+    m = b.score_defaults({_key("FR-001"): {"preconditions": [{"setting": "redis_socket_connect_timeout",
+                                                               "confirmation": "confirmed"}]}}, _celery())
+    row = next(x for x in m["rows"] if x["setting"] == "redis_socket_connect_timeout")
+    assert row["outcome"] == "not stated"
+
+
+@pytest.mark.parametrize("pc, needle", [
+    ({"kind": "setting", "literal": {"type": "none"}, "effective": {"type": "none"}}, "setting is missing"),
+    ({"setting": "s", "kind": "setting", "literal": {"type": "number"}, "effective": {"type": "none"}}, "has no value"),
+])
+def test_a_precondition_without_a_setting_or_value_is_rejected(tmp_path, pc, needle):
+    doc = _set()
+    doc["labels"][0]["preconditions"] = [pc]
+    with pytest.raises(b.InputError) as e:
+        b.load_label_sets([_write_set(tmp_path, doc)])
+    assert any(needle in p for p in e.value.problems), e.value.problems
+
+
+@pytest.mark.parametrize("doc", [
+    [],
+    {"schema": b.RUN_SCHEMA, "commit": SHA, "produced_by": {"stage": "s"}, "findings": {"k": "upheld"}},
+    {"schema": b.RUN_SCHEMA, "commit": SHA, "produced_by": {"stage": "s"}, "findings": {"k": {"preconditions": None}}},
+    {"schema": b.RUN_SCHEMA, "commit": 5, "produced_by": {"stage": "s"}, "findings": {}},
+])
+def test_a_malformed_run_record_is_refused_without_a_traceback(tmp_path, doc):
+    p = tmp_path / "run.json"
+    p.write_text(json.dumps(doc))
+    r = _cli("--run", str(p))
+    assert r.returncode == 2 and str(p) in r.stderr and "Traceback" not in r.stderr
+
+
+def test_pooled_lines_over_a_revealed_holdout_say_revealed(tmp_path):
+    _second_set(tmp_path)
+    p = _cli("--labels", str(CELERY), "--labels", str(tmp_path / "service"),
+             "--run", str(CELERY / "runs" / "spike-refuter.json"), "--run", str(_second_run(tmp_path)), "--reveal")
+    pooled = p.stdout.split("## pooled", 1)[1]
+    assert all(ln.endswith("· revealed") for ln in pooled.splitlines() if re.search(r" \d+/\d+  \(", ln))
+
+
+def test_a_hidden_holdout_leaks_no_per_finding_keys_in_json(tmp_path):
+    _second_set(tmp_path)
+    p = _cli("--labels", str(tmp_path / "service"), "--run", str(_second_run(tmp_path)), "--json")
+    doc = json.loads(p.stdout)
+    assert all("keys" not in m for r in doc["runs"] for m in r["measures"].values())
+    assert all(r["display"] == {} for r in doc["runs"])
+
+
+def test_a_hotspot_missing_from_the_bundle_index_is_unreadable(tmp_path):
+    import shutil
+    shutil.copytree(CELERY / "scan" / "bundles", tmp_path / "bundles")
+    index = json.loads((tmp_path / "bundles" / "index.json").read_text())
+    index["bundles"] = [x for x in index["bundles"] if x["id"] != "H03"]
+    (tmp_path / "bundles" / "index.json").write_text(json.dumps(index))
+    run = b.run_from_report(CELERY / "scan" / "report.json")
+    b.add_bundles(run, tmp_path / "bundles", CELERY / "scan" / "report.json")
+    records, _, _ = b.split_run(run, _celery())
+    assert b.score_bundles(records, _celery())["rows"][_key("FR-001")]["outcome"] == "unreadable"
+
+
+def test_label_setting_names_ignore_surrounding_space_and_json_infinity_is_inf():
+    s = _celery()
+    lb = copy.deepcopy(s)
+    pc = next(p for p in lb["_by_key"][_key("FR-002")]["preconditions"] if p["setting"] == "task_acks_on_timeout")
+    pc["setting"] = "task_acks_on_timeout "
+    m = b.score_defaults({_key("FR-002"): {"preconditions": [{"setting": "task_acks_on_timeout", "default": True}]}}, lb)
+    assert m["counts"]["matches effective"] == 1
+    assert b.normalise_value(float("inf")) == {"type": "number", "value": "inf"}
+
+
+def test_an_unreadable_report_is_named_by_its_own_path(tmp_path):
+    bad = tmp_path / "report.json"
+    bad.write_text("{not json")
+    with pytest.raises(b.InputError) as e:
+        b.add_bundles({"findings": {}}, CELERY / "scan" / "bundles", bad)
+    assert str(bad) in e.value.problems[0]

@@ -84,11 +84,16 @@ def validate_label_set(doc: dict, where: str) -> list[str]:
                 if not (isinstance(lo, int) and isinstance(hi, int) and 0 < lo <= hi and r.get("file")):
                     p.append(f"{where}: {k}: repo range {r.get('file')}:{lo}-{hi} is not a valid line range")
         for pc in lb.get("preconditions") or []:
+            if not isinstance(pc.get("setting"), str) or not pc["setting"].strip():
+                p.append(f"{where}: {k}: precondition setting is missing")
             if pc.get("kind") not in PRECONDITION_KINDS:
                 p.append(f"{where}: {k}: precondition {pc.get('setting')!r} kind is not setting or environment")
             for side in ("literal", "effective"):
-                if (pc.get(side) or {}).get("type") not in VALUE_TYPES:
+                value = pc.get(side) or {}
+                if value.get("type") not in VALUE_TYPES:
                     p.append(f"{where}: {k}: precondition {pc.get('setting')!r} {side} has no valid type")
+                elif value["type"] != "none" and "value" not in value:
+                    p.append(f"{where}: {k}: precondition {pc.get('setting')!r} {side} has no value")
     return p
 
 
@@ -176,16 +181,24 @@ def format_figure(fig: dict, revealed: bool = False) -> str:
 
 # --------------------------------------------------------------------- runs
 def validate_run(doc: dict, where: str) -> list[str]:
-    if doc.get("schema") != RUN_SCHEMA:
+    if not isinstance(doc, dict) or doc.get("schema") != RUN_SCHEMA:
         return [f"{where}: schema is not {RUN_SCHEMA}"]
     p = []
-    if not doc.get("commit"):
-        p.append(f"{where}: commit is missing")
+    if not doc.get("commit") or not isinstance(doc["commit"], str):
+        p.append(f"{where}: commit is missing or not a string")
     if not isinstance(doc.get("produced_by"), dict) or not doc["produced_by"].get("stage"):
         p.append(f"{where}: produced_by.stage is missing")
     if not isinstance(doc.get("findings"), dict):
         return p + [f"{where}: findings is not an object keyed by finding key"]
     for key, rec in sorted(doc["findings"].items()):
+        if not isinstance(rec, dict):
+            p.append(f"{where}: {key}: the record is not an object")
+            continue
+        for field, kind in (("preconditions", list), ("bundle", dict)):
+            if field in rec and not isinstance(rec[field], kind):
+                p.append(f"{where}: {key}: {field} is not a {'list' if kind is list else 'object'}")
+        if isinstance(rec.get("preconditions"), list) and not all(isinstance(x, dict) for x in rec["preconditions"]):
+            p.append(f"{where}: {key}: a precondition is not an object")
         v = rec.get("verdict")
         if v is not None and v not in RUN_VERDICTS:
             p.append(f"{where}: {key}: verdict {v!r} is not one of {', '.join(RUN_VERDICTS)}")
@@ -221,7 +234,7 @@ def run_from_report(report_path: Path) -> dict:
             "findings": findings}
 
 
-_NOTE = re.compile(r"^## Source — `(?P<file>[^`]+)`\n\n_(?P<note>[^\n]*)_\n\n```[^\n]*\n(?P<body>.*?)\n```",
+_NOTE = re.compile(r"^## Source — `(?P<file>[^`]+)`\n\n_(?P<note>[^\n]*)_\n\n```[^\n]*\n(?P<body>.*?)\n```\n(?=\n+## |\n*\Z)",
                    re.S | re.M)
 _MARKER = re.compile(r"\n\n\.\.\. \[[^\]]*: \d+ characters omitted\] \.\.\.\n\n")
 _WHOLE = re.compile(r"^whole file, (\d+) lines$")
@@ -266,14 +279,21 @@ def shown_lines(bundle_text: str) -> tuple[str, list[tuple[int, int]]] | None:
 def add_bundles(run: dict, bundles_dir: Path, report_path: Path) -> dict:
     """--bundles: attach what each finding's bundle shows, joined through the scan."""
     try:
-        index = json.loads((bundles_dir / "index.json").read_text())
         report = json.loads(report_path.read_text())
+    except (OSError, ValueError) as e:
+        raise InputError([f"{report_path}: {e}"]) from None
+    try:
+        index = json.loads((bundles_dir / "index.json").read_text())
     except (OSError, ValueError) as e:
         raise InputError([f"{bundles_dir}: {e}"]) from None
     files = {b["id"]: b["file"] for b in index.get("bundles") or []}
     for f in report.get("findings") or []:
         key, hid = f.get("key"), f.get("hotspot_id")
-        if not key or hid not in files:
+        if not key or not hid:
+            continue
+        if hid not in files:
+            # A finding whose hotspot has no bundle entry is unreadable, never silently unscored.
+            run["findings"].setdefault(key, {})["bundle"] = {"file": None, "shown": None}
             continue
         path = bundles_dir / f"{hid}.md"
         parsed = shown_lines(path.read_text()) if path.is_file() else None
@@ -391,7 +411,7 @@ def normalise_value(raw) -> dict:
     if isinstance(raw, bool):
         return {"type": "bool", "value": raw}
     if isinstance(raw, (int, float)):
-        return {"type": "number", "value": raw}
+        return {"type": "number", "value": "inf" if raw == math.inf else raw}
     text = " ".join(str(raw).split())
     low = text.casefold()
     if low in ("none", "null"):
@@ -434,11 +454,12 @@ def score_defaults(records: dict, label_set: dict) -> dict:
     for k, r in sorted(records.items()):
         if "preconditions" not in r:
             continue
-        stated = {str(p.get("setting", "")).strip().casefold(): p.get("default") for p in r["preconditions"]}
+        stated = {str(p.get("setting", "")).strip().casefold(): p["default"]
+                  for p in r["preconditions"] if "default" in p}
         for pc in label_set["_by_key"][k].get("preconditions") or []:
             if pc["kind"] != "setting":
                 continue
-            name = pc["setting"].casefold()
+            name = pc["setting"].strip().casefold()
             discriminating = not values_match(pc["literal"], pc["effective"])
             if name not in stated:
                 outcome = NOT_STATED
@@ -498,14 +519,14 @@ def evaluate(runs: list[dict], sets: list[dict], reveal: bool = False) -> dict:
             basis = basis_of(ls, m["keys"])
             m["figures"] = _figures(name, m, basis)
             if hide:
-                for detail in PER_FINDING:
+                for detail in PER_FINDING + ("keys",):
                     m.pop(detail, None)
             measures[name] = m
         out.append({"repo": ls["repo"], "commit": ls["commit"], "role": ls["role"],
                     "revealed": ls["role"] == "holdout" and reveal,
                     "produced_by": run.get("produced_by"),
                     "independence_checked": bool((run.get("produced_by") or {}).get("model")),
-                    "display": {lb["key"]: lb.get("display", "") for lb in ls["labels"]},
+                    "display": {} if hide else {lb["key"]: lb.get("display", "") for lb in ls["labels"]},
                     "unlabelled": unlabelled, "excluded": excluded, "measures": measures})
     return {"schema": RESULT_SCHEMA, "runs": out, "pooled": pooled(out)}
 
@@ -562,7 +583,7 @@ def render(result: dict) -> str:
         lines.append("")
     for name, figs in result["pooled"].items():
         lines.append(f"## pooled {name}")
-        lines += [format_figure(f) for f in figs]
+        lines += [format_figure(f, revealed=any(r["revealed"] for r in result["runs"])) for f in figs]
     return "\n".join(lines).rstrip() + "\n"
 
 
