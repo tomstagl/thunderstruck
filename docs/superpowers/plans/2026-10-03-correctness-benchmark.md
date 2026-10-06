@@ -52,7 +52,7 @@ One file of tests, `tests/test_benchmark.py`, grows task by task; each task's te
 **Interfaces:**
 - Produces: `InputError(problems: list[str])`; constants `LABELS_SCHEMA`, `RUN_SCHEMA`, `RESULT_SCHEMA`, `VERDICTS`, `RUN_VERDICTS`, `BASES`, `CONFIDENCE`, `ROLES`, `RANGE_KINDS`, `PRECONDITION_KINDS`, `VALUE_TYPES`; `validate_label_set(doc: dict, where: str) -> list[str]`; `load_label_sets(paths: list[Path]) -> list[dict]` (each set gains `_path` and `_by_key: dict[str, dict]`); `default_label_paths() -> list[Path]`; `select_set(sets: list[dict], commit: str) -> dict`; `wilson(k: int, n: int) -> tuple[int, int]`; `basis_of(label_set: dict, keys: list[str]) -> dict`; `figure(name: str, k: int, n: int, basis: dict) -> dict`; `format_basis(basis: dict) -> str`; `format_figure(fig: dict, revealed: bool = False) -> str`.
 
-- [ ] **Step 1: Write the failing tests.** Create `tests/test_benchmark.py` with this header and the Task 1 tests:
+- [x] **Step 1: Write the failing tests.** Create `tests/test_benchmark.py` with this header and the Task 1 tests:
 
 ```python
 """The correctness benchmark (#55): scoring against labelled ground truth."""
@@ -168,12 +168,12 @@ def test_a_figure_line_states_what_it_rests_on(tmp_path):
     assert b.format_figure(b.figure("x", 0, 1, b.basis_of(s, ["k1"])), revealed=True).endswith("· revealed")
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_benchmark.py -q`
 Expected: collection error, `ModuleNotFoundError: No module named 'benchmark'`.
 
-- [ ] **Step 3: Write the implementation.** Create `scripts/benchmark.py`:
+- [x] **Step 3: Write the implementation.** Create `scripts/benchmark.py`:
 
 ```python
 #!/usr/bin/env python3
@@ -349,12 +349,12 @@ def format_figure(fig: dict, revealed: bool = False) -> str:
     return f"{fig['name']:<28} {fig['k']}/{fig['n']}  ({lo}–{hi}%)  {format_basis(fig['basis'])}{tail}"
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_benchmark.py -q`
 Expected: all Task 1 tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/benchmark.py tests/test_benchmark.py
@@ -373,7 +373,7 @@ git commit -m "Benchmark: label sets, validation and figures (#55)"
 - Consumes: `load_label_sets`, `values_match` (Task 6 defines `values_match`; until then the third test below is expected to fail with `AttributeError` and is marked so in Step 2).
 - Produces: `docs/calibration/correctness/celery/labels.json` with 21 labels, `role: development`, `commit: 508c1129269d2b1baffc516d8f5c05da06273ef0`.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_benchmark.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_benchmark.py`:
 
 ```python
 # --- Task 2 -----------------------------------------------------------------
@@ -435,12 +435,12 @@ def test_celery_has_exactly_five_discriminating_preconditions():
     assert env == [("FR-014", "database user privileges"), ("FR-014", "result_backend"), ("FR-019", "task_routes")]
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_benchmark.py -q -k "celery"`
 Expected: FAIL, `FileNotFoundError` for `labels.json`.
 
-- [ ] **Step 3: Generate `labels.json`.** Save this one-off converter in your scratch directory (not in the repository; spec §6.1 converts once and checks in the result) and run it with the set directory as its argument. The `PRECONDITIONS` table is the hand normalisation §6.1 calls for: one entry per precondition in `verdicts.json`, keyed by display id and the setting as written there. Measured consequences leave `effective` equal to `literal`; FR-014's `result_backend` and `database user privileges` and FR-019's `task_routes` are `environment`.
+- [x] **Step 3: Generate `labels.json`.** Save this one-off converter in your scratch directory (not in the repository; spec §6.1 converts once and checks in the result) and run it with the set directory as its argument. The `PRECONDITIONS` table is the hand normalisation §6.1 calls for: one entry per precondition in `verdicts.json`, keyed by display id and the setting as written there. Measured consequences leave `effective` equal to `literal`; FR-014's `result_backend` and `database user privileges` and FR-019's `task_routes` are `environment`.
 
 ```python
 """One-off: docs/calibration/correctness/celery/verdicts.json -> labels.json (spec §6.1)."""
@@ -549,7 +549,7 @@ print(len(labels), "labels")
 Run: `uv run --no-project python "$SCRATCH/build_labels.py" docs/calibration/correctness/celery`
 Expected: `21 labels`. Open the file and check three labels by eye against `verdicts.json`: FR-001 (three repo ranges), FR-006 (`duplicate_of` is FR-001's key `f62fb0c3468b`), FR-020 (`basis: read`, `established_by: null`).
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_benchmark.py -q -k "celery"`
 Expected: `test_celery_labels_agree_with_the_evidence` and `test_celery_refuting_ranges_are_the_evidence_ranges` PASS. `test_celery_has_exactly_five_discriminating_preconditions` fails with `AttributeError: module 'benchmark' has no attribute 'values_match'` until Task 6; that is the only failure allowed on this commit, so mark it for now:
@@ -560,7 +560,7 @@ Expected: `test_celery_labels_agree_with_the_evidence` and `test_celery_refuting
 
 placed on the line above `def test_celery_has_exactly_five_discriminating_preconditions`. Task 6 removes the marker.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/calibration/correctness/celery/labels.json tests/test_benchmark.py
@@ -579,7 +579,7 @@ git commit -m "Benchmark: the Celery label set from the executed review (#55)"
 - Consumes: `InputError`, `RUN_SCHEMA`, `RUN_VERDICTS`, `CONFIDENCE`, `load_label_sets`.
 - Produces: `validate_run(doc: dict, where: str) -> list[str]`; `load_run(path: Path) -> dict`; `run_from_report(report_path: Path) -> dict` (a run with `produced_by.model` None); `split_run(run: dict, label_set: dict) -> tuple[dict, list[str], list[str]]` returning (records by key, unlabelled keys, excluded keys); `score_confidence(records: dict, label_set: dict) -> dict` with `rows`, `counts` (`exact`, `within one`, `over`, `under`), `high_above_deserved`, `keys`.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 3 -----------------------------------------------------------------
@@ -636,12 +636,12 @@ def test_an_invalid_run_is_refused(tmp_path, doc, needle):
     assert any(needle in x for x in e.value.problems)
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_benchmark.py -q -k "confidence or unlabelled or display_id or labeller or invalid_run"`
 Expected: FAIL, `AttributeError: module 'benchmark' has no attribute 'run_from_report'` (and the like).
 
-- [ ] **Step 3: Write the implementation.** Append to `scripts/benchmark.py`:
+- [x] **Step 3: Write the implementation.** Append to `scripts/benchmark.py`:
 
 ```python
 
@@ -725,9 +725,9 @@ def score_confidence(records: dict, label_set: dict) -> dict:
     return {"rows": rows, "counts": counts, "high_above_deserved": high_above, "keys": sorted(rows)}
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass** (same command as Step 2). Expected: PASS.
+- [x] **Step 4: Run the tests to verify they pass** (same command as Step 2). Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/benchmark.py tests/test_benchmark.py
@@ -747,7 +747,7 @@ git commit -m "Benchmark: runs, the report adapter and confidence scoring (#55)"
 - Consumes: `VERDICTS`, `load_run`, `split_run`.
 - Produces: `SAME`, `ONE_STEP`, `WRONG_DIRECTION`, `CORRECT_REFUTED`, `VERDICT_OUTCOMES`, `VERDICT_MATRIX`; `verdict_outcome(run_verdict: str, label_verdict: str) -> str`; `score_verdicts(records, label_set) -> dict` with `rows`, `counts`, `keys`; `score_duplicates(records, label_set) -> dict` with `found`, `missed`, `false`, `keys`.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 4 -----------------------------------------------------------------
@@ -798,12 +798,12 @@ def test_duplicates_missed_and_false():
     assert d["found"] == [] and d["missed"] == [k6] and d["false"] == [k2]
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_benchmark.py -q -k "matrix or spike or duplicates"`
 Expected: FAIL, `AttributeError: ... 'verdict_outcome'`.
 
-- [ ] **Step 3: Write the implementation.** Append to `scripts/benchmark.py`:
+- [x] **Step 3: Write the implementation.** Append to `scripts/benchmark.py`:
 
 ```python
 
@@ -841,7 +841,7 @@ def score_duplicates(records: dict, label_set: dict) -> dict:
     return {"found": found, "missed": missed, "false": false, "keys": sorted(stated)}
 ```
 
-- [ ] **Step 4: Generate the spike run file.** Save this one-off converter in your scratch directory and run it (spec §6.2):
+- [x] **Step 4: Generate the spike run file.** Save this one-off converter in your scratch directory and run it (spec §6.2):
 
 ```python
 """One-off: spikes/refute/*.json -> runs/spike-refuter.json (spec §6.2)."""
@@ -871,9 +871,9 @@ print(len(findings))
 Run: `uv run --no-project python "$SCRATCH/build_spike_run.py" docs/calibration/correctness/celery`
 Expected: `21`.
 
-- [ ] **Step 5: Run the tests to verify they pass** (same command as Step 2). Expected: PASS, including all 16 matrix cells.
+- [x] **Step 5: Run the tests to verify they pass** (same command as Step 2). Expected: PASS, including all 16 matrix cells.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/benchmark.py tests/test_benchmark.py docs/calibration/correctness/celery/runs/spike-refuter.json
@@ -892,7 +892,7 @@ git commit -m "Benchmark: verdict matrix, duplicates and the spike refuter basel
 - Consumes: `InputError`, `run_from_report`, `split_run`; `bundle.section_source(repo: Path, hs: dict, budget: int) -> str` (existing, tests only).
 - Produces: `shown_lines(bundle_text: str) -> tuple[str, list[tuple[int, int]]] | None`; `add_bundles(run: dict, bundles_dir: Path, report_path: Path) -> dict` (adds `bundle: {"file": str, "shown": list[[lo, hi]] | None}` to each record); `SHOWN`, `NOT_SHOWN`, `ELSEWHERE`, `NOT_IN_REPO`, `UNREADABLE`, `BUNDLE_OUTCOMES`; `score_bundles(records, label_set) -> dict` with `rows` (`outcome`, `partly_elsewhere`), `counts` (each outcome plus `partly elsewhere`), `keys`.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 5 -----------------------------------------------------------------
@@ -951,12 +951,12 @@ def test_a_missing_bundle_file_is_unreadable(tmp_path):
     assert b.score_bundles(records, _celery())["rows"][_key("FR-001")]["outcome"] == "unreadable"
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_benchmark.py -q -k "bundle or unreadable"`
 Expected: FAIL, `AttributeError: ... 'add_bundles'`.
 
-- [ ] **Step 3: Write the implementation.** Insert after `run_from_report` (before `split_run`), keeping the adapters together:
+- [x] **Step 3: Write the implementation.** Insert after `run_from_report` (before `split_run`), keeping the adapters together:
 
 ```python
 _NOTE = re.compile(r"^## Source — `(?P<file>[^`]+)`\n\n_(?P<note>[^\n]*)_\n\n```[^\n]*\n(?P<body>.*?)\n```",
@@ -1059,9 +1059,9 @@ def score_bundles(records: dict, label_set: dict) -> dict:
     return {"rows": rows, "counts": counts, "keys": sorted(rows)}
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass** (same command as Step 2). Expected: PASS; the baseline is 4 shown, 5 not shown, 3 elsewhere, FR-003 and FR-015 partly elsewhere.
+- [x] **Step 4: Run the tests to verify they pass** (same command as Step 2). Expected: PASS; the baseline is 4 shown, 5 not shown, 3 elsewhere, FR-003 and FR-015 partly elsewhere.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/benchmark.py tests/test_benchmark.py
@@ -1079,7 +1079,7 @@ git commit -m "Benchmark: what each bundle's Source block shows (#55)"
 **Interfaces:**
 - Produces: `normalise_value(raw) -> dict`; `values_match(a: dict, b: dict) -> bool`; `EFFECTIVE`, `LITERAL_ONLY`, `NEITHER`, `NOT_STATED`, `DEFAULT_OUTCOMES`; `score_defaults(records, label_set) -> dict` with `rows` (`key`, `setting`, `discriminating`, `outcome`), `counts` (over discriminating preconditions), `non_discriminating`, `keys`.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 6 -----------------------------------------------------------------
@@ -1126,12 +1126,12 @@ def test_setting_names_ignore_case_and_surrounding_space():
     assert m["counts"]["matches effective"] == 1
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_benchmark.py -q -k "normalise or number or defaults or environment or setting_names or discriminating"`
 Expected: the new tests FAIL with `AttributeError`; `test_celery_has_exactly_five_discriminating_preconditions` XFAILs.
 
-- [ ] **Step 3: Write the implementation.** Append to `scripts/benchmark.py`:
+- [x] **Step 3: Write the implementation.** Append to `scripts/benchmark.py`:
 
 ```python
 
@@ -1209,11 +1209,11 @@ def score_defaults(records: dict, label_set: dict) -> dict:
             "keys": sorted({x["key"] for x in rows})}
 ```
 
-- [ ] **Step 4: Remove the `@pytest.mark.xfail(...)` line** above `test_celery_has_exactly_five_discriminating_preconditions` (with `strict=True` it now fails as XPASS until removed).
+- [x] **Step 4: Remove the `@pytest.mark.xfail(...)` line** above `test_celery_has_exactly_five_discriminating_preconditions` (with `strict=True` it now fails as XPASS until removed).
 
-- [ ] **Step 5: Run the tests to verify they pass** (same command as Step 2). Expected: PASS, including the five discriminating preconditions.
+- [x] **Step 5: Run the tests to verify they pass** (same command as Step 2). Expected: PASS, including the five discriminating preconditions.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/benchmark.py tests/test_benchmark.py
@@ -1232,7 +1232,7 @@ git commit -m "Benchmark: defaults scored against the effective value (#55)"
 - Consumes: every scorer above, `load_label_sets`, `default_label_paths`, `load_run`, `run_from_report`, `add_bundles`, `split_run`, `select_set`, `basis_of`, `figure`, `format_figure`, `wilson`.
 - Produces: `PER_FINDING` (the per-finding fields hidden for a holdout set); `SCORERS: dict[str, Callable]`; `evaluate(runs: list[dict], sets: list[dict], reveal: bool = False) -> dict` (schema `thunderstruck.benchmark/v1`; `runs[]` with `repo`, `commit`, `role`, `revealed`, `produced_by`, `independence_checked`, `display`, `unlabelled`, `excluded`, `measures`; and `pooled`); `pooled(results: list[dict]) -> dict`; `render(result: dict) -> str`; `main(argv: list[str] | None = None) -> int`.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 7 -----------------------------------------------------------------
@@ -1307,12 +1307,12 @@ def test_a_malformed_run_file_is_refused_without_a_traceback(tmp_path):
     assert r.returncode == 2 and str(run) in r.stderr and "Traceback" not in r.stderr
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_benchmark.py -q -k "cli or json_output or unlabelled_commit or partial_run or malformed"`
 Expected: FAIL; the script has no `main` yet and exits 0 with no output.
 
-- [ ] **Step 3: Write the implementation.** Append to `scripts/benchmark.py`:
+- [x] **Step 3: Write the implementation.** Append to `scripts/benchmark.py`:
 
 ```python
 
@@ -1492,14 +1492,14 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass** (same command as Step 2). Expected: PASS.
+- [x] **Step 4: Run the tests to verify they pass** (same command as Step 2). Expected: PASS.
 
-- [ ] **Step 5: Run the command by hand and read the output**
+- [x] **Step 5: Run the command by hand and read the output**
 
 Run: `uv run scripts/benchmark.py --run docs/calibration/correctness/celery/runs/spike-refuter.json --report docs/calibration/correctness/celery/scan/report.json --bundles docs/calibration/correctness/celery/scan/bundles`
 Expected: three blocks: refuter (`verdict: same 15/21 (50–86%)`, `duplicates found 1/1`), investigator (`confidence: exact 8/21 (21–59%)`, `high above deserved: FR-001 (f62fb0c3468b), FR-003 (b1af3746845c)`) and bundles (`refuting fact shown 4/9 (19–73%)`); each run block says `independence not checked`; every rate line ends `celery/celery@508c112 · n=… · labels: … claude-fable-5-1 (…)`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/benchmark.py tests/test_benchmark.py
@@ -1516,7 +1516,7 @@ git commit -m "Benchmark: the command, per-set and pooled figures, holdout (#55)
 **Interfaces:**
 - Consumes: `main` via the CLI, `evaluate`, `load_label_sets`, `load_run`, `run_from_report`, `add_bundles`.
 
-- [ ] **Step 1: Write the tests.** Append:
+- [x] **Step 1: Write the tests.** Append:
 
 ```python
 # --- Task 8 -----------------------------------------------------------------
@@ -1613,12 +1613,12 @@ def test_labels_never_reach_the_pipeline():
     assert hits == []
 ```
 
-- [ ] **Step 2: Run them**
+- [x] **Step 2: Run them**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_benchmark.py -q -k "second or pooled or adding_labels or standard_library or never_reach"`
 Expected: PASS. These pin behaviour Tasks 1–7 already built; if any fails, the defect is in the scorer, and the fix goes there, not in the test. Check the second set's figures by hand against the run: same = s1 and s4 (2/4), pooled with Celery 17/25.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add tests/test_benchmark.py
@@ -1635,7 +1635,7 @@ git commit -m "Benchmark: a second repository is data only; stability and isolat
 - Modify: `docs/calibration/correctness.md` (one line under Files)
 - Modify: `CHANGELOG.md`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `pyproject.toml` (version)
 
-- [ ] **Step 1: Write `docs/calibration/correctness/labelling.md`:**
+- [x] **Step 1: Write `docs/calibration/correctness/labelling.md`:**
 
 ````markdown
 # Labelling findings for the correctness benchmark
@@ -1719,7 +1719,7 @@ The figures are measures, not targets. Tuning a stage against one set's
 findings until its score looks good fits that set.
 ````
 
-- [ ] **Step 2: Add to CLAUDE.md's Commands block**, after the `calibrate.py` lines:
+- [x] **Step 2: Add to CLAUDE.md's Commands block**, after the `calibrate.py` lines:
 
 ```bash
 # The correctness benchmark (#55): score a run or a scan against labelled ground truth. No model, no network.
@@ -1727,7 +1727,7 @@ uv run scripts/benchmark.py --run docs/calibration/correctness/celery/runs/spike
 uv run scripts/benchmark.py --report <scan>/report.json --bundles <scan>/bundles   # confidences and bundles
 ```
 
-- [ ] **Step 3: Add this subsection to CLAUDE.md** at the end of "Things that will bite you":
+- [x] **Step 3: Add this subsection to CLAUDE.md** at the end of "Things that will bite you":
 
 ```markdown
 **The correctness benchmark measures; it never feeds.** `scripts/benchmark.py`
@@ -1743,13 +1743,13 @@ Adding a set is data only (`labelling.md`); changing a label fails the
 baseline tests on purpose.
 ```
 
-- [ ] **Step 4: In `docs/calibration/correctness.md`**, add to the Files table:
+- [x] **Step 4: In `docs/calibration/correctness.md`**, add to the Files table:
 
 ```markdown
 | `celery/labels.json`, `celery/runs/` | The same ground truth normalised for `scripts/benchmark.py`, and the two baseline inputs; see [`correctness/labelling.md`](correctness/labelling.md) |
 ```
 
-- [ ] **Step 5: Version and CHANGELOG.** Bump the patch version in all four places (the next patch above `main`'s at the time; `0.9.1` if `main` is still `0.9.0`) and add an entry in the 0.8.2 entry's form:
+- [x] **Step 5: Version and CHANGELOG.** Bump the patch version in all four places (the next patch above `main`'s at the time; `0.9.1` if `main` is still `0.9.0`) and add an entry in the 0.8.2 entry's form:
 
 ```markdown
 ## 0.9.1
@@ -1763,7 +1763,7 @@ A correctness benchmark scored against executed ground truth (#55).
 - **`docs/calibration/correctness/labelling.md`**: how to label new findings and add a repository.
 ```
 
-- [ ] **Step 6: Run the full suite and the generated-file checks**
+- [x] **Step 6: Run the full suite and the generated-file checks**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/ -q; echo "exit=$?"
@@ -1773,7 +1773,7 @@ uv run scripts/gen_sample_report.py --check; echo "exit=$?"
 
 Expected: all three `exit=0`; `test_versions_agree` and `test_docs_in_sync` pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add docs/calibration/correctness/labelling.md docs/calibration/correctness.md CLAUDE.md CHANGELOG.md .claude-plugin/plugin.json .claude-plugin/marketplace.json pyproject.toml

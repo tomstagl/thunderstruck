@@ -24,6 +24,7 @@ else was edited.
 | `celery/verdicts.json` | The ground truth: per finding a verdict, how it was established, the refuting fact and whether it was in the bundle, preconditions with literal and effective defaults, each cited commit's actual role, claimed and deserved confidence, whether `how_to_verify` reproduced, duplicates, detector-lead verdicts; plus the defects the scan missed |
 | `celery/spikes/refute/` | Two blind read-only refuters (Spike 2) |
 | `celery/spikes/xray/` | Function-level hotspot X-ray, coupling, code age and confidence rules (Spikes 1 and 3). `CELERY_REPO=<a celery checkout at 508c112> uv run --with lizard python xray.py --full`, then `analyze.py`, rebuilds `results.json`, except the churn-only control (rank C), which the spike computed outside these scripts. Re-running was checked: every other value is identical |
+| `celery/labels.json`, `celery/runs/` | The same ground truth normalised for `scripts/benchmark.py`, and the two baseline inputs; see [`correctness/labelling.md`](correctness/labelling.md) |
 
 ## Ground truth
 
