@@ -379,3 +379,76 @@ def score_bundles(records: dict, label_set: dict) -> dict:
     counts = {o: sum(1 for x in rows.values() if x["outcome"] == o) for o in BUNDLE_OUTCOMES}
     counts["partly elsewhere"] = sum(1 for x in rows.values() if x["partly_elsewhere"])
     return {"rows": rows, "counts": counts, "keys": sorted(rows)}
+
+
+_NUM = re.compile(r"^(-?\d+(?:\.\d+)?)\s*(s|ms)?$")
+
+
+def normalise_value(raw) -> dict:
+    """A run's stated default as a §4.5 value."""
+    if raw is None:
+        return {"type": "none"}
+    if isinstance(raw, bool):
+        return {"type": "bool", "value": raw}
+    if isinstance(raw, (int, float)):
+        return {"type": "number", "value": raw}
+    text = " ".join(str(raw).split())
+    low = text.casefold()
+    if low in ("none", "null"):
+        return {"type": "none"}
+    if low in ("true", "false"):
+        return {"type": "bool", "value": low == "true"}
+    if low in ("inf", "infinity"):
+        return {"type": "number", "value": "inf"}
+    if m := _NUM.match(low):
+        value = float(m.group(1))
+        if m.group(2) == "ms":
+            return {"type": "number", "value": value / 1000, "unit": "s"}
+        return {"type": "number", "value": value, **({"unit": "s"} if m.group(2) else {})}
+    return {"type": "text", "value": low}
+
+
+def values_match(a: dict, b: dict) -> bool:
+    if a["type"] != b["type"]:
+        return False
+    if a["type"] == "none":
+        return True
+    if a["type"] == "number":
+        va, vb = a["value"], b["value"]
+        if (va == "inf") != (vb == "inf"):
+            return False
+        if va != "inf" and float(va) != float(vb):
+            return False
+        return not a.get("unit") or not b.get("unit") or a["unit"] == b["unit"]
+    if a["type"] == "text":
+        return " ".join(str(a["value"]).split()).casefold() == " ".join(str(b["value"]).split()).casefold()
+    return a["value"] == b["value"]
+
+
+EFFECTIVE, LITERAL_ONLY, NEITHER, NOT_STATED = "matches effective", "matches literal only", "matches neither", "not stated"
+DEFAULT_OUTCOMES = (EFFECTIVE, LITERAL_ONLY, NEITHER, NOT_STATED)
+
+
+def score_defaults(records: dict, label_set: dict) -> dict:
+    rows = []
+    for k, r in sorted(records.items()):
+        if "preconditions" not in r:
+            continue
+        stated = {str(p.get("setting", "")).strip().casefold(): p.get("default") for p in r["preconditions"]}
+        for pc in label_set["_by_key"][k].get("preconditions") or []:
+            if pc["kind"] != "setting":
+                continue
+            name = pc["setting"].casefold()
+            discriminating = not values_match(pc["literal"], pc["effective"])
+            if name not in stated:
+                outcome = NOT_STATED
+            else:
+                v = normalise_value(stated[name])
+                outcome = (EFFECTIVE if values_match(v, pc["effective"])
+                           else LITERAL_ONLY if values_match(v, pc["literal"]) else NEITHER)
+            rows.append({"key": k, "setting": pc["setting"], "discriminating": discriminating, "outcome": outcome})
+    head = [x for x in rows if x["discriminating"]]
+    counts = {o: sum(1 for x in head if x["outcome"] == o) for o in DEFAULT_OUTCOMES}
+    rest = {o: sum(1 for x in rows if not x["discriminating"] and x["outcome"] == o) for o in DEFAULT_OUTCOMES}
+    return {"rows": rows, "counts": counts, "non_discriminating": rest,
+            "keys": sorted({x["key"] for x in rows})}

@@ -158,7 +158,6 @@ def test_celery_refuting_ranges_are_the_evidence_ranges():
     assert len(kinds) == 12
 
 
-@pytest.mark.xfail(reason="values_match arrives in Task 6", strict=True)
 def test_celery_has_exactly_five_discriminating_preconditions():
     s = _celery()
     found = sorted((lb["display"], p["setting"]) for lb in s["labels"] for p in lb["preconditions"]
@@ -327,3 +326,47 @@ def test_a_missing_bundle_file_is_unreadable(tmp_path):
     b.add_bundles(run, tmp_path / "bundles", CELERY / "scan" / "report.json")
     records, _, _ = b.split_run(run, _celery())
     assert b.score_bundles(records, _celery())["rows"][_key("FR-001")]["outcome"] == "unreadable"
+
+
+# --- Task 6 -----------------------------------------------------------------
+@pytest.mark.parametrize("raw, value", [
+    (None, {"type": "none"}), ("None", {"type": "none"}), ("null", {"type": "none"}),
+    (True, {"type": "bool", "value": True}), ("false", {"type": "bool", "value": False}),
+    ("120.0", {"type": "number", "value": 120.0}), ("120 s", {"type": "number", "value": 120.0, "unit": "s"}),
+    ("500ms", {"type": "number", "value": 0.5, "unit": "s"}), ("inf", {"type": "number", "value": "inf"}),
+    (3, {"type": "number", "value": 3}), ("  Max_Retries=3 ", {"type": "text", "value": "max_retries=3"}),
+])
+def test_normalise_value(raw, value):
+    assert b.normalise_value(raw) == value
+
+
+def test_a_bare_number_matches_a_number_with_a_unit_but_not_another_unit():
+    assert b.values_match({"type": "number", "value": 120.0}, {"type": "number", "value": 120, "unit": "s"})
+    assert not b.values_match({"type": "number", "value": 120, "unit": "ms"}, {"type": "number", "value": 120, "unit": "s"})
+    assert not b.values_match({"type": "number", "value": "inf"}, {"type": "number", "value": 3})
+
+
+def test_defaults_effective_literal_neither_and_not_stated():
+    s = _celery()
+    run = {
+        _key("FR-001"): {"preconditions": [{"setting": "redis_socket_connect_timeout", "default": "120.0"}]},
+        _key("FR-002"): {"preconditions": [{"setting": "task_acks_on_timeout", "default": "None"}]},
+        _key("FR-015"): {"preconditions": [{"setting": "Result_Backend_Always_Retry", "default": True},
+                                           {"setting": "result_backend_max_retries", "default": "7"}]},
+    }
+    m = b.score_defaults(run, s)
+    assert m["counts"] == {"matches effective": 1, "matches literal only": 2, "matches neither": 1, "not stated": 0}
+    assert all(not x["discriminating"] for x in m["rows"] if x["outcome"] == "not stated")
+
+
+def test_environment_preconditions_are_not_scored():
+    s = _celery()
+    m = b.score_defaults({_key("FR-014"): {"preconditions": [{"setting": "result_backend", "default": "x"}]}}, s)
+    assert {x["setting"] for x in m["rows"]} == {"result_backend_always_retry"}
+    assert m["counts"]["not stated"] == 1
+
+
+def test_setting_names_ignore_case_and_surrounding_space():
+    m = b.score_defaults({_key("FR-002"): {"preconditions": [{"setting": "  TASK_ACKS_ON_TIMEOUT ", "default": True}]}},
+                         _celery())
+    assert m["counts"]["matches effective"] == 1

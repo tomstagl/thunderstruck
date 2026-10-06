@@ -1079,7 +1079,7 @@ git commit -m "Benchmark: what each bundle's Source block shows (#55)"
 **Interfaces:**
 - Produces: `normalise_value(raw) -> dict`; `values_match(a: dict, b: dict) -> bool`; `EFFECTIVE`, `LITERAL_ONLY`, `NEITHER`, `NOT_STATED`, `DEFAULT_OUTCOMES`; `score_defaults(records, label_set) -> dict` with `rows` (`key`, `setting`, `discriminating`, `outcome`), `counts` (over discriminating preconditions), `non_discriminating`, `keys`.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 6 -----------------------------------------------------------------
@@ -1126,12 +1126,12 @@ def test_setting_names_ignore_case_and_surrounding_space():
     assert m["counts"]["matches effective"] == 1
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_benchmark.py -q -k "normalise or number or defaults or environment or setting_names or discriminating"`
 Expected: the new tests FAIL with `AttributeError`; `test_celery_has_exactly_five_discriminating_preconditions` XFAILs.
 
-- [ ] **Step 3: Write the implementation.** Append to `scripts/benchmark.py`:
+- [x] **Step 3: Write the implementation.** Append to `scripts/benchmark.py`:
 
 ```python
 
@@ -1209,11 +1209,11 @@ def score_defaults(records: dict, label_set: dict) -> dict:
             "keys": sorted({x["key"] for x in rows})}
 ```
 
-- [ ] **Step 4: Remove the `@pytest.mark.xfail(...)` line** above `test_celery_has_exactly_five_discriminating_preconditions` (with `strict=True` it now fails as XPASS until removed).
+- [x] **Step 4: Remove the `@pytest.mark.xfail(...)` line** above `test_celery_has_exactly_five_discriminating_preconditions` (with `strict=True` it now fails as XPASS until removed).
 
-- [ ] **Step 5: Run the tests to verify they pass** (same command as Step 2). Expected: PASS, including the five discriminating preconditions.
+- [x] **Step 5: Run the tests to verify they pass** (same command as Step 2). Expected: PASS, including the five discriminating preconditions.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/benchmark.py tests/test_benchmark.py
