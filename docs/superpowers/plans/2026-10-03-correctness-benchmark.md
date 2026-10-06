@@ -1719,7 +1719,7 @@ The figures are measures, not targets. Tuning a stage against one set's
 findings until its score looks good fits that set.
 ````
 
-- [ ] **Step 2: Add to CLAUDE.md's Commands block**, after the `calibrate.py` lines:
+- [x] **Step 2: Add to CLAUDE.md's Commands block**, after the `calibrate.py` lines:
 
 ```bash
 # The correctness benchmark (#55): score a run or a scan against labelled ground truth. No model, no network.
@@ -1727,7 +1727,7 @@ uv run scripts/benchmark.py --run docs/calibration/correctness/celery/runs/spike
 uv run scripts/benchmark.py --report <scan>/report.json --bundles <scan>/bundles   # confidences and bundles
 ```
 
-- [ ] **Step 3: Add this subsection to CLAUDE.md** at the end of "Things that will bite you":
+- [x] **Step 3: Add this subsection to CLAUDE.md** at the end of "Things that will bite you":
 
 ```markdown
 **The correctness benchmark measures; it never feeds.** `scripts/benchmark.py`
@@ -1743,13 +1743,13 @@ Adding a set is data only (`labelling.md`); changing a label fails the
 baseline tests on purpose.
 ```
 
-- [ ] **Step 4: In `docs/calibration/correctness.md`**, add to the Files table:
+- [x] **Step 4: In `docs/calibration/correctness.md`**, add to the Files table:
 
 ```markdown
 | `celery/labels.json`, `celery/runs/` | The same ground truth normalised for `scripts/benchmark.py`, and the two baseline inputs; see [`correctness/labelling.md`](correctness/labelling.md) |
 ```
 
-- [ ] **Step 5: Version and CHANGELOG.** Bump the patch version in all four places (the next patch above `main`'s at the time; `0.9.1` if `main` is still `0.9.0`) and add an entry in the 0.8.2 entry's form:
+- [x] **Step 5: Version and CHANGELOG.** Bump the patch version in all four places (the next patch above `main`'s at the time; `0.9.1` if `main` is still `0.9.0`) and add an entry in the 0.8.2 entry's form:
 
 ```markdown
 ## 0.9.1
@@ -1763,7 +1763,7 @@ A correctness benchmark scored against executed ground truth (#55).
 - **`docs/calibration/correctness/labelling.md`**: how to label new findings and add a repository.
 ```
 
-- [ ] **Step 6: Run the full suite and the generated-file checks**
+- [x] **Step 6: Run the full suite and the generated-file checks**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/ -q; echo "exit=$?"
@@ -1773,7 +1773,7 @@ uv run scripts/gen_sample_report.py --check; echo "exit=$?"
 
 Expected: all three `exit=0`; `test_versions_agree` and `test_docs_in_sync` pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add docs/calibration/correctness/labelling.md docs/calibration/correctness.md CLAUDE.md CHANGELOG.md .claude-plugin/plugin.json .claude-plugin/marketplace.json pyproject.toml
