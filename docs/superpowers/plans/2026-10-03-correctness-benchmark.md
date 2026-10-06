@@ -1232,7 +1232,7 @@ git commit -m "Benchmark: defaults scored against the effective value (#55)"
 - Consumes: every scorer above, `load_label_sets`, `default_label_paths`, `load_run`, `run_from_report`, `add_bundles`, `split_run`, `select_set`, `basis_of`, `figure`, `format_figure`, `wilson`.
 - Produces: `PER_FINDING` (the per-finding fields hidden for a holdout set); `SCORERS: dict[str, Callable]`; `evaluate(runs: list[dict], sets: list[dict], reveal: bool = False) -> dict` (schema `thunderstruck.benchmark/v1`; `runs[]` with `repo`, `commit`, `role`, `revealed`, `produced_by`, `independence_checked`, `display`, `unlabelled`, `excluded`, `measures`; and `pooled`); `pooled(results: list[dict]) -> dict`; `render(result: dict) -> str`; `main(argv: list[str] | None = None) -> int`.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 7 -----------------------------------------------------------------
@@ -1307,12 +1307,12 @@ def test_a_malformed_run_file_is_refused_without_a_traceback(tmp_path):
     assert r.returncode == 2 and str(run) in r.stderr and "Traceback" not in r.stderr
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_benchmark.py -q -k "cli or json_output or unlabelled_commit or partial_run or malformed"`
 Expected: FAIL; the script has no `main` yet and exits 0 with no output.
 
-- [ ] **Step 3: Write the implementation.** Append to `scripts/benchmark.py`:
+- [x] **Step 3: Write the implementation.** Append to `scripts/benchmark.py`:
 
 ```python
 
@@ -1492,14 +1492,14 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass** (same command as Step 2). Expected: PASS.
+- [x] **Step 4: Run the tests to verify they pass** (same command as Step 2). Expected: PASS.
 
-- [ ] **Step 5: Run the command by hand and read the output**
+- [x] **Step 5: Run the command by hand and read the output**
 
 Run: `uv run scripts/benchmark.py --run docs/calibration/correctness/celery/runs/spike-refuter.json --report docs/calibration/correctness/celery/scan/report.json --bundles docs/calibration/correctness/celery/scan/bundles`
 Expected: three blocks: refuter (`verdict: same 15/21 (50–86%)`, `duplicates found 1/1`), investigator (`confidence: exact 8/21 (21–59%)`, `high above deserved: FR-001 (f62fb0c3468b), FR-003 (b1af3746845c)`) and bundles (`refuting fact shown 4/9 (19–73%)`); each run block says `independence not checked`; every rate line ends `celery/celery@508c112 · n=… · labels: … claude-fable-5-1 (…)`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/benchmark.py tests/test_benchmark.py

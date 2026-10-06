@@ -370,3 +370,75 @@ def test_setting_names_ignore_case_and_surrounding_space():
     m = b.score_defaults({_key("FR-002"): {"preconditions": [{"setting": "  TASK_ACKS_ON_TIMEOUT ", "default": True}]}},
                          _celery())
     assert m["counts"]["matches effective"] == 1
+
+
+# --- Task 7 -----------------------------------------------------------------
+def _cli(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run([sys.executable, str(ROOT / "scripts" / "benchmark.py"), *args],
+                          capture_output=True, text=True)
+
+
+def test_cli_scores_every_baseline_and_every_rate_line_carries_its_basis():
+    p = _cli("--run", str(CELERY / "runs" / "spike-refuter.json"),
+             "--report", str(CELERY / "scan" / "report.json"), "--bundles", str(CELERY / "scan" / "bundles"))
+    assert p.returncode == 0, p.stderr
+    rate_lines = [ln for ln in p.stdout.splitlines() if re.search(r" \d+/\d+  \(", ln)]
+    assert len(rate_lines) >= 15
+    for ln in rate_lines:
+        assert "celery/celery@508c112" in ln and "n=" in ln and "labels:" in ln, ln
+    assert re.search(r"verdict: same\s+15/21  \(50–86%\)", p.stdout)
+    assert re.search(r"confidence: exact\s+8/21  \(21–59%\)", p.stdout)
+    assert re.search(r"refuting fact shown\s+4/9  \(19–73%\)", p.stdout)
+    assert "high above deserved: FR-001 (f62fb0c3468b), FR-003 (b1af3746845c)" in p.stdout
+    assert "  found: FR-006 (df2cb49b3e2c)" in p.stdout
+
+
+def test_json_output_carries_the_basis_on_every_figure_and_is_deterministic():
+    args = ("--run", str(CELERY / "runs" / "spike-refuter.json"), "--json")
+    a, c = _cli(*args), _cli(*args)
+    assert a.returncode == 0 and a.stdout == c.stdout
+    doc = json.loads(a.stdout)
+    figs = [f for r in doc["runs"] for m in r["measures"].values() for f in m["figures"]]
+    assert figs and all({"repo", "commit", "n", "labellers"} <= set(f["basis"]) for f in figs)
+
+
+@pytest.mark.parametrize("args, needle", [
+    (["--bundles", "x"], "--bundles needs --report"),
+    ([], "nothing to score"),
+])
+def test_cli_refuses_incomplete_arguments(args, needle):
+    p = _cli(*args)
+    assert p.returncode == 2 and needle in p.stderr
+
+
+def test_cli_refuses_an_invalid_label_set_and_scores_nothing(tmp_path):
+    doc = _set()
+    doc["labels"][0].pop("basis")
+    _write_set(tmp_path, doc)
+    run = tmp_path / "run.json"
+    run.write_text(json.dumps(_run({"k1": {"verdict": "upheld"}}, commit="a" * 40)))
+    p = _cli("--labels", str(tmp_path / "lib"), "--run", str(run))
+    assert p.returncode == 2 and "basis is missing" in p.stderr and p.stdout == ""
+
+
+def test_a_scan_of_an_unlabelled_commit_is_refused(tmp_path):
+    report = json.loads((CELERY / "scan" / "report.json").read_text())
+    report["repo"]["head"] = "c" * 40
+    p = tmp_path / "report.json"
+    p.write_text(json.dumps(report))
+    r = _cli("--report", str(p))
+    assert r.returncode == 2 and "matches no loaded label set (loaded: celery/celery@508c112)" in r.stderr
+
+
+def test_a_partial_run_states_how_many_labelled_findings_it_covers(tmp_path):
+    run = tmp_path / "run.json"
+    run.write_text(json.dumps(_run({_key(i): {"verdict": "upheld"} for i in ("FR-001", "FR-002", "FR-004")})))
+    r = _cli("--run", str(run))
+    assert r.returncode == 0 and "n=3 of 21 labelled findings" in r.stdout
+
+
+def test_a_malformed_run_file_is_refused_without_a_traceback(tmp_path):
+    run = tmp_path / "run.json"
+    run.write_text("{not json")
+    r = _cli("--run", str(run))
+    assert r.returncode == 2 and str(run) in r.stderr and "Traceback" not in r.stderr

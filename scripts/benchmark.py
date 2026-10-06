@@ -452,3 +452,178 @@ def score_defaults(records: dict, label_set: dict) -> dict:
     rest = {o: sum(1 for x in rows if not x["discriminating"] and x["outcome"] == o) for o in DEFAULT_OUTCOMES}
     return {"rows": rows, "counts": counts, "non_discriminating": rest,
             "keys": sorted({x["key"] for x in rows})}
+
+
+# ------------------------------------------------------------------ results
+def _figures(measure: str, m: dict, basis: dict) -> list[dict]:
+    c = m.get("counts", {})
+    if measure == "verdicts":
+        n = len(m["keys"])
+        return [figure(f"verdict: {o}", c[o], n, basis) for o in VERDICT_OUTCOMES]
+    if measure == "duplicates":
+        pairs = len(m["found"]) + len(m["missed"])
+        return [figure("duplicates found", len(m["found"]), pairs, basis),
+                figure("false duplicates", len(m["false"]), len(m["keys"]), basis)]
+    if measure == "confidence":
+        n = len(m["keys"])
+        return [figure(f"confidence: {o}", c[o], n, basis) for o in ("exact", "within one", "over", "under")]
+    if measure == "bundles":
+        located = c[SHOWN] + c[NOT_SHOWN]
+        n = len(m["keys"])
+        return [figure("refuting fact shown", c[SHOWN], located, basis),
+                figure("shown, partly elsewhere", c["partly elsewhere"], located, basis)] + [
+                figure(f"refuting fact {o}", c[o], n, basis) for o in (ELSEWHERE, NOT_IN_REPO, UNREADABLE)]
+    if measure == "defaults":
+        n = sum(c.values())
+        return [figure(f"default {o}", c[o], n, basis) for o in DEFAULT_OUTCOMES]
+    raise ValueError(measure)
+
+
+PER_FINDING = ("rows", "found", "missed", "false", "high_above_deserved")
+SCORERS = {"verdicts": score_verdicts, "duplicates": score_duplicates, "confidence": score_confidence,
+           "bundles": score_bundles, "defaults": score_defaults}
+
+
+def evaluate(runs: list[dict], sets: list[dict], reveal: bool = False) -> dict:
+    out = []
+    for run in runs:
+        ls = select_set(sets, run.get("commit", ""))
+        records, unlabelled, excluded = split_run(run, ls)
+        hide = ls["role"] == "holdout" and not reveal
+        measures = {}
+        for name, scorer in SCORERS.items():
+            m = scorer(records, ls)
+            if not m["keys"]:
+                continue
+            basis = basis_of(ls, m["keys"])
+            m["figures"] = _figures(name, m, basis)
+            if hide:
+                for detail in PER_FINDING:
+                    m.pop(detail, None)
+            measures[name] = m
+        out.append({"repo": ls["repo"], "commit": ls["commit"], "role": ls["role"],
+                    "revealed": ls["role"] == "holdout" and reveal,
+                    "produced_by": run.get("produced_by"),
+                    "independence_checked": bool((run.get("produced_by") or {}).get("model")),
+                    "display": {lb["key"]: lb.get("display", "") for lb in ls["labels"]},
+                    "unlabelled": unlabelled, "excluded": excluded, "measures": measures})
+    return {"schema": RESULT_SCHEMA, "runs": out, "pooled": pooled(out)}
+
+
+def pooled(results: list[dict]) -> dict:
+    """Pooled figures per measure, only across runs on distinct sets."""
+    commits = [r["commit"] for r in results]
+    if len(set(commits)) < 2 or len(set(commits)) != len(commits):
+        return {}
+    out: dict[str, list[dict]] = {}
+    for r in results:
+        for name, m in r["measures"].items():
+            for fig in m["figures"]:
+                slot = {f["name"]: f for f in out.setdefault(name, [])}
+                if fig["name"] in slot:
+                    f = slot[fig["name"]]
+                    k, n = f["k"] + fig["k"], f["n"] + fig["n"]
+                    f.update({"k": k, "n": n, "interval": list(wilson(k, n))})
+                    f["basis"] = _merge_basis(f["basis"], fig["basis"])
+                else:
+                    out[name].append(json.loads(json.dumps(fig)))
+    return out
+
+
+def _merge_basis(a: dict, b: dict) -> dict:
+    mix = json.loads(json.dumps(a["labellers"]))
+    for who, bases in b["labellers"].items():
+        for bs, c in bases.items():
+            mix.setdefault(who, {})[bs] = mix.get(who, {}).get(bs, 0) + c
+    return {"repo": f"{a['repo']} + {b['repo']}", "commit": "pooled", "n": a["n"] + b["n"],
+            "labelled": a["labelled"] + b["labelled"], "labellers": mix}
+
+
+def render(result: dict) -> str:
+    lines = []
+    for r in result["runs"]:
+        pb = r["produced_by"] or {}
+        lines.append(f"# {r['repo']}@{r['commit'][:7]} ({r['role']}) — {pb.get('stage')}"
+                     f"{' · ' + pb['model'] if pb.get('model') else ''}")
+        if not r["independence_checked"]:
+            lines.append("independence not checked: the run does not record a model")
+        if r["excluded"]:
+            lines.append(f"excluded: {len(r['excluded'])} — labeller is the scored model")
+        if r["unlabelled"]:
+            lines.append(f"unlabelled: {len(r['unlabelled'])} — " + ", ".join(r["unlabelled"]))
+        for name, m in r["measures"].items():
+            lines.append(f"## {name}")
+            for fig in m["figures"]:
+                lines.append(format_figure(fig, revealed=r["revealed"]))
+            if m.get("high_above_deserved"):
+                lines.append("high above deserved: " + ", ".join(_disp(r, k) for k in _order(r, m["high_above_deserved"])))
+            if any(detail in m for detail in PER_FINDING):
+                lines += _rows(name, m, r)
+        lines.append("")
+    for name, figs in result["pooled"].items():
+        lines.append(f"## pooled {name}")
+        lines += [format_figure(f) for f in figs]
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _disp(run_result: dict, key: str) -> str:
+    d = run_result["display"].get(key)
+    return f"{d} ({key})" if d else key
+
+
+def _order(run_result: dict, keys) -> list[str]:
+    """Keys in display order, so a reader finds FR-001 first; ties and missing ids by key."""
+    return sorted(keys, key=lambda k: (run_result["display"].get(k) or "~", k))
+
+
+def _rows(name: str, m: dict, r: dict) -> list[str]:
+    if name == "verdicts":
+        return [f"  {_disp(r, k)}: {x['run']} vs {x['label']} → {x['outcome']}" for k, x in ((k, m["rows"][k]) for k in _order(r, m["rows"]))]
+    if name == "confidence":
+        return [f"  {_disp(r, k)}: {x['run']} vs {x['deserved']} ({x['step']:+d})"
+                for k, x in ((k, m["rows"][k]) for k in _order(r, m["rows"]))]
+    if name == "bundles":
+        return [f"  {_disp(r, k)}: {x['outcome']}{' (partly elsewhere)' if x['partly_elsewhere'] else ''}"
+                for k, x in ((k, m["rows"][k]) for k in _order(r, m["rows"]))]
+    if name == "defaults":
+        return [f"  {_disp(r, x['key'])} {x['setting']}: {x['outcome']}{'' if x['discriminating'] else ' (non-discriminating)'}"
+                for x in sorted(m["rows"], key=lambda x: (r["display"].get(x["key"]) or "~", x["key"]))]
+    if name == "duplicates":
+        return ([f"  found: {_disp(r, k)}" for k in m["found"]] + [f"  missed: {_disp(r, k)}" for k in m["missed"]]
+                + [f"  false: {_disp(r, k)}" for k in m["false"]])
+    return []
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--run", action="append", type=Path, default=[], help="a run file (repeatable)")
+    ap.add_argument("--report", type=Path, help="a scan's report.json: its confidences")
+    ap.add_argument("--bundles", type=Path, help="that scan's bundles/ (needs --report)")
+    ap.add_argument("--labels", action="append", type=Path, default=[], help="a label set directory (repeatable)")
+    ap.add_argument("--json", action="store_true", help="machine output")
+    ap.add_argument("--reveal", action="store_true", help="per-finding rows for holdout sets")
+    a = ap.parse_args(argv)
+    try:
+        if a.bundles and not a.report:
+            raise InputError(["--bundles needs --report (the scan that produced the bundles)"])
+        if not a.run and not a.report:
+            raise InputError(["nothing to score: give --run or --report"])
+        paths = [d / "labels.json" for d in a.labels] or default_label_paths()
+        sets = load_label_sets(paths)
+        runs = [load_run(p) for p in a.run]
+        if a.report:
+            run = run_from_report(a.report)
+            if a.bundles:
+                add_bundles(run, a.bundles, a.report)
+            runs.append(run)
+        result = evaluate(runs, sets, reveal=a.reveal)
+    except InputError as e:
+        for p in e.problems:
+            print(f"benchmark: {p}", file=sys.stderr)
+        return 2
+    sys.stdout.write(json.dumps(result, indent=2, sort_keys=True) + "\n" if a.json else render(result))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
