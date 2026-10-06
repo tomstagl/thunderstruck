@@ -892,7 +892,7 @@ git commit -m "Benchmark: verdict matrix, duplicates and the spike refuter basel
 - Consumes: `InputError`, `run_from_report`, `split_run`; `bundle.section_source(repo: Path, hs: dict, budget: int) -> str` (existing, tests only).
 - Produces: `shown_lines(bundle_text: str) -> tuple[str, list[tuple[int, int]]] | None`; `add_bundles(run: dict, bundles_dir: Path, report_path: Path) -> dict` (adds `bundle: {"file": str, "shown": list[[lo, hi]] | None}` to each record); `SHOWN`, `NOT_SHOWN`, `ELSEWHERE`, `NOT_IN_REPO`, `UNREADABLE`, `BUNDLE_OUTCOMES`; `score_bundles(records, label_set) -> dict` with `rows` (`outcome`, `partly_elsewhere`), `counts` (each outcome plus `partly elsewhere`), `keys`.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 5 -----------------------------------------------------------------
@@ -951,12 +951,12 @@ def test_a_missing_bundle_file_is_unreadable(tmp_path):
     assert b.score_bundles(records, _celery())["rows"][_key("FR-001")]["outcome"] == "unreadable"
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_benchmark.py -q -k "bundle or unreadable"`
 Expected: FAIL, `AttributeError: ... 'add_bundles'`.
 
-- [ ] **Step 3: Write the implementation.** Insert after `run_from_report` (before `split_run`), keeping the adapters together:
+- [x] **Step 3: Write the implementation.** Insert after `run_from_report` (before `split_run`), keeping the adapters together:
 
 ```python
 _NOTE = re.compile(r"^## Source — `(?P<file>[^`]+)`\n\n_(?P<note>[^\n]*)_\n\n```[^\n]*\n(?P<body>.*?)\n```",
@@ -1059,9 +1059,9 @@ def score_bundles(records: dict, label_set: dict) -> dict:
     return {"rows": rows, "counts": counts, "keys": sorted(rows)}
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass** (same command as Step 2). Expected: PASS; the baseline is 4 shown, 5 not shown, 3 elsewhere, FR-003 and FR-015 partly elsewhere.
+- [x] **Step 4: Run the tests to verify they pass** (same command as Step 2). Expected: PASS; the baseline is 4 shown, 5 not shown, 3 elsewhere, FR-003 and FR-015 partly elsewhere.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/benchmark.py tests/test_benchmark.py

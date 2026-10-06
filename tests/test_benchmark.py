@@ -271,3 +271,59 @@ def test_duplicates_missed_and_false():
     k1, k6, k2 = _key("FR-001"), _key("FR-006"), _key("FR-002")
     d = b.score_duplicates({k6: {"duplicate_of": None}, k2: {"duplicate_of": k1}}, s)
     assert d["found"] == [] and d["missed"] == [k6] and d["false"] == [k2]
+
+
+# --- Task 5 -----------------------------------------------------------------
+def test_today_bundles_baseline():
+    run = b.run_from_report(CELERY / "scan" / "report.json")
+    b.add_bundles(run, CELERY / "scan" / "bundles", CELERY / "scan" / "report.json")
+    records, _, _ = b.split_run(run, _celery())
+    m = b.score_bundles(records, _celery())
+    c = m["counts"]
+    assert (c["shown"], c["not shown"], c["elsewhere"], c["not in repository"], c["unreadable"]) == (4, 5, 3, 0, 0)
+    assert sorted(k for k, x in m["rows"].items() if x["partly_elsewhere"]) == sorted([_key("FR-003"), _key("FR-015")])
+
+
+def _render(tmp_path: Path, n: int, budget: int, top: dict | None) -> str:
+    import bundle
+    (tmp_path / "m.py").write_text("\n".join(f"x_{i:04d} = {i}  # line {i}" for i in range(1, n + 1)) + "\n")
+    hs = {"file": "m.py", "language": "python", "complexity": {"top_function": top} if top else {}}
+    return bundle.section_source(tmp_path, hs, budget)
+
+
+@pytest.mark.parametrize("n, budget, top", [
+    (50, 10000, None),                                  # whole file
+    (400, 500, None),                                   # file trimmed, clipped
+    (400, 10000, {"name": "f", "lines": "100-150"}),    # fits: whole file
+    (400, 200, {"name": "f", "lines": "100-250"}),      # function excerpt, clipped
+    (400, 600, {"name": "f", "lines": "100-120"}),      # function excerpt, not clipped
+    (400, 300, {"name": "f", "lines": "300-400"}),      # excerpt reaching the file's end, clipped
+])
+def test_bundle_parser_matches_what_bundle_py_renders(tmp_path, n, budget, top):
+    text = _render(tmp_path, n, budget, top)
+    file, ranges = b.shown_lines(text)
+    assert file == "m.py"
+    body = text.split("```python\n", 1)[1].rsplit("\n```", 1)[0]
+    whole = {int(m.group(1)) for line in body.split("\n")
+             if (m := re.fullmatch(r"x_\d{4} = \d+  # line (\d+)", line))}
+    claimed = {i for lo, hi in ranges for i in range(lo, hi + 1)}
+    assert claimed <= whole
+    assert len(whole - claimed) <= 2
+
+
+def test_an_unparsable_source_block_is_unreadable_never_not_shown(tmp_path):
+    assert b.shown_lines("## Source — `a.py`\n\n_something new_\n\n```python\nx\n```\n") is None
+    s = _celery()
+    k = _key("FR-001")
+    m = b.score_bundles({k: {"bundle": {"file": "celery/app/base.py", "shown": None}}}, s)
+    assert m["rows"][k]["outcome"] == "unreadable"
+
+
+def test_a_missing_bundle_file_is_unreadable(tmp_path):
+    import shutil
+    shutil.copytree(CELERY / "scan" / "bundles", tmp_path / "bundles")
+    (tmp_path / "bundles" / "H03.md").unlink()
+    run = b.run_from_report(CELERY / "scan" / "report.json")
+    b.add_bundles(run, tmp_path / "bundles", CELERY / "scan" / "report.json")
+    records, _, _ = b.split_run(run, _celery())
+    assert b.score_bundles(records, _celery())["rows"][_key("FR-001")]["outcome"] == "unreadable"

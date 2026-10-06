@@ -221,6 +221,70 @@ def run_from_report(report_path: Path) -> dict:
             "findings": findings}
 
 
+_NOTE = re.compile(r"^## Source — `(?P<file>[^`]+)`\n\n_(?P<note>[^\n]*)_\n\n```[^\n]*\n(?P<body>.*?)\n```",
+                   re.S | re.M)
+_MARKER = re.compile(r"\n\n\.\.\. \[[^\]]*: \d+ characters omitted\] \.\.\.\n\n")
+_WHOLE = re.compile(r"^whole file, (\d+) lines$")
+_RANGE = re.compile(r"^lines (\d+)-(\d+) — ")
+_TRIMMED = re.compile(r"^file trimmed to fit the budget; (\d+) lines total$")
+
+
+def shown_lines(bundle_text: str) -> tuple[str, list[tuple[int, int]]] | None:
+    """The file and line ranges a bundle's Source block shows; None if unparsable."""
+    m = _NOTE.search(bundle_text)
+    if not m:
+        return None
+    note, body = m.group("note"), m.group("body")
+    if w := _WHOLE.match(note):
+        return m.group("file"), [(1, int(w.group(1)))]  # never clipped
+    if r := _RANGE.match(note):
+        start, end = int(r.group(1)), int(r.group(2))
+    elif t := _TRIMMED.match(note):
+        start, end = 1, int(t.group(1))
+    else:
+        return None
+    if body.endswith("\n"):
+        # The excerpt ran to the file's final newline; bundle.py counted the empty line after it.
+        body, end = body[:-1], end - 1
+    parts = _MARKER.split(body)
+    if len(parts) == 1:
+        return m.group("file"), [(start, end)]
+    if len(parts) != 2:
+        return None
+    head, tail = parts
+    # A line the character cut split is not shown: drop the last head line and the first tail line.
+    n_head = len(head.split("\n")) - 1
+    n_tail = len(tail.split("\n")) - 1
+    ranges = []
+    if n_head > 0:
+        ranges.append((start, start + n_head - 1))
+    if n_tail > 0:
+        ranges.append((end - n_tail + 1, end))
+    return m.group("file"), ranges
+
+
+def add_bundles(run: dict, bundles_dir: Path, report_path: Path) -> dict:
+    """--bundles: attach what each finding's bundle shows, joined through the scan."""
+    try:
+        index = json.loads((bundles_dir / "index.json").read_text())
+        report = json.loads(report_path.read_text())
+    except (OSError, ValueError) as e:
+        raise InputError([f"{bundles_dir}: {e}"]) from None
+    files = {b["id"]: b["file"] for b in index.get("bundles") or []}
+    for f in report.get("findings") or []:
+        key, hid = f.get("key"), f.get("hotspot_id")
+        if not key or hid not in files:
+            continue
+        path = bundles_dir / f"{hid}.md"
+        parsed = shown_lines(path.read_text()) if path.is_file() else None
+        rec = run["findings"].setdefault(key, {})
+        if parsed is None or parsed[0] != files[hid]:
+            rec["bundle"] = {"file": files[hid], "shown": None}
+        else:
+            rec["bundle"] = {"file": files[hid], "shown": [list(r) for r in parsed[1]]}
+    return run
+
+
 def split_run(run: dict, label_set: dict) -> tuple[dict, list[str], list[str]]:
     """(scored records by key, unlabelled keys, keys excluded by independence)."""
     model = (run.get("produced_by") or {}).get("model")
@@ -284,3 +348,34 @@ def score_duplicates(records: dict, label_set: dict) -> dict:
     missed = sorted(k for k, d in labelled.items() if stated.get(k) != d)
     false = sorted(k for k, d in stated.items() if d and labelled.get(k) != d)
     return {"found": found, "missed": missed, "false": false, "keys": sorted(stated)}
+
+
+SHOWN, NOT_SHOWN, ELSEWHERE, NOT_IN_REPO, UNREADABLE = (
+    "shown", "not shown", "elsewhere", "not in repository", "unreadable")
+BUNDLE_OUTCOMES = (SHOWN, NOT_SHOWN, ELSEWHERE, NOT_IN_REPO, UNREADABLE)
+
+
+def score_bundles(records: dict, label_set: dict) -> dict:
+    rows = {}
+    for k, r in records.items():
+        fact = label_set["_by_key"][k].get("refuting_fact")
+        if not fact or "bundle" not in r:
+            continue
+        repo = [x for x in fact.get("ranges") or [] if x["kind"] == "repo"]
+        bfile, shown = r["bundle"]["file"], r["bundle"]["shown"]
+        mine = [x for x in repo if x["file"] == bfile]
+        partly = bool(mine) and len(mine) < len(repo)
+        if not repo:
+            outcome = NOT_IN_REPO
+        elif shown is None:
+            outcome = UNREADABLE
+        elif not mine:
+            outcome = ELSEWHERE
+        elif all(any(a <= x["lo"] and x["hi"] <= b for a, b in shown) for x in mine):
+            outcome = SHOWN
+        else:
+            outcome = NOT_SHOWN
+        rows[k] = {"outcome": outcome, "partly_elsewhere": outcome == SHOWN and partly}
+    counts = {o: sum(1 for x in rows.values() if x["outcome"] == o) for o in BUNDLE_OUTCOMES}
+    counts["partly elsewhere"] = sum(1 for x in rows.values() if x["partly_elsewhere"])
+    return {"rows": rows, "counts": counts, "keys": sorted(rows)}
