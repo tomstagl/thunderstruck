@@ -52,7 +52,7 @@ One file of tests, `tests/test_benchmark.py`, grows task by task; each task's te
 **Interfaces:**
 - Produces: `InputError(problems: list[str])`; constants `LABELS_SCHEMA`, `RUN_SCHEMA`, `RESULT_SCHEMA`, `VERDICTS`, `RUN_VERDICTS`, `BASES`, `CONFIDENCE`, `ROLES`, `RANGE_KINDS`, `PRECONDITION_KINDS`, `VALUE_TYPES`; `validate_label_set(doc: dict, where: str) -> list[str]`; `load_label_sets(paths: list[Path]) -> list[dict]` (each set gains `_path` and `_by_key: dict[str, dict]`); `default_label_paths() -> list[Path]`; `select_set(sets: list[dict], commit: str) -> dict`; `wilson(k: int, n: int) -> tuple[int, int]`; `basis_of(label_set: dict, keys: list[str]) -> dict`; `figure(name: str, k: int, n: int, basis: dict) -> dict`; `format_basis(basis: dict) -> str`; `format_figure(fig: dict, revealed: bool = False) -> str`.
 
-- [ ] **Step 1: Write the failing tests.** Create `tests/test_benchmark.py` with this header and the Task 1 tests:
+- [x] **Step 1: Write the failing tests.** Create `tests/test_benchmark.py` with this header and the Task 1 tests:
 
 ```python
 """The correctness benchmark (#55): scoring against labelled ground truth."""
@@ -168,12 +168,12 @@ def test_a_figure_line_states_what_it_rests_on(tmp_path):
     assert b.format_figure(b.figure("x", 0, 1, b.basis_of(s, ["k1"])), revealed=True).endswith("· revealed")
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_benchmark.py -q`
 Expected: collection error, `ModuleNotFoundError: No module named 'benchmark'`.
 
-- [ ] **Step 3: Write the implementation.** Create `scripts/benchmark.py`:
+- [x] **Step 3: Write the implementation.** Create `scripts/benchmark.py`:
 
 ```python
 #!/usr/bin/env python3
@@ -349,12 +349,12 @@ def format_figure(fig: dict, revealed: bool = False) -> str:
     return f"{fig['name']:<28} {fig['k']}/{fig['n']}  ({lo}–{hi}%)  {format_basis(fig['basis'])}{tail}"
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_benchmark.py -q`
 Expected: all Task 1 tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/benchmark.py tests/test_benchmark.py
