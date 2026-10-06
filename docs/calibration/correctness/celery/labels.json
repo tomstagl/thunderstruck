@@ -1,0 +1,1027 @@
+{
+  "schema": "thunderstruck.labels/v1",
+  "repo": "celery/celery",
+  "commit": "508c1129269d2b1baffc516d8f5c05da06273ef0",
+  "role": "development",
+  "scan": "scan/report.json",
+  "labels": [
+    {
+      "key": "f62fb0c3468b",
+      "display": "FR-001",
+      "source": "verdicts.json#FR-001",
+      "verdict": "partially_correct",
+      "basis": "executed",
+      "labelled_by": "claude-fable-5-1",
+      "established_by": "review/recipe_fr001.py: pool_limit=2, stalled fake Redis (accepts, never answers), 20 fresh threads, socket_timeout scaled to 1 s and max_retries to 1. All 14 result-tracking threads blocked 3-21 s and raised RuntimeError; all 6 ignore_result threads blocked 18-21 s; none raised OperationalError. Also redis/fr001_a.py at full defaults against a refused port: 19.1 s then RuntimeError; redis/fr001_b_dbg.py: two threads in the retry loop at once. Threads with a warm pubsub connection published in 0.00 s during a stall. Not run against a real Redis; the 44 min figure for a blackholed host at defaults is extrapolated, not measured.",
+      "deserved_confidence": "medium",
+      "duplicate_of": null,
+      "refuting_fact": {
+        "ranges": [
+          {
+            "file": "celery/app/base.py",
+            "lo": 1640,
+            "hi": 1657,
+            "kind": "repo"
+          },
+          {
+            "file": "celery/backends/base.py",
+            "lo": 236,
+            "hi": 236,
+            "kind": "repo"
+          },
+          {
+            "file": "celery/backends/asynchronous.py",
+            "lo": 358,
+            "hi": 363,
+            "kind": "repo"
+          }
+        ]
+      },
+      "preconditions": [
+        {
+          "setting": "broker_pool_acquire_timeout",
+          "kind": "setting",
+          "literal": {
+            "type": "none"
+          },
+          "effective": {
+            "type": "none"
+          }
+        },
+        {
+          "setting": "broker_pool_limit",
+          "kind": "setting",
+          "literal": {
+            "type": "number",
+            "value": 10
+          },
+          "effective": {
+            "type": "number",
+            "value": 10
+          }
+        },
+        {
+          "setting": "redis_socket_connect_timeout",
+          "kind": "setting",
+          "literal": {
+            "type": "none"
+          },
+          "effective": {
+            "type": "number",
+            "value": 120,
+            "unit": "s"
+          }
+        },
+        {
+          "setting": "redis_socket_timeout",
+          "kind": "setting",
+          "literal": {
+            "type": "number",
+            "value": 120,
+            "unit": "s"
+          },
+          "effective": {
+            "type": "number",
+            "value": 120,
+            "unit": "s"
+          }
+        },
+        {
+          "setting": "result backend retry_policy",
+          "kind": "setting",
+          "literal": {
+            "type": "text",
+            "value": "max_retries=20, interval 1 s"
+          },
+          "effective": {
+            "type": "text",
+            "value": "max_retries=20, interval 1 s"
+          }
+        },
+        {
+          "setting": "result_backend_thread_safe",
+          "kind": "setting",
+          "literal": {
+            "type": "bool",
+            "value": false
+          },
+          "effective": {
+            "type": "bool",
+            "value": false
+          }
+        },
+        {
+          "setting": "task_ignore_result",
+          "kind": "setting",
+          "literal": {
+            "type": "bool",
+            "value": false
+          },
+          "effective": {
+            "type": "bool",
+            "value": false
+          }
+        }
+      ]
+    },
+    {
+      "key": "a0ba5bc31036",
+      "display": "FR-002",
+      "source": "verdicts.json#FR-002",
+      "verdict": "correct_but_gated",
+      "basis": "executed",
+      "labelled_by": "claude-fable-5-1",
+      "established_by": "review/real_worker.py timeout: real prefork worker, memory broker, time_limit=1, task sleeps 5. In 10 s: 5 executions, 4 errback executions, state FAILURE throughout, 6 'Hard time limit' log lines. Also worker/fr_request.py at Request level. Bounds from a RabbitMQ quorum-queue delivery limit were not tested.",
+      "deserved_confidence": "high",
+      "duplicate_of": null,
+      "refuting_fact": null,
+      "preconditions": [
+        {
+          "setting": "task_acks_late",
+          "kind": "setting",
+          "literal": {
+            "type": "bool",
+            "value": false
+          },
+          "effective": {
+            "type": "bool",
+            "value": false
+          }
+        },
+        {
+          "setting": "task_acks_on_timeout",
+          "kind": "setting",
+          "literal": {
+            "type": "none"
+          },
+          "effective": {
+            "type": "bool",
+            "value": true
+          }
+        },
+        {
+          "setting": "task_time_limit",
+          "kind": "setting",
+          "literal": {
+            "type": "none"
+          },
+          "effective": {
+            "type": "none"
+          }
+        }
+      ]
+    },
+    {
+      "key": "b1af3746845c",
+      "display": "FR-003",
+      "source": "verdicts.json#FR-003",
+      "verdict": "partially_correct",
+      "basis": "executed",
+      "labelled_by": "claude-fable-5-1",
+      "established_by": "canvas/fr003_tracer.py and canvas/fr003_worker.py (memory broker patched to mark requeued messages redelivered, as the Redis transport does). Default trail=True: 0 dispatches on redelivery. trail=False plus malformed link: 5 of 5 passes Reject(requeue=True), 1 backend read per pass. Real prefork worker: 6 bounces in 5 s. Unregistered link: published, no failure. Solo: CRITICAL 'Unrecoverable error'. Threads: one log line, message never settled. Rate on a real Redis or RabbitMQ broker not measured; SQS claim from reading kombu only.",
+      "deserved_confidence": "low",
+      "duplicate_of": null,
+      "refuting_fact": {
+        "ranges": [
+          {
+            "file": "celery/app/task.py",
+            "lo": 260,
+            "hi": 260,
+            "kind": "repo"
+          },
+          {
+            "file": "celery/app/trace.py",
+            "lo": 531,
+            "hi": 541,
+            "kind": "repo"
+          },
+          {
+            "file": "celery/result.py",
+            "lo": 470,
+            "hi": 473,
+            "kind": "repo"
+          },
+          {
+            "file": "site-packages/kombu/transport/SQS/__init__.py",
+            "lo": 577,
+            "hi": 577,
+            "kind": "dependency"
+          }
+        ]
+      },
+      "preconditions": [
+        {
+          "setting": "worker_deduplicate_successful_tasks",
+          "kind": "setting",
+          "literal": {
+            "type": "bool",
+            "value": false
+          },
+          "effective": {
+            "type": "bool",
+            "value": false
+          }
+        },
+        {
+          "setting": "task_acks_late",
+          "kind": "setting",
+          "literal": {
+            "type": "bool",
+            "value": false
+          },
+          "effective": {
+            "type": "bool",
+            "value": false
+          }
+        },
+        {
+          "setting": "Task.trail",
+          "kind": "setting",
+          "literal": {
+            "type": "bool",
+            "value": true
+          },
+          "effective": {
+            "type": "bool",
+            "value": true
+          }
+        }
+      ]
+    },
+    {
+      "key": "a4b8d7590c34",
+      "display": "FR-004",
+      "source": "verdicts.json#FR-004",
+      "verdict": "correct",
+      "basis": "executed",
+      "labelled_by": "claude-fable-5-1",
+      "established_by": "canvas/fr004_bloat.py, re-run by me. N=4: largest message 795 B, 3.7 KB, 21 KB, 127 KB, 761 KB, 4.6 MB, 27 MB for K=1..7 in the direct-chord form, against 16 KB at K=7 for the operator and chain forms. N=100, K=3: 5.03 MB per message, 503 MB total, apply_async took 10 s; operator form 88 KB. Worker-side OOM on deserialisation was not tested.",
+      "deserved_confidence": "high",
+      "duplicate_of": null,
+      "refuting_fact": null,
+      "preconditions": []
+    },
+    {
+      "key": "bb3600c042ef",
+      "display": "FR-005",
+      "source": "verdicts.json#FR-005",
+      "verdict": "partially_correct",
+      "basis": "executed",
+      "labelled_by": "claude-fable-5-1",
+      "established_by": "redis/fr005.py, re-run by me with retry scaled to 2: after outage and recovery, A.get(timeout=5) for a completed A returned in 0.01 s. The recipe's own step does not hang. A variant does show the bug: B.get(timeout=5) already waiting when B completes raised TimeoutError at 5.0 s with SUCCESS stored. gevent runs (fr005_gevent*.py): drainer dies, later get() raises RuntimeError in 0.00 s.",
+      "deserved_confidence": "medium",
+      "duplicate_of": null,
+      "refuting_fact": {
+        "ranges": [
+          {
+            "file": "celery/backends/redis.py",
+            "lo": 209,
+            "hi": 212,
+            "kind": "repo"
+          },
+          {
+            "file": "celery/backends/asynchronous.py",
+            "lo": 136,
+            "hi": 155,
+            "kind": "repo"
+          }
+        ]
+      },
+      "preconditions": [
+        {
+          "setting": "result backend retry_policy",
+          "kind": "setting",
+          "literal": {
+            "type": "text",
+            "value": "max_retries=20, interval 1 s"
+          },
+          "effective": {
+            "type": "text",
+            "value": "max_retries=20, interval 1 s"
+          }
+        },
+        {
+          "setting": "result_backend_thread_safe",
+          "kind": "setting",
+          "literal": {
+            "type": "bool",
+            "value": false
+          },
+          "effective": {
+            "type": "bool",
+            "value": false
+          }
+        }
+      ]
+    },
+    {
+      "key": "df2cb49b3e2c",
+      "display": "FR-006",
+      "source": "verdicts.json#FR-006",
+      "verdict": "partially_correct",
+      "basis": "executed",
+      "labelled_by": "claude-fable-5-1",
+      "established_by": "review/recipe_fr001.py second half: 8 threads with warm connections, Redis stalled, every apply_async returned in 0.00 s. With fresh threads the stall is the FR-001 behaviour. redis/fr001_b_shared.py with result_backend_thread_safe=True does serialise callers.",
+      "deserved_confidence": "low",
+      "duplicate_of": "f62fb0c3468b",
+      "refuting_fact": {
+        "ranges": [
+          {
+            "file": "celery/app/base.py",
+            "lo": 1640,
+            "hi": 1657,
+            "kind": "repo"
+          },
+          {
+            "file": "celery/backends/base.py",
+            "lo": 236,
+            "hi": 236,
+            "kind": "repo"
+          }
+        ]
+      },
+      "preconditions": [
+        {
+          "setting": "result_backend_thread_safe",
+          "kind": "setting",
+          "literal": {
+            "type": "bool",
+            "value": false
+          },
+          "effective": {
+            "type": "bool",
+            "value": false
+          }
+        },
+        {
+          "setting": "redis_socket_timeout",
+          "kind": "setting",
+          "literal": {
+            "type": "number",
+            "value": 120,
+            "unit": "s"
+          },
+          "effective": {
+            "type": "number",
+            "value": 120,
+            "unit": "s"
+          }
+        },
+        {
+          "setting": "result backend retry_policy",
+          "kind": "setting",
+          "literal": {
+            "type": "text",
+            "value": "max_retries=20"
+          },
+          "effective": {
+            "type": "text",
+            "value": "max_retries=20"
+          }
+        }
+      ]
+    },
+    {
+      "key": "8bcddcb49b5d",
+      "display": "FR-007",
+      "source": "verdicts.json#FR-007",
+      "verdict": "correct_but_gated",
+      "basis": "executed",
+      "labelled_by": "claude-fable-5-1",
+      "established_by": "redis/fr007.py and fr007_ctl.py, re-run by me. always_retry=True, backend down 12 s: get(timeout=2) still blocked at 12 s and raised TimeoutError at 14.0 s; store blocked 12.1 s; 101 'Retrying inf more times' warnings. Defaults: both raise ConnectionError in 0.00 s. For Redis the get() path is on_wait_for_pending, not the cited wait_for.",
+      "deserved_confidence": "high",
+      "duplicate_of": null,
+      "refuting_fact": null,
+      "preconditions": [
+        {
+          "setting": "result_backend_always_retry",
+          "kind": "setting",
+          "literal": {
+            "type": "bool",
+            "value": false
+          },
+          "effective": {
+            "type": "bool",
+            "value": false
+          }
+        },
+        {
+          "setting": "result_backend_max_retries",
+          "kind": "setting",
+          "literal": {
+            "type": "number",
+            "value": "inf"
+          },
+          "effective": {
+            "type": "number",
+            "value": "inf"
+          }
+        }
+      ]
+    },
+    {
+      "key": "34e3742160f1",
+      "display": "FR-008",
+      "source": "verdicts.json#FR-008",
+      "verdict": "partially_correct",
+      "basis": "executed",
+      "labelled_by": "claude-fable-5-1",
+      "established_by": "redis/fr008.py, re-run by me on the cache backend with mget mocked at 2 s and 1000 ids: TimeoutError after 17.1 s, 7 MGETs of 1000 keys each. The script also asserts RedisBackend.iter_native is AsyncBackendMixin.iter_native. The load-amplification claim was not measured.",
+      "deserved_confidence": "medium",
+      "duplicate_of": null,
+      "refuting_fact": {
+        "ranges": [
+          {
+            "file": "celery/backends/redis.py",
+            "lo": 372,
+            "hi": 372,
+            "kind": "repo"
+          },
+          {
+            "file": "celery/backends/asynchronous.py",
+            "lo": 224,
+            "hi": 230,
+            "kind": "repo"
+          },
+          {
+            "file": "celery/backends/base.py",
+            "lo": 1022,
+            "hi": 1023,
+            "kind": "repo"
+          }
+        ]
+      },
+      "preconditions": []
+    },
+    {
+      "key": "25300c62e151",
+      "display": "FR-009",
+      "source": "verdicts.json#FR-009",
+      "verdict": "partially_correct",
+      "basis": "executed",
+      "labelled_by": "claude-fable-5-1",
+      "established_by": "canvas/fr009_errback.py, re-run by me. Case 1 (body.link_error, healthy broker): nothing published, so the recipe's expected observation appears without any fault and cannot confirm the hypothesis. Case 3 (link_error in group.options, publish raises): nothing published, 0 log lines, which does confirm the swallow. Case 4 (new-style errback that raises): logged.",
+      "deserved_confidence": "low",
+      "duplicate_of": null,
+      "refuting_fact": {
+        "ranges": [
+          {
+            "file": "celery/canvas.py",
+            "lo": 1806,
+            "hi": 1816,
+            "kind": "repo"
+          },
+          {
+            "file": "celery/backends/base.py",
+            "lo": 482,
+            "hi": 482,
+            "kind": "repo"
+          }
+        ]
+      },
+      "preconditions": [
+        {
+          "setting": "task_publish_retry_policy",
+          "kind": "setting",
+          "literal": {
+            "type": "text",
+            "value": "max_retries=3, 0/0.2/0.4 s"
+          },
+          "effective": {
+            "type": "text",
+            "value": "max_retries=3, 0/0.2/0.4 s"
+          }
+        }
+      ]
+    },
+    {
+      "key": "c15996fba8db",
+      "display": "FR-010",
+      "source": "verdicts.json#FR-010",
+      "verdict": "partially_correct",
+      "basis": "executed",
+      "labelled_by": "claude-fable-5-1",
+      "established_by": "amqp/fr010.py and fr010b.py, re-run by me: publish mocked to fail only for the celeryev exchange, 10,000 apply_async calls, buffer length 10,000, maxlen None, nothing logged, about 0.9 to 2.9 KB per entry. flush() clears the buffer without sending (producer is None). The real-broker trigger (refused declare) was reasoned from code, not run.",
+      "deserved_confidence": "medium",
+      "duplicate_of": null,
+      "refuting_fact": {
+        "ranges": [
+          {
+            "file": "celery/app/amqp.py",
+            "lo": 570,
+            "hi": 570,
+            "kind": "repo"
+          },
+          {
+            "file": "celery/app/amqp.py",
+            "lo": 598,
+            "hi": 608,
+            "kind": "repo"
+          }
+        ]
+      },
+      "preconditions": [
+        {
+          "setting": "task_send_sent_event",
+          "kind": "setting",
+          "literal": {
+            "type": "bool",
+            "value": false
+          },
+          "effective": {
+            "type": "bool",
+            "value": false
+          }
+        }
+      ]
+    },
+    {
+      "key": "6105880fd01e",
+      "display": "FR-011",
+      "source": "verdicts.json#FR-011",
+      "verdict": "correct_but_gated",
+      "basis": "executed",
+      "labelled_by": "claude-fable-5-1",
+      "established_by": "worker/fr_request.py and worker/fr011_redis.py, re-run by me: real Request object, Redis backend on a closed port, default config. on_failure raised ConnectionError in 0.0 s, acknowledged=False; healthy control ran store, signal, event, REJECT(requeue=False). Redelivery after a worker restart was not run. The swallow is at site-packages/billiard/pool.py:1804-1814.",
+      "deserved_confidence": "medium",
+      "duplicate_of": null,
+      "refuting_fact": null,
+      "preconditions": [
+        {
+          "setting": "task_acks_late",
+          "kind": "setting",
+          "literal": {
+            "type": "bool",
+            "value": false
+          },
+          "effective": {
+            "type": "bool",
+            "value": false
+          }
+        },
+        {
+          "setting": "result_backend_always_retry",
+          "kind": "setting",
+          "literal": {
+            "type": "bool",
+            "value": false
+          },
+          "effective": {
+            "type": "bool",
+            "value": false
+          }
+        },
+        {
+          "setting": "task_ignore_result",
+          "kind": "setting",
+          "literal": {
+            "type": "bool",
+            "value": false
+          },
+          "effective": {
+            "type": "bool",
+            "value": false
+          }
+        }
+      ]
+    },
+    {
+      "key": "6bd1a259060b",
+      "display": "FR-012",
+      "source": "verdicts.json#FR-012",
+      "verdict": "partially_correct",
+      "basis": "executed",
+      "labelled_by": "claude-fable-5-1",
+      "established_by": "review/real_worker.py: real prefork worker. sys.exit(1): 9 executions in 10 s, state never leaves PENDING. os._exit(1): redelivered after 10.4 s (worker_lost_wait), second delivery received. Also worker/fr_request.py at Request level. Behaviour with billiard before 4.3.0 was taken from the commit message, not run.",
+      "deserved_confidence": "medium",
+      "duplicate_of": null,
+      "refuting_fact": {
+        "ranges": [
+          {
+            "file": "celery/worker/request.py",
+            "lo": 669,
+            "hi": 670,
+            "kind": "repo"
+          },
+          {
+            "file": "git show 67ba9e5",
+            "kind": "history"
+          }
+        ]
+      },
+      "preconditions": [
+        {
+          "setting": "task_reject_on_worker_lost",
+          "kind": "setting",
+          "literal": {
+            "type": "none"
+          },
+          "effective": {
+            "type": "none"
+          }
+        },
+        {
+          "setting": "task_acks_late",
+          "kind": "setting",
+          "literal": {
+            "type": "bool",
+            "value": false
+          },
+          "effective": {
+            "type": "bool",
+            "value": false
+          }
+        },
+        {
+          "setting": "worker_lost_wait",
+          "kind": "setting",
+          "literal": {
+            "type": "number",
+            "value": 10,
+            "unit": "s"
+          },
+          "effective": {
+            "type": "number",
+            "value": 10,
+            "unit": "s"
+          }
+        }
+      ]
+    },
+    {
+      "key": "5fc6c6cb450e",
+      "display": "FR-013",
+      "source": "verdicts.json#FR-013",
+      "verdict": "wrong",
+      "basis": "executed",
+      "labelled_by": "claude-fable-5-1",
+      "established_by": "The recipe needs RabbitMQ; none is available here. Refuted instead by worker/fr013.py, re-run by me: threads, solo and prefork on pyamqp and redis all report hub set and asynloop; 16 threads x 300 basic.ack frames through a transport that yields mid-frame gave 4800 of 4800 intact frames, and the control without buffer_lock corrupted immediately. No gevent or eventlet worker was run against a real broker.",
+      "deserved_confidence": "low",
+      "duplicate_of": null,
+      "refuting_fact": {
+        "ranges": [
+          {
+            "file": "site-packages/amqp/method_framing.py",
+            "lo": 118,
+            "hi": 122,
+            "kind": "dependency"
+          },
+          {
+            "file": "celery/worker/worker.py",
+            "lo": 307,
+            "hi": 310,
+            "kind": "repo"
+          }
+        ]
+      },
+      "preconditions": []
+    },
+    {
+      "key": "8196e104b15a",
+      "display": "FR-014",
+      "source": "verdicts.json#FR-014",
+      "verdict": "correct",
+      "basis": "executed",
+      "labelled_by": "claude-fable-5-1",
+      "established_by": "worker/fr014_pg.py, re-run by me against PostgreSQL 16.2 (pgserver): ALTER fails with InsufficientPrivilege, 8 warnings, prepared=True, then all four reads and writes raise InFailedSqlTransaction and no row is written. worker/fr014.py on sqlite: reads work, writes fail with 'no column named children'. always_retry was False and max_retries inf in both runs.",
+      "deserved_confidence": "high",
+      "duplicate_of": null,
+      "refuting_fact": null,
+      "preconditions": [
+        {
+          "setting": "result_backend",
+          "kind": "environment",
+          "literal": {
+            "type": "none"
+          },
+          "effective": {
+            "type": "text",
+            "value": "db+postgresql with a celery_taskmeta table created by an older release"
+          }
+        },
+        {
+          "setting": "database user privileges",
+          "kind": "environment",
+          "literal": {
+            "type": "none"
+          },
+          "effective": {
+            "type": "text",
+            "value": "DML only, not table owner"
+          }
+        },
+        {
+          "setting": "result_backend_always_retry",
+          "kind": "setting",
+          "literal": {
+            "type": "bool",
+            "value": true
+          },
+          "effective": {
+            "type": "bool",
+            "value": false
+          }
+        }
+      ]
+    },
+    {
+      "key": "6345778fa223",
+      "display": "FR-015",
+      "source": "verdicts.json#FR-015",
+      "verdict": "wrong",
+      "basis": "executed",
+      "labelled_by": "claude-fable-5-1",
+      "established_by": "worker/fr015_defaults.py and worker/fr015.py, re-run by me on sqlite with a real IntegrityError from a duplicate save_group. Defaults: 1 attempt, 0 dispose, raises at once. always_retry=True and max_retries=3: 4 attempts, 3 dispose calls only in a forked child. The recipe as written (PostgreSQL with max_connections just above concurrency) was not run.",
+      "deserved_confidence": "low",
+      "duplicate_of": null,
+      "refuting_fact": {
+        "ranges": [
+          {
+            "file": "celery/app/defaults.py",
+            "lo": 229,
+            "hi": 231,
+            "kind": "repo"
+          },
+          {
+            "file": "celery/backends/database/__init__.py",
+            "lo": 70,
+            "hi": 71,
+            "kind": "repo"
+          }
+        ]
+      },
+      "preconditions": [
+        {
+          "setting": "result_backend_always_retry",
+          "kind": "setting",
+          "literal": {
+            "type": "bool",
+            "value": true
+          },
+          "effective": {
+            "type": "bool",
+            "value": false
+          }
+        },
+        {
+          "setting": "result_backend_max_retries",
+          "kind": "setting",
+          "literal": {
+            "type": "number",
+            "value": 3
+          },
+          "effective": {
+            "type": "number",
+            "value": "inf"
+          }
+        },
+        {
+          "setting": "result_backend_base_sleep_between_retries_ms",
+          "kind": "setting",
+          "literal": {
+            "type": "number",
+            "value": 10
+          },
+          "effective": {
+            "type": "number",
+            "value": 10
+          }
+        }
+      ]
+    },
+    {
+      "key": "d710c0302beb",
+      "display": "FR-016",
+      "source": "verdicts.json#FR-016",
+      "verdict": "correct",
+      "basis": "executed",
+      "labelled_by": "claude-fable-5-1",
+      "established_by": "amqp/fr016.py and fr016b.py, re-run by me: in-process solo worker, memory broker, retry publish mocked to raise OperationalError. State FAILURE with 'reject requeue=False: OperationalError', no re-execution, queue empty, with acks_late False and True. In my re-run the errback counter read 1 for early ack and 0 for late ack; I did not resolve that difference. Not run against a real broker failover. Origin is f05a95726 (2014, 'Do not requeue if retry fails').",
+      "deserved_confidence": "high",
+      "duplicate_of": null,
+      "refuting_fact": null,
+      "preconditions": [
+        {
+          "setting": "task_publish_retry_policy",
+          "kind": "setting",
+          "literal": {
+            "type": "text",
+            "value": "max_retries=3, interval_start=0, interval_step=0.2"
+          },
+          "effective": {
+            "type": "text",
+            "value": "max_retries=3, interval_start=0, interval_step=0.2"
+          }
+        },
+        {
+          "setting": "task_publish_retry",
+          "kind": "setting",
+          "literal": {
+            "type": "bool",
+            "value": true
+          },
+          "effective": {
+            "type": "bool",
+            "value": true
+          }
+        }
+      ]
+    },
+    {
+      "key": "9be5cf13811a",
+      "display": "FR-017",
+      "source": "verdicts.json#FR-017",
+      "verdict": "correct",
+      "basis": "executed",
+      "labelled_by": "claude-fable-5-1",
+      "established_by": "canvas/fr017_worker.py early and late, re-run by me: real solo worker, memory broker, publish of b raises OperationalError once. Executed ['a', 'eb(OperationalError)', 'cb']; a is FAILURE; b is FAILURE and never ran; queue empty; identical for early and late ack. Upstream duplicate found through the GitHub issue search.",
+      "deserved_confidence": "high",
+      "duplicate_of": null,
+      "refuting_fact": null,
+      "preconditions": [
+        {
+          "setting": "task_publish_retry_policy",
+          "kind": "setting",
+          "literal": {
+            "type": "text",
+            "value": "max_retries=3"
+          },
+          "effective": {
+            "type": "text",
+            "value": "max_retries=3"
+          }
+        }
+      ]
+    },
+    {
+      "key": "293417791dc2",
+      "display": "FR-018",
+      "source": "verdicts.json#FR-018",
+      "verdict": "correct_but_gated",
+      "basis": "executed",
+      "labelled_by": "claude-fable-5-1",
+      "established_by": "amqp/fr018.py, re-run by me: 8 threads, event publish mocked to take 0.5 s. Sent events off: 0.04 s wall. On: 4.03 s wall, per-call 0.51 to 4.01 s. Mocked delay, not a real degraded broker; the recipe's 32 threads and proxy were not used.",
+      "deserved_confidence": "medium",
+      "duplicate_of": null,
+      "refuting_fact": null,
+      "preconditions": [
+        {
+          "setting": "task_send_sent_event",
+          "kind": "setting",
+          "literal": {
+            "type": "bool",
+            "value": false
+          },
+          "effective": {
+            "type": "bool",
+            "value": false
+          }
+        },
+        {
+          "setting": "task_publish_retry_policy",
+          "kind": "setting",
+          "literal": {
+            "type": "text",
+            "value": "max_retries=3"
+          },
+          "effective": {
+            "type": "text",
+            "value": "max_retries=3"
+          }
+        }
+      ]
+    },
+    {
+      "key": "39e3d9a88104",
+      "display": "FR-019",
+      "source": "verdicts.json#FR-019",
+      "verdict": "correct",
+      "basis": "executed",
+      "labelled_by": "claude-fable-5-1",
+      "established_by": "amqp/fr019.py, re-run by me, capturing Producer.publish kwargs for eight route shapes. Exchange-only: exchange '', routing_key None, memory transport queue '' received 1 message. The RabbitMQ drop was not observed (no broker); it follows from kombu turning routing_key None into '' and never setting mandatory.",
+      "deserved_confidence": "medium",
+      "duplicate_of": null,
+      "refuting_fact": null,
+      "preconditions": [
+        {
+          "setting": "task_routes",
+          "kind": "environment",
+          "literal": {
+            "type": "none"
+          },
+          "effective": {
+            "type": "text",
+            "value": "a user-authored route naming only an exchange"
+          }
+        }
+      ]
+    },
+    {
+      "key": "2b1793902d2d",
+      "display": "FR-020",
+      "source": "verdicts.json#FR-020",
+      "verdict": "partially_correct",
+      "basis": "read",
+      "labelled_by": "claude-fable-5-1",
+      "established_by": null,
+      "deserved_confidence": "low",
+      "duplicate_of": null,
+      "refuting_fact": {
+        "ranges": [
+          {
+            "file": "celery/worker/components.py",
+            "lo": 36,
+            "hi": 47,
+            "kind": "repo"
+          },
+          {
+            "file": "celery/worker/worker.py",
+            "lo": 307,
+            "hi": 310,
+            "kind": "repo"
+          }
+        ]
+      },
+      "preconditions": []
+    },
+    {
+      "key": "50df890ef774",
+      "display": "FR-021",
+      "source": "verdicts.json#FR-021",
+      "verdict": "partially_correct",
+      "basis": "executed",
+      "labelled_by": "claude-fable-5-1",
+      "established_by": "amqp/fr021.py, re-run by me: 300 manual retries all with countdown 180.0 s; autoretry_for without backoff also exactly 180.0 s; with retry_backoff=True 0 to 4 s jittered. That matches the recipe's prediction (retries land in a window as wide as the outage). The recipe's 503 stub and the effect on a dependency were not run.",
+      "deserved_confidence": "low",
+      "duplicate_of": null,
+      "refuting_fact": {
+        "ranges": [
+          {
+            "file": "docs/userguide/tasks.rst",
+            "lo": 738,
+            "hi": 755,
+            "kind": "docs"
+          },
+          {
+            "file": "celery/app/task.py",
+            "lo": 241,
+            "hi": 245,
+            "kind": "repo"
+          }
+        ]
+      },
+      "preconditions": [
+        {
+          "setting": "Task.default_retry_delay",
+          "kind": "setting",
+          "literal": {
+            "type": "number",
+            "value": 180,
+            "unit": "s"
+          },
+          "effective": {
+            "type": "number",
+            "value": 180,
+            "unit": "s"
+          }
+        },
+        {
+          "setting": "Task.max_retries",
+          "kind": "setting",
+          "literal": {
+            "type": "number",
+            "value": 3
+          },
+          "effective": {
+            "type": "number",
+            "value": 3
+          }
+        },
+        {
+          "setting": "retry_backoff",
+          "kind": "setting",
+          "literal": {
+            "type": "bool",
+            "value": false
+          },
+          "effective": {
+            "type": "bool",
+            "value": false
+          }
+        },
+        {
+          "setting": "retry_jitter",
+          "kind": "setting",
+          "literal": {
+            "type": "bool",
+            "value": true
+          },
+          "effective": {
+            "type": "bool",
+            "value": true
+          }
+        }
+      ]
+    }
+  ]
+}

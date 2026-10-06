@@ -373,7 +373,7 @@ git commit -m "Benchmark: label sets, validation and figures (#55)"
 - Consumes: `load_label_sets`, `values_match` (Task 6 defines `values_match`; until then the third test below is expected to fail with `AttributeError` and is marked so in Step 2).
 - Produces: `docs/calibration/correctness/celery/labels.json` with 21 labels, `role: development`, `commit: 508c1129269d2b1baffc516d8f5c05da06273ef0`.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_benchmark.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_benchmark.py`:
 
 ```python
 # --- Task 2 -----------------------------------------------------------------
@@ -435,12 +435,12 @@ def test_celery_has_exactly_five_discriminating_preconditions():
     assert env == [("FR-014", "database user privileges"), ("FR-014", "result_backend"), ("FR-019", "task_routes")]
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_benchmark.py -q -k "celery"`
 Expected: FAIL, `FileNotFoundError` for `labels.json`.
 
-- [ ] **Step 3: Generate `labels.json`.** Save this one-off converter in your scratch directory (not in the repository; spec §6.1 converts once and checks in the result) and run it with the set directory as its argument. The `PRECONDITIONS` table is the hand normalisation §6.1 calls for: one entry per precondition in `verdicts.json`, keyed by display id and the setting as written there. Measured consequences leave `effective` equal to `literal`; FR-014's `result_backend` and `database user privileges` and FR-019's `task_routes` are `environment`.
+- [x] **Step 3: Generate `labels.json`.** Save this one-off converter in your scratch directory (not in the repository; spec §6.1 converts once and checks in the result) and run it with the set directory as its argument. The `PRECONDITIONS` table is the hand normalisation §6.1 calls for: one entry per precondition in `verdicts.json`, keyed by display id and the setting as written there. Measured consequences leave `effective` equal to `literal`; FR-014's `result_backend` and `database user privileges` and FR-019's `task_routes` are `environment`.
 
 ```python
 """One-off: docs/calibration/correctness/celery/verdicts.json -> labels.json (spec §6.1)."""
@@ -549,7 +549,7 @@ print(len(labels), "labels")
 Run: `uv run --no-project python "$SCRATCH/build_labels.py" docs/calibration/correctness/celery`
 Expected: `21 labels`. Open the file and check three labels by eye against `verdicts.json`: FR-001 (three repo ranges), FR-006 (`duplicate_of` is FR-001's key `f62fb0c3468b`), FR-020 (`basis: read`, `established_by: null`).
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_benchmark.py -q -k "celery"`
 Expected: `test_celery_labels_agree_with_the_evidence` and `test_celery_refuting_ranges_are_the_evidence_ranges` PASS. `test_celery_has_exactly_five_discriminating_preconditions` fails with `AttributeError: module 'benchmark' has no attribute 'values_match'` until Task 6; that is the only failure allowed on this commit, so mark it for now:
@@ -560,7 +560,7 @@ Expected: `test_celery_labels_agree_with_the_evidence` and `test_celery_refuting
 
 placed on the line above `def test_celery_has_exactly_five_discriminating_preconditions`. Task 6 removes the marker.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/calibration/correctness/celery/labels.json tests/test_benchmark.py
