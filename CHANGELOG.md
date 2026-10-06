@@ -4,6 +4,16 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.10.1
+
+A correctness benchmark scored against executed ground truth (#55).
+
+### Added
+
+- **`scripts/benchmark.py`.** Scores a refutation run, a confidence assignment, a scan's bundles and stated defaults against labelled ground truth, by finding `key`, with no model call and no network. Every figure prints the repository, commit, n, a Wilson 95% interval and who labelled the findings.
+- **The Celery label set** (`docs/calibration/correctness/celery/labels.json`): the 21 findings of the executed review, with the baselines for today's pipeline (8 of 21 confidences exact, 4 of 9 in-file refuting facts shown) and for the spike's read-only refuters (15 of 21 same verdict class).
+- **`docs/calibration/correctness/labelling.md`**: how to label new findings and add a repository.
+
 ## 0.10.0
 
 Scans that cost less and say what they consumed (#5).

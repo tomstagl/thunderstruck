@@ -1635,7 +1635,7 @@ git commit -m "Benchmark: a second repository is data only; stability and isolat
 - Modify: `docs/calibration/correctness.md` (one line under Files)
 - Modify: `CHANGELOG.md`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `pyproject.toml` (version)
 
-- [ ] **Step 1: Write `docs/calibration/correctness/labelling.md`:**
+- [x] **Step 1: Write `docs/calibration/correctness/labelling.md`:**
 
 ````markdown
 # Labelling findings for the correctness benchmark

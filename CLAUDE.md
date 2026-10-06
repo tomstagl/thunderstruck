@@ -54,6 +54,10 @@ uv run scripts/report_html.py --repo /path/to/repo   # report.json -> report.htm
 uv run scripts/calibrate.py --repo /path/to/repo --lang java --patterns S01,S27   # every hit, every tracked file
 uv run scripts/calibrate.py --repo /path/to/repo --lang all --patterns all --summary   # counts only, safe to share
 
+# The correctness benchmark (#55): score a run or a scan against labelled ground truth. No model, no network.
+uv run scripts/benchmark.py --run docs/calibration/correctness/celery/runs/spike-refuter.json
+uv run scripts/benchmark.py --report <scan>/report.json --bundles <scan>/bundles   # confidences and bundles
+
 # Build the fixture repo to poke at by hand
 python3 tests/fixtures/build_fixture.py /tmp/fixture
 ```
@@ -126,6 +130,18 @@ not a fix. Tightening a validator rule means bumping `VALIDATION_RULES`.
 in parallel, exactly one repair round and no retry loops, `--top` caps scope,
 preflight fails fast. A tool that spawns unbounded concurrent workers against a
 shared quota has no standing to report S05.
+
+**The correctness benchmark measures; it never feeds.** `scripts/benchmark.py`
+scores runs against `docs/calibration/correctness/<set>/labels.json` by `key`.
+No label, refuting fact or verdict may reach a prompt, a bundle, the catalog or
+a sample (`test_labels_never_reach_the_pipeline`). Every figure prints the
+repository, commit, n and labeller mix; state them in a PR. What it cannot
+show: recall (missed defects have no key); an investigator change without new
+labels (reworded findings get new keys); anything beyond the labelled
+repositories; an effect smaller than the printed interval. Do not tune a stage
+against the Celery findings until the score looks good — that fits Celery.
+Adding a set is data only (`labelling.md`); changing a label fails the
+baseline tests on purpose.
 
 ## The catalog is the source of truth
 
