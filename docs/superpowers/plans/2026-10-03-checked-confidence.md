@@ -48,7 +48,7 @@ New tests go in one file, `tests/test_checked_confidence.py`, appended task by t
 
 **Satisfies:** none directly; every later task assumes it.
 
-- [ ] **Step 1: Check #5 and #55 are on `main`.**
+- [x] **Step 1: Check #5 and #55 are on `main`.**
 
 ```bash
 git fetch -q origin
@@ -62,7 +62,7 @@ git show origin/main:scripts/finding_shape.py | grep -q "def shape" && echo "ok 
 
 Expected: every line `ok`.
 
-- [ ] **Step 2: Stop if anything is missing.** Any `MISSING` line ends the run before Task 1: replace `agent:in-progress` with `agent:blocked` on #56, comment "Blocked at Task 0: <the missing files>. #5 (finding_shape.py, capture_finding.py, the SubagentStop hook) / #55 (benchmark.py, labels.json) is not merged", open no PR. Do not build Tasks 1–8 without #55: a branch that cannot finish Task 9 cannot merge.
+- [x] **Step 2: Stop if anything is missing.** Any `MISSING` line ends the run before Task 1: replace `agent:in-progress` with `agent:blocked` on #56, comment "Blocked at Task 0: <the missing files>. #5 (finding_shape.py, capture_finding.py, the SubagentStop hook) / #55 (benchmark.py, labels.json) is not merged", open no PR. Do not build Tasks 1–8 without #55: a branch that cannot finish Task 9 cannot merge.
 
 No commit: this task changes nothing.
 
@@ -77,7 +77,7 @@ No commit: this task changes nothing.
 **Interfaces:**
 - Produces, in `_common`: `CONFIDENCE_LEVELS: tuple[str, ...]`, `CHECK_STATUSES`, `CONFIDENCE_CEILING: dict[str, str]`, `CHECK_SENTENCES: dict[str, str]`, `COMMIT_ROLES`, `PRECONDITION_NEEDS`, `DOCUMENTED`, `GATES`, `GATE_MARKERS: dict[str, str]`; `check_status(finding: dict) -> str`; `effective_confidence(claimed, status: str) -> str`; `finding_gate(finding: dict) -> str`.
 
-- [ ] **Step 1: Write the failing tests.** Create `tests/test_checked_confidence.py`:
+- [x] **Step 1: Write the failing tests.** Create `tests/test_checked_confidence.py`:
 
 ```python
 """#56: confidence that means the claim was checked, preconditions, and the
@@ -155,12 +155,12 @@ def test_vocabularies_are_the_spec_spelling():
     assert set(c.GATE_MARKERS) == set(c.GATES) - {"none"}
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_checked_confidence.py -q`
 Expected: FAIL, `AttributeError: module '_common' has no attribute 'effective_confidence'` (and the like).
 
-- [ ] **Step 3: Write the implementation.** In `scripts/_common.py`, directly after `classify_commit`, add:
+- [x] **Step 3: Write the implementation.** In `scripts/_common.py`, directly after `classify_commit`, add:
 
 ```python
 # --------------------------------------------------------------------------
@@ -215,9 +215,9 @@ def finding_gate(finding: dict) -> str:
     return "none"
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass** (same command as Step 2). Expected: PASS.
+- [x] **Step 4: Run the tests to verify they pass** (same command as Step 2). Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/_common.py tests/test_checked_confidence.py
