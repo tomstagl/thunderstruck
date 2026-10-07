@@ -659,7 +659,7 @@ def load_suppressions(profile: dict[str, Any]) -> tuple[list[Suppression], list[
 # Bumped whenever validate.py's rules tighten. A findings file carries the
 # version that validated it; older ones are re-checked before they are reused
 # (bundle.py) and never reported unchecked (report.py).
-VALIDATION_RULES = 3
+VALIDATION_RULES = 4
 
 
 def ref_path(path: Any) -> str:

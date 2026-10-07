@@ -241,7 +241,7 @@ git commit -m "Checked confidence: the confidence ceiling and the gate (#56)"
 - Consumes: `c.COMMIT_ROLES`, `c.PRECONDITION_NEEDS`, `c.DOCUMENTED`, `c.CHECK_STATUSES` (Task 1).
 - Produces: in `validate`: `PRECONDITION_KEYS: frozenset[str]`; `Validator.check_ref(ref, where: str, errors: list[str]) -> tuple[str, int, int] | None`; `Validator.check_preconditions(pre, where: str, errors: list[str]) -> None`; `Validator.history(finding: dict) -> list[dict]` (entries `{sha, class, role, wrote_cited_line}`). Findings files that pass carry `check` and `history`.
 
-- [ ] **Step 1: Update the test data to the new contract.** Two mechanical rules, applied to every finding a test builds by hand:
+- [x] **Step 1: Update the test data to the new contract.** Two mechanical rules, applied to every finding a test builds by hand:
   1. every finding dict gains `"preconditions": []` (place it after `"evidence"`);
   2. every `{"type": "commit", …}` evidence item gains `"role": "changed"`, except where Step 2's tests set another role.
 
@@ -262,7 +262,7 @@ git commit -m "Checked confidence: the confidence ceiling and the gate (#56)"
 
   Then delete `tests/test_high_gate.py`. (Checked: with Tasks 1–2 applied to today's `main`, these are the only changes the existing suite needs.)
 
-- [ ] **Step 2: Write the failing tests.** Append to `tests/test_checked_confidence.py`:
+- [x] **Step 2: Write the failing tests.** Append to `tests/test_checked_confidence.py`:
 
 ```python
 # --- Task 2 -----------------------------------------------------------------
@@ -491,12 +491,12 @@ def test_findings_validated_under_rules_3_are_investigated_again(scanned_copy, p
     assert not bundle._still_valid(v, doc)
 ```
 
-- [ ] **Step 3: Run them to verify they fail**
+- [x] **Step 3: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_checked_confidence.py -q`
 Expected: FAIL on the Task 2 tests (e.g. `preconditions is missing` not reported, `VALIDATION_RULES == 3`).
 
-- [ ] **Step 4: Write the implementation.**
+- [x] **Step 4: Write the implementation.**
 
 In `scripts/_common.py`: `VALIDATION_RULES = 4`. In `scripts/finding_shape.py`: `FINDING_SCHEMA_VERSION = "thunderstruck.finding/v2"` (`_common` re-exports it unchanged).
 
@@ -717,12 +717,12 @@ In `scripts/gen_sample_report.py`, `_corroborating_commit` returns a third value
 
 and every built item gets `item["preconditions"] = []` (Task 8 fills one in).
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_checked_confidence.py tests/test_validate_paths.py tests/test_investigator_contract.py tests/test_pipeline.py -q`
 Expected: PASS. Then run the full suite (command in the header); expected `exit=0`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A scripts/validate.py scripts/_common.py scripts/finding_shape.py scripts/gen_sample_report.py tests/

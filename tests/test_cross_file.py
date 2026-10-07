@@ -32,7 +32,7 @@ def _scan_with_cross_file_finding(repo: Path, plugin_root: Path) -> dict:
     f["evidence"] = [
         {"type": "code", "ref": f"{RELEASES}:11", "note": "loop around withRetry"},
         {"type": "code", "ref": f"./{WRAPPER}:1", "note": "the inner retry layer"},
-        {"type": "commit", "ref": _fix_sha(repo), "note": "fix history"}]
+        {"type": "commit", "ref": _fix_sha(repo), "role": "fixed", "note": "fix history"}]
     doc["hotspot_id"], doc["file"] = by_file[RELEASES], RELEASES
     _write_finding(repo, by_file[RELEASES], doc)
     _write_finding(repo, by_file[WRAPPER], {"hotspot_id": by_file[WRAPPER], "findings": [],

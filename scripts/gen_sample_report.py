@@ -217,21 +217,22 @@ CANNED: dict[str, list[dict]] = {
 
 
 def _corroborating_commit(repo: Path, hs: dict, spec: dict, line: int,
-                          env: dict) -> tuple[str | None, str]:
-    """The commit an investigator should cite (#19 AC-5): for an OTHER-only
-    finding, the one that wrote the cited line; otherwise the most recent fix
-    to the file, or, when there is none, the most recent change."""
+                          env: dict) -> tuple[str | None, str, str | None]:
+    """The commit an investigator should cite, with its role (#56): for an
+    OTHER-only finding, the one that wrote the cited line (introduced);
+    otherwise the most recent fix to the file (fixed), or, when there is none,
+    the most recent change (changed)."""
     if spec["missing_patterns"] == ["OTHER"]:
         blame = _run(["git", "-C", str(repo), "blame", "--porcelain", "-L",
                       f"{line},{line}", "--", hs["file"]], repo, env).stdout
-        return blame.split(" ", 1)[0], "introduced this text"
+        return blame.split(" ", 1)[0], "introduced this text", "introduced"
     for sha in hs["churn"]["recent_shas"]:
         subject = _run(["git", "-C", str(repo), "log", "-1", "--format=%s", sha],
                        repo, env).stdout.strip()
         if c.classify_commit(subject) == "fix":
-            return sha, "most recent fix to this file"
+            return sha, "most recent fix to this file", "fixed"
     shas = hs["churn"]["recent_shas"]
-    return (shas[0], "most recent change to this file") if shas else (None, "")
+    return (shas[0], "most recent change to this file", "changed") if shas else (None, "", None)
 
 
 def _line_of(repo: Path, rel: str, anchor: str) -> int:
@@ -299,9 +300,9 @@ def generate_all() -> dict[str, str]:
                     evidence.append({"type": "code",
                                      "ref": f"{rel}:{_line_of(repo, rel, anchor)}",
                                      "note": note})
-                sha, note = _corroborating_commit(repo, hs, spec, line, env)
+                sha, note, role = _corroborating_commit(repo, hs, spec, line, env)
                 if sha:
-                    evidence.append({"type": "commit", "ref": sha, "note": note})
+                    evidence.append({"type": "commit", "ref": sha, "role": role, "note": note})
                 hit = next((h for h in hs["detector_hits"]
                             if h["pattern_id"] in spec["missing_patterns"]), None)
                 if hit:
@@ -319,6 +320,7 @@ def generate_all() -> dict[str, str]:
                 item["location"] = {"file": hs["file"], "symbol": spec["symbol"],
                                     "lines": f"{line}-{min(line + 12, total)}"}
                 item["evidence"] = evidence
+                item["preconditions"] = []
                 built.append(item)
             doc = {"hotspot_id": hs["id"], "file": hs["file"], "findings": built}
             proc = subprocess.run(
