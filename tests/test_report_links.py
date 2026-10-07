@@ -63,7 +63,7 @@ def test_every_resolved_ref_is_linked(linked_copy, plugin_root):
     blob = re.escape(f"{BASE}/blob/{head}/")
     file = re.escape(finding["location"]["file"])
 
-    assert re.search(rf"\*\* · \[`{file}:1-2`\]\({blob}{file}#L1-L2\)", md), md
+    assert re.search(rf"\*\* · unchecked · \[`{file}:1-2`\]\({blob}{file}#L1-L2\)", md), md
     code = _evidence_lines(md, "code")
     assert code and re.match(rf"- _code_ \[`{file}:1`\]\({blob}{file}#L1\) — ", code[0])
     detector = _evidence_lines(md, "detector")

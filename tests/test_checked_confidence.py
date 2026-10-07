@@ -409,3 +409,77 @@ def test_preconditions_and_history_are_linked(linked_copy, plugin_root):
     assert f["history"][0]["url"].startswith("https://github.com/acme/fixture/")
     assert isinstance(f["history"][0]["subject"], str)
     assert all("kind" not in ev for ev in f["evidence"])
+
+
+# --- Task 4 -----------------------------------------------------------------
+def _f(**over) -> dict:
+    f = {"confidence": "medium", "confidence_claimed": "high", "gate": "none",
+         "check": {"status": "unchecked", "by": None, "reason": None},
+         "preconditions": [], "history": []}
+    f.update(over)
+    return f
+
+
+def test_check_line():
+    assert report.render_check(_f())[0] == (
+        "**Check** — unchecked. No one has tried to refute this claim, so it is reported at "
+        "medium confidence (claimed high).")
+    assert report.render_check(_f(confidence_claimed="medium"))[0] == (
+        "**Check** — unchecked. No one has tried to refute this claim.")
+    upheld = _f(confidence="high", check={"status": "upheld", "by": "s", "reason": "it held"})
+    assert report.render_check(upheld)[0].endswith("refute this claim and it held. it held")
+
+
+PRE = {"setting": "API_RETRY_ON_429", "default": "false (unset)", "default_ref": "src/a.ts:1",
+       "default_url": None, "needs": "changed", "value": "true", "documented": "no"}
+
+
+def test_preconditions_block():
+    assert report.render_preconditions(_f())[0] == (
+        "**Preconditions** — none: the failure happens on default settings.")
+    gated = "\n".join(report.render_preconditions(_f(gate="non_default_setting", preconditions=[PRE])))
+    assert ("- `API_RETRY_ON_429` set to `true`; default `false (unset)`, registered at "
+            "`src/a.ts:1`. The docs do not describe this behaviour.") in gated
+    rests = {**PRE, "needs": "default", "value": None, "documented": "yes",
+             "doc_ref": "docs/x.md:3", "doc_url": "https://h/x#L3"}
+    text = "\n".join(report.render_preconditions(_f(preconditions=[rests])))
+    assert "The failure happens on default settings and rests on these defaults:" in text
+    assert "`API_RETRY_ON_429` left at its default `false (unset)`" in text
+    assert "The docs describe this behaviour: [`docs/x.md:3`](https://h/x#L3)." in text
+    assert "Docs not checked." in "\n".join(
+        report.render_preconditions(_f(preconditions=[{**PRE, "documented": "not_checked"}])))
+
+
+def test_history_block():
+    assert report.render_history(_f())[0] == "**History** — none cited."
+    hist = [{"sha": "1a2b3c4d", "class": "fix", "role": "fixed", "wrote_cited_line": False, "url": None},
+            {"sha": "5d6e7f8", "class": None, "role": "introduced", "wrote_cited_line": True, "url": None}]
+    text = "\n".join(report.render_history(_f(history=hist)))
+    assert text.startswith("**History** — a signal of how often this code changed, "
+                           "not of whether the claim holds.")
+    assert "- `1a2b3c4` fix · stated role: fixed · wrote none of the cited lines" in text
+    assert "- `5d6e7f8` class unavailable · stated role: introduced · wrote a cited line" in text
+
+
+def test_report_md_states_what_validation_proved(scanned_copy, plugin_root):
+    data = _hotspots(scanned_copy)
+    hid, doc = _valid_finding(scanned_copy, data)
+    f = doc["findings"][0]
+    del f["amplifier"]
+    f["preconditions"] = [{"setting": "SWITCH", "default": "off",
+                           "default_ref": f"{data['hotspots'][0]['file']}:1", "needs": "changed",
+                           "value": "on", "documented": "not_checked"}]
+    _write_finding(scanned_copy, hid, doc)
+    assert _validate(scanned_copy, plugin_root).returncode == 0
+    _report(scanned_copy, plugin_root)
+    md_text = (scanned_copy / ".thunderstruck" / "report.md").read_text()
+    assert "That is all validation proves." in md_text
+    assert "validated finding" not in md_text
+    assert "Check status: 1 unchecked · 1 finding needs a non-default setting and is listed last" in md_text
+    assert "**medium confidence** · unchecked · needs a non-default setting · " in md_text
+    assert "| Amplifier | _not stated_ |" in md_text
+    assert "_none — this one stops" not in md_text
+    for block in ("**Check** — unchecked.", "**Preconditions**", "**History** — "):
+        assert block in md_text
+    commit_line = next(l for l in md_text.splitlines() if l.startswith("- _commit_"))
+    assert commit_line.count("(fix)") == 0

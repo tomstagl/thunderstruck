@@ -4,6 +4,7 @@ the tool's own evidence links."""
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -64,8 +65,15 @@ def test_hostile_model_text_stays_inert(linked_copy, plugin_root):
     finding["location"]["symbol"] = "sym`bol](https://evil.example)"
     for ev in finding["evidence"]:
         ev["note"] = f"note: {HOSTILE}"
+    finding["preconditions"] = [{"setting": f"setting: {HOSTILE}", "default": f"default: {HOSTILE}",
+                                 "default_ref": finding["evidence"][0]["ref"], "needs": "changed",
+                                 "value": f"value: {HOSTILE}", "documented": "not_checked"}]
     _write_finding(linked_copy, hid, doc)
     assert _validate(linked_copy, plugin_root).returncode == 0
+    saved_path = linked_copy / ".thunderstruck" / "findings" / f"{hid}.json"
+    saved = json.loads(saved_path.read_text())
+    saved["findings"][0]["check"]["reason"] = f"reason: {HOSTILE}"
+    saved_path.write_text(json.dumps(saved))
     subprocess.run([sys.executable, str(plugin_root / "scripts" / "report.py"),
                     "--repo", str(linked_copy)], check=True, capture_output=True)
     markdown = (linked_copy / ".thunderstruck" / "report.md").read_text()

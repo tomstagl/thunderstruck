@@ -1012,7 +1012,7 @@ git commit -m "Report: confidence capped by check status, default-path findings 
 - Consumes: Task 3's per-finding fields; `c.CHECK_SENTENCES`, `c.GATE_MARKERS`.
 - Produces: `report.render_check(f) -> list[str]`, `report.render_preconditions(f) -> list[str]`, `report.render_history(f) -> list[str]`.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 4 -----------------------------------------------------------------
@@ -1089,12 +1089,12 @@ def test_report_md_states_what_validation_proved(scanned_copy, plugin_root):
     assert commit_line.count("(fix)") == 0
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_checked_confidence.py -q -k "check_line or block or validation_proved"`
 Expected: FAIL, `AttributeError: module 'report' has no attribute 'render_check'`.
 
-- [ ] **Step 3: Write the implementation.** In `scripts/report.py`, add after `_shared_line`:
+- [x] **Step 3: Write the implementation.** In `scripts/report.py`, add after `_shared_line`:
 
 ```python
 def _not_stated(value) -> str:
@@ -1201,9 +1201,9 @@ In `tests/test_inert_report.py::test_hostile_model_text_stays_inert`, after the 
 
   and, after `_validate` and before `report.py`, set `check.reason` to `f"reason: {HOSTILE}"` in the saved findings file (read, edit, write the JSON). The assertions are unchanged.
 
-- [ ] **Step 4: Run the tests to verify they pass** (Step 2's command, `tests/test_inert_report.py`, then the full suite). Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests to verify they pass** (Step 2's command, `tests/test_inert_report.py`, then the full suite). Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/report.py tests/test_checked_confidence.py tests/test_inert_report.py
