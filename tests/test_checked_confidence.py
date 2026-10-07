@@ -570,3 +570,52 @@ def test_guardrail_lists_at_most_three_items(project):
     many = [{"setting": f"S{n}", "default": "d", "needs": "changed", "value": "v"} for n in range(5)]
     text = _context(project, [{**NEW, "gate": "non_default_setting", "preconditions": many}])
     assert "S2 set to v (default d) and 2 more." in text and "S3" not in text
+
+
+# --- Task 9 -----------------------------------------------------------------
+CELERY = ROOT / "docs" / "calibration" / "correctness" / "celery"
+AFTER = CELERY / "runs" / "checked-confidence.json"
+
+
+def checked_confidence_run() -> dict:
+    """Every frozen Celery finding under the new rule, all unchecked."""
+    import benchmark as b
+    frozen = json.loads((CELERY / "scan" / "report.json").read_text())
+    return {"schema": b.RUN_SCHEMA, "commit": frozen["repo"]["head"],
+            "produced_by": {"stage": "confidence", "model": None,
+                            "source": "scan/report.json via _common.effective_confidence, "
+                                      "every finding unchecked"},
+            "findings": {f["key"]: {"confidence": c.effective_confidence(f["confidence"], "unchecked")}
+                         for f in sorted(frozen["findings"], key=lambda f: f["key"])}}
+
+
+def test_the_after_run_is_derived_from_the_frozen_scan():
+    assert json.loads(AFTER.read_text()) == checked_confidence_run()
+
+
+def test_confidence_agreement_before_and_after():
+    import benchmark as b
+    celery = b.load_label_sets([CELERY / "labels.json"])[0]
+
+    def score(run):
+        return b.score_confidence(b.split_run(run, celery)[0], celery)
+
+    before = score(b.run_from_report(CELERY / "scan" / "report.json"))
+    after = score(b.load_run(AFTER))
+    assert before["counts"] == {"exact": 8, "within one": 20, "over": 6, "under": 7}
+    assert len(before["high_above_deserved"]) == 2
+    assert after["counts"] == {"exact": 8, "within one": 21, "over": 5, "under": 8}
+    assert after["high_above_deserved"] == []
+
+
+def test_the_report_adapter_reads_preconditions(tmp_path):
+    import benchmark as b
+    doc = {"repo": {"head": "a" * 40}, "findings": [
+        {"key": "k1", "confidence": "medium",
+         "preconditions": [{"setting": "S", "default": "10", "needs": "default"}]},
+        {"key": "k2", "confidence": "low"}]}
+    path = tmp_path / "report.json"
+    path.write_text(json.dumps(doc))
+    run = b.run_from_report(path)
+    assert run["findings"]["k1"]["preconditions"] == [{"setting": "S", "default": "10"}]
+    assert "preconditions" not in run["findings"]["k2"]

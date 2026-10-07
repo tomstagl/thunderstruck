@@ -1741,7 +1741,7 @@ git commit -m "Sample: a gated finding, check status, preconditions and history 
 - Consumes: from #55's `benchmark`: `RUN_SCHEMA`, `load_label_sets`, `load_run`, `run_from_report`, `split_run`, `score_confidence`; `c.effective_confidence`.
 - Produces: `test_checked_confidence.checked_confidence_run() -> dict`.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 9 -----------------------------------------------------------------
@@ -1793,12 +1793,12 @@ def test_the_report_adapter_reads_preconditions(tmp_path):
     assert "preconditions" not in run["findings"]["k2"]
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_checked_confidence.py -q -k "after_run or agreement or adapter"`
 Expected: FAIL (`FileNotFoundError` for the run file; the adapter drops preconditions).
 
-- [ ] **Step 3: Write the implementation.** In `scripts/benchmark.py`'s `run_from_report`, the loop becomes:
+- [x] **Step 3: Write the implementation.** In `scripts/benchmark.py`'s `run_from_report`, the loop becomes:
 
 ```python
     for f in report.get("findings") or []:
@@ -1821,7 +1821,7 @@ open('docs/calibration/correctness/celery/runs/checked-confidence.json', 'w').wr
     json.dumps(t.checked_confidence_run(), indent=2) + '\n')"
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass** (Step 2's command, then the full suite). Expected: PASS, `exit=0`. Then record the figures for the PR description:
+- [x] **Step 4: Run the tests to verify they pass** (Step 2's command, then the full suite). Expected: PASS, `exit=0`. Then record the figures for the PR description:
 
 ```bash
 uv run scripts/benchmark.py --report docs/calibration/correctness/celery/scan/report.json
@@ -1830,7 +1830,7 @@ uv run scripts/benchmark.py --run docs/calibration/correctness/celery/runs/check
 
 Expected: confidence 8/21 exact before and after; `high` above deserved FR-001, FR-003 before and none after; each line with `celery/celery@508c112`, `n=21` and `labels: 21 claude-fable-5-1`. Paste both outputs into the PR.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/benchmark.py docs/calibration/correctness/celery/runs/checked-confidence.json tests/test_checked_confidence.py
