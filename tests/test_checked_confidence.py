@@ -483,3 +483,30 @@ def test_report_md_states_what_validation_proved(scanned_copy, plugin_root):
         assert block in md_text
     commit_line = next(l for l in md_text.splitlines() if l.startswith("- _commit_"))
     assert commit_line.count("(fix)") == 0
+
+
+# --- Task 5 -----------------------------------------------------------------
+import re  # noqa: E402
+
+TEMPLATE = ROOT / "templates" / "report.html"
+
+
+def _js_object(name: str) -> dict:
+    m = re.search(rf"var {name} = (\{{.*?\}});", TEMPLATE.read_text(encoding="utf-8"))
+    assert m, name
+    return json.loads(m.group(1))
+
+
+def test_template_sentences_and_markers_match_common():
+    assert _js_object("CHECK_SENTENCES") == c.CHECK_SENTENCES
+    assert _js_object("GATE_MARKERS") == c.GATE_MARKERS
+
+
+def test_template_keeps_the_report_order_and_states_what_validation_proved():
+    text = TEMPLATE.read_text(encoding="utf-8")
+    assert ".sort(" not in text.split("function start(R)", 1)[1].split("var hotspots", 1)[0]
+    assert "That is all validation proves." in text
+    assert "validated finding" not in text
+    assert "This one stops when the trigger stops" not in text
+    for label in ('"Check"', '"Preconditions"', '"History"', '"Not stated."'):
+        assert label in text, label

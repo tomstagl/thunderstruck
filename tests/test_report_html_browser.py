@@ -173,7 +173,7 @@ def test_a_report_without_findings_says_what_happened(page, scanned_copy, plugin
 
 def _two_findings(report: dict) -> dict:
     second = copy.deepcopy(report["findings"][0])
-    second.update(id="FR-002", key="k-second", confidence="medium",
+    second.update(id="FR-002", key="k-second", confidence="low",
                   failure_mode="the second failure")
     report["findings"].append(second)
     return report
@@ -189,9 +189,25 @@ def test_filter_and_keyboard_stepping(page, scanned_copy, plugin_root):
     assert p.text("h1") == ["the second failure"]
     p.page.keyboard.press("k")
     assert p.text("h1") == [first["failure_mode"]]
-    p.page.get_by_role("button", name="Medium", exact=True).click()
+    p.page.get_by_role("button", name="Low", exact=True).click()
     ids = p.text(".item .item-top .mono")
     assert ids == ["Overview", "FR-002"], ids
+
+
+def test_dossier_shows_check_preconditions_and_history(page, scanned_copy, plugin_root):
+    report = _report(scanned_copy, plugin_root)
+    f = report["findings"][0]
+    f["gate"] = "non_default_setting"
+    f["preconditions"] = [{"setting": "SWITCH", "default": "off", "default_ref": "a.ts:1",
+                           "default_url": None, "needs": "changed", "value": "on",
+                           "documented": "no", "doc_ref": None, "doc_url": None}]
+    f.pop("amplifier", None)
+    p = page(report)
+    p.page.keyboard.press("j")
+    body = p.page.text_content("#doc")    # the DOM text: tags are uppercased by CSS
+    assert "unchecked" in body and "needs a non-default setting" in body
+    assert "SWITCH set to on; default off, registered at a.ts:1." in body
+    assert "Not stated." in body and "History" in body
 
 
 def test_reviewed_marks_survive_a_reload(page, scanned_copy, plugin_root):

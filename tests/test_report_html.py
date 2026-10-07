@@ -246,6 +246,10 @@ def test_hostile_model_text_stays_inside_the_data_block(scanned_copy, plugin_roo
     hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
     for field in MODEL_FIELDS:
         doc["findings"][0][field] = f"{field}: {HOSTILE_TEXT}"
+    doc["findings"][0]["preconditions"] = [{
+        "setting": HOSTILE_TEXT, "default": HOSTILE_TEXT,
+        "default_ref": doc["findings"][0]["evidence"][0]["ref"], "needs": "changed",
+        "value": HOSTILE_TEXT, "documented": "not_checked"}]
     _write_finding(scanned_copy, hid, doc)
     assert _validate(scanned_copy, plugin_root).returncode == 0
     subprocess.run([sys.executable, str(plugin_root / "scripts" / "report.py"),

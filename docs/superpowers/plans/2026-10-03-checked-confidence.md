@@ -1223,7 +1223,7 @@ git commit -m "report.md: check status, preconditions and history per finding (#
 - Consumes: `report.json` v2 fields (Task 3); `c.CHECK_SENTENCES`, `c.GATE_MARKERS`.
 - Produces: in the template script, `var CHECK_SENTENCES = {…}` and `var GATE_MARKERS = {…}` written as JSON object literals (double-quoted keys), on one line each.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 5 -----------------------------------------------------------------
@@ -1274,12 +1274,12 @@ def test_dossier_shows_check_preconditions_and_history(page, scanned_copy, plugi
     assert "Not stated." in body and "History" in body
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_checked_confidence.py -q -k "template"`
 Expected: FAIL, `AssertionError: CHECK_SENTENCES`.
 
-- [ ] **Step 3: Write the implementation.** In `templates/report.html`'s script:
+- [x] **Step 3: Write the implementation.** In `templates/report.html`'s script:
 
 - After `var KIND = …`, add (one line each, JSON-compatible):
 
@@ -1339,12 +1339,12 @@ Expected: FAIL, `AssertionError: CHECK_SENTENCES`.
 - `renderHead`: the counts gain `h("span", null, [h("b", { text: String(nUnchecked) }), "unchecked"])` when `nUnchecked` (the number of findings whose `check.status` is `unchecked` or missing) is non-zero.
 - The overview's `hypo` text becomes: `"Findings are falsifiable hypotheses. Every citation in them was resolved mechanically: each cited file:line, commit, detector hit and catalog edge exists. That is all validation proves. Whether a claim holds is its check status; a finding nobody has tried to refute is unchecked, and its confidence is at most medium. Check it before you act on one."` The coverage sentence ends "leads confirmed counts those cited by a finding whose citations resolved."
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_checked_confidence.py tests/test_report_html.py -q`, then, where Chromium is installed, `THUNDERSTRUCK_REQUIRE_BROWSER=1 uv run --with pytest --with pyyaml --with lizard --with playwright==1.56.0 pytest tests/test_report_html_browser.py -q`, then the full suite.
 Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add templates/report.html tests/test_checked_confidence.py tests/test_report_html.py tests/test_report_html_browser.py

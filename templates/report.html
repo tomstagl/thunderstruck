@@ -8,7 +8,7 @@
 <!--
   thunderstruck HTML report template (reader layout).
   scripts/report_html.py replaces the placeholder in #thunderstruck-report with
-  report.json (schema thunderstruck.report/v1). Opened with the placeholder
+  report.json (schema thunderstruck.report/v2). Opened with the placeholder
   intact, the page says there is no report data. No network requests, no
   external fonts. Every repository-derived value is inserted with textContent,
   never as HTML.
@@ -147,8 +147,9 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
 (function () {
   "use strict";
   var PLACEHOLDER = "__THUNDERSTRUCK_" + "REPORT__";
-  var RANK = { high: 0, medium: 1, low: 2 };
   var KIND = { code: "Code", commit: "Commit", detector: "Detector", catalog: "Catalog" };
+  var CHECK_SENTENCES = {"unchecked": "No one has tried to refute this claim", "upheld": "A check tried to refute this claim and it held", "narrowed": "A check found that only part of this claim holds", "inconclusive": "A check could not settle this claim", "refuted": "A check refuted this claim"};
+  var GATE_MARKERS = {"non_default_setting": "needs a non-default setting"};
 
   function h(tag, attrs, kids) {
     var el = document.createElement(tag);
@@ -189,9 +190,7 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
   });
 
   function start(R) {
-    var findings = (R.findings || []).slice().sort(function (a, b) {
-      return (RANK[a.confidence] ?? 9) - (RANK[b.confidence] ?? 9);
-    });
+    var findings = (R.findings || []).slice();
     var hotspots = {};
     (R.hotspots || []).forEach(function (hs) { hotspots[hs.id] = hs; });
     var coverage = R.pattern_coverage || {};
@@ -246,6 +245,7 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
       var counts = {}; findings.forEach(function (f) { counts[f.confidence] = (counts[f.confidence] || 0) + 1; });
       var date = String(R.generated_at || "").slice(0, 10);
       var revN = findings.filter(function (f) { return reviewed[rkey(f)]; }).length;
+      var nUnchecked = findings.filter(function (f) { return !f.check || !f.check.status || f.check.status === "unchecked"; }).length;
       el.appendChild(h("span", { class: "eyebrow", text: "thunderstruck" }));
       el.appendChild(h("span", { class: "repo wrap", text: repoName }));
       el.appendChild(h("span", { class: "mono muted wrap", text:
@@ -256,7 +256,8 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
         h("span", null, [h("b", { text: String(findings.length) }), "findings"]),
         counts.high ? h("span", null, [h("b", { text: String(counts.high) }), "high"]) : null,
         counts.medium ? h("span", null, [h("b", { text: String(counts.medium) }), "medium"]) : null,
-        counts.low ? h("span", null, [h("b", { text: String(counts.low) }), "low"]) : null
+        counts.low ? h("span", null, [h("b", { text: String(counts.low) }), "low"]) : null,
+        nUnchecked ? h("span", null, [h("b", { text: String(nUnchecked) }), "unchecked"]) : null
       ]));
       var seg = h("div", { class: "seg", role: "group", "aria-label": "Filter by confidence" });
       [["all", "All"], ["high", "High"], ["medium", "Medium"], ["low", "Low"]].forEach(function (o) {
@@ -314,6 +315,7 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
               h("span", { class: "dot" + (f.confidence === "high" ? " high" : ""), title: f.confidence + " confidence" }),
               h("span", { class: "mono", text: f.id }),
               h("span", { class: "pat", text: (f.missing_patterns || []).join(" · ") }),
+              GATE_MARKERS[f.gate] ? h("span", { class: "pat", text: "setting", title: GATE_MARKERS[f.gate] }) : null,
               reviewed[rkey(f)] ? h("span", { class: "done", text: "✓", "aria-label": "reviewed" }) : null
             ]),
             h("span", { class: "item-text", text: f.failure_mode || "" })
@@ -344,13 +346,51 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
         }
         var sub = [];
         if (ev.type === "commit" && "subject" in ev)
-          sub.push(typeof ev.subject === "string" ? "“" + ev.subject + "”" + (ev.kind ? " (" + ev.kind + ")" : "") : "(subject unavailable)");
+          sub.push(typeof ev.subject === "string" ? "“" + ev.subject + "”" : "(subject unavailable)");
         if (ev.note) sub.push(ev.note);
         return h("div", { class: "ev-item" }, [
           h("span", { class: "kind", text: KIND[ev.type] || ev.type || "" }),
           h("span", { class: "what" }, [main].concat(sub.map(function (s) { return h("span", { class: "note", text: s }); })))
         ]);
       }));
+    }
+    function checkText(f) {
+      var ck = f.check || {}, st = CHECK_SENTENCES[ck.status] ? ck.status : "unchecked";
+      var s = st + ". " + CHECK_SENTENCES[st];
+      if (f.confidence_claimed && f.confidence_claimed !== f.confidence)
+        s += ", so it is reported at " + f.confidence + " confidence (claimed " + f.confidence_claimed + ")";
+      s += ".";
+      if (ck.reason) s += " " + ck.reason;
+      return s;
+    }
+    function preconditionList(f) {
+      var ps = f.preconditions || [];
+      if (!ps.length) return "None: the failure happens on default settings.";
+      var lead = f.gate === "none" ? [h("div", { class: "small", text: "The failure happens on default settings and rests on these defaults:" })] : [];
+      return h("div", { class: "ev" }, lead.concat(ps.map(function (p) {
+        var kids = [h("span", { class: "mono", text: String(p.setting || "") })];
+        kids.push(p.needs === "changed"
+          ? " set to " + p.value + "; default " + p["default"] + ", registered at "
+          : " left at its default " + p["default"] + ", registered at ");
+        kids.push(link(String(p.default_ref || ""), p.default_url, "mono"));
+        kids.push(".");
+        if (p.documented === "yes") {
+          kids.push(" The docs describe this behaviour: ");
+          kids.push(link(String(p.doc_ref || ""), p.doc_url, "mono"));
+          kids.push(".");
+        } else kids.push(p.documented === "no" ? " The docs do not describe this behaviour." : " Docs not checked.");
+        return h("div", null, kids);
+      })));
+    }
+    function historyList(f) {
+      var hs = f.history || [];
+      if (!hs.length) return "None cited.";
+      return h("div", { class: "ev" }, [h("div", { class: "small", text: "A signal of how often this code changed, not of whether the claim holds." })]
+        .concat(hs.map(function (x) {
+          return h("div", null, [link(String(x.sha || "").slice(0, 7), x.url, "mono"),
+            " " + (x["class"] || "class unavailable") + " · stated role: " + (x.role || "?") + " · " +
+            (x.wrote_cited_line ? "wrote a cited line" : "wrote none of the cited lines")]);
+        })));
     }
     function renderDoc() {
       var el = document.getElementById("doc"); clear(el);
@@ -367,7 +407,9 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
           "hotspot " + (f.hotspot_id || "—") + (f.hotspot_score != null ? " · score " + f.hotspot_score : "") }),
         h("span", { class: "spacer" })
       ].concat((f.missing_patterns || []).map(function (p) { return h("span", { class: "tag", text: patternLabel(p) }); }))
-       .concat([h("span", { class: "tag" + (conf === "high" ? " accent" : ""), text: conf + " confidence" })])));
+       .concat([h("span", { class: "tag" + (conf === "high" ? " accent" : ""), text: conf + " confidence" }),
+                h("span", { class: "tag", text: (f.check && f.check.status) || "unchecked" }),
+                GATE_MARKERS[f.gate] ? h("span", { class: "tag accent", text: GATE_MARKERS[f.gate] }) : null])));
 
       el.appendChild(h("div", { style: "display:flex;flex-direction:column;gap:12px" }, [
         h("h1", { text: f.failure_mode || "(no failure mode)" }),
@@ -382,9 +424,8 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
 
       var rows = h("div", { class: "rows" });
       rows.appendChild(row("Trigger", f.trigger_condition || "—"));
-      rows.appendChild(row("Amplifier", f.amplifier || "—"));
-      rows.appendChild(row("Keeps it failing",
-        f.sustaining_effect || "None. This one stops when the trigger stops.",
+      rows.appendChild(row("Amplifier", f.amplifier || "Not stated.", { cls: f.amplifier ? "" : "quiet" }));
+      rows.appendChild(row("Keeps it failing", f.sustaining_effect || "Not stated.",
         { amber: true, cls: f.sustaining_effect ? "" : "quiet" }));
       rows.appendChild(row("Blast radius", f.blast_radius || "—"));
       if ((f.catalog_evidence || []).length) {
@@ -393,6 +434,9 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
         }).join(", ")));
       }
       if ((f.evidence || []).length) rows.appendChild(row("Evidence", evidenceList(f.evidence)));
+      rows.appendChild(row("Check", checkText(f)));
+      rows.appendChild(row("Preconditions", preconditionList(f)));
+      rows.appendChild(row("History", historyList(f)));
       rows.appendChild(row("Why " + conf, f.confidence_rationale || "—", { cls: "small" }));
       if (f.prediction) rows.appendChild(row("Prediction", f.prediction, { cls: "small" }));
       el.appendChild(rows);
@@ -461,9 +505,10 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
       ]));
       var status = statusLine();
       if (status) el.appendChild(h("div", { class: "status", text: status }));
-      el.appendChild(h("div", { class: "hypo", text: "Findings are falsifiable hypotheses, not verified defects. " +
-        "Every claim cites evidence that resolved to a real file:line, commit, detector hit or catalog edge, " +
-        "and every finding names one concrete way to prove it wrong. Check it before you act on one." }));
+      el.appendChild(h("div", { class: "hypo", text: "Findings are falsifiable hypotheses. Every citation in them " +
+        "was resolved mechanically: each cited file:line, commit, detector hit and catalog edge exists. " +
+        "That is all validation proves. Whether a claim holds is its check status; a finding nobody has " +
+        "tried to refute is unchecked, and its confidence is at most medium. Check it before you act on one." }));
       if (legacy) el.appendChild(h("div", { class: "shared", text: "This report predates the HTML view; " +
         "re-run /thunderstruck-report after a scan for every section." }));
 
@@ -500,7 +545,7 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
         el.appendChild(section("Pattern coverage", [
           para("Leads are detector hits — mechanical, noisy, and never a finding on their own. Findings are what " +
             "survived an investigator reading the code. Leads read counts the hits inside investigated hotspots; " +
-            "leads confirmed counts those a validated finding cites."),
+            "leads confirmed counts those cited by a finding whose citations resolved."),
           table(["ID", "Pattern", "Tier", "Files with an unconfirmed lead", "Leads read", "Leads confirmed", "Findings"],
             R.coverage_rows.map(function (r) {
               return [h("span", { class: "mono", text: r.id }), r.name, r.tier, r.unconfirmed_files,
