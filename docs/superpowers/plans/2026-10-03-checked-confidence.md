@@ -1639,7 +1639,7 @@ git commit -m "Investigator: preconditions, commit roles, confidence as a claim 
 - Modify: `tests/test_docs_in_sync.py`
 - Regenerate: `examples/sample-report.md`, `examples/sample-report.html`
 
-- [ ] **Step 1: Write the failing tests.** In `tests/test_docs_in_sync.py`, `test_sample_report_is_a_real_artefact` expects `"thunderstruck.report/v2"`, and add:
+- [x] **Step 1: Write the failing tests.** In `tests/test_docs_in_sync.py`, `test_sample_report_is_a_real_artefact` expects `"thunderstruck.report/v2"`, and add:
 
 ```python
 def test_sample_report_shows_check_status_preconditions_and_history():
@@ -1654,12 +1654,12 @@ def test_sample_report_shows_check_status_preconditions_and_history():
     assert "_not stated_" in sample and "**History** — a signal" in sample
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_docs_in_sync.py -q -k sample`
 Expected: FAIL (the committed sample is still `report/v1` with no check status).
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 In `tests/fixtures/build_fixture.py`, `IGNORES_RETRY_AFTER` becomes:
 
@@ -1714,12 +1714,12 @@ uv run scripts/gen_sample_report.py --check; echo "exit=$?"
 
 Read the regenerated `examples/sample-report.md` in full before committing: five findings, all `unchecked`; the three `high` claims shown as `medium` with "(claimed high)"; the api.ts finding last with "needs a non-default setting"; *not stated* under the scheduler and format findings' Sustaining effect; a History block under every finding with a cited commit.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_docs_in_sync.py tests/test_sample_report.py tests/test_pipeline.py -q`, then the full suite.
 Expected: PASS (`test_pipeline`'s S03 lead on `client/api.ts` still fires), `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tests/fixtures/build_fixture.py scripts/gen_sample_report.py tests/test_docs_in_sync.py examples/sample-report.md examples/sample-report.html

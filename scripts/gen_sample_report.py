@@ -130,8 +130,8 @@ CANNED: dict[str, list[dict]] = {
         "failure_mode": "A 429 is retried after a fixed 5s regardless of the "
                         "window the server asked for, so the client keeps "
                         "arriving while it is still throttled",
-        "trigger_condition": "The API returns 429 with Retry-After longer than 5 "
-                             "seconds",
+        "trigger_condition": "API_RETRY_ON_429 is set to true and the API returns "
+                             "429 with Retry-After longer than 5 seconds",
         "amplifier": "callApi recurses without a depth limit, so each rejected "
                      "retry immediately schedules another",
         "sustaining_effect": "Each early retry is itself throttled and counts "
@@ -139,6 +139,9 @@ CANNED: dict[str, list[dict]] = {
                              "caused it",
         "blast_radius": "All calls through this helper for the duration of the "
                         "throttle",
+        "preconditions": [{"setting": "API_RETRY_ON_429", "default": "false (unset)",
+                           "anchor": "const RETRY_ON_429", "needs": "changed", "value": "true",
+                           "documented": "no"}],
         "confidence": "medium",
         "confidence_rationale": "The code path is unambiguous, but no incident "
                                 "in the window is attributable to it",
@@ -180,7 +183,6 @@ CANNED: dict[str, list[dict]] = {
                              "a user is browsing",
         "amplifier": "The queue runs one job at a time, so latency is the full "
                      "depth of the batch ahead of the request",
-        "sustaining_effect": None,
         "blast_radius": "Every interactive lookup for the duration of a batch run",
         "confidence": "medium",
         "confidence_rationale": "The shared queue is plain in the code; no "
@@ -200,7 +202,6 @@ CANNED: dict[str, list[dict]] = {
                              "repository text as instruction rather than data",
         "amplifier": "The text is phrased as an authorisation from a security "
                      "team, which is exactly the framing a naive reviewer trusts",
-        "sustaining_effect": None,
         "blast_radius": "Any credential reachable by a tool that complies, and "
                         "the integrity of every audit of this repository",
         "confidence": "high",
@@ -313,14 +314,18 @@ def generate_all() -> dict[str, str]:
                                      "note": "listed in the service catalog as "
                                              "depending on this component"})
                 item = {k: v for k, v in spec.items()
-                        if k not in ("symbol", "anchor", "catalog", "also_cite")}
+                        if k not in ("symbol", "anchor", "catalog", "also_cite",
+                                     "preconditions")}
                 # the symbol's span, clamped to the file: a range past the end
                 # of the file is rejected by the validator (#25)
                 total = len((repo / hs["file"]).read_text(encoding="utf-8").splitlines())
                 item["location"] = {"file": hs["file"], "symbol": spec["symbol"],
                                     "lines": f"{line}-{min(line + 12, total)}"}
                 item["evidence"] = evidence
-                item["preconditions"] = []
+                item["preconditions"] = [
+                    {**{k: v for k, v in p.items() if k != "anchor"},
+                     "default_ref": f"{hs['file']}:{_line_of(repo, hs['file'], p['anchor'])}"}
+                    for p in spec.get("preconditions", [])]
                 built.append(item)
             doc = {"hotspot_id": hs["id"], "file": hs["file"], "findings": built}
             proc = subprocess.run(
