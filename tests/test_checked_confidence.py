@@ -1,0 +1,638 @@
+"""#56: confidence that means the claim was checked, preconditions, and the
+history signal, from the rule tables to every output."""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+import _common as c
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+# --- Task 1 -----------------------------------------------------------------
+TABLE = {
+    ("high", "unchecked"): "medium", ("high", "upheld"): "high", ("high", "narrowed"): "medium",
+    ("high", "inconclusive"): "medium", ("high", "refuted"): "low",
+    ("medium", "unchecked"): "medium", ("medium", "upheld"): "medium", ("medium", "narrowed"): "low",
+    ("medium", "inconclusive"): "medium", ("medium", "refuted"): "low",
+    ("low", "unchecked"): "low", ("low", "upheld"): "low", ("low", "narrowed"): "low",
+    ("low", "inconclusive"): "low", ("low", "refuted"): "low",
+}
+
+
+@pytest.mark.parametrize("claimed, status", sorted(TABLE))
+def test_effective_confidence_table(claimed, status):
+    assert c.effective_confidence(claimed, status) == TABLE[(claimed, status)]
+
+
+def test_only_upheld_can_be_high():
+    assert {s for s in c.CHECK_STATUSES if c.effective_confidence("high", s) == "high"} == {"upheld"}
+
+
+def test_an_unknown_status_counts_as_unchecked_and_an_unknown_claim_as_low():
+    assert c.effective_confidence("high", "probably") == "medium"
+    assert c.effective_confidence("certain", "upheld") == "low"
+    assert c.effective_confidence(None, "unchecked") == "low"
+
+
+@pytest.mark.parametrize("finding, expected", [
+    ({}, "unchecked"),
+    ({"check": None}, "unchecked"),
+    ({"check": "upheld"}, "unchecked"),
+    ({"check": {"status": "maybe"}}, "unchecked"),
+    *[({"check": {"status": s}}, s) for s in ("unchecked", "upheld", "narrowed", "inconclusive", "refuted")],
+])
+def test_check_status(finding, expected):
+    assert c.check_status(finding) == expected
+
+
+@pytest.mark.parametrize("preconditions, gate", [
+    ([], "none"),
+    (None, "none"),
+    ([{"needs": "default"}, {"needs": "default"}], "none"),
+    ([{"needs": "default"}, {"needs": "changed"}], "non_default_setting"),
+    (["not an object", {"needs": "changed"}], "non_default_setting"),
+])
+def test_finding_gate(preconditions, gate):
+    assert c.finding_gate({"preconditions": preconditions}) == gate
+
+
+def test_vocabularies_are_the_spec_spelling():
+    assert c.CHECK_STATUSES == ("unchecked", "upheld", "narrowed", "inconclusive", "refuted")
+    assert c.COMMIT_ROLES == ("introduced", "fixed", "mitigated", "changed")
+    assert c.PRECONDITION_NEEDS == ("changed", "default")
+    assert c.DOCUMENTED == ("yes", "no", "not_checked")
+    assert c.GATES == ("none", "non_default_setting")
+    assert set(c.CHECK_SENTENCES) == set(c.CHECK_STATUSES)
+    assert set(c.GATE_MARKERS) == set(c.GATES) - {"none"}
+
+
+# --- Task 2 -----------------------------------------------------------------
+import bundle  # noqa: E402
+from test_pipeline import _hotspots, _valid_finding, _validate, _write_finding  # noqa: E402
+from test_validate_paths import _doc, _git, _validator, repo  # noqa: E402,F401
+
+FORMAT = "src/util/format.ts"
+RELEASES = "src/client/releases.ts"
+_DROP = object()
+
+
+def _pre(**over) -> dict:
+    p = {"setting": "RETRY_ON_429", "default": "false", "default_ref": "src/a.ts:1",
+         "needs": "changed", "value": "true", "documented": "no", "doc_ref": None}
+    p.update(over)
+    return {k: v for k, v in p.items() if v is not _DROP}
+
+
+def _errors(repo, *items) -> list[str]:
+    doc = _doc("src/a.ts")
+    doc["findings"][0]["preconditions"] = list(items)
+    return _validator(repo).check_document(doc)
+
+
+def test_complete_preconditions_pass(repo):
+    assert _errors(repo) == []
+    assert _errors(repo, _pre()) == []
+    assert _errors(repo, _pre(needs="default", value=_DROP, documented="yes",
+                              doc_ref="src/a.ts:2-3")) == []
+
+
+@pytest.mark.parametrize("over, fragment", [
+    ({"setting": ""}, "preconditions[0].setting must be a non-empty string"),
+    ({"default": None}, "preconditions[0].default must be a non-empty string"),
+    ({"default_ref": "src/a.ts:99"}, "that line does not exist"),
+    ({"default_ref": "src/new.ts:1"}, "not tracked by git"),
+    ({"default_ref": "/etc/hostname:1"}, "is absolute"),
+    ({"default_ref": "src/a.ts"}, "is not path:line"),
+    ({"default_ref": _DROP}, "preconditions[0].default_ref must be one string"),
+    ({"needs": "maybe"}, "needs 'maybe' is not one of"),
+    ({"value": None}, "value must name the value the failure needs"),
+    ({"needs": "default"}, "value must be absent or null"),
+    ({"documented": True}, "documented True is not one of"),
+    ({"documented": "yes"}, "preconditions[0].doc_ref must be one string"),
+    ({"documented": "no", "doc_ref": "src/a.ts:2"}, 'doc_ref is only given when documented is "yes"'),
+    ({"confirmation": {"state": "confirmed"}}, "unknown key(s) ['confirmation']"),
+])
+def test_each_precondition_rule(repo, over, fragment):
+    errors = _errors(repo, _pre(**over))
+    assert any(fragment in e for e in errors), errors
+
+
+def test_a_setting_is_listed_once(repo):
+    errors = _errors(repo, _pre(), _pre(setting=" retry_on_429 "))
+    assert any("listed twice" in e for e in errors), errors
+
+
+def test_preconditions_must_be_present_and_a_list(repo):
+    doc = _doc("src/a.ts")
+    del doc["findings"][0]["preconditions"]
+    assert "findings[0].preconditions is missing (it may be [], but the key must be present)" \
+        in _validator(repo).check_document(doc)
+    doc["findings"][0]["preconditions"] = {"setting": "x"}
+    assert any("preconditions must be a list" in e for e in _validator(repo).check_document(doc))
+
+
+def test_amplifier_and_sustaining_effect_are_optional_but_never_filler(repo):
+    doc = _doc("src/a.ts")
+    f = doc["findings"][0]
+    del f["amplifier"], f["sustaining_effect"]
+    assert _validator(repo).check_document(doc) == []
+    f["amplifier"] = "  "
+    assert any("amplifier must be a non-empty string when present; leave it out" in e
+               for e in _validator(repo).check_document(doc))
+
+
+def _with_commit(repo, role=_DROP, etype="commit") -> list[str]:
+    doc = _doc("src/a.ts")
+    sha = _git(repo, "rev-parse", "HEAD").strip()[:7]
+    item = {"type": etype, "ref": sha if etype == "commit" else "src/a.ts:1", "note": "n"}
+    if role is not _DROP:
+        item["role"] = role
+    doc["findings"][0]["evidence"].append(item)
+    return _validator(repo).check_document(doc)
+
+
+def test_commit_evidence_needs_a_role(repo):
+    assert any("role None is not one of" in e for e in _with_commit(repo))
+    assert any("role 'blamed' is not one of" in e for e in _with_commit(repo, "blamed"))
+    assert _with_commit(repo, "introduced") == []          # init wrote src/a.ts:1
+    assert any("role is only given on commit evidence" in e
+               for e in _with_commit(repo, "changed", etype="code"))
+
+
+@pytest.mark.parametrize("check, ok", [
+    ({"status": "upheld", "by": "skeptic", "reason": "held", "holds": "all"}, True),
+    ({"status": "probably"}, False),
+    ("upheld", False),
+    ({"status": "unchecked", "reason": 3}, False),
+])
+def test_an_existing_check_is_validated(repo, check, ok):
+    doc = _doc("src/a.ts")
+    doc["findings"][0]["check"] = check
+    assert (_validator(repo).check_document(doc) == []) is ok
+
+
+def _sha(repo: Path, rel: str, subject: str) -> str:
+    out = subprocess.run(["git", "-C", str(repo), "log", "--format=%H %s", "--", rel],
+                         capture_output=True, text=True, check=True).stdout
+    return next(line.split(" ", 1)[0] for line in out.splitlines()
+                if line.split(" ", 1)[1] == subject)
+
+
+def _fixture_doc(repo: Path, *, file: str, line: int, commits: list[tuple[str, str]],
+                 patterns=("S02",), confidence="high"):
+    hid, doc = _valid_finding(repo, _hotspots(repo))
+    f = doc["findings"][0]
+    f["location"] = {"file": file, "symbol": "f", "lines": str(line)}
+    f["missing_patterns"] = list(patterns)
+    f["confidence"] = confidence
+    f["evidence"] = [{"type": "code", "ref": f"{file}:{line}", "note": "the text"}] + [
+        {"type": "commit", "ref": sha[:7], "role": role, "note": "history"} for sha, role in commits]
+    return hid, doc
+
+
+def _check(repo, plugin_root, hid, doc):
+    _write_finding(repo, hid, doc)
+    return _validate(repo, plugin_root)
+
+
+def test_high_with_only_a_feature_commit_now_passes(scanned_copy, plugin_root):
+    sha = _sha(scanned_copy, RELEASES, "feat: add release client")
+    hid, doc = _fixture_doc(scanned_copy, file=RELEASES, line=1, commits=[(sha, "changed")])
+    assert _check(scanned_copy, plugin_root, hid, doc).returncode == 0
+
+
+def test_introduced_needs_the_commit_that_wrote_the_lines(scanned_copy, plugin_root):
+    wrote = _sha(scanned_copy, FORMAT, "feat: add title formatting")
+    tidy = _sha(scanned_copy, FORMAT, "refactor: tidy imports")      # touched the file, not line 4
+    hid, doc = _fixture_doc(scanned_copy, file=FORMAT, line=4, commits=[(wrote, "introduced")])
+    assert _check(scanned_copy, plugin_root, hid, doc).returncode == 0
+    hid, doc = _fixture_doc(scanned_copy, file=FORMAT, line=4, commits=[(tidy, "introduced")])
+    proc = _check(scanned_copy, plugin_root, hid, doc)
+    assert proc.returncode == 1
+    assert "cited as having introduced the cited code, but it wrote none of the cited lines" in proc.stdout
+
+
+def test_an_uncommitted_line_is_introduced_by_no_commit(scanned_copy, plugin_root):
+    wrote = _sha(scanned_copy, FORMAT, "feat: add title formatting")
+    path = scanned_copy / FORMAT
+    lines = path.read_text().split("\n")
+    lines[3] = " * edited locally"
+    path.write_text("\n".join(lines))
+    hid, doc = _fixture_doc(scanned_copy, file=FORMAT, line=4, commits=[(wrote, "introduced")])
+    assert _check(scanned_copy, plugin_root, hid, doc).returncode == 1
+
+
+def test_validation_writes_check_and_history(scanned_copy, plugin_root):
+    feat = _sha(scanned_copy, RELEASES, "feat: add release client")
+    fix = _sha(scanned_copy, RELEASES, "fix: timeout again on large releases")
+    hid, doc = _fixture_doc(scanned_copy, file=RELEASES, line=1,
+                            commits=[(fix, "fixed"), (feat, "introduced"), (fix, "fixed")])
+    assert _check(scanned_copy, plugin_root, hid, doc).returncode == 0
+    saved = json.loads((scanned_copy / ".thunderstruck" / "findings" / f"{hid}.json").read_text())
+    f = saved["findings"][0]
+    assert saved["validated_with"] == c.VALIDATION_RULES == 4
+    assert f["check"] == {"status": "unchecked", "by": None, "reason": None}
+    assert f["confidence"] == "high"                      # the claim is kept as written
+    assert f["history"] == [
+        {"sha": fix[:7], "class": "fix", "role": "fixed", "wrote_cited_line": False},
+        {"sha": feat[:7], "class": "feature", "role": "introduced", "wrote_cited_line": True},
+    ]
+
+
+def test_validation_keeps_an_existing_check(scanned_copy, plugin_root):
+    hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
+    doc["findings"][0]["check"] = {"status": "upheld", "by": "skeptic", "reason": "held"}
+    assert _check(scanned_copy, plugin_root, hid, doc).returncode == 0
+    saved = json.loads((scanned_copy / ".thunderstruck" / "findings" / f"{hid}.json").read_text())
+    assert saved["findings"][0]["check"]["status"] == "upheld"
+
+
+def test_save_finding_strips_what_a_model_must_not_set(scanned_copy, plugin_root):
+    hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
+    f = doc["findings"][0]
+    f["check"] = {"status": "upheld"}
+    f["history"] = [{"sha": "x", "class": "fix"}]
+    f["confidence_claimed"] = "high"
+    src = scanned_copy / "out.json"
+    src.write_text(json.dumps(doc))
+    subprocess.run([sys.executable, str(plugin_root / "scripts" / "save_finding.py"),
+                    "--repo", str(scanned_copy), "--id", hid, "--from", str(src)],
+                   check=True, capture_output=True)
+    saved = json.loads((scanned_copy / ".thunderstruck" / "findings" / f"{hid}.json").read_text())
+    assert not {"check", "history", "confidence_claimed"} & set(saved["findings"][0])
+    assert _validate(scanned_copy, plugin_root).returncode == 0
+    saved = json.loads((scanned_copy / ".thunderstruck" / "findings" / f"{hid}.json").read_text())
+    assert saved["findings"][0]["check"]["status"] == "unchecked"
+
+
+def test_the_capture_hook_strips_what_a_model_must_not_set(scanned_copy, plugin_root):
+    hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
+    doc["findings"][0].update(check={"status": "upheld"}, history=[{"sha": "x"}],
+                              confidence_claimed="high")
+    payload = {"session_id": "s", "transcript_path": "/dev/null", "cwd": str(scanned_copy),
+               "hook_event_name": "SubagentStop", "agent_id": "a1",
+               "agent_type": "plugin:thunderstruck:thunderstruck-investigator",
+               "stop_reason": "completed", "last_assistant_message": json.dumps(doc)}
+    proc = subprocess.run([sys.executable, str(plugin_root / "scripts" / "capture_finding.py")],
+                          input=json.dumps(payload), capture_output=True, text=True)
+    assert proc.returncode == 0
+    saved = json.loads((scanned_copy / ".thunderstruck" / "findings" / f"{hid}.json").read_text())
+    assert not {"check", "history", "confidence_claimed"} & set(saved["findings"][0])
+    assert saved["schema"] == "thunderstruck.finding/v2"
+
+
+def test_findings_validated_under_rules_3_are_investigated_again(scanned_copy, plugin_root):
+    old = {"findings": [{"key": "k", "confidence": "high"}], "validated_with": 3}
+    assert bundle._validated_under_older_rules(old)
+    hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
+    for f in doc["findings"]:
+        del f["preconditions"]                               # written by 0.9.x
+    from validate import Validator
+    v = Validator(scanned_copy, _hotspots(scanned_copy), c.load_catalog())
+    assert not bundle._still_valid(v, doc)
+
+
+# --- Task 3 -----------------------------------------------------------------
+import report  # noqa: E402
+
+
+def _report(repo: Path, plugin_root: Path) -> tuple[dict, dict]:
+    subprocess.run([sys.executable, str(plugin_root / "scripts" / "report.py"),
+                    "--repo", str(repo)], check=True, capture_output=True)
+    out = repo / ".thunderstruck"
+    return json.loads((out / "report.json").read_text()), json.loads((out / "index.json").read_text())
+
+
+def _second_hotspot_finding(repo: Path, confidence: str, preconditions: list) -> tuple[str, dict]:
+    hs = _hotspots(repo)["hotspots"][1]
+    return hs["id"], {"hotspot_id": hs["id"], "file": hs["file"], "findings": [{
+        "location": {"file": hs["file"], "lines": "1"}, "missing_patterns": ["S01"],
+        "failure_mode": "A second failure", "trigger_condition": "t", "blast_radius": "b",
+        "evidence": [{"type": "code", "ref": f"{hs['file']}:1", "note": "n"}],
+        "preconditions": preconditions, "confidence": confidence,
+        "confidence_rationale": "r", "how_to_verify": "v"}]}
+
+
+def test_reported_confidence_is_capped_and_the_claim_kept(scanned_copy, plugin_root):
+    hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))   # claims high
+    _write_finding(scanned_copy, hid, doc)
+    assert _validate(scanned_copy, plugin_root).returncode == 0
+    payload, index = _report(scanned_copy, plugin_root)
+    f = payload["findings"][0]
+    assert (f["confidence"], f["confidence_claimed"]) == ("medium", "high")
+    assert f["check"] == {"status": "unchecked", "by": None, "reason": None}
+    assert f["gate"] == "none" and f["preconditions"] == []
+    assert payload["schema"] == "thunderstruck.report/v2"
+    assert payload["counts"]["check_status"] == {"unchecked": 1, "upheld": 0, "narrowed": 0,
+                                                 "inconclusive": 0, "refuted": 0}
+    assert payload["counts"]["gate"] == {"none": 1, "non_default_setting": 0}
+    entry = index["files"][f["location"]["file"]]["findings"][0]
+    assert entry["confidence"] == "medium" and entry["check_status"] == "unchecked"
+    assert entry["gate"] == "none" and entry["preconditions"] == []
+    assert entry["history"] == [{k: h[k] for k in ("sha", "class", "wrote_cited_line")}
+                                for h in f["history"]]
+
+
+def test_an_upheld_check_allows_high_and_a_narrowed_one_drops_a_level(scanned_copy, plugin_root):
+    hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
+    _write_finding(scanned_copy, hid, doc)
+    assert _validate(scanned_copy, plugin_root).returncode == 0
+    path = scanned_copy / ".thunderstruck" / "findings" / f"{hid}.json"
+    for status, expected in (("upheld", "high"), ("narrowed", "medium"), ("refuted", "low")):
+        saved = json.loads(path.read_text())
+        saved["findings"][0]["check"] = {"status": status, "by": "test", "reason": None}
+        path.write_text(json.dumps(saved))
+        assert _report(scanned_copy, plugin_root)[0]["findings"][0]["confidence"] == expected
+
+
+def test_a_malformed_check_is_reported_unchecked_with_a_warning(scanned_copy, plugin_root):
+    hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
+    _write_finding(scanned_copy, hid, doc)
+    assert _validate(scanned_copy, plugin_root).returncode == 0
+    path = scanned_copy / ".thunderstruck" / "findings" / f"{hid}.json"
+    saved = json.loads(path.read_text())
+    saved["findings"][0]["check"] = {"status": "upheld!"}     # tampered after validation
+    path.write_text(json.dumps(saved))
+    payload, _ = _report(scanned_copy, plugin_root)
+    assert payload["findings"][0]["check"]["status"] == "unchecked"
+    assert payload["findings"][0]["confidence"] == "medium"
+    assert any("FR-001" in w and "reported as unchecked" in w for w in payload["run_warnings"])
+
+
+def test_gated_findings_follow_default_path_ones(scanned_copy, plugin_root):
+    data = _hotspots(scanned_copy)
+    hid, doc = _valid_finding(scanned_copy, data)      # highest score, claims high
+    gated_ref = f"{data['hotspots'][0]['file']}:1"
+    doc["findings"][0]["preconditions"] = [{
+        "setting": "SWITCH", "default": "off", "default_ref": gated_ref, "needs": "changed",
+        "value": "on", "documented": "not_checked"}]
+    _write_finding(scanned_copy, hid, doc)
+    hid2, doc2 = _second_hotspot_finding(scanned_copy, "low", [{
+        "setting": "LIMIT", "default": "10", "default_ref": gated_ref, "needs": "default",
+        "documented": "not_checked"}])
+    _write_finding(scanned_copy, hid2, doc2)
+    assert _validate(scanned_copy, plugin_root).returncode == 0
+    payload, _ = _report(scanned_copy, plugin_root)
+    order = [(f["id"], f["gate"], f["failure_mode"]) for f in payload["findings"]]
+    assert order[0][1:] == ("none", "A second failure")      # needs: default only → default path
+    assert order[1][1] == "non_default_setting" and order[1][0] == "FR-002"
+    assert payload["findings"][1]["preconditions"][0]["default_url"] is None   # no remote: unlinked
+
+
+def test_order_key_keeps_todays_rule_inside_a_gate():
+    a = {"gate": "none", "confidence": "medium", "hotspot_score": 1.0, "location": {"file": "a"}}
+    b = {"gate": "none", "confidence": "low", "hotspot_score": 9.0, "location": {"file": "b"}}
+    g = {"gate": "non_default_setting", "confidence": "high", "hotspot_score": 9.0,
+         "location": {"file": "c"}}
+    assert sorted([g, b, a], key=report.order_key) == [a, b, g]
+
+
+def test_preconditions_and_history_are_linked(linked_copy, plugin_root):
+    data = _hotspots(linked_copy)
+    hid, doc = _valid_finding(linked_copy, data)
+    ref = f"{data['hotspots'][0]['file']}:1"
+    doc["findings"][0]["preconditions"] = [{
+        "setting": "S", "default": "d", "default_ref": ref, "needs": "default",
+        "documented": "yes", "doc_ref": ref}]
+    _write_finding(linked_copy, hid, doc)
+    assert _validate(linked_copy, plugin_root).returncode == 0
+    f = _report(linked_copy, plugin_root)[0]["findings"][0]
+    p = f["preconditions"][0]
+    assert p["default_url"].startswith("https://github.com/acme/fixture/") and p["doc_url"]
+    assert f["history"][0]["url"].startswith("https://github.com/acme/fixture/")
+    assert isinstance(f["history"][0]["subject"], str)
+    assert all("kind" not in ev for ev in f["evidence"])
+
+
+# --- Task 4 -----------------------------------------------------------------
+def _f(**over) -> dict:
+    f = {"confidence": "medium", "confidence_claimed": "high", "gate": "none",
+         "check": {"status": "unchecked", "by": None, "reason": None},
+         "preconditions": [], "history": []}
+    f.update(over)
+    return f
+
+
+def test_check_line():
+    assert report.render_check(_f())[0] == (
+        "**Check** — unchecked. No one has tried to refute this claim, so it is reported at "
+        "medium confidence (claimed high).")
+    assert report.render_check(_f(confidence_claimed="medium"))[0] == (
+        "**Check** — unchecked. No one has tried to refute this claim.")
+    upheld = _f(confidence="high", check={"status": "upheld", "by": "s", "reason": "it held"})
+    assert report.render_check(upheld)[0].endswith("refute this claim and it held. it held")
+
+
+PRE = {"setting": "API_RETRY_ON_429", "default": "false (unset)", "default_ref": "src/a.ts:1",
+       "default_url": None, "needs": "changed", "value": "true", "documented": "no"}
+
+
+def test_preconditions_block():
+    assert report.render_preconditions(_f())[0] == (
+        "**Preconditions** — none: the failure happens on default settings.")
+    gated = "\n".join(report.render_preconditions(_f(gate="non_default_setting", preconditions=[PRE])))
+    assert ("- `API_RETRY_ON_429` set to `true`; default `false (unset)`, registered at "
+            "`src/a.ts:1`. The docs do not describe this behaviour.") in gated
+    rests = {**PRE, "needs": "default", "value": None, "documented": "yes",
+             "doc_ref": "docs/x.md:3", "doc_url": "https://h/x#L3"}
+    text = "\n".join(report.render_preconditions(_f(preconditions=[rests])))
+    assert "The failure happens on default settings and rests on these defaults:" in text
+    assert "`API_RETRY_ON_429` left at its default `false (unset)`" in text
+    assert "The docs describe this behaviour: [`docs/x.md:3`](https://h/x#L3)." in text
+    assert "Docs not checked." in "\n".join(
+        report.render_preconditions(_f(preconditions=[{**PRE, "documented": "not_checked"}])))
+
+
+def test_history_block():
+    assert report.render_history(_f())[0] == "**History** — none cited."
+    hist = [{"sha": "1a2b3c4d", "class": "fix", "role": "fixed", "wrote_cited_line": False, "url": None},
+            {"sha": "5d6e7f8", "class": None, "role": "introduced", "wrote_cited_line": True, "url": None}]
+    text = "\n".join(report.render_history(_f(history=hist)))
+    assert text.startswith("**History** — a signal of how often this code changed, "
+                           "not of whether the claim holds.")
+    assert "- `1a2b3c4` fix · stated role: fixed · wrote none of the cited lines" in text
+    assert "- `5d6e7f8` class unavailable · stated role: introduced · wrote a cited line" in text
+
+
+def test_report_md_states_what_validation_proved(scanned_copy, plugin_root):
+    data = _hotspots(scanned_copy)
+    hid, doc = _valid_finding(scanned_copy, data)
+    f = doc["findings"][0]
+    del f["amplifier"]
+    f["preconditions"] = [{"setting": "SWITCH", "default": "off",
+                           "default_ref": f"{data['hotspots'][0]['file']}:1", "needs": "changed",
+                           "value": "on", "documented": "not_checked"}]
+    _write_finding(scanned_copy, hid, doc)
+    assert _validate(scanned_copy, plugin_root).returncode == 0
+    _report(scanned_copy, plugin_root)
+    md_text = (scanned_copy / ".thunderstruck" / "report.md").read_text()
+    assert "That is all validation proves." in md_text
+    assert "validated finding" not in md_text
+    assert "Check status: 1 unchecked · 1 finding needs a non-default setting and is listed last" in md_text
+    assert "**medium confidence** · unchecked · needs a non-default setting · " in md_text
+    assert "| Amplifier | _not stated_ |" in md_text
+    assert "_none — this one stops" not in md_text
+    for block in ("**Check** — unchecked.", "**Preconditions**", "**History** — "):
+        assert block in md_text
+    commit_line = next(l for l in md_text.splitlines() if l.startswith("- _commit_"))
+    assert commit_line.count("(fix)") == 0
+
+
+# --- Task 5 -----------------------------------------------------------------
+import re  # noqa: E402
+
+TEMPLATE = ROOT / "templates" / "report.html"
+
+
+def _js_object(name: str) -> dict:
+    m = re.search(rf"var {name} = (\{{.*?\}});", TEMPLATE.read_text(encoding="utf-8"))
+    assert m, name
+    return json.loads(m.group(1))
+
+
+def test_template_sentences_and_markers_match_common():
+    assert _js_object("CHECK_SENTENCES") == c.CHECK_SENTENCES
+    assert _js_object("GATE_MARKERS") == c.GATE_MARKERS
+
+
+def test_template_keeps_the_report_order_and_states_what_validation_proved():
+    text = TEMPLATE.read_text(encoding="utf-8")
+    assert ".sort(" not in text.split("function start(R)", 1)[1].split("var hotspots", 1)[0]
+    assert "That is all validation proves." in text
+    assert "validated finding" not in text
+    assert "This one stops when the trigger stops" not in text
+    for label in ('"Check"', '"Preconditions"', '"History"', '"Not stated."'):
+        assert label in text, label
+
+
+# --- Task 6 -----------------------------------------------------------------
+import guardrail  # noqa: E402
+from test_guardrail import project, run_hook  # noqa: E402,F401
+
+
+@pytest.mark.parametrize("claimed, status", sorted(TABLE))
+def test_guardrail_ceiling_copy_matches_common(claimed, status):
+    assert guardrail.effective(claimed, status) == c.effective_confidence(claimed, status)
+    assert guardrail.effective(claimed, "bogus") == c.effective_confidence(claimed, "bogus")
+
+
+def test_guardrail_gate_order_matches_common():
+    assert guardrail.GATE_ORDER == c.GATES
+
+
+def _context(project: Path, findings: list[dict]) -> str:
+    index = json.loads((project / ".thunderstruck" / "index.json").read_text())
+    index["files"]["src/flagged.ts"]["findings"] = findings
+    (project / ".thunderstruck" / "index.json").write_text(json.dumps(index))
+    return json.loads(run_hook(project, "src/flagged.ts").stdout)["hookSpecificOutput"]["additionalContext"]
+
+
+NEW = {"id": "FR-001", "failure_mode": "f", "missing_patterns": ["S03"], "confidence": "medium",
+       "check_status": "unchecked", "gate": "none", "preconditions": [], "history": []}
+
+
+def test_guardrail_states_status_preconditions_and_history(project):
+    gated = {**NEW, "id": "FR-002", "gate": "non_default_setting",
+             "preconditions": [{"setting": "API_RETRY_ON_429", "default": "false (unset)",
+                                "needs": "changed", "value": "true"}],
+             "history": [{"sha": "1a2b3c4", "class": "fix", "wrote_cited_line": True},
+                         {"sha": "5d6e7f8", "class": "feature", "wrote_cited_line": False}]}
+    rests = {**NEW, "id": "FR-003", "preconditions": [{"setting": "LIMIT", "default": "10",
+                                                       "needs": "default", "value": None}]}
+    text = _context(project, [gated, NEW, rests])
+    assert "confidence: medium; check status: unchecked." in text
+    assert "It happens on default settings." in text
+    assert "It happens on default settings and rests on LIMIT at its default 10." in text
+    assert ("It happens only with a non-default setting: API_RETRY_ON_429 set to true "
+            "(default false (unset)).") in text
+    assert ("Cited commits: 1a2b3c4 fix, wrote a cited line; 5d6e7f8 feature, wrote none of "
+            "the cited lines.") in text
+    assert text.index("FR-001") < text.index("FR-003") < text.index("FR-002")
+
+
+def test_guardrail_caps_an_index_from_before_checked_confidence(project):
+    old = {"id": "FR-001", "failure_mode": "f", "missing_patterns": ["S03"], "confidence": "high",
+           "sustaining_effect": "s"}
+    text = _context(project, [old])
+    assert "confidence: medium; check status: unchecked." in text
+    assert "high" not in text
+    assert "It happens" not in text and "Cited commits" not in text
+
+
+def test_guardrail_lists_at_most_three_items(project):
+    many = [{"setting": f"S{n}", "default": "d", "needs": "changed", "value": "v"} for n in range(5)]
+    text = _context(project, [{**NEW, "gate": "non_default_setting", "preconditions": many}])
+    assert "S2 set to v (default d) and 2 more." in text and "S3" not in text
+
+
+# --- Task 9 -----------------------------------------------------------------
+CELERY = ROOT / "docs" / "calibration" / "correctness" / "celery"
+AFTER = CELERY / "runs" / "checked-confidence.json"
+
+
+def checked_confidence_run() -> dict:
+    """Every frozen Celery finding under the new rule, all unchecked."""
+    import benchmark as b
+    frozen = json.loads((CELERY / "scan" / "report.json").read_text())
+    return {"schema": b.RUN_SCHEMA, "commit": frozen["repo"]["head"],
+            "produced_by": {"stage": "confidence", "model": None,
+                            "source": "scan/report.json via _common.effective_confidence, "
+                                      "every finding unchecked"},
+            "findings": {f["key"]: {"confidence": c.effective_confidence(f["confidence"], "unchecked")}
+                         for f in sorted(frozen["findings"], key=lambda f: f["key"])}}
+
+
+def test_the_after_run_is_derived_from_the_frozen_scan():
+    assert json.loads(AFTER.read_text()) == checked_confidence_run()
+
+
+def test_confidence_agreement_before_and_after():
+    import benchmark as b
+    celery = b.load_label_sets([CELERY / "labels.json"])[0]
+
+    def score(run):
+        return b.score_confidence(b.split_run(run, celery)[0], celery)
+
+    before = score(b.run_from_report(CELERY / "scan" / "report.json"))
+    after = score(b.load_run(AFTER))
+    assert before["counts"] == {"exact": 8, "within one": 20, "over": 6, "under": 7}
+    assert len(before["high_above_deserved"]) == 2
+    assert after["counts"] == {"exact": 8, "within one": 21, "over": 5, "under": 8}
+    assert after["high_above_deserved"] == []
+
+
+def test_the_report_adapter_reads_preconditions(tmp_path):
+    import benchmark as b
+    doc = {"repo": {"head": "a" * 40}, "findings": [
+        {"key": "k1", "confidence": "medium",
+         "preconditions": [{"setting": "S", "default": "10", "needs": "default"}]},
+        {"key": "k2", "confidence": "low"}]}
+    path = tmp_path / "report.json"
+    path.write_text(json.dumps(doc))
+    run = b.run_from_report(path)
+    assert run["findings"]["k1"]["preconditions"] == [{"setting": "S", "default": "10"}]
+    assert "preconditions" not in run["findings"]["k2"]
+
+
+# --- Code review ------------------------------------------------------------
+def test_guardrail_does_not_cap_a_reported_confidence_twice(project):
+    """index.json's confidence is already reported; a narrowed one stays as is."""
+    text = _context(project, [{**NEW, "check_status": "narrowed", "confidence": "medium"}])
+    assert "confidence: medium; check status: narrowed." in text
+
+
+def test_precondition_refs_are_written_back_canonical():
+    from validate import canonicalise
+    f = {"evidence": [], "preconditions": [
+        {"setting": "S", "default_ref": "./src/a.ts:1", "doc_ref": "./docs/x.md:2-3"},
+        {"setting": "T", "default_ref": "src/b.ts:4", "doc_ref": None}]}
+    canonicalise(f)
+    assert [(p["default_ref"], p["doc_ref"]) for p in f["preconditions"]] == [
+        ("src/a.ts:1", "docs/x.md:2-3"), ("src/b.ts:4", None)]

@@ -120,7 +120,7 @@ def _catalog_finding(data: dict, catalog_refs: list[str], code: bool = True) -> 
     if code:
         evidence += [{"type": "code", "ref": f"{hs['file']}:1", "note": "first line"},
                      {"type": "commit", "ref": hs["churn"]["recent_shas"][0],
-                      "note": "recent change"}]
+                      "role": "changed", "note": "recent change"}]
     evidence += [{"type": "catalog", "ref": r, "note": "catalog edge"} for r in catalog_refs]
     return hs["id"], {"hotspot_id": hs["id"], "file": hs["file"], "findings": [{
         "location": {"file": hs["file"], "symbol": "f", "lines": "1-2"},
@@ -131,6 +131,7 @@ def _catalog_finding(data: dict, catalog_refs: list[str], code: bool = True) -> 
         "sustaining_effect": None,
         "blast_radius": "web-frontend depends on this component",
         "evidence": evidence,
+        "preconditions": [],
         "confidence": "high" if code else "medium",
         "confidence_rationale": "code and fix history agree",
         "how_to_verify": "Assert successive delays differ across clients"}]}

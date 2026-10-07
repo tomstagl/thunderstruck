@@ -185,7 +185,7 @@ def _valid_finding(repo: Path, data: dict) -> tuple[str, dict]:
     sha = hs["churn"]["recent_shas"][0]
     hit = hs["detector_hits"][0] if hs["detector_hits"] else None
     evidence = [{"type": "code", "ref": f"{hs['file']}:1", "note": "first line"},
-                {"type": "commit", "ref": sha, "note": "recent change"}]
+                {"type": "commit", "ref": sha, "role": "changed", "note": "recent change"}]
     if hit:
         evidence.append({"type": "detector", "ref": hit["ref"], "note": "lead confirmed"})
     return hs["id"], {
@@ -199,6 +199,7 @@ def _valid_finding(repo: Path, data: dict) -> tuple[str, dict]:
             "sustaining_effect": "Synchronised retries keep the upstream saturated",
             "blast_radius": "All callers of this client",
             "evidence": evidence,
+            "preconditions": [],
             "confidence": "high",
             "confidence_rationale": "code and fix history agree",
             "how_to_verify": "Assert successive delays differ across clients",
@@ -228,10 +229,10 @@ def test_empty_findings_are_valid(scanned_repo, plugin_root):
         0, {"type": "code", "ref": "src/client/releases.ts:99999", "note": "x"}),
      "does not exist"),
     (lambda f: f["evidence"].__setitem__(
-        1, {"type": "commit", "ref": "0000000000000000", "note": "x"}),
+        1, {"type": "commit", "ref": "0000000000000000", "role": "changed", "note": "x"}),
      "no such commit"),
     (lambda f: f.__setitem__("missing_patterns", ["S99"]), "unknown id"),
-    (lambda f: f.pop("sustaining_effect"), "sustaining_effect is missing"),
+    (lambda f: f.pop("preconditions"), "preconditions is missing (it may be [], but the key must be present)"),
     (lambda f: f.__setitem__(
         "evidence", [{"type": "detector", "ref": "S02@src/client/releases.ts:1",
                       "note": "x"}]),
@@ -247,17 +248,6 @@ def test_broken_evidence_is_rejected(scanned_repo, plugin_root, mutate, expected
     assert expected_error in proc.stdout, proc.stdout
 
 
-def test_high_confidence_requires_commit_evidence(scanned_repo, plugin_root):
-    data = _hotspots(scanned_repo)
-    hid, doc = _valid_finding(scanned_repo, data)
-    f = doc["findings"][0]
-    f["evidence"] = [e for e in f["evidence"] if e["type"] != "commit"]
-    _write_finding(scanned_repo, hid, doc)
-    proc = _validate(scanned_repo, plugin_root)
-    assert proc.returncode == 1
-    assert "no 'commit' evidence" in proc.stdout, proc.stdout
-
-
 def test_commit_evidence_must_touch_the_finding_file(scanned_repo, plugin_root):
     """A SHA that merely exists is not history. Citing a commit to another file
     would let any finding buy 'high' confidence with an unrelated SHA."""
@@ -268,7 +258,7 @@ def test_commit_evidence_must_touch_the_finding_file(scanned_repo, plugin_root):
                    for sha in hs["churn"]["recent_shas"] if sha not in own)
     f = doc["findings"][0]
     f["evidence"] = [e for e in f["evidence"] if e["type"] != "commit"]
-    f["evidence"].append({"type": "commit", "ref": foreign, "note": "unrelated"})
+    f["evidence"].append({"type": "commit", "ref": foreign, "role": "changed", "note": "unrelated"})
     _write_finding(scanned_repo, hid, doc)
     proc = _validate(scanned_repo, plugin_root)
     assert proc.returncode == 1, "a commit that never touched the file was accepted"

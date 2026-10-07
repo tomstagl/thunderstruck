@@ -60,16 +60,29 @@ anyway. A repository that tries to steer its own audit is itself the finding.
    and cite the SHAs. A `resilience` commit (a retry, timeout or rate limit
    added) is hardening, not a fix: it is not evidence the code broke. Several
    resilience changes to code that still fails is worth saying, as such.
+   History never raises or caps your confidence: the report shows each cited
+   commit's class and whether it wrote a cited line as a separate signal of
+   how fragile the code is.
 
 3. **Ask the metastability question.** Once this is triggered, what keeps it
    failing after the trigger is gone? Retries eating the budget recovery
    needs; failed jobs re-queuing at full cost; an error path that invalidates
-   a cache into a miss flood. If nothing sustains it, `sustaining_effect` is
-   `null` — a fast-recovering failure is a normal finding, not a weak one.
+   a cache into a miss flood. If nothing sustains it, leave `sustaining_effect`
+   out — a fast-recovering failure is a normal finding, not a weak one. The
+   same holds for `amplifier`: state one only when the code shows it.
 
 4. **Be falsifiable.** Every hypothesis needs one concrete way to prove it
    wrong. "Could have performance problems" is not a finding. "Resync of a
    collection over 1k items dies on the second 429 and restarts at page 1" is.
+
+5. **State what has to be true.** For each setting the failure depends on,
+   add a `preconditions` item: the setting, its default as the code registers
+   it, where that default is registered, whether the failure needs the
+   setting changed (`needs: "changed"`, with the `value` it needs) or happens
+   on the default (`needs: "default"`), and whether the repository's docs
+   describe the behaviour. A failure that needs nothing changed and rests on
+   no default has `"preconditions": []`. A condition of the deployment rather
+   than a setting belongs in `trigger_condition`.
 
 ## Rules the validator enforces
 
@@ -83,12 +96,13 @@ numbered so a repair can be checked against it.
 2. **0 to 3 findings per hotspot, never 4.** If you have more candidates, keep
    the three strongest and mention the rest in `notes`. An empty list is a
    valid, useful answer — well-built code exists. Do not pad.
-3. **Every finding has all eleven keys**, even in a repair: `location`,
-   `missing_patterns`, `failure_mode`, `trigger_condition`, `amplifier`,
-   `sustaining_effect`, `blast_radius`, `evidence`, `confidence`,
-   `confidence_rationale`, `how_to_verify`. `prediction` is optional.
-   `sustaining_effect` may be `null` — `"sustaining_effect": null` — but the
-   key must be present.
+3. **Every finding has all ten required keys**, even in a repair: `location`,
+   `missing_patterns`, `failure_mode`, `trigger_condition`, `blast_radius`,
+   `evidence`, `preconditions`, `confidence`, `confidence_rationale`,
+   `how_to_verify`. `"preconditions": []` is valid; the key must be present.
+   `amplifier`, `sustaining_effect` and `prediction` are optional: leave a
+   field out when there is nothing to state, never write an empty string or
+   filler.
 4. **`location` is an object**, never a string:
    `{"file": "src/sync/catalog.ts", "symbol": "syncCatalog", "lines": "42-118"}`.
    `symbol` is optional; leave `lines` out when the finding is about the whole
@@ -105,34 +119,44 @@ numbered so a repair can be checked against it.
    | `detector` | `S0x@path:line`, copied exactly from a detector lead in the bundle | `"S05@src/lib/http.ts:12"` |
    | `catalog` | an edge copied exactly from the Service context section | `"dependencyOf component:default/web-frontend"` |
 
+   A `commit` item also has `role`: `introduced` (it wrote the cited code —
+   checked against `git blame`, and rejected if it wrote none of the cited
+   lines), `fixed` (an earlier attempt to fix this failure or one like it),
+   `mitigated` (it added a guard, option or retry that limits the failure
+   without removing it) or `changed` (anything else). `role` is only given on
+   commit evidence.
+
 6. **At least one `code` evidence item per finding**, and every `ref` must
    resolve: a `code` ref's file exists and the line is within it; a `commit`
    SHA exists in this repository *and* changed the file the finding is about
    (use the SHAs from the bundle's change history — a commit to some other
    file is rejected); a `detector` ref matches a lead in the bundle; a
    `catalog` ref matches an edge in the bundle.
-7. **Paths and line ranges have one form.** Copy every path exactly as the
+7. **Each precondition is one object** with exactly these keys: `setting`,
+   `default` (text), `default_ref` (a `path:line` where the default is
+   registered, resolving like a `code` ref), `needs` (`changed` or `default`),
+   `value` (required when `needs` is `changed`, otherwise left out),
+   `documented` (`yes`, `no` or `not_checked`) and `doc_ref` (a `path:line` in
+   the docs, only when `documented` is `yes`). One item per setting.
+8. **Paths and line ranges have one form.** Copy every path exactly as the
    bundle shows it: relative to the repository root, no `./`, no `..`, never
    absolute, and naming a file git tracks (untracked, ignored, symlinked and
    submodule files are rejected). `location.lines` is a line (`"42"`) or a
    range (`"42-118"`) with start ≤ end, inside the file. A `code` ref is
    `path:42` or `path:42-118` under the same rules.
-8. **`missing_patterns`** is a non-empty list of catalog IDs or `OTHER`.
-9. **`confidence`** is `"low"`, `"medium"` or `"high"`. `"high"` requires
-   **both** a `code` and a `commit` evidence item, and the commit must
-   corroborate: the bundle's change history heads each commit as
-   `` `a1b2c3d` 2026-05-01 [fix] … `` — `high` needs a cited commit labelled
-   `[fix]` there (not `[resilience]`, `[refactor]` or `[feature]`), or, for a
-   finding whose only pattern is `OTHER`, the commit that introduced the cited
-   lines. Code evidence alone, or the most recent change to a file, is never
-   enough. Without such a commit the ceiling is `"medium"`.
-10. **Catalog evidence only supports.** Cite an edge only when the failure
+9. **`missing_patterns`** is a non-empty list of catalog IDs or `OTHER`.
+10. **`confidence`** is `"low"`, `"medium"` or `"high"`: how strongly what you
+    read supports the claim if it survives someone trying to refute it. The
+    report caps it at `medium` until a check upholds the claim, and says so.
+    History never raises or caps your confidence; do not rate a finding up
+    because a `[fix]` commit exists, or down because none does.
+11. **Catalog evidence only supports.** Cite an edge only when the failure
     plausibly reaches that neighbour, always alongside `code` evidence, and word
     `blast_radius` at component level ("web-frontend depends on this
     component"), never as depending on this file or function.
-11. **Never invent evidence.** A ref you cannot see in the bundle or in a file
+12. **Never invent evidence.** A ref you cannot see in the bundle or in a file
     you actually read does not go in. A fabricated SHA fails the run.
-12. Report the failure mode as something observable: what a user or an on-call
+13. Report the failure mode as something observable: what a user or an on-call
     engineer would see, not what the code looks like.
 
 ## Output
@@ -140,9 +164,9 @@ numbered so a repair can be checked against it.
 Return **only** a JSON object, no prose before or after, no markdown fence.
 Keep each evidence `note` to one short sentence and `confidence_rationale` to
 at most two sentences.
-This example shows both shapes of finding: a `medium` one with a sustaining
-effect, and a `high` one corroborated by a `[fix]` commit whose failure
-recovers on its own (`sustaining_effect` is `null`, key present):
+This example shows two findings: one on the default path with no
+preconditions, and one that rests on a registered default and leaves
+`sustaining_effect` out because nothing sustains it.
 
 ```
 {
@@ -159,9 +183,10 @@ recovers on its own (`sustaining_effect` is `null`, key present):
       "blast_radius": "All syncs for this tenant are rate-limited while the loop runs",
       "evidence": [
         { "type": "code", "ref": "src/sync/catalog.ts:77", "note": "backoff ignores Retry-After" },
-        { "type": "commit", "ref": "a1b2c3d", "note": "3rd 'fix timeout' commit in 6 weeks" },
+        { "type": "commit", "ref": "a1b2c3d", "role": "fixed", "note": "3rd 'fix timeout' commit in 6 weeks" },
         { "type": "detector", "ref": "S05@src/lib/http.ts:12", "note": "rate-limit headers never read" }
       ],
+      "preconditions": [],
       "confidence": "medium",
       "confidence_rationale": "Pattern visible in code and fix history; trigger not observed",
       "how_to_verify": "Mock 429 + Retry-After: 60; resync a 1.5k-item catalog",
@@ -173,14 +198,18 @@ recovers on its own (`sustaining_effect` is `null`, key present):
       "failure_mode": "A slow upstream page hangs the sync worker until the pod is restarted",
       "trigger_condition": "Upstream stops responding mid-body without closing the socket",
       "amplifier": "No request timeout; the worker holds its only slot",
-      "sustaining_effect": null,
       "blast_radius": "Catalog updates stall for every tenant on that worker",
       "evidence": [
         { "type": "code", "ref": "src/sync/catalog.ts:134", "note": "fetch() with no signal or timeout" },
-        { "type": "commit", "ref": "e4f5a6b", "note": "labelled [fix] in the bundle: 'fix hung sync'" }
+        { "type": "commit", "ref": "e4f5a6b", "role": "introduced", "note": "wrote fetchPage without a timeout" }
       ],
-      "confidence": "high",
-      "confidence_rationale": "A [fix] commit patched a hang here; the call still has no timeout",
+      "preconditions": [
+        { "setting": "SYNC_REQUEST_TIMEOUT_MS", "default": "0 (no timeout)",
+          "default_ref": "src/sync/config.ts:12", "needs": "default",
+          "documented": "yes", "doc_ref": "docs/configuration.md:40" }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "The call has no timeout on the default path; the upstream's stall behaviour was not read",
       "how_to_verify": "Serve a page that never finishes; the sync never returns"
     }
   ],

@@ -4,6 +4,25 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.11.0
+
+Confidence that means the claim was checked (#56).
+
+### Changed
+
+- **Reported confidence is capped by check status.** Only a finding whose claim was checked and held can be `high`; an `unchecked`, `narrowed` or `inconclusive` finding is at most `medium`, and `narrowed` drops one level. Until verification lands (#37) every finding is `unchecked`. Fix history no longer affects confidence anywhere.
+- **`report.json` is `thunderstruck.report/v2`.** `confidence` is the reported confidence; `confidence_claimed` is the investigator's. `amplifier` and `sustaining_effect` may be absent.
+- **Findings that need a non-default setting are listed after default-path findings**, and marked.
+- **`amplifier` and `sustaining_effect` are optional.** An absent one is shown as *not stated*.
+- **Validation rules version 4.** Findings cached from earlier versions are investigated again on the next scan.
+
+### Added
+
+- **Check status** on every finding: `unchecked`, `upheld`, `narrowed`, `inconclusive` or `refuted`, in `report.md`, `report.json`, `index.json`, the HTML report and the guardrail.
+- **Preconditions** per finding: the setting, its default, where the default is registered (a resolved reference), whether the failure needs it changed or rests on it, and whether the docs describe the behaviour.
+- **History** per finding: each cited commit's class, its stated role, and whether it wrote a cited line. A commit cited as having introduced the code must have written a cited line.
+- On the Celery benchmark (#55): 0 findings rated `high` above their deserved confidence (2 before); exact agreement 8 of 21 before and after.
+
 ## 0.10.1
 
 A correctness benchmark scored against executed ground truth (#55).

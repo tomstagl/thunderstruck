@@ -6,7 +6,7 @@ All output lives in `.thunderstruck/` in the scanned repository.
 .thunderstruck/
 ├── report.md          human report
 ├── report.html        the same report as one self-contained page, for a browser
-├── report.json        thunderstruck.report/v1 — stable, versioned
+├── report.json        thunderstruck.report/v2 — stable, versioned
 ├── index.json         thunderstruck.index/v1 — file → findings, read by the hook
 ├── hotspots.json      thunderstruck.hotspots/v1 — deterministic layer output
 ├── validation.json    thunderstruck.validation/v1 — what passed, what failed and why
@@ -23,13 +23,17 @@ All output lives in `.thunderstruck/` in the scanned repository.
 
 Every section of `report.md` is in `report.json`, computed by `report.py`,
 so nothing that reads the JSON has to derive a number itself. These fields
-were added without a schema bump; existing fields keep their meaning.
+were added without a schema bump; existing fields keep their meaning, except
+that v2 changed what `confidence` means (see *Check status, preconditions and
+history* below).
 
 - `scanned_at`: when `signals.py` ran (`hotspots.json` `generated_at`), the
   date `report.md` prints as *Scanned*. `generated_at` is when the report
   was rendered.
 - `run_warnings`: exactly the list under **Run warnings**: hotspot, context,
-  link and usage warnings, in that order. `warnings` keeps its older content
+  link, usage and check-status warnings, in that order (a check-status warning
+  names a finding whose stored check status was missing or unrecognised and
+  was reported as `unchecked`). `warnings` keeps its older content
   (hotspot and link warnings only).
 - `suppressed`: `[{detector, path, hits, reason}]`, one per suppression rule
   in `.thunderstruck.toml`.
@@ -62,11 +66,65 @@ does not reach the report.
   copied from the bundle's Service context section. It must be an edge in
   `context.json`, from the same snapshot the finding's bundle was built from.
 - **`missing_patterns` ⊆ catalog IDs ∪ {`OTHER`}.**
-- **`confidence: "high"` requires both `code` and `commit` evidence.** A
-  hypothesis the change history does not corroborate tops out at `medium`.
-- **`sustaining_effect` may be `null`, never omitted.** Asking the question is
-  mandatory; a negative answer is a real answer.
+- **`preconditions` is required and may be `[]`.** Each item is one setting
+  the failure depends on, with exactly the keys `setting` (non-empty, unique
+  within the finding), `default` (non-empty text), `default_ref` (`path:line`
+  or `path:start-end`, resolved like a `code` ref), `needs` (`changed` or
+  `default`), `value` (required when `needs` is `changed`, absent or `null`
+  otherwise), `documented` (`yes`, `no` or `not_checked`) and `doc_ref`
+  (resolved like a `code` ref, given only when `documented` is `yes`). Any
+  other key is rejected. An empty list means the failure happens on defaults.
+- **Every `commit` item has a `role`:** `introduced`, `fixed`, `mitigated` or
+  `changed`, and no other evidence type has one. A commit cited as
+  `introduced` must have written at least one line of a cited `code` range,
+  per `git blame`.
+- **`amplifier` and `sustaining_effect` are optional**, and never an empty
+  string when present. An absent one is reported as *not stated*.
+- **`confidence` is the investigator's claim** (`low`, `medium` or `high`).
+  The reported confidence goes through the check-status ceiling below; fix
+  history plays no part in it.
 - **0–3 findings per hotspot.** Empty is valid and common on well-built code.
+
+## Check status, preconditions and history
+
+`validate.py` writes `check` (`{"status": "unchecked", "by": null, "reason":
+null}` unless one is already present, which it never overwrites) and
+`history` into each finding it passes. `report.py` reports a confidence of
+`_common.effective_confidence(claim, check status)`: only `upheld` can be
+`high`, `unchecked`, `narrowed` and `inconclusive` are at most `medium`,
+`narrowed` drops one level, and `refuted` is `low`.
+
+Per finding, `report.json` carries, in addition to the contract's fields:
+
+- `confidence`: the reported confidence; `confidence_claimed`: the claim.
+- `check`: the stored check object, with `status` normalised to one of
+  `unchecked`, `upheld`, `narrowed`, `inconclusive`, `refuted`.
+- `gate`: `none` or `non_default_setting` (`_common.finding_gate`). Findings
+  are ordered by gate, then confidence, then hotspot score; gated findings
+  come last and are marked.
+- `preconditions`: as validated, each item gaining `default_url` and
+  `doc_url` (a link or `null`).
+- `history`: one entry per distinct cited commit, `{sha, class, role,
+  wrote_cited_line, subject, url}`. A signal of fragility, never of
+  confidence.
+
+`counts.check_status` counts all five statuses (zeros included) and
+`counts.gate` both gates. Commit evidence no longer carries `kind`; the class
+is in `history[].class`.
+
+`index.json` (still `thunderstruck.index/v1`, additive) gives each finding
+`check_status`, `gate`, `preconditions` (`setting`, `default`, `needs`,
+`value`) and `history` (`sha`, `class`, `wrote_cited_line`); `confidence` is
+the reported one, and `sustaining_effect` is written only when present.
+
+Reserved for #37 (verification), under `check`: `by`, `reason`, `holds`,
+`refuted_claims`, `evidence`, `model`, `dependency_versions`, `reused_from`,
+`duplicate_of` and `confirmations`. `validate.py` accepts them unread and
+`report.json` passes `check` through whole. #37 also extends `finding_gate` so
+that a `narrowed` verdict naming a missing setting gates the finding.
+
+Reserved for #57 (confirmed defaults): `preconditions[].confirmation`, and the
+gate `unconfirmed_default`, placed in `GATES` by #57.
 
 ## Service context
 

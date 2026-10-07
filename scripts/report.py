@@ -87,15 +87,20 @@ def collect(repo: Path) -> dict[str, Any]:
             f = copy.deepcopy(f)  # urls are added below; the finding files stay untouched
             f["hotspot_id"] = hid
             f["hotspot_score"] = scores.get(hid)
+            status = c.check_status(f)
+            stored = f.get("check") if isinstance(f.get("check"), dict) else {}
+            f["_check_fallback"] = stored.get("status") != status
+            f["check"] = {"by": None, "reason": None, **stored, "status": status}
+            f["confidence_claimed"] = f.get("confidence")
+            f["confidence"] = c.effective_confidence(f["confidence_claimed"], status)
+            f["gate"] = c.finding_gate(f)
             findings.append(f)
 
-    findings.sort(key=lambda f: (
-        CONFIDENCE_RANK.get(f.get("confidence"), 9),
-        -(f.get("hotspot_score") or 0.0),
-        str(f.get("location", {}).get("file", "")),
-    ))
+    findings.sort(key=order_key)
     for n, f in enumerate(findings, 1):
         f["id"] = f"FR-{n:03d}"
+    check_warnings = [f"{f['id']}: check status missing or unrecognised in its findings file; "
+                      f"reported as unchecked" for f in findings if f.pop("_check_fallback")]
     _attach_commit_subjects(repo, findings)
     shared = shared_code(findings)
     for f in findings:
@@ -117,7 +122,8 @@ def collect(repo: Path) -> dict[str, Any]:
             "context_warnings": _context_warnings(raw_warnings),
             "links": link_meta, "link_warnings": link_warnings,
             "hotspot_links": hotspot_links,
-            "usage": usage, "usage_warnings": usage_warnings}
+            "usage": usage, "usage_warnings": usage_warnings,
+            "check_warnings": check_warnings}
 
 
 def _usage(out: Path, generated_at: str) -> tuple[dict | None, list[str]]:
@@ -132,29 +138,27 @@ def _usage(out: Path, generated_at: str) -> tuple[dict | None, list[str]]:
 
 
 def _attach_commit_subjects(repo: Path, findings: list[dict]) -> None:
-    """Give every commit evidence item its subject and class, so a reader sees
-    the history itself rather than only the investigator's note on it. The
-    refs were already resolved by validate.py; a failure here renders as
-    unavailable and never fails the report."""
-    try:
-        extra_fix = c.profile_fix_keywords(c.load_profile(repo))
-    except c.ThunderstruckError:
-        extra_fix = ()
+    """Give every cited commit its subject, so a reader sees the history
+    itself. The class is in `history`. The refs were already resolved by
+    validate.py; a failure here renders as unavailable and never fails the
+    report."""
     cache: dict[str, str | None] = {}
+
+    def subject(sha: str) -> str | None:
+        if sha not in cache:
+            try:
+                cache[sha] = c.git_paths(repo, "log", "-1", "--format=%s", sha, "--").strip("\n")
+            except (c.ThunderstruckError, OSError, subprocess.SubprocessError):
+                cache[sha] = None
+        return cache[sha]
+
     for f in findings:
         for ev in _evidence(f):
-            if ev.get("type") != "commit" or not str(ev.get("ref") or "").strip():
-                continue
-            sha = str(ev["ref"]).split()[0]
-            if sha not in cache:
-                try:
-                    cache[sha] = c.git_paths(repo, "log", "-1", "--format=%s", sha,
-                                             "--").strip("\n")
-                except (c.ThunderstruckError, OSError, subprocess.SubprocessError):
-                    cache[sha] = None
-            subject = cache[sha]
-            ev["subject"] = subject
-            ev["kind"] = c.classify_commit(subject, extra_fix) if subject is not None else None
+            if ev.get("type") == "commit" and str(ev.get("ref") or "").strip():
+                ev["subject"] = subject(str(ev["ref"]).split()[0])
+        for h in _history(f):
+            if h.get("sha"):
+                h["subject"] = subject(str(h["sha"]))
 
 
 def _context_warnings(raw: Any) -> list[str]:
@@ -249,6 +253,10 @@ def link_refs(repo: Path, head: str, findings: list[dict], hotspots: list[dict] 
                     paths.add(m["path"])
                 elif etype == "commit" and ref:
                     commits.add(ref.split()[0])
+            for p in _preconditions(f):
+                for key in ("default_ref", "doc_ref"):
+                    if (m := CODE_REF.match(str(p.get(key) or "").strip())):
+                        paths.add(m["path"])
         result = links.link_context(repo, profile, head, paths, commits)
         _set_urls(findings, result, repo)
         hotspot_links = _set_file_urls(hotspots, listed, result.ctx)
@@ -286,6 +294,22 @@ def _evidence(f: dict) -> list[dict]:
     return [ev for ev in (f.get("evidence") or []) if isinstance(ev, dict)]
 
 
+def _preconditions(f: dict) -> list[dict]:
+    return [p for p in (f.get("preconditions") or []) if isinstance(p, dict)]
+
+
+def _history(f: dict) -> list[dict]:
+    return [h for h in (f.get("history") or []) if isinstance(h, dict)]
+
+
+def order_key(f: dict) -> tuple:
+    """Default-path findings first (#56 AC-5); inside a gate, today's order."""
+    return (c.GATES.index(f.get("gate", "none")) if f.get("gate", "none") in c.GATES else len(c.GATES),
+            CONFIDENCE_RANK.get(f.get("confidence"), 9),
+            -(f.get("hotspot_score") or 0.0),
+            str(f.get("location", {}).get("file", "")))
+
+
 def _set_urls(findings: list[dict], result: "links.LinkResult | None", repo: Path) -> None:
     ctx = result.ctx if result else None
     for f in findings:
@@ -294,6 +318,20 @@ def _set_urls(findings: list[dict], result: "links.LinkResult | None", repo: Pat
             loc["url"] = _location_url(ctx, loc, repo) if ctx else None
         for ev in _evidence(f):
             ev["url"] = _evidence_url(ctx, result, ev) if ctx else None
+        for p in _preconditions(f):
+            p["default_url"] = _ref_url(ctx, p.get("default_ref"))
+            p["doc_url"] = _ref_url(ctx, p.get("doc_ref"))
+        for h in _history(f):
+            full = result.commits.get(str(h.get("sha"))) if (ctx and result) else None
+            h["url"] = ctx.commit(full) if full else None
+
+
+def _ref_url(ctx: "links.LinkContext | None", ref) -> str | None:
+    m = CODE_REF.match(str(ref or "").strip())
+    if not ctx or not m:
+        return None
+    start, end = int(m["start"]), int(m["end"] or m["start"])
+    return ctx.code(m["path"], min(start, end), max(start, end))
 
 
 def _location_url(ctx: "links.LinkContext", loc: dict, repo: Path) -> str | None:
@@ -335,7 +373,7 @@ def _evidence_ref(ev: dict) -> str:
         if "subject" in ev:
             subject = ev.get("subject")
             # the subject is repository text: inert, like every other value (#28)
-            out += (f" — “{md.text(subject)}” ({md.text(ev.get('kind') or '?')})"
+            out += (f" — “{md.text(subject)}”"
                     if isinstance(subject, str) else " — (subject unavailable)")
         return out
     return _linked(str(ev.get("ref")), url)
@@ -397,6 +435,62 @@ def _shared_line(f: dict) -> list[str]:
             f"{'both' if len(links) == 1 else 'all of them'}.", ""]
 
 
+def _not_stated(value) -> str:
+    return md.text(value, cell=True) if value else "_not stated_"
+
+
+def render_check(f: dict) -> list[str]:
+    status = f["check"]["status"]
+    line = f"**Check** — {status}. {c.CHECK_SENTENCES[status]}"
+    claimed = f.get("confidence_claimed")
+    if claimed in c.CONFIDENCE_LEVELS and claimed != f.get("confidence"):
+        line += (f", so it is reported at {md.text(f.get('confidence') or '?')} confidence "
+                 f"(claimed {claimed})")
+    line += "."
+    if f["check"].get("reason"):
+        line += f" {md.text(f['check']['reason'])}"
+    return [line, ""]
+
+
+def _precondition_line(p: dict) -> str:
+    setting, default = md.code(p.get("setting")), md.code(p.get("default"))
+    where = _linked(str(p.get("default_ref")), p.get("default_url"))
+    if p.get("needs") == "changed":
+        line = f"{setting} set to {md.code(p.get('value'))}; default {default}, registered at {where}."
+    else:
+        line = f"{setting} left at its default {default}, registered at {where}."
+    if p.get("documented") == "yes":
+        line += f" The docs describe this behaviour: {_linked(str(p.get('doc_ref')), p.get('doc_url'))}."
+    elif p.get("documented") == "no":
+        line += " The docs do not describe this behaviour."
+    else:
+        line += " Docs not checked."
+    return f"- {line}"
+
+
+def render_preconditions(f: dict) -> list[str]:
+    items = _preconditions(f)
+    if not items:
+        return ["**Preconditions** — none: the failure happens on default settings.", ""]
+    L = ["**Preconditions**", ""]
+    if f.get("gate") == "none":
+        L += ["The failure happens on default settings and rests on these defaults:", ""]
+    return L + [_precondition_line(p) for p in items] + [""]
+
+
+def render_history(f: dict) -> list[str]:
+    items = _history(f)
+    if not items:
+        return ["**History** — none cited.", ""]
+    L = ["**History** — a signal of how often this code changed, not of whether the claim holds.", ""]
+    for h in items:
+        cls = md.text(h["class"]) if h.get("class") else "class unavailable"
+        wrote = "wrote a cited line" if h.get("wrote_cited_line") else "wrote none of the cited lines"
+        L.append(f"- {_linked(str(h.get('sha'))[:7], h.get('url'))} {cls} · "
+                 f"stated role: {md.text(h.get('role') or '?')} · {wrote}")
+    return L + [""]
+
+
 def render_dormant(data: dict) -> list[str]:
     """Untouched files that carry integration-point leads (#19 AC-7)."""
     rows = data["hotspots"].get("dormant") or []
@@ -425,7 +519,7 @@ def render_dormant(data: dict) -> list[str]:
 def lead_precision(data: dict) -> dict[str, dict[str, int]]:
     """Per pattern: detector hits in the files an investigator read (hotspots
     and investigated dormant files, not incomplete ones), and the distinct
-    ones a validated finding cites (confirmed). Over many runs this is
+    ones cited by a finding whose citations resolved (confirmed). Over many runs this is
     the detector's precision on code we never see (#19 AC-2)."""
     out: dict[str, dict[str, int]] = {}
     read = data.get("read")
@@ -492,7 +586,8 @@ def run_warnings(data: dict) -> list[str]:
     return (list(data["hotspots"].get("warnings") or [])
             + list(data.get("context_warnings") or [])
             + list(data.get("link_warnings") or [])
-            + list(data.get("usage_warnings") or []))
+            + list(data.get("usage_warnings") or [])
+            + list(data.get("check_warnings") or []))
 
 
 def _k(n: int) -> str:
@@ -602,6 +697,12 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
     breakdown = ", ".join(f"{n} {md.text(k)}" for k, n in
                           sorted(counts.items(), key=lambda kv: CONFIDENCE_RANK.get(kv[0], 9)))
     files_affected = _files_affected(findings)
+    by_status = [(s, sum(1 for f in findings if f["check"]["status"] == s)) for s in c.CHECK_STATUSES]
+    gated = sum(1 for f in findings if f["gate"] != "none")
+    check_line = ("Check status: " + " · ".join(f"{n} {s}" for s, n in by_status if n)
+                  + (f" · {gated} {'finding needs' if gated == 1 else 'findings need'} a "
+                     f"non-default setting and {'is' if gated == 1 else 'are'} listed last"
+                     if gated else "")) if findings else None
 
     L: list[str] = [
         f"# thunderstruck — {md.text(repo_name, heading=True)}",
@@ -612,12 +713,14 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
         f"{hs['counts']['files_considered']} files considered · "
         f"{hs['counts']['hotspots']} hotspots investigated  ",
         f"**{len(findings)} finding(s)** across {files_affected} file(s)"
-        + (f" — {breakdown}" if breakdown else ""),
+        + (f" — {breakdown}" if breakdown else "") + "  ",
+        *([check_line] if check_line else []),
         "",
-        "> Findings are **falsifiable hypotheses**, not verified defects. Every "
-        "claim cites evidence that resolved to a real file:line, commit, "
-        "detector hit or catalog edge, and every finding names one concrete way to prove it "
-        "wrong. Check the `Verify` line before you act on one.",
+        "> Findings are **falsifiable hypotheses**. Every citation in them was resolved "
+        "mechanically: each cited file:line, commit, detector hit and catalog edge exists. "
+        "That is all validation proves. Whether a claim holds is its **check status**; a "
+        "finding nobody has tried to refute is `unchecked`, and its confidence is at most "
+        "`medium`. Check the `Verify` line before you act on one.",
         "",
     ]
 
@@ -641,7 +744,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
           "Leads are detector hits — mechanical, noisy, and never a finding on "
           "their own. Findings are what survived an investigator reading the code. "
           "*Leads read* counts the hits inside investigated hotspots; *Leads "
-          "confirmed* counts those a validated finding cites.",
+          "confirmed* counts those cited by a finding whose citations resolved.",
           "",
           "| ID | Pattern | Tier | Files with an unconfirmed lead | Leads read "
           "| Leads confirmed | Findings |",
@@ -666,18 +769,18 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
             where = _linked(f"{loc.get('file', '?')}{lines}", loc.get("url"))
             rows = ["| | |", "|---|---|",
                     f"| Trigger | {md.text(f.get('trigger_condition', '—'), cell=True)} |",
-                    f"| Amplifier | {md.text(f.get('amplifier', '—'), cell=True)} |",
-                    f"| Sustaining effect | "
-                    f"{md.text(f['sustaining_effect'], cell=True) if f.get('sustaining_effect') else '_none — this one stops when the trigger stops_'} |",
+                    f"| Amplifier | {_not_stated(f.get('amplifier'))} |",
+                    f"| Sustaining effect | {_not_stated(f.get('sustaining_effect'))} |",
                     f"| Blast radius | {md.text(f.get('blast_radius', '—'), cell=True)} |"]
             if f.get("catalog_evidence"):
                 rows.append(f"| Dependents / dependencies | {_deps(f['catalog_evidence'])} |")
             rows.append(f"| Missing patterns | {', '.join(md.code(p, cell=True) for p in f.get('missing_patterns') or []) or '—'} |")
+            marker = f" · {c.GATE_MARKERS[f['gate']]}" if f["gate"] in c.GATE_MARKERS else ""
+            badge = (f"**{BADGE.get(f.get('confidence'), '?')} confidence** · "
+                     f"{f['check']['status']}{marker} · ")
             L += [f"### {f['id']} · {md.text(f.get('failure_mode', '(no failure mode)'), heading=True)}",
                   "",
-                  f"**{BADGE.get(f.get('confidence'), '?')} confidence** · "
-                  f"{where}{symbol} · "
-                  f"hotspot {f['hotspot_id']} (score {f.get('hotspot_score')})",
+                  badge + f"{where}{symbol} · hotspot {f['hotspot_id']} (score {f.get('hotspot_score')})",
                   "",
                   *_shared_line(f),
                   *rows,
@@ -686,7 +789,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
             for ev in f.get("evidence") or []:
                 note = f" — {md.text(ev['note'])}" if ev.get("note") else ""
                 L.append(f"- _{md.text(ev.get('type'))}_ {_evidence_ref(ev)}{note}")
-            L += ["",
+            L += ["", *render_check(f), *render_preconditions(f), *render_history(f),
                   f"**Verify** — {md.text(f.get('how_to_verify', '—'))}  ",
                   f"**Why this confidence** — {md.text(f.get('confidence_rationale', '—'))}  "]
             if f.get("prediction"):
@@ -763,6 +866,9 @@ def render_json(data: dict) -> dict:
             "findings": len(data["findings"]),
             "clean_hotspots": len(data["clean"]),
             "failed_hotspots": len(data["failed"]),
+            "check_status": {s: sum(1 for f in data["findings"] if f["check"]["status"] == s)
+                             for s in c.CHECK_STATUSES},
+            "gate": {g: sum(1 for f in data["findings"] if f["gate"] == g) for g in c.GATES},
         },
         "warnings": list(hs.get("warnings") or []) + list(data.get("link_warnings") or []),
         "run_warnings": run_warnings(data),
@@ -815,8 +921,15 @@ def render_index(data: dict) -> dict:
             "failure_mode": f.get("failure_mode"),
             "missing_patterns": f.get("missing_patterns") or [],
             "confidence": f.get("confidence"),
-            "sustaining_effect": f.get("sustaining_effect"),
+            "check_status": f["check"]["status"],
+            "gate": f["gate"],
+            "preconditions": [{k: p.get(k) for k in ("setting", "default", "needs", "value")}
+                              for p in _preconditions(f)],
+            "history": [{k: h.get(k) for k in ("sha", "class", "wrote_cited_line")}
+                        for h in _history(f)],
         }
+        if f.get("sustaining_effect"):
+            item["sustaining_effect"] = f["sustaining_effect"]
         if f.get("catalog_evidence"):
             item["catalog_evidence"] = f["catalog_evidence"]
         entry["findings"].append(item)

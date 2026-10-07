@@ -63,12 +63,14 @@ export async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
 '''
 
 IGNORES_RETRY_AFTER = '''\
+const RETRY_ON_429 = process.env.API_RETRY_ON_429 === "true";
+
 export async function callApi(path: string): Promise<Response> {
   const res = await fetch(`https://api.example.com${path}`, {
     signal: AbortSignal.timeout(10_000),
   });
 
-  if (res.status === 429) {
+  if (RETRY_ON_429 && res.status === 429) {
     // Back off and try again.
     await new Promise(resolve => setTimeout(resolve, 5000));
     return callApi(path);

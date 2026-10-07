@@ -53,7 +53,8 @@ def _doc(file: str, lines=None, code_ref: str | None = None) -> dict:
         "trigger_condition": "t", "amplifier": "a", "sustaining_effect": None,
         "blast_radius": "b", "confidence": "medium", "confidence_rationale": "r",
         "how_to_verify": "v",
-        "evidence": [{"type": "code", "ref": code_ref or f"{file}:1", "note": "n"}]}]}
+        "evidence": [{"type": "code", "ref": code_ref or f"{file}:1", "note": "n"}],
+        "preconditions": []}]}
 
 
 # ------------------------------------------------------------------ paths --
@@ -241,7 +242,7 @@ def test_commit_evidence_matches_bracketed_paths_literally(repo):
     _git(repo, "commit", "-qm", "only i.ts")
     only_i = _git(repo, "rev-parse", "HEAD").strip()
     doc = _doc("src/[id].ts")
-    doc["findings"][0]["evidence"].append({"type": "commit", "ref": only_i, "note": "n"})
+    doc["findings"][0]["evidence"].append({"type": "commit", "ref": only_i, "role": "changed", "note": "n"})
     errors = _validator(repo).check_document(doc)
     assert any("does not touch" in e for e in errors), errors
 

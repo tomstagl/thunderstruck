@@ -228,7 +228,11 @@ def run_from_report(report_path: Path) -> dict:
     findings = {}
     for f in report.get("findings") or []:
         if f.get("key"):
-            findings[f["key"]] = {"confidence": f.get("confidence")}
+            record = {"confidence": f.get("confidence")}
+            if isinstance(f.get("preconditions"), list):
+                record["preconditions"] = [{"setting": p.get("setting"), "default": p.get("default")}
+                                           for p in f["preconditions"] if isinstance(p, dict)]
+            findings[f["key"]] = record
     return {"schema": RUN_SCHEMA, "commit": (report.get("repo") or {}).get("head", ""),
             "produced_by": {"stage": "investigator", "model": None, "source": str(report_path)},
             "findings": findings}
