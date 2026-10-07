@@ -1844,7 +1844,7 @@ git commit -m "Benchmark: confidence before and after checked confidence (#56)"
 **Files:**
 - Modify: `README.md`, `CLAUDE.md`, `skills/thunderstruck-scan/references/report-format.md`, `CHANGELOG.md`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `pyproject.toml`
 
-- [ ] **Step 1: README.** In "Findings are falsifiable, and checked", replace the "`high` confidence requires corroborating history" and "`sustaining_effect` is mandatory" bullets with:
+- [x] **Step 1: README.** In "Findings are falsifiable, and checked", replace the "`high` confidence requires corroborating history" and "`sustaining_effect` is mandatory" bullets with:
 
 ```markdown
 - **Confidence says whether the claim was checked.** Only a finding whose
@@ -1864,7 +1864,7 @@ git commit -m "Benchmark: confidence before and after checked confidence (#56)"
 
   Update the guardrail example to the new lines (`confidence: medium; check status: unchecked.` and `It happens on default settings.`).
 
-- [ ] **Step 2: CLAUDE.md.** Replace the "**`high` needs a corroborating commit.**" paragraph with:
+- [x] **Step 2: CLAUDE.md.** Replace the "**`high` needs a corroborating commit.**" paragraph with:
 
 ```markdown
 **Confidence is capped by check status, never by history.** A finding's
@@ -1882,9 +1882,9 @@ are listed after default-path findings and marked. Tightening a validator
 rule means bumping `VALIDATION_RULES`.
 ```
 
-- [ ] **Step 3: report-format.md.** The tree line reads `thunderstruck.report/v2`. The finding contract's `high` and `sustaining_effect` bullets are replaced by: `preconditions` required (may be `[]`) with its keys and rules; commit `role` with the `introduced` rule; `amplifier`/`sustaining_effect` optional, never empty; `confidence` is a claim, reported through the check-status ceiling. A new section "Check status, preconditions and history" lists §6.2's per-finding fields, `counts.check_status` and `counts.gate`, §6.3's `index.json` additions, and names the keys reserved for #37 (`check.by`, `check.reason`, `check.holds`, `check.refuted_claims`, `check.evidence`, `check.model`, `check.dependency_versions`, `check.reused_from`, `check.duplicate_of`, `check.confirmations`; and #37's extension of `finding_gate` to a narrowed verdict naming a missing setting) and #57 (`preconditions[].confirmation`, gate `unconfirmed_default`, placed in `GATES` by #57). The "Sections of `report.md` in `report.json`" intro notes that `run_warnings` now ends with check-status warnings, and that v2 changed `confidence`'s meaning.
+- [x] **Step 3: report-format.md.** The tree line reads `thunderstruck.report/v2`. The finding contract's `high` and `sustaining_effect` bullets are replaced by: `preconditions` required (may be `[]`) with its keys and rules; commit `role` with the `introduced` rule; `amplifier`/`sustaining_effect` optional, never empty; `confidence` is a claim, reported through the check-status ceiling. A new section "Check status, preconditions and history" lists §6.2's per-finding fields, `counts.check_status` and `counts.gate`, §6.3's `index.json` additions, and names the keys reserved for #37 (`check.by`, `check.reason`, `check.holds`, `check.refuted_claims`, `check.evidence`, `check.model`, `check.dependency_versions`, `check.reused_from`, `check.duplicate_of`, `check.confirmations`; and #37's extension of `finding_gate` to a narrowed verdict naming a missing setting) and #57 (`preconditions[].confirmation`, gate `unconfirmed_default`, placed in `GATES` by #57). The "Sections of `report.md` in `report.json`" intro notes that `run_warnings` now ends with check-status warnings, and that v2 changed `confidence`'s meaning.
 
-- [ ] **Step 4: Version and CHANGELOG.** Bump the minor version in all four places to `<version>`, the next minor above `main`'s at the time (read it from `pyproject.toml` on `origin/main`; e.g. `0.9.3` becomes `0.10.0`), and add, with that version in the heading:
+- [x] **Step 4: Version and CHANGELOG.** Bump the minor version in all four places to `<version>`, the next minor above `main`'s at the time (read it from `pyproject.toml` on `origin/main`; e.g. `0.9.3` becomes `0.10.0`), and add, with that version in the heading:
 
 ```markdown
 ## <version>

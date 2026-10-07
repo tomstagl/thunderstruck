@@ -114,7 +114,9 @@ thunderstruck has 1 open finding(s) on src/sync/collection.ts.
 
 - FR-002 (lines 4-16): An interrupted collection sync restarts at page 1 and
   re-creates every row it already wrote
-  missing patterns: S07; confidence: high
+  missing patterns: S07; confidence: medium; check status: unchecked.
+  It happens on default settings.
+  Cited commits: 597cdb7 fix, wrote none of the cited lines.
   what keeps it failing: Each attempt is as expensive as the first and hits
   the same failure at the same page
 ```
@@ -158,15 +160,19 @@ A finding is a hypothesis, and it has to earn its place:
   ref must be a SHA git can resolve that changed the file in question. A
   `detector` ref must match a real hit.
   This is checked mechanically, not trusted.
-- **`high` confidence requires corroborating history.** A cited commit
-  must be a *fix* to the cited code (resilience work such as "add retry with
-  backoff" is not a fix), or, for a prompt-injection-style `OTHER` finding,
-  the commit that wrote the cited lines. The most recent change to a file is
-  not corroboration, and the report prints each cited commit's subject so a
-  reader can check.
-- **`sustaining_effect` is mandatory**, though it may be `null`. Asking "once
-  this is triggered, what keeps it failing?" is the point; a clean "nothing,
-  it recovers" is a real answer.
+- **Confidence says whether the claim was checked.** Only a finding whose
+  claim survived a check can be `high`; until one has, a finding is
+  `unchecked` and at most `medium`, and the report says what the investigator
+  claimed. Fix history does not count: it is shown per cited commit (its
+  class, its stated role, and whether it wrote a cited line) as a signal of
+  how fragile the code is.
+- **Preconditions are stated.** Each finding lists the settings it needs
+  changed or relies on, with the default and where it is registered.
+  Findings that happen on default settings come first; the rest are marked.
+- **Nothing is filled in.** `amplifier` and `sustaining_effect` are given
+  only when the code shows them; otherwise the report says *not stated*.
+- **Validation proves the citations, not the claim.** A commit cited as
+  having introduced the code must have written a cited line, per `git blame`.
 - Each finding names **one concrete way to prove it wrong**.
   `/thunderstruck-verify FR-001` turns that into a failing test.
 

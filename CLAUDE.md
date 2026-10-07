@@ -120,11 +120,19 @@ inventory (`inventory: retry_layer`); they add no stability weight and never
 qualify a dormant file on their own. The inventory reads raw, unsuppressed
 hits: a suppressed lead is still a retry layer.
 
-**`high` needs a corroborating commit.** A cited commit must touch a cited
-file *and* classify as `fix` (`_common.classify_commit`, the one definition
-every stage uses), or, for an `OTHER`-only finding, have written a cited line
-per `git blame`. Resilience work ("add retry with backoff") is its own class,
-not a fix. Tightening a validator rule means bumping `VALIDATION_RULES`.
+**Confidence is capped by check status, never by history.** A finding's
+`confidence` in its findings file is the investigator's claim. `report.py`
+reports `_common.effective_confidence(claim, check status)`: only `upheld`
+can be `high`, everything else is at most `medium`, and `narrowed` drops one
+level. Until #37 lands every finding is `unchecked`. `finding_shape.shape()` strips
+`check`, `history` and `confidence_claimed` from model output, so a model
+cannot raise its own finding, and `validate.py` never overwrites an existing
+`check`. A cited commit's class (`_common.classify_commit`) and whether it
+wrote a cited line are reported as `history` and feed nothing. A commit cited
+with `role: introduced` must have written a cited line per `git blame`.
+Findings whose `preconditions` need a setting changed (`_common.finding_gate`)
+are listed after default-path findings and marked. Tightening a validator
+rule means bumping `VALIDATION_RULES`.
 
 **The plugin must not exhibit the patterns it hunts.** At most 4 investigators
 in parallel, exactly one repair round and no retry loops, `--top` caps scope,
