@@ -378,6 +378,8 @@ class Validator:
         """One entry per distinct cited commit: its class, its stated role and
         whether it wrote a cited line. A signal of fragility; never confidence."""
         evidence = [ev for ev in finding.get("evidence") or [] if isinstance(ev, dict)]
+        if not any(ev.get("type") == "commit" for ev in evidence):
+            return []  # nothing to blame for
         written = self._written(evidence)
         out: list[dict] = []
         seen: set[str] = set()
@@ -495,7 +497,8 @@ class Validator:
     def check_commits_touch(self, f: dict, evidence: list, types: list,
                             where: str, errors: list[str]) -> list[str]:
         """A commit is evidence only if it changed the code the finding is
-        about. Without this, any SHA from the bundle buys 'high' confidence."""
+        about. Without this, any SHA from the bundle could pass as the
+        history of code it never touched."""
         cited: list[str] = []
         loc = f.get("location")
         if isinstance(loc, dict) and loc.get("file"):
@@ -562,10 +565,21 @@ def canonicalise(finding: dict) -> None:
         loc["file"] = c.ref_path(loc["file"])
     for ev in finding.get("evidence") or []:
         if isinstance(ev, dict) and ev.get("type") == "code":
-            m = CODE_REF.match(str(ev.get("ref") or "").strip())
-            if m:
-                rng = m["start"] + (f"-{m['end']}" if m["end"] else "")
-                ev["ref"] = f"{c.ref_path(m['path'])}:{rng}"
+            ev["ref"] = _canonical_ref(ev.get("ref"))
+    for p in finding.get("preconditions") or []:
+        if isinstance(p, dict):
+            for key in ("default_ref", "doc_ref"):
+                if p.get(key) is not None:
+                    p[key] = _canonical_ref(p[key])
+
+
+def _canonical_ref(ref: Any) -> Any:
+    """path:line with the canonical path; anything else unchanged."""
+    m = CODE_REF.match(str(ref or "").strip())
+    if not m:
+        return ref
+    rng = m["start"] + (f"-{m['end']}" if m["end"] else "")
+    return f"{c.ref_path(m['path'])}:{rng}"
 
 
 def evidence_hashes(repo: Path, finding: dict) -> dict[str, str]:

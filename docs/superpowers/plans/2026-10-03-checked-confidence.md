@@ -1907,7 +1907,7 @@ Confidence that means the claim was checked (#56).
 - On the Celery benchmark (#55): 0 findings rated `high` above their deserved confidence (2 before); exact agreement 8 of 21 before and after.
 ```
 
-- [ ] **Step 5: Run the full suite and the generated-file checks**
+- [x] **Step 5: Run the full suite and the generated-file checks**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/ -q; echo "exit=$?"
@@ -1919,7 +1919,7 @@ claude plugin marketplace add "$PWD" && claude plugin install thunderstruck@thun
 
 Expected: every `exit=0`; `test_versions_agree` passes; `claude plugin list` shows thunderstruck `enabled`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add README.md CLAUDE.md skills/thunderstruck-scan/references/report-format.md CHANGELOG.md .claude-plugin/plugin.json .claude-plugin/marketplace.json pyproject.toml

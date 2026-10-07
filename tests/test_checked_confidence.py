@@ -619,3 +619,20 @@ def test_the_report_adapter_reads_preconditions(tmp_path):
     run = b.run_from_report(path)
     assert run["findings"]["k1"]["preconditions"] == [{"setting": "S", "default": "10"}]
     assert "preconditions" not in run["findings"]["k2"]
+
+
+# --- Code review ------------------------------------------------------------
+def test_guardrail_does_not_cap_a_reported_confidence_twice(project):
+    """index.json's confidence is already reported; a narrowed one stays as is."""
+    text = _context(project, [{**NEW, "check_status": "narrowed", "confidence": "medium"}])
+    assert "confidence: medium; check status: narrowed." in text
+
+
+def test_precondition_refs_are_written_back_canonical():
+    from validate import canonicalise
+    f = {"evidence": [], "preconditions": [
+        {"setting": "S", "default_ref": "./src/a.ts:1", "doc_ref": "./docs/x.md:2-3"},
+        {"setting": "T", "default_ref": "src/b.ts:4", "doc_ref": None}]}
+    canonicalise(f)
+    assert [(p["default_ref"], p["doc_ref"]) for p in f["preconditions"]] == [
+        ("src/a.ts:1", "docs/x.md:2-3"), ("src/b.ts:4", None)]

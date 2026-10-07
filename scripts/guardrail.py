@@ -167,14 +167,18 @@ def build_context(entry: dict, rel: str, stale: bool) -> str | None:
         if not isinstance(f, dict):
             continue
         status = f.get("check_status") if f.get("check_status") in CEILING else "unchecked"
-        confidence = effective(f.get("confidence"), status)
+        # A current index carries the reported confidence; only an index from
+        # before #56 (no check_status) holds a claim that still needs the cap.
+        confidence = (f.get("confidence") if "check_status" in f
+                      else effective(f.get("confidence"), status))
         if confidence in MIN_CONFIDENCE:
             findings.append({**f, "_status": status, "_confidence": confidence})
     if not findings:
         return None
     order = {"high": 0, "medium": 1}
-    findings.sort(key=lambda f: (GATE_ORDER.index(f.get("gate")) if f.get("gate") in GATE_ORDER
-                                 else 0, order.get(f["_confidence"], 9)))
+    findings.sort(key=lambda f: (GATE_ORDER.index(f.get("gate", "none"))
+                                 if f.get("gate", "none") in GATE_ORDER else len(GATE_ORDER),
+                                 order.get(f["_confidence"], 9)))
     shown, extra = findings[:MAX_FINDINGS_SHOWN], len(findings) - MAX_FINDINGS_SHOWN
 
     lines = [f"thunderstruck has {len(findings)} open finding(s) on {rel}."]
