@@ -171,9 +171,10 @@ its errors to the task:
 > Your previous output for `<ID>` failed validation:
 > <the errors verbatim>
 > Fix these problems and return the **complete** corrected JSON object: the
-> top-level `findings` list with every finding you keep, each with all eleven
-> keys from your system prompt (`sustaining_effect` may be `null` but must be
-> present), not only the parts that changed. At most 3 findings. Paths are copied
+> top-level `findings` list with every finding you keep, each with all ten
+> required keys from your system prompt (`preconditions` may be `[]` but must be present;
+> leave `amplifier` and `sustaining_effect` out when there is nothing to state),
+> and every commit item with its `role`, not only the parts that changed. At most 3 findings. Paths are copied
 > exactly as the bundle shows them — relative to the repository root, no `./`,
 > no `..`, a file git tracks — and a line range is `"42"` or `"42-118"` with
 > start ≤ end inside the file. Every `ref` must
@@ -236,7 +237,8 @@ finding, not the file:
   `/thunderstruck-verify FR-001` turns one into a failing test.
 
 Do not claim a finding is a confirmed defect. It is a hypothesis whose
-evidence resolved.
+evidence resolved. State each finding's check status; until a check runs,
+every finding is `unchecked`.
 
 ## Reading the repository's own content
 

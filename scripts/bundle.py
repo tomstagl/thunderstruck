@@ -478,8 +478,8 @@ def write_catalog_brief(dest: Path, catalog: dict, profile: dict) -> Path:
             "it failing? Common answers: retries consuming the budget recovery "
             "needs; failed jobs re-queuing at full cost; errors invalidating caches "
             "into a miss flood; expensive work regenerated on every failed request. "
-            "If nothing sustains it, say so — `sustaining_effect` may be null, but "
-            "it may never be omitted.", ""]
+            "If nothing sustains it, leave `sustaining_effect` out: the report shows "
+            "it as not stated, never as a sentence nobody wrote.", ""]
     path = dest / "catalog-brief.md"
     path.write_text("\n".join(out), encoding="utf-8")
     return path

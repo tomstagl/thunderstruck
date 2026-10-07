@@ -1539,7 +1539,7 @@ git commit -m "Guardrail: check status, preconditions and cited history as facts
 **Interfaces:**
 - Consumes: `validate.REQUIRED_FIELDS`, `validate.PRECONDITION_KEYS`, `c.COMMIT_ROLES` (Task 2).
 
-- [ ] **Step 1: Write the failing tests.** In `tests/test_investigator_contract.py`:
+- [x] **Step 1: Write the failing tests.** In `tests/test_investigator_contract.py`:
 
 ```python
 from validate import PRECONDITION_KEYS, REQUIRED_FIELDS
@@ -1583,12 +1583,12 @@ def test_the_prompt_never_ties_confidence_to_a_fix():
 
 and in `test_the_repair_round_asks_for_the_whole_object`, add `assert "`preconditions` may be `[]` but must be present" in flat`.
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_investigator_contract.py -q`
 Expected: FAIL (the example has no `preconditions`; the old `[fix]` ceiling sentence is present).
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 In `agents/thunderstruck-investigator.md`:
 
@@ -1617,12 +1617,12 @@ In `scripts/bundle.py`'s `write_catalog_brief`, the metastability paragraph's la
 
 In `skills/thunderstruck-verify/SKILL.md`, where it describes building the test from the finding, add: "Set every precondition with `needs: changed` to its stated `value` in the test, and leave the others at their defaults: a gated finding's test that passes on defaults proves nothing."
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_investigator_contract.py tests/test_docs_in_sync.py -q`, then the full suite.
 Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add agents/thunderstruck-investigator.md skills/thunderstruck-scan/SKILL.md skills/thunderstruck-verify/SKILL.md scripts/bundle.py tests/test_investigator_contract.py
