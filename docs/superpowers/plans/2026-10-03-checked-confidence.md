@@ -1363,7 +1363,7 @@ git commit -m "HTML report: check status, preconditions and history; the report'
 - Consumes: `index.json` entries from Task 3 (`check_status`, `gate`, `preconditions`, `history`, reported `confidence`).
 - Produces: in `guardrail`: `CEILING: dict[str, str]`, `LEVELS`, `GATE_ORDER` (pinned to `_common.GATES` by a test), `effective(confidence, status) -> str` (a copy of `_common.effective_confidence`), `precondition_line(f) -> str | None`, `history_line(f) -> str | None`.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 6 -----------------------------------------------------------------
@@ -1426,12 +1426,12 @@ def test_guardrail_lists_at_most_three_items(project):
     assert "S2 set to v (default d) and 2 more." in text and "S3" not in text
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_checked_confidence.py -q -k guardrail`
 Expected: FAIL, `AttributeError: module 'guardrail' has no attribute 'effective'`.
 
-- [ ] **Step 3: Write the implementation.** In `scripts/guardrail.py`, add after the constants:
+- [x] **Step 3: Write the implementation.** In `scripts/guardrail.py`, add after the constants:
 
 ```python
 # A copy of _common's confidence rule: this hook may not import _common.
@@ -1513,12 +1513,12 @@ and, per shown finding:
             lines.append(f"  what keeps it failing: {f['sustaining_effect']}")
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_checked_confidence.py tests/test_guardrail.py -q`, then the full suite.
 Expected: PASS (including `test_hook_needs_no_third_party_imports`, `test_context_is_phrased_as_fact_not_instruction` and `test_latency_is_within_budget`), `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/guardrail.py tests/test_checked_confidence.py

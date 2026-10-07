@@ -510,3 +510,63 @@ def test_template_keeps_the_report_order_and_states_what_validation_proved():
     assert "This one stops when the trigger stops" not in text
     for label in ('"Check"', '"Preconditions"', '"History"', '"Not stated."'):
         assert label in text, label
+
+
+# --- Task 6 -----------------------------------------------------------------
+import guardrail  # noqa: E402
+from test_guardrail import project, run_hook  # noqa: E402,F401
+
+
+@pytest.mark.parametrize("claimed, status", sorted(TABLE))
+def test_guardrail_ceiling_copy_matches_common(claimed, status):
+    assert guardrail.effective(claimed, status) == c.effective_confidence(claimed, status)
+    assert guardrail.effective(claimed, "bogus") == c.effective_confidence(claimed, "bogus")
+
+
+def test_guardrail_gate_order_matches_common():
+    assert guardrail.GATE_ORDER == c.GATES
+
+
+def _context(project: Path, findings: list[dict]) -> str:
+    index = json.loads((project / ".thunderstruck" / "index.json").read_text())
+    index["files"]["src/flagged.ts"]["findings"] = findings
+    (project / ".thunderstruck" / "index.json").write_text(json.dumps(index))
+    return json.loads(run_hook(project, "src/flagged.ts").stdout)["hookSpecificOutput"]["additionalContext"]
+
+
+NEW = {"id": "FR-001", "failure_mode": "f", "missing_patterns": ["S03"], "confidence": "medium",
+       "check_status": "unchecked", "gate": "none", "preconditions": [], "history": []}
+
+
+def test_guardrail_states_status_preconditions_and_history(project):
+    gated = {**NEW, "id": "FR-002", "gate": "non_default_setting",
+             "preconditions": [{"setting": "API_RETRY_ON_429", "default": "false (unset)",
+                                "needs": "changed", "value": "true"}],
+             "history": [{"sha": "1a2b3c4", "class": "fix", "wrote_cited_line": True},
+                         {"sha": "5d6e7f8", "class": "feature", "wrote_cited_line": False}]}
+    rests = {**NEW, "id": "FR-003", "preconditions": [{"setting": "LIMIT", "default": "10",
+                                                       "needs": "default", "value": None}]}
+    text = _context(project, [gated, NEW, rests])
+    assert "confidence: medium; check status: unchecked." in text
+    assert "It happens on default settings." in text
+    assert "It happens on default settings and rests on LIMIT at its default 10." in text
+    assert ("It happens only with a non-default setting: API_RETRY_ON_429 set to true "
+            "(default false (unset)).") in text
+    assert ("Cited commits: 1a2b3c4 fix, wrote a cited line; 5d6e7f8 feature, wrote none of "
+            "the cited lines.") in text
+    assert text.index("FR-001") < text.index("FR-003") < text.index("FR-002")
+
+
+def test_guardrail_caps_an_index_from_before_checked_confidence(project):
+    old = {"id": "FR-001", "failure_mode": "f", "missing_patterns": ["S03"], "confidence": "high",
+           "sustaining_effect": "s"}
+    text = _context(project, [old])
+    assert "confidence: medium; check status: unchecked." in text
+    assert "high" not in text
+    assert "It happens" not in text and "Cited commits" not in text
+
+
+def test_guardrail_lists_at_most_three_items(project):
+    many = [{"setting": f"S{n}", "default": "d", "needs": "changed", "value": "v"} for n in range(5)]
+    text = _context(project, [{**NEW, "gate": "non_default_setting", "preconditions": many}])
+    assert "S2 set to v (default d) and 2 more." in text and "S3" not in text

@@ -37,6 +37,54 @@ MAX_NEIGHBOURS_SHOWN = 5
 EDGE_PHRASES = (("inbound", "Cited dependents of this component"),
                 ("outbound", "Cited dependencies of this component"))
 
+# A copy of _common's confidence rule: this hook is stdlib-only and cannot use _common.
+# tests/test_checked_confidence.py pins the two together.
+LEVELS = ("low", "medium", "high")
+CEILING = {"upheld": "high", "unchecked": "medium", "narrowed": "medium",
+           "inconclusive": "medium", "refuted": "low"}
+GATE_ORDER = ("none", "non_default_setting")
+MAX_ITEMS_SHOWN = 3
+
+
+def effective(confidence, status) -> str:
+    level = LEVELS.index(confidence) if confidence in LEVELS else 0
+    status = status if status in CEILING else "unchecked"
+    if status == "narrowed":
+        level = max(0, level - 1)
+    return LEVELS[min(level, LEVELS.index(CEILING[status]))]
+
+
+def _capped(parts: list[str], sep: str) -> str:
+    text = sep.join(parts[:MAX_ITEMS_SHOWN])
+    if len(parts) > MAX_ITEMS_SHOWN:
+        text += f" and {len(parts) - MAX_ITEMS_SHOWN} more"
+    return text
+
+
+def precondition_line(f: dict) -> str | None:
+    if "check_status" not in f:
+        return None  # an index from before #56 states nothing about preconditions
+    items = [p for p in f.get("preconditions") or [] if isinstance(p, dict)]
+    changed = [p for p in items if p.get("needs") == "changed"]
+    if changed:
+        return ("It happens only with a non-default setting: " + _capped(
+            [f"{p.get('setting')} set to {p.get('value')} (default {p.get('default')})"
+             for p in changed], ", ") + ".")
+    if items:
+        return ("It happens on default settings and rests on " + _capped(
+            [f"{p.get('setting')} at its default {p.get('default')}" for p in items], ", ") + ".")
+    return "It happens on default settings."
+
+
+def history_line(f: dict) -> str | None:
+    items = [h for h in f.get("history") or [] if isinstance(h, dict)]
+    if not items:
+        return None
+    return "Cited commits: " + _capped(
+        [f"{h.get('sha')} {h.get('class') or 'class unavailable'}, "
+         + ("wrote a cited line" if h.get("wrote_cited_line") else "wrote none of the cited lines")
+         for h in items], "; ") + "."
+
 
 def _project_dir(hook_input: dict) -> Path | None:
     for candidate in (os.environ.get("CLAUDE_PROJECT_DIR"), hook_input.get("cwd"), os.getcwd()):
@@ -114,12 +162,19 @@ def _neighbour_lines(findings: list[dict]) -> list[str]:
 
 
 def build_context(entry: dict, rel: str, stale: bool) -> str | None:
-    findings = [f for f in entry.get("findings", [])
-                if f.get("confidence") in MIN_CONFIDENCE]
+    findings = []
+    for f in entry.get("findings", []):
+        if not isinstance(f, dict):
+            continue
+        status = f.get("check_status") if f.get("check_status") in CEILING else "unchecked"
+        confidence = effective(f.get("confidence"), status)
+        if confidence in MIN_CONFIDENCE:
+            findings.append({**f, "_status": status, "_confidence": confidence})
     if not findings:
         return None
     order = {"high": 0, "medium": 1}
-    findings.sort(key=lambda f: order.get(f.get("confidence"), 9))
+    findings.sort(key=lambda f: (GATE_ORDER.index(f.get("gate")) if f.get("gate") in GATE_ORDER
+                                 else 0, order.get(f["_confidence"], 9)))
     shown, extra = findings[:MAX_FINDINGS_SHOWN], len(findings) - MAX_FINDINGS_SHOWN
 
     lines = [f"thunderstruck has {len(findings)} open finding(s) on {rel}."]
@@ -134,7 +189,11 @@ def build_context(entry: dict, rel: str, stale: bool) -> str | None:
         if f.get("via") == "evidence":
             where = f" (cited as evidence; finding is on {f.get('anchor', '?')})"
         lines.append(f"- {f.get('id', '?')}{where}: {f.get('failure_mode', '')}")
-        lines.append(f"  missing patterns: {pats}; confidence: {f.get('confidence')}")
+        lines.append(f"  missing patterns: {pats}; confidence: {f['_confidence']}; "
+                     f"check status: {f['_status']}.")
+        for fact in (precondition_line(f), history_line(f)):
+            if fact:
+                lines.append(f"  {fact}")
         if f.get("sustaining_effect"):
             lines.append(f"  what keeps it failing: {f['sustaining_effect']}")
     if extra > 0:
