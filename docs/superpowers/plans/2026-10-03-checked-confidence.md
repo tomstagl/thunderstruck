@@ -743,7 +743,7 @@ git commit -m "Validator: preconditions, commit roles and history; the fix gate 
 - Consumes: `c.check_status`, `c.effective_confidence`, `c.finding_gate`, `c.GATES`, `c.CHECK_STATUSES` (Task 1); `check`, `history` in findings files (Task 2).
 - Produces: each finding in `collect()`'s data carries `confidence` (reported), `confidence_claimed`, `check` (`{status, by, reason, …}`), `gate`, `preconditions[]` with `default_url`/`doc_url`, `history[]` with `subject`/`url`; `report.order_key(f: dict) -> tuple`; `report._preconditions(f) -> list[dict]`; `report._history(f) -> list[dict]`; `report.json` `counts.check_status`, `counts.gate`; `index.json` entries with `check_status`, `gate`, `preconditions`, `history`.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 3 -----------------------------------------------------------------
@@ -858,12 +858,12 @@ def test_preconditions_and_history_are_linked(linked_copy, plugin_root):
     assert all("kind" not in ev for ev in f["evidence"])
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_checked_confidence.py -q -k "capped or upheld or malformed or gated or order_key or linked"`
 Expected: FAIL (`KeyError: 'confidence_claimed'`, `AttributeError: module 'report' has no attribute 'order_key'`).
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 `scripts/_common.py`: `REPORT_SCHEMA_VERSION = "thunderstruck.report/v2"`. `tests/test_report_html.py::test_wrong_schema_writes_nothing`: expect `thunderstruck.report/v2` in stderr.
 
@@ -990,9 +990,9 @@ In `render_index`, the item becomes:
             item["sustaining_effect"] = f["sustaining_effect"]
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass** (same command as Step 2, then the full suite). Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests to verify they pass** (same command as Step 2, then the full suite). Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/report.py scripts/_common.py tests/test_checked_confidence.py tests/test_report_html.py

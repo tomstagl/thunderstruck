@@ -152,7 +152,7 @@ def test_wrong_schema_writes_nothing(scanned_copy, plugin_root):
     (out / "report.json").write_text(json.dumps(payload))
     proc = _run(scanned_copy)
     assert proc.returncode == 2
-    assert "thunderstruck.report/v0" in proc.stderr and "thunderstruck.report/v1" in proc.stderr
+    assert "thunderstruck.report/v0" in proc.stderr and "thunderstruck.report/v2" in proc.stderr
     assert not (out / "report.html").exists()
 
 

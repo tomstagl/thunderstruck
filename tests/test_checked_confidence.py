@@ -297,3 +297,115 @@ def test_findings_validated_under_rules_3_are_investigated_again(scanned_copy, p
     from validate import Validator
     v = Validator(scanned_copy, _hotspots(scanned_copy), c.load_catalog())
     assert not bundle._still_valid(v, doc)
+
+
+# --- Task 3 -----------------------------------------------------------------
+import report  # noqa: E402
+
+
+def _report(repo: Path, plugin_root: Path) -> tuple[dict, dict]:
+    subprocess.run([sys.executable, str(plugin_root / "scripts" / "report.py"),
+                    "--repo", str(repo)], check=True, capture_output=True)
+    out = repo / ".thunderstruck"
+    return json.loads((out / "report.json").read_text()), json.loads((out / "index.json").read_text())
+
+
+def _second_hotspot_finding(repo: Path, confidence: str, preconditions: list) -> tuple[str, dict]:
+    hs = _hotspots(repo)["hotspots"][1]
+    return hs["id"], {"hotspot_id": hs["id"], "file": hs["file"], "findings": [{
+        "location": {"file": hs["file"], "lines": "1"}, "missing_patterns": ["S01"],
+        "failure_mode": "A second failure", "trigger_condition": "t", "blast_radius": "b",
+        "evidence": [{"type": "code", "ref": f"{hs['file']}:1", "note": "n"}],
+        "preconditions": preconditions, "confidence": confidence,
+        "confidence_rationale": "r", "how_to_verify": "v"}]}
+
+
+def test_reported_confidence_is_capped_and_the_claim_kept(scanned_copy, plugin_root):
+    hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))   # claims high
+    _write_finding(scanned_copy, hid, doc)
+    assert _validate(scanned_copy, plugin_root).returncode == 0
+    payload, index = _report(scanned_copy, plugin_root)
+    f = payload["findings"][0]
+    assert (f["confidence"], f["confidence_claimed"]) == ("medium", "high")
+    assert f["check"] == {"status": "unchecked", "by": None, "reason": None}
+    assert f["gate"] == "none" and f["preconditions"] == []
+    assert payload["schema"] == "thunderstruck.report/v2"
+    assert payload["counts"]["check_status"] == {"unchecked": 1, "upheld": 0, "narrowed": 0,
+                                                 "inconclusive": 0, "refuted": 0}
+    assert payload["counts"]["gate"] == {"none": 1, "non_default_setting": 0}
+    entry = index["files"][f["location"]["file"]]["findings"][0]
+    assert entry["confidence"] == "medium" and entry["check_status"] == "unchecked"
+    assert entry["gate"] == "none" and entry["preconditions"] == []
+    assert entry["history"] == [{k: h[k] for k in ("sha", "class", "wrote_cited_line")}
+                                for h in f["history"]]
+
+
+def test_an_upheld_check_allows_high_and_a_narrowed_one_drops_a_level(scanned_copy, plugin_root):
+    hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
+    _write_finding(scanned_copy, hid, doc)
+    assert _validate(scanned_copy, plugin_root).returncode == 0
+    path = scanned_copy / ".thunderstruck" / "findings" / f"{hid}.json"
+    for status, expected in (("upheld", "high"), ("narrowed", "medium"), ("refuted", "low")):
+        saved = json.loads(path.read_text())
+        saved["findings"][0]["check"] = {"status": status, "by": "test", "reason": None}
+        path.write_text(json.dumps(saved))
+        assert _report(scanned_copy, plugin_root)[0]["findings"][0]["confidence"] == expected
+
+
+def test_a_malformed_check_is_reported_unchecked_with_a_warning(scanned_copy, plugin_root):
+    hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
+    _write_finding(scanned_copy, hid, doc)
+    assert _validate(scanned_copy, plugin_root).returncode == 0
+    path = scanned_copy / ".thunderstruck" / "findings" / f"{hid}.json"
+    saved = json.loads(path.read_text())
+    saved["findings"][0]["check"] = {"status": "upheld!"}     # tampered after validation
+    path.write_text(json.dumps(saved))
+    payload, _ = _report(scanned_copy, plugin_root)
+    assert payload["findings"][0]["check"]["status"] == "unchecked"
+    assert payload["findings"][0]["confidence"] == "medium"
+    assert any("FR-001" in w and "reported as unchecked" in w for w in payload["run_warnings"])
+
+
+def test_gated_findings_follow_default_path_ones(scanned_copy, plugin_root):
+    data = _hotspots(scanned_copy)
+    hid, doc = _valid_finding(scanned_copy, data)      # highest score, claims high
+    gated_ref = f"{data['hotspots'][0]['file']}:1"
+    doc["findings"][0]["preconditions"] = [{
+        "setting": "SWITCH", "default": "off", "default_ref": gated_ref, "needs": "changed",
+        "value": "on", "documented": "not_checked"}]
+    _write_finding(scanned_copy, hid, doc)
+    hid2, doc2 = _second_hotspot_finding(scanned_copy, "low", [{
+        "setting": "LIMIT", "default": "10", "default_ref": gated_ref, "needs": "default",
+        "documented": "not_checked"}])
+    _write_finding(scanned_copy, hid2, doc2)
+    assert _validate(scanned_copy, plugin_root).returncode == 0
+    payload, _ = _report(scanned_copy, plugin_root)
+    order = [(f["id"], f["gate"], f["failure_mode"]) for f in payload["findings"]]
+    assert order[0][1:] == ("none", "A second failure")      # needs: default only → default path
+    assert order[1][1] == "non_default_setting" and order[1][0] == "FR-002"
+    assert payload["findings"][1]["preconditions"][0]["default_url"] is None   # no remote: unlinked
+
+
+def test_order_key_keeps_todays_rule_inside_a_gate():
+    a = {"gate": "none", "confidence": "medium", "hotspot_score": 1.0, "location": {"file": "a"}}
+    b = {"gate": "none", "confidence": "low", "hotspot_score": 9.0, "location": {"file": "b"}}
+    g = {"gate": "non_default_setting", "confidence": "high", "hotspot_score": 9.0,
+         "location": {"file": "c"}}
+    assert sorted([g, b, a], key=report.order_key) == [a, b, g]
+
+
+def test_preconditions_and_history_are_linked(linked_copy, plugin_root):
+    data = _hotspots(linked_copy)
+    hid, doc = _valid_finding(linked_copy, data)
+    ref = f"{data['hotspots'][0]['file']}:1"
+    doc["findings"][0]["preconditions"] = [{
+        "setting": "S", "default": "d", "default_ref": ref, "needs": "default",
+        "documented": "yes", "doc_ref": ref}]
+    _write_finding(linked_copy, hid, doc)
+    assert _validate(linked_copy, plugin_root).returncode == 0
+    f = _report(linked_copy, plugin_root)[0]["findings"][0]
+    p = f["preconditions"][0]
+    assert p["default_url"].startswith("https://github.com/acme/fixture/") and p["doc_url"]
+    assert f["history"][0]["url"].startswith("https://github.com/acme/fixture/")
+    assert isinstance(f["history"][0]["subject"], str)
+    assert all("kind" not in ev for ev in f["evidence"])

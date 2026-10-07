@@ -25,7 +25,7 @@ from finding_shape import FINDING_SCHEMA_VERSION  # noqa: F401  (re-exported)
 
 OUTPUT_DIRNAME = ".thunderstruck"
 PROFILE_FILENAME = ".thunderstruck.toml"
-REPORT_SCHEMA_VERSION = "thunderstruck.report/v1"
+REPORT_SCHEMA_VERSION = "thunderstruck.report/v2"
 USAGE_SCHEMA = "thunderstruck.usage/v1"
 
 # Every token weighted by its published price relative to Claude Sonnet 5.5
