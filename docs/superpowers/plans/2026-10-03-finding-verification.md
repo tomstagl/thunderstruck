@@ -1947,7 +1947,7 @@ git commit -m "Verification: plan the checks, write the briefs, reuse unchanged 
 **Interfaces:**
 - Produces, in `verify`: `VERDICT_KEYS = ("key", "verdict", "reason", "holds", "refuted_claims", "evidence", "dependencies_read", "duplicate_of")`; `REFUTED_CLAIM_KEYS = ("field", "claim", "fact", "evidence", "setting")`; `SETTING_KEYS = ("setting", "default", "default_ref", "value")`.
 
-- [ ] **Step 1: Write the failing tests.** Create `tests/test_skeptic_contract.py`:
+- [x] **Step 1: Write the failing tests.** Create `tests/test_skeptic_contract.py`:
 
 ```python
 """The skeptic's prompt states the contract verify.py enforces (#37 §6, §8)."""
@@ -2000,9 +2000,9 @@ def test_prompt_states_the_rules_that_matter():
     assert "confidence_rationale" not in text  # it is never given, so never mentioned
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** `... pytest tests/test_skeptic_contract.py -q`. Expected: `FileNotFoundError` / `AttributeError: VERDICT_KEYS`.
+- [x] **Step 2: Run them to verify they fail.** `... pytest tests/test_skeptic_contract.py -q`. Expected: `FileNotFoundError` / `AttributeError: VERDICT_KEYS`.
 
-- [ ] **Step 3: Write the implementation.** In `scripts/verify.py` add the three tuples. Create `agents/thunderstruck-skeptic.md`:
+- [x] **Step 3: Write the implementation.** In `scripts/verify.py` add the three tuples. Create `agents/thunderstruck-skeptic.md`:
 
 ````markdown
 ---

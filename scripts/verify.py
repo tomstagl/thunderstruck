@@ -38,6 +38,10 @@ OWNED = ("key", "content_hash", "catalog_evidence", "evidence_hashes", "check", 
 WITHHELD = ("confidence", "confidence_rationale", "notes", "history", "check")
 MAX_MESSAGES = 12
 MAX_MESSAGE_CHARS = 2000
+VERDICT_KEYS = ("key", "verdict", "reason", "holds", "refuted_claims", "evidence",
+                "dependencies_read", "duplicate_of")
+REFUTED_CLAIM_KEYS = ("field", "claim", "fact", "evidence", "setting")
+SETTING_KEYS = ("setting", "default", "default_ref", "value")
 CODE_REF = re.compile(r"^(?P<path>[^:]+):(?P<start>[0-9]+)(?:-(?P<end>[0-9]+))?\Z")
 
 
