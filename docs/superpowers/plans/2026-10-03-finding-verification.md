@@ -1519,7 +1519,7 @@ git commit -m "Verification: resolve a verdict's code, commit and dependency evi
   - `checks_dir(repo) -> Path`; `load_findings(repo) -> list[dict]` (items `{"finding", "hotspot_id", "index", "path"}`, report-eligible only); `load_frozen(frozen: Path) -> list[dict]` (same shape, `path: None`); `claim_hash(finding) -> str`; `cited_files(finding, verdict_evidence=()) -> list[str]`; `hash_files(repo, files) -> dict[str, str | None]`; `reusable(entry: dict | None, finding: dict, repo: Path, deps_index: dict | None) -> bool`; `commit_messages(repo, finding) -> list[tuple[str, str]]`; `render_brief(finding: dict, others: list[dict], deps_index: dict | None, messages: list[tuple[str, str]]) -> str`; `prepare(repo, model: str, frozen: Path | None = None) -> dict`; CLI `verify.py prepare [--repo] [--model] [--frozen DIR]`.
 - Produces, in `gen_sample_report`: `build_validated(dest: Path) -> tuple[Path, dict]` (the fixture repo with canned findings saved and validated, and the env the pipeline ran with). In `tests/conftest.py`: session fixture `validated_template` and per-test `validated_repo` (a copy) plus `validated_env`.
 
-- [ ] **Step 1: Factor the generator.** Move everything in `generate_all` from building the fixture through the successful `validate.py` run into `build_validated(dest)`, which returns `(repo, env)`; `generate_all` calls it inside its `TemporaryDirectory`. Run `uv run scripts/gen_sample_report.py --check`: Expected `exit 0` (no output change). Add to `tests/conftest.py`:
+- [x] **Step 1: Factor the generator.** Move everything in `generate_all` from building the fixture through the successful `validate.py` run into `build_validated(dest)`, which returns `(repo, env)`; `generate_all` calls it inside its `TemporaryDirectory`. Run `uv run scripts/gen_sample_report.py --check`: Expected `exit 0` (no output change). Add to `tests/conftest.py`:
 
 ```python
 @pytest.fixture(scope="session")
@@ -1541,7 +1541,7 @@ def validated_env(validated_template) -> dict:
     return dict(validated_template[1])
 ```
 
-- [ ] **Step 2: Write the failing tests.** Append to `tests/test_verification.py`:
+- [x] **Step 2: Write the failing tests.** Append to `tests/test_verification.py`:
 
 ```python
 # --- Task 7 -----------------------------------------------------------------
@@ -1651,9 +1651,9 @@ def test_frozen_mode_plans_the_celery_keys(tmp_path):
     assert len({i["finding"]["key"] for i in items}) == 21
 ```
 
-- [ ] **Step 3: Run them to verify they fail.** `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_verification.py -q -k "planned or brief or deterministic or reuse or cited_file or frozen"`. Expected: `ModuleNotFoundError: No module named 'verify'`.
+- [x] **Step 3: Run them to verify they fail.** `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_verification.py -q -k "planned or brief or deterministic or reuse or cited_file or frozen"`. Expected: `ModuleNotFoundError: No module named 'verify'`.
 
-- [ ] **Step 4: Write the implementation.** Create `scripts/verify.py` (Tasks 9, 10 and 18 add subcommands to it):
+- [x] **Step 4: Write the implementation.** Create `scripts/verify.py` (Tasks 9, 10 and 18 add subcommands to it):
 
 ```python
 #!/usr/bin/env python3
@@ -1926,9 +1926,9 @@ if __name__ == "__main__":
 
 `--model`'s default here is provisional and the skill always passes one; Task 21 sets it to the measured default (§12.3).
 
-- [ ] **Step 5: Run the tests**, then the full suite and `uv run scripts/gen_sample_report.py --check`. Expected: PASS, `exit=0`, samples unchanged.
+- [x] **Step 5: Run the tests**, then the full suite and `uv run scripts/gen_sample_report.py --check`. Expected: PASS, `exit=0`, samples unchanged.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/verify.py scripts/gen_sample_report.py tests/conftest.py tests/test_verification.py

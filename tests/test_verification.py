@@ -107,3 +107,110 @@ def test_a_verdict_commit_may_touch_a_file_only_the_verdict_cites(scanned_copy):
     errors.clear()
     assert v.check_verdict_evidence(ev, "e", errors, finding_files=["src/util/format.ts"]) is None
     assert "does not touch" in errors[0]
+
+
+# --- Task 7 -----------------------------------------------------------------
+import verify  # noqa: E402
+
+
+def _prepare(repo: Path, env: dict, *extra: str) -> dict:
+    args = list(extra) if "--model" in extra else ["--model", "sonnet", *extra]
+    proc = subprocess.run([sys.executable, str(SCRIPTS / "verify.py"), "prepare", "--repo", str(repo), *args],
+                          capture_output=True, text=True, cwd=str(repo), env=env)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    return json.loads((repo / ".thunderstruck" / "checks" / "plan.json").read_text())
+
+
+def test_every_validated_finding_is_planned_once(validated_repo, validated_env):
+    plan = _prepare(validated_repo, validated_env)
+    findings = verify.load_findings(validated_repo)
+    assert sorted(e["key"] for e in plan["findings"]) == sorted(f["finding"]["key"] for f in findings)
+    assert {e["action"] for e in plan["findings"]} == {"check"}
+    assert plan["model"] == "sonnet" and plan["generated_at"] == c.load_json(
+        validated_repo / ".thunderstruck" / "hotspots.json")["generated_at"]
+
+
+def test_an_invalid_hotspot_is_not_planned(validated_repo, validated_env):
+    val = c.load_json(validated_repo / ".thunderstruck" / "validation.json")
+    val["results"][0]["valid"] = False
+    c.write_json(validated_repo / ".thunderstruck" / "validation.json", val)
+    plan = _prepare(validated_repo, validated_env)
+    assert val["results"][0]["hotspot_id"] not in {e["hotspot_id"] for e in plan["findings"]}
+
+
+def test_the_brief_holds_the_claim_and_evidence_only(validated_repo, validated_env):
+    plan = _prepare(validated_repo, validated_env)
+    entry = plan["findings"][0]
+    brief = (validated_repo / entry["brief"]).read_text()
+    f = next(x["finding"] for x in verify.load_findings(validated_repo) if x["finding"]["key"] == entry["key"])
+    assert f["failure_mode"] in brief and f["evidence"][0]["ref"] in brief
+    assert f["confidence_rationale"] not in brief
+    for word in ("confidence", "history", "notes"):
+        assert f"`{word}`" not in brief and f"## {word.title()}" not in brief
+    assert "## Other findings in this scan" in brief and str(validated_repo) not in brief
+
+
+def test_the_brief_carries_full_commit_messages(validated_repo, validated_env):
+    plan = _prepare(validated_repo, validated_env)
+    releases = next(e for e in plan["findings"] if e["file"].endswith("releases.ts"))
+    brief = (validated_repo / releases["brief"]).read_text()
+    assert "## Commit messages" in brief and "fix: " in brief
+
+
+def test_prepare_is_deterministic(validated_repo, validated_env):
+    first = _prepare(validated_repo, validated_env)
+    briefs = {e["key"]: (validated_repo / e["brief"]).read_bytes() for e in first["findings"]}
+    second = _prepare(validated_repo, validated_env)
+    assert first == second
+    assert briefs == {e["key"]: (validated_repo / e["brief"]).read_bytes() for e in second["findings"]}
+
+
+def _ledger_entry(repo: Path, item: dict, status: str = "upheld") -> dict:
+    f = item["finding"]
+    return {"location": f["location"]["file"], "claim_hash": verify.claim_hash(f),
+            "files": verify.hash_files(repo, verify.cited_files(f)),
+            "dependency_versions": {},
+            "check": {"status": status, "by": "skeptic", "reason": "held", "model": "claude-haiku-4-5"},
+            "scan": "2026-01-01T00:00:00+00:00", "head": "0" * 40}
+
+
+def _write_ledger(repo: Path, entries: dict) -> None:
+    c.write_json(repo / ".thunderstruck" / "checks" / "ledger.json",
+                 {"schema": verify.LEDGER_SCHEMA, "entries": entries})
+
+
+def test_an_unchanged_finding_reuses_its_verdict(validated_repo, validated_env):
+    item = verify.load_findings(validated_repo)[0]
+    _write_ledger(validated_repo, {item["finding"]["key"]: _ledger_entry(validated_repo, item)})
+    plan = _prepare(validated_repo, validated_env)
+    assert {e["key"]: e["action"] for e in plan["findings"]}[item["finding"]["key"]] == "reuse"
+
+
+def test_a_changed_cited_file_is_checked_again(validated_repo, validated_env):
+    """Review Focus 4: same key, same text, one cited file changed elsewhere."""
+    item = verify.load_findings(validated_repo)[0]
+    _write_ledger(validated_repo, {item["finding"]["key"]: _ledger_entry(validated_repo, item)})
+    cited = validated_repo / item["finding"]["location"]["file"]
+    cited.write_text(cited.read_text() + "\n// unrelated\n")
+    assert {e["key"]: e["action"] for e in _prepare(validated_repo, validated_env)["findings"]}[
+        item["finding"]["key"]] == "check"
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda e: e.update(claim_hash="0" * 64),
+    lambda e: e["files"].update({"src/client/retry-wrapper.ts": "0" * 64}),
+    lambda e: e.update(dependency_versions={"pypi:kombu": "5.7.0a1"}),
+    lambda e: e["check"].update(status="unchecked"),
+])
+def test_reuse_needs_every_condition(validated_repo, mutate):
+    item = verify.load_findings(validated_repo)[0]
+    entry = _ledger_entry(validated_repo, item)
+    mutate(entry)
+    assert verify.reusable(entry, item["finding"], validated_repo, None) is False
+
+
+def test_frozen_mode_plans_the_celery_keys(tmp_path):
+    frozen = ROOT / "docs" / "calibration" / "correctness" / "celery" / "scan"
+    items = verify.load_frozen(frozen)
+    assert len(items) == 21 and all(i["path"] is None for i in items)
+    assert len({i["finding"]["key"] for i in items}) == 21

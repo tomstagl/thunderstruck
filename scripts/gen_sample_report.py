@@ -255,107 +255,115 @@ def generate() -> str:
     return generate_all()["sample-report.md"]
 
 
-def generate_all() -> dict[str, str]:
-    """Both samples, from one run of the pipeline: file name -> content."""
+def build_validated(dest: Path) -> tuple[Path, dict]:
+    """The fixture at dest, scanned, with the canned findings saved and
+    validated: (the repository, the env the pipeline ran with)."""
     from build_fixture import add_remote, add_service_context, build, isolated_git_env
 
     root = ROOT
     scripts = root / "scripts"
-    with tempfile.TemporaryDirectory() as tmp:
-        repo = build(Path(tmp) / "fixture", base_date=BASE_DATE)
-        add_service_context(repo, python=sys.executable,
-                            stub=root / "tests" / "fixtures" / "fake_catalog.py")
-        # Report links: a reserved placeholder host (RFC 2606), so no sample
-        # link can ever point at a real repository. It also exercises the
-        # self-hosted path, which needs provider from the profile. Appended,
-        # untracked: [context] survives and the pinned SHAs do not move.
-        add_remote(repo, SAMPLE_REMOTE)
-        with (repo / c.PROFILE_FILENAME).open("a", encoding="utf-8") as fh:
-            fh.write('\n[links]\nprovider = "github"\n')
-            # a reasoned suppression, so the sample shows how one is reported
-            fh.write('\n[[suppress]]\ndetector = "S15-ts-no-fallback"\n'
-                     'path = "src/client/artists.ts"\n'
-                     'reason = "artist pages fall back to the CDN snapshot at the edge"\n')
-        # The whole pipeline runs without user git config, as the fixture was built
-        env = isolated_git_env({k: v for k, v in os.environ.items()
-                                if not k.startswith(("FAKE_CATALOG_", "CLAUDE_PLUGIN_"))})
-        env.update(THUNDERSTRUCK_TRUST_CONTEXT="1", XDG_CONFIG_HOME=str(Path(tmp) / "xdg"))
-        _run([sys.executable, str(scripts / "signals.py"), "--repo", str(repo),
-              "--top", "9", "--since", SINCE], repo, env)
-        _run([sys.executable, str(scripts / "context.py"), "--repo", str(repo)], repo, env)
-        _run([sys.executable, str(scripts / "bundle.py"), "--repo", str(repo)], repo, env)
+    repo = build(dest, base_date=BASE_DATE)
+    add_service_context(repo, python=sys.executable,
+                        stub=root / "tests" / "fixtures" / "fake_catalog.py")
+    # Report links: a reserved placeholder host (RFC 2606), so no sample
+    # link can ever point at a real repository. It also exercises the
+    # self-hosted path, which needs provider from the profile. Appended,
+    # untracked: [context] survives and the pinned SHAs do not move.
+    add_remote(repo, SAMPLE_REMOTE)
+    with (repo / c.PROFILE_FILENAME).open("a", encoding="utf-8") as fh:
+        fh.write('\n[links]\nprovider = "github"\n')
+        # a reasoned suppression, so the sample shows how one is reported
+        fh.write('\n[[suppress]]\ndetector = "S15-ts-no-fallback"\n'
+                 'path = "src/client/artists.ts"\n'
+                 'reason = "artist pages fall back to the CDN snapshot at the edge"\n')
+    # The whole pipeline runs without user git config, as the fixture was built
+    env = isolated_git_env({k: v for k, v in os.environ.items()
+                            if not k.startswith(("FAKE_CATALOG_", "CLAUDE_PLUGIN_"))})
+    env.update(THUNDERSTRUCK_TRUST_CONTEXT="1", XDG_CONFIG_HOME=str(dest.parent / "xdg"))
+    _run([sys.executable, str(scripts / "signals.py"), "--repo", str(repo),
+          "--top", "9", "--since", SINCE], repo, env)
+    _run([sys.executable, str(scripts / "context.py"), "--repo", str(repo)], repo, env)
+    _run([sys.executable, str(scripts / "bundle.py"), "--repo", str(repo)], repo, env)
 
-        data = json.loads((repo / ".thunderstruck" / "hotspots.json").read_text(encoding="utf-8"))
-        by_file = {h["file"]: h for h in data["hotspots"]}
+    data = json.loads((repo / ".thunderstruck" / "hotspots.json").read_text(encoding="utf-8"))
+    by_file = {h["file"]: h for h in data["hotspots"]}
 
-        for fragment, findings in CANNED.items():
-            hs = next((h for f, h in by_file.items() if fragment in f), None)
-            if hs is None:
-                continue
-            built = []
-            for spec in findings:
-                line = _line_of(repo, hs["file"], spec["anchor"])
-                evidence = [{"type": "code", "ref": f"{hs['file']}:{line}",
-                             "note": spec["anchor"]}]
-                for rel, anchor, note in spec.get("also_cite", []):
-                    evidence.append({"type": "code",
-                                     "ref": f"{rel}:{_line_of(repo, rel, anchor)}",
-                                     "note": note})
-                sha, note, role = _corroborating_commit(repo, hs, spec, line, env)
-                if sha:
-                    evidence.append({"type": "commit", "ref": sha, "role": role, "note": note})
-                hit = next((h for h in hs["detector_hits"]
-                            if h["pattern_id"] in spec["missing_patterns"]), None)
-                if hit:
-                    evidence.append({"type": "detector", "ref": hit["ref"],
-                                     "note": "lead confirmed against the code"})
-                for ref in spec.get("catalog", []):
-                    evidence.append({"type": "catalog", "ref": ref,
-                                     "note": "listed in the service catalog as "
-                                             "depending on this component"})
-                item = {k: v for k, v in spec.items()
-                        if k not in ("symbol", "anchor", "catalog", "also_cite",
-                                     "preconditions")}
-                # the symbol's span, clamped to the file: a range past the end
-                # of the file is rejected by the validator (#25)
-                total = len((repo / hs["file"]).read_text(encoding="utf-8").splitlines())
-                item["location"] = {"file": hs["file"], "symbol": spec["symbol"],
-                                    "lines": f"{line}-{min(line + 12, total)}"}
-                item["evidence"] = evidence
-                item["preconditions"] = [
-                    {**{k: v for k, v in p.items() if k != "anchor"},
-                     "default_ref": f"{hs['file']}:{_line_of(repo, hs['file'], p['anchor'])}"}
-                    for p in spec.get("preconditions", [])]
-                built.append(item)
-            doc = {"hotspot_id": hs["id"], "file": hs["file"], "findings": built}
+    for fragment, findings in CANNED.items():
+        hs = next((h for f, h in by_file.items() if fragment in f), None)
+        if hs is None:
+            continue
+        built = []
+        for spec in findings:
+            line = _line_of(repo, hs["file"], spec["anchor"])
+            evidence = [{"type": "code", "ref": f"{hs['file']}:{line}",
+                         "note": spec["anchor"]}]
+            for rel, anchor, note in spec.get("also_cite", []):
+                evidence.append({"type": "code",
+                                 "ref": f"{rel}:{_line_of(repo, rel, anchor)}",
+                                 "note": note})
+            sha, note, role = _corroborating_commit(repo, hs, spec, line, env)
+            if sha:
+                evidence.append({"type": "commit", "ref": sha, "role": role, "note": note})
+            hit = next((h for h in hs["detector_hits"]
+                        if h["pattern_id"] in spec["missing_patterns"]), None)
+            if hit:
+                evidence.append({"type": "detector", "ref": hit["ref"],
+                                 "note": "lead confirmed against the code"})
+            for ref in spec.get("catalog", []):
+                evidence.append({"type": "catalog", "ref": ref,
+                                 "note": "listed in the service catalog as "
+                                         "depending on this component"})
+            item = {k: v for k, v in spec.items()
+                    if k not in ("symbol", "anchor", "catalog", "also_cite",
+                                 "preconditions")}
+            # the symbol's span, clamped to the file: a range past the end
+            # of the file is rejected by the validator (#25)
+            total = len((repo / hs["file"]).read_text(encoding="utf-8").splitlines())
+            item["location"] = {"file": hs["file"], "symbol": spec["symbol"],
+                                "lines": f"{line}-{min(line + 12, total)}"}
+            item["evidence"] = evidence
+            item["preconditions"] = [
+                {**{k: v for k, v in p.items() if k != "anchor"},
+                 "default_ref": f"{hs['file']}:{_line_of(repo, hs['file'], p['anchor'])}"}
+                for p in spec.get("preconditions", [])]
+            built.append(item)
+        doc = {"hotspot_id": hs["id"], "file": hs["file"], "findings": built}
+        proc = subprocess.run(
+            [sys.executable, str(scripts / "save_finding.py"),
+             "--repo", str(repo), "--id", hs["id"]],
+            input=json.dumps(doc), capture_output=True, text=True, cwd=str(repo), env=env)
+        if proc.returncode != 0:
+            raise SystemExit(f"save_finding failed: {proc.stderr}")
+
+    for hs in data["hotspots"]:
+        path = repo / ".thunderstruck" / "findings" / f"{hs['id']}.json"
+        if not path.is_file():
             proc = subprocess.run(
                 [sys.executable, str(scripts / "save_finding.py"),
                  "--repo", str(repo), "--id", hs["id"]],
-                input=json.dumps(doc), capture_output=True, text=True, cwd=str(repo), env=env)
+                input=json.dumps({
+                    "hotspot_id": hs["id"], "file": hs["file"], "findings": [],
+                    "notes": "no credible production failure mode found"}),
+                capture_output=True, text=True, cwd=str(repo), env=env)
             if proc.returncode != 0:
                 raise SystemExit(f"save_finding failed: {proc.stderr}")
 
-        for hs in data["hotspots"]:
-            path = repo / ".thunderstruck" / "findings" / f"{hs['id']}.json"
-            if not path.is_file():
-                proc = subprocess.run(
-                    [sys.executable, str(scripts / "save_finding.py"),
-                     "--repo", str(repo), "--id", hs["id"]],
-                    input=json.dumps({
-                        "hotspot_id": hs["id"], "file": hs["file"], "findings": [],
-                        "notes": "no credible production failure mode found"}),
-                    capture_output=True, text=True, cwd=str(repo), env=env)
-                if proc.returncode != 0:
-                    raise SystemExit(f"save_finding failed: {proc.stderr}")
+    validation = subprocess.run(
+        [sys.executable, str(scripts / "validate.py"), "--repo", str(repo)],
+        capture_output=True, text=True, cwd=str(repo), env=env)
+    if validation.returncode != 0:
+        raise SystemExit(
+            "the sample findings no longer satisfy validate.py — fix the "
+            f"canned findings in this script:\n{validation.stdout}")
 
-        validation = subprocess.run(
-            [sys.executable, str(scripts / "validate.py"), "--repo", str(repo)],
-            capture_output=True, text=True, cwd=str(repo), env=env)
-        if validation.returncode != 0:
-            raise SystemExit(
-                "the sample findings no longer satisfy validate.py — fix the "
-                f"canned findings in this script:\n{validation.stdout}")
+    return repo, env
 
+
+def generate_all() -> dict[str, str]:
+    """Both samples, from one run of the pipeline: file name -> content."""
+    scripts = ROOT / "scripts"
+    with tempfile.TemporaryDirectory() as tmp:
+        repo, env = build_validated(Path(tmp) / "fixture")
         _run([sys.executable, str(scripts / "report.py"), "--repo", str(repo)], repo, env)
         # the fixture's last commit: no pinned date can predate what was scanned
         day = _run(["git", "-C", str(repo), "log", "-1", "--format=%cs"], repo, env).stdout.strip()
