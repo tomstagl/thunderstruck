@@ -2372,7 +2372,7 @@ git commit -m "Verification: capture each skeptic's verdict from the SubagentSto
 - Consumes: `Validator.check_verdict_evidence`, `Validator.check_ref` (Task 6); `deps.load_index`; the plan and results (Tasks 7, 9).
 - Produces: `Resolver(repo: Path, deps_index: dict | None)` with `.evidence(ev, where, errors, finding_files) -> bool` and `.ref(ref, where, errors) -> bool`; `settle(finding: dict, entry: dict, result: dict | None, resolver: Resolver, plan: dict, ledger_entry: dict | None) -> dict` (the `check`); `apply(repo: Path) -> dict` (the `run.json` document). Files written: findings files' `check` (not in frozen mode), `checks/verdicts.json`, `checks/ledger.json` (not in frozen mode), `checks/run.json`.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_verification.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_verification.py`:
 
 ```python
 # --- Task 10 ----------------------------------------------------------------
@@ -2517,9 +2517,9 @@ def test_apply_writes_the_ledger_and_run_and_reuse_follows(validated_repo, valid
     assert check["reused_from"] == {"scan": plan["generated_at"], "head": plan["head"]}
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** `... -k "upheld_is_written or unchecked_with_reasons or inconclusive or narrowed or other_finding or stale or ledger"`. Expected: `invalid choice: 'apply'`.
+- [x] **Step 2: Run them to verify they fail.** `... -k "upheld_is_written or unchecked_with_reasons or inconclusive or narrowed or other_finding or stale or ledger"`. Expected: `invalid choice: 'apply'`.
 
-- [ ] **Step 3: Write the implementation.** Add to `scripts/verify.py`:
+- [x] **Step 3: Write the implementation.** Add to `scripts/verify.py`:
 
 ```python
 import validate  # noqa: E402
@@ -2756,9 +2756,9 @@ def apply(repo: Path) -> dict:
 
 Register `apply` in `main`, printing `verification: 12 upheld · 4 narrowed · 2 refuted · 2 inconclusive · 1 unchecked`.
 
-- [ ] **Step 4: Run the tests**, then the full suite. Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests**, then the full suite. Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/verify.py tests/test_verification.py

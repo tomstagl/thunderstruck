@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _common as c  # noqa: E402
 import deps  # noqa: E402
 import finding_shape  # noqa: E402
+import validate  # noqa: E402
 
 PLAN_SCHEMA = "thunderstruck.check-plan/v1"
 VERDICTS_SCHEMA = "thunderstruck.verdicts/v1"
@@ -309,6 +310,239 @@ def _cmd_save(args) -> int:
     return 0
 
 
+class Resolver:
+    """Resolves a verdict's refs with validate.py's rules and deps.py's index."""
+
+    def __init__(self, repo: Path, deps_index: dict | None):
+        hotspots = c.load_json(c.out_dir(repo) / "hotspots.json", {}) or {}
+        self.v = validate.Validator(repo, hotspots, c.load_catalog(), deps_index=deps_index)
+
+    def evidence(self, ev, where: str, errors: list[str], finding_files: list[str]) -> bool:
+        return self.v.check_verdict_evidence(ev, where, errors, finding_files) is not None
+
+    def ref(self, ref, where: str, errors: list[str]) -> bool:
+        return self.v.check_ref(ref, where, errors, allow_dependency=True) is not None
+
+
+def _norm(text) -> str:
+    return " ".join(str(text or "").split()).casefold()
+
+
+def _quotes(finding: dict, field: str, claim) -> bool:
+    if not isinstance(claim, str) or not claim.strip():
+        return False
+    if field == "preconditions":
+        source = json.dumps(finding.get("preconditions") or [], ensure_ascii=False) + " " + c.MISSING_GATE_PHRASE
+    else:
+        source = finding.get(field) or ""
+    return _norm(claim) in _norm(source)
+
+
+def _ranges(evidence) -> list[tuple[str, int, int]]:
+    out = []
+    for ev in evidence or []:
+        m = CODE_REF.match(str(ev.get("ref") or "").strip()) if isinstance(ev, dict) and ev.get("type") == "code" else None
+        if m and not deps.DEP_REF.match(str(ev["ref"]).strip()):
+            out.append((c.ref_path(m["path"]), int(m["start"]), int(m["end"] or m["start"])))
+    return out
+
+
+def _overlaps(a: tuple[str, int, int], ranges: list[tuple[str, int, int]]) -> bool:
+    return any(a[0] == b[0] and a[1] <= b[2] and b[1] <= a[2] for b in ranges)
+
+
+def _contract_problem(result: dict, entry: dict) -> str | None:
+    unknown = sorted(set(result) - set(VERDICT_KEYS) - {"brief_hash", "scan"})
+    if unknown:
+        return f"unknown key(s) {unknown}"
+    if result.get("key") != entry["key"]:
+        return f"key {result.get('key')!r} is not {entry['key']!r}"
+    if result.get("verdict") not in c.VERDICTS:
+        return f"verdict {result.get('verdict')!r} is not one of {list(c.VERDICTS)}"
+    for name in ("refuted_claims", "evidence", "dependencies_read"):
+        if result.get(name) is not None and not isinstance(result[name], list):
+            return f"{name} is not a list"
+    return None
+
+
+UNCHECKED_NO_RESULT = "No verdict reached disk: the skeptic failed, stopped or its result was not saved."
+
+
+def settle(finding: dict, entry: dict, result: dict | None, resolver: Resolver, plan: dict,
+           ledger_entry: dict | None) -> dict:
+    """The one place a check status is decided (spec §9). Every path, the
+    ledger-reuse path included, leaves through here: #57 adds its rule after
+    _decide (spec §16)."""
+    return _decide(finding, entry, result, resolver, plan, ledger_entry)
+
+
+def _decide(finding: dict, entry: dict, result: dict | None, resolver: Resolver, plan: dict,
+            ledger_entry: dict | None) -> dict:
+    """Spec §9's table, in order; the first rule that applies decides."""
+    if entry["action"] == "reuse":
+        check = dict(ledger_entry["check"])
+        check["reused_from"] = {"scan": ledger_entry["scan"], "head": ledger_entry["head"]}
+        return check
+    if entry["action"] == "skip":
+        return {"status": "unchecked", "by": None, "reason": entry["reason"]}
+    if not isinstance(result, dict) or result.get("scan") != plan["generated_at"]:
+        return {"status": "unchecked", "by": "skeptic", "reason": UNCHECKED_NO_RESULT}
+    if result.get("failed"):
+        return {"status": "unchecked", "by": "skeptic",
+                "reason": f"The skeptic returned nothing usable: {result.get('reason')}"}
+    if "unparsed" in result or (problem := _contract_problem(result, entry)):
+        why = result.get("unparsed") or problem
+        return {"status": "unchecked", "by": "skeptic",
+                "reason": f"The skeptic's output did not follow the verdict contract: {why}"}
+    if result.get("brief_hash") != entry["brief_hash"]:
+        return {"status": "unchecked", "by": "skeptic",
+                "reason": "The only verdict on disk was for an earlier version of this finding."}
+
+    verdict = result["verdict"]
+    ignored: list[str] = []
+    evidence = [ev for ev in result.get("evidence") or []]
+    finding_files = cited_files(finding, evidence)
+    resolved: dict[int, dict] = {}
+    first_error: str | None = None
+    for i, ev in enumerate(evidence):
+        errors: list[str] = []
+        if resolver.evidence(ev, f"evidence[{i}]", errors, finding_files):
+            resolved[i] = ev
+        else:
+            first_error = first_error or errors[0]
+            ignored.append(errors[0])
+    claims: list[dict] = []
+    for j, rc in enumerate(result.get("refuted_claims") or []):
+        where = f"refuted_claims[{j}]"
+        if not isinstance(rc, dict) or set(rc) - set(REFUTED_CLAIM_KEYS):
+            ignored.append(f"{where} is not an object with the keys {list(REFUTED_CLAIM_KEYS)}")
+            continue
+        if rc.get("field") not in c.REFUTABLE_FIELDS:
+            ignored.append(f"{where}.field {rc.get('field')!r} is not a finding field")
+            continue
+        if not _quotes(finding, rc["field"], rc.get("claim")):
+            ignored.append(f"{where} does not quote the finding's {rc['field']}")
+            continue
+        idx = [k for k in rc.get("evidence") or [] if isinstance(k, int) and k in resolved]
+        if not idx:
+            ignored.append(f"{where} has no evidence that resolved")
+            continue
+        kept = {"field": rc["field"], "claim": rc["claim"], "fact": str(rc.get("fact") or ""), "evidence": idx}
+        if rc["field"] == "preconditions" and isinstance(rc.get("setting"), dict):
+            s = rc["setting"]
+            errors: list[str] = []
+            if set(s) <= set(SETTING_KEYS) and all(isinstance(s.get(k), str) and s[k].strip()
+                                                   for k in SETTING_KEYS) \
+                    and resolver.ref(s["default_ref"], f"{where}.setting.default_ref", errors):
+                kept["setting"] = {k: s[k] for k in SETTING_KEYS}
+            else:
+                ignored.append(errors[0] if errors else f"{where}.setting needs {list(SETTING_KEYS)}")
+        claims.append(kept)
+
+    status, reason = verdict, str(result.get("reason") or "")
+    if verdict in ("refuted", "narrowed") and not claims:
+        status = "inconclusive"
+        reason = (f"The verdict was {verdict}, but none of its evidence resolved: "
+                  f"{first_error or 'no refuted claim survived its checks'}")
+    elif verdict in ("refuted", "narrowed") and finding.get("missing_patterns") == ["OTHER"]:
+        own = _ranges(finding.get("evidence"))
+        used = {k for rc in claims for k in rc["evidence"]}
+        if all(resolved[k].get("type") == "code" and any(_overlaps(r, own) for r in _ranges([resolved[k]]))
+               for k in used):
+            status, reason = "inconclusive", ("The verdict rests only on the text this finding "
+                                              "reports as steering the audit.")
+    elif verdict == "narrowed" and not (isinstance(result.get("holds"), str) and result["holds"].strip()):
+        status, reason = "inconclusive", "Narrowed, but the skeptic did not say what holds."
+    if ignored and status == verdict:
+        reason = (reason + " Ignored: " + "; ".join(ignored)).strip()
+
+    index = resolver.v.deps_index
+    available = {p["id"]: p["version"] for p in (index or {}).get("packages", []) if p.get("status") == "available"}
+    read: dict[str, str] = {}
+    for item in result.get("dependencies_read") or []:
+        pid, _, ver = str(item).rpartition("@")
+        if available.get(pid) == ver:
+            read[pid] = ver
+    for ev in resolved.values():
+        if ev.get("type") == "dependency":
+            m = deps.DEP_REF.match(ev["ref"].strip())
+            read[f"{m['eco']}:{m['name']}"] = m["version"]
+    target = result.get("duplicate_of")
+    planned = {e["key"] for e in plan["findings"]}
+    duplicate = target if isinstance(target, str) and target in planned and target != entry["key"] else None
+    if target is not None and duplicate is None:
+        reason += f" Ignored duplicate_of {str(target)!r}: not another finding in this scan."
+    renumber = {old: new for new, old in enumerate(sorted(resolved))}
+    for rc in claims:
+        rc["evidence"] = [renumber[k] for k in rc["evidence"]]
+    return {"status": status, "by": "skeptic", "reason": reason,
+            "holds": result.get("holds") if status in ("narrowed", "upheld") else None,
+            "refuted_claims": claims if status in ("narrowed", "refuted") else [],
+            "evidence": [resolved[i] for i in sorted(resolved)],
+            "model": c.MODEL_ALIASES.get(plan["model"], plan["model"]),
+            "dependency_versions": dict(sorted(read.items())),
+            "reused_from": None, "duplicate_of": duplicate}
+
+
+def apply(repo: Path) -> dict:
+    plan = _plan(repo)
+    frozen = Path(plan["frozen"]) if plan.get("frozen") else None
+    items = load_frozen(frozen) if frozen else load_findings(repo)
+    by_key = {i["finding"]["key"]: i for i in items}
+    resolver = Resolver(repo, deps.load_index(repo))
+    ledger_path = checks_dir(repo) / "ledger.json"
+    try:
+        ledger = (json.loads(ledger_path.read_text("utf-8")) if ledger_path.is_file() else {}).get("entries", {})
+        ledger_warning = None
+    except (OSError, ValueError, AttributeError):
+        ledger, ledger_warning = {}, "checks/ledger.json could not be read; every finding was checked."
+    checks: dict[str, dict] = {}
+    for entry in plan["findings"]:
+        item = by_key.get(entry["key"])
+        if item is None:
+            continue
+        result = c.load_json(checks_dir(repo) / "results" / f"{entry['key']}.json", None)
+        checks[entry["key"]] = settle(item["finding"], entry, result, resolver, plan, ledger.get(entry["key"]))
+    if not frozen:
+        for path in sorted({i["path"] for i in items}):
+            doc = json.loads(path.read_text(encoding="utf-8"))
+            for f in doc.get("findings") or []:
+                if isinstance(f, dict) and f.get("key") in checks:
+                    f["check"] = checks[f["key"]]
+            c.write_json(path, doc)
+        for key, check in checks.items():
+            if check["by"] == "skeptic" and check["status"] in c.VERDICTS and not check.get("reused_from"):
+                f = by_key[key]["finding"]
+                ledger[key] = {"location": (f.get("location") or {}).get("file"),
+                               "claim_hash": claim_hash(f),
+                               "files": hash_files(repo, cited_files(f, check["evidence"])),
+                               "dependency_versions": check["dependency_versions"],
+                               "check": {k: v for k, v in check.items() if k != "reused_from"},
+                               "scan": plan["generated_at"], "head": plan["head"]}
+        ledger = {k: e for k, e in ledger.items()
+                  if isinstance(e.get("location"), str) and (repo / e["location"]).is_file()}
+        c.write_json(ledger_path, {"schema": LEDGER_SCHEMA, "entries": dict(sorted(ledger.items()))})
+    c.write_json(checks_dir(repo) / "verdicts.json",
+                 {"schema": VERDICTS_SCHEMA, "generated_at": plan["generated_at"],
+                  "checks": dict(sorted(checks.items()))})
+    statuses = [ch["status"] for ch in checks.values()]
+    run = {"schema": RUN_SCHEMA, "generated_at": plan["generated_at"], "head": plan["head"],
+           "model": c.MODEL_ALIASES.get(plan["model"], plan["model"]),
+           "checked": sum(1 for e in plan["findings"] if e["action"] == "check"),
+           "reused": sum(1 for e in plan["findings"] if e["action"] == "reuse"),
+           "counts": {s: statuses.count(s) for s in c.CHECK_STATUSES},
+           "warnings": [ledger_warning] if ledger_warning else []}
+    c.write_json(checks_dir(repo) / "run.json", run)
+    return run
+
+
+def _cmd_apply(args) -> int:
+    run = apply(c.find_repo_root(args.repo))
+    print("verification: " + " · ".join(f"{run['counts'][s]} {s}" for s in
+                                        ("upheld", "narrowed", "refuted", "inconclusive", "unchecked")))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="verify.py", description="verification of findings (#37)")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -331,6 +565,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--fallback", action="store_true")
     p.add_argument("--usage", default=None)
     p.set_defaults(fn=_cmd_save)
+    p = sub.add_parser("apply")
+    p.add_argument("--repo", default=None)
+    p.set_defaults(fn=_cmd_apply)
     args = ap.parse_args(argv)
     try:
         return args.fn(args)

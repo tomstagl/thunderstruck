@@ -242,3 +242,145 @@ def test_save_refuses_an_unplanned_key(validated_repo, validated_env, tmp_path):
     result.write_text(json.dumps({"key": "ffffffffffff", "verdict": "upheld"}))
     proc = _verify(validated_repo, validated_env, "save", "--key", "ffffffffffff", "--from", str(result))
     assert proc.returncode == 2 and "is not a planned check" in proc.stderr
+
+
+# --- Task 10 ----------------------------------------------------------------
+def _entry(plan: dict, fragment: str) -> dict:
+    return next(e for e in plan["findings"] if fragment in e["file"])
+
+
+def _finding(repo: Path, key: str) -> dict:
+    return next(i["finding"] for i in verify.load_findings(repo) if i["finding"]["key"] == key)
+
+
+def _line(repo: Path, rel: str, needle: str) -> int:
+    return next(n for n, l in enumerate((repo / rel).read_text().splitlines(), 1) if needle in l)
+
+
+def _save(repo: Path, env: dict, tmp_path: Path, verdict: dict) -> None:
+    p = tmp_path / f"{verdict['key']}.json"
+    p.write_text(json.dumps(verdict))
+    assert _verify(repo, env, "save", "--key", verdict["key"], "--from", str(p)).returncode == 0
+
+
+def _apply(repo: Path, env: dict) -> dict:
+    proc = _verify(repo, env, "apply")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    return c.load_json(repo / ".thunderstruck" / "checks" / "verdicts.json")["checks"]
+
+
+def _v(key: str, verdict: str, **over) -> dict:
+    v = {"key": key, "verdict": verdict, "reason": "r", "holds": None, "refuted_claims": [],
+         "evidence": [], "dependencies_read": [], "duplicate_of": None}
+    v.update(over)
+    return v
+
+
+def test_upheld_is_written_into_the_findings_file(validated_repo, validated_env, tmp_path):
+    plan = _prepare(validated_repo, validated_env)
+    e = _entry(plan, "releases.ts")
+    _save(validated_repo, validated_env, tmp_path, _v(e["key"], "upheld", reason="All three layers are real."))
+    checks = _apply(validated_repo, validated_env)
+    assert checks[e["key"]]["status"] == "upheld" and checks[e["key"]]["by"] == "skeptic"
+    assert checks[e["key"]]["model"] == c.MODEL_ALIASES[plan["model"]]
+    assert _finding(validated_repo, e["key"])["check"]["status"] == "upheld"
+
+
+def test_no_result_failed_and_unparsed_are_unchecked_with_reasons(validated_repo, validated_env, tmp_path):
+    plan = _prepare(validated_repo, validated_env)
+    keys = [e["key"] for e in plan["findings"]]
+    _verify(validated_repo, validated_env, "save", "--key", keys[1], "--failed", "--reason", "timed out")
+    bad = tmp_path / "bad.json"
+    bad.write_text("I could not decide.")
+    _verify(validated_repo, validated_env, "save", "--key", keys[2], "--from", str(bad))
+    _save(validated_repo, validated_env, tmp_path, _v(keys[3], "probably"))
+    checks = _apply(validated_repo, validated_env)
+    assert checks[keys[0]] == {"status": "unchecked", "by": "skeptic", "reason":
+                               "No verdict reached disk: the skeptic failed, stopped or its result was not saved."}
+    assert checks[keys[1]]["reason"] == "The skeptic returned nothing usable: timed out"
+    assert checks[keys[2]]["reason"].startswith("The skeptic's output did not follow the verdict contract")
+    assert "verdict 'probably'" in checks[keys[3]]["reason"]
+
+
+def test_refuted_with_unresolved_evidence_is_inconclusive(validated_repo, validated_env, tmp_path):
+    plan = _prepare(validated_repo, validated_env)
+    e = _entry(plan, "api.ts")
+    _save(validated_repo, validated_env, tmp_path, _v(e["key"], "refuted", refuted_claims=[
+        {"field": "failure_mode", "claim": "a 429 is retried", "fact": "f", "evidence": [0]}],
+        evidence=[{"type": "code", "ref": "src/client/api.ts:9999", "note": "n"}]))
+    check = _apply(validated_repo, validated_env)[e["key"]]
+    assert check["status"] == "inconclusive"
+    assert check["reason"].startswith("The verdict was refuted, but none of its evidence resolved:")
+
+
+def test_narrowed_with_a_quoted_claim_and_resolving_evidence(validated_repo, validated_env, tmp_path):
+    plan = _prepare(validated_repo, validated_env)
+    e = _entry(plan, "api.ts")
+    wait = _line(validated_repo, "src/client/api.ts", "setTimeout(resolve, 5000)")
+    _save(validated_repo, validated_env, tmp_path, _v(
+        e["key"], "narrowed", holds="A 429 is retried after a fixed 5 s, ignoring Retry-After.",
+        refuted_claims=[
+            {"field": "amplifier", "claim": "immediately schedules another", "fact": "It waits 5 s first.",
+             "evidence": [0]},
+            {"field": "amplifier", "claim": "a paraphrase that is not in the text", "fact": "x", "evidence": [0]}],
+        evidence=[{"type": "code", "ref": f"src/client/api.ts:{wait}", "note": "the fixed wait"}]))
+    check = _apply(validated_repo, validated_env)[e["key"]]
+    assert check["status"] == "narrowed"
+    assert [rc["claim"] for rc in check["refuted_claims"]] == ["immediately schedules another"]
+    assert "Ignored: refuted_claims[1]" in check["reason"]
+
+
+def test_narrowed_without_holds_is_inconclusive(validated_repo, validated_env, tmp_path):
+    plan = _prepare(validated_repo, validated_env)
+    e = _entry(plan, "api.ts")
+    wait = _line(validated_repo, "src/client/api.ts", "setTimeout(resolve, 5000)")
+    _save(validated_repo, validated_env, tmp_path, _v(e["key"], "narrowed", refuted_claims=[
+        {"field": "amplifier", "claim": "immediately schedules another", "fact": "f", "evidence": [0]}],
+        evidence=[{"type": "code", "ref": f"src/client/api.ts:{wait}", "note": "n"}]))
+    assert _apply(validated_repo, validated_env)[e["key"]]["reason"] == \
+        "Narrowed, but the skeptic did not say what holds."
+
+
+def test_an_other_finding_is_not_refuted_on_its_own_text(validated_repo, validated_env, tmp_path):
+    """AC-11: the only evidence is the steering comment the finding cites."""
+    plan = _prepare(validated_repo, validated_env)
+    e = _entry(plan, "format.ts")
+    f = _finding(validated_repo, e["key"])
+    code_ref = next(ev["ref"] for ev in f["evidence"] if ev["type"] == "code")
+    _save(validated_repo, validated_env, tmp_path, _v(e["key"], "refuted", refuted_claims=[
+        {"field": "failure_mode", "claim": "instructs automated reviewers", "fact": "The file says it was reviewed.",
+         "evidence": [0]}], evidence=[{"type": "code", "ref": code_ref, "note": "already audited"}]))
+    check = _apply(validated_repo, validated_env)[e["key"]]
+    assert check["status"] == "inconclusive"
+    assert check["reason"] == "The verdict rests only on the text this finding reports as steering the audit."
+
+
+def test_a_stale_result_is_not_applied(validated_repo, validated_env, tmp_path):
+    plan = _prepare(validated_repo, validated_env)
+    e = plan["findings"][0]
+    _save(validated_repo, validated_env, tmp_path, _v(e["key"], "upheld"))
+    path = validated_repo / ".thunderstruck" / "checks" / "results" / f"{e['key']}.json"
+    doc = json.loads(path.read_text())
+    doc["brief_hash"] = "0" * 64
+    path.write_text(json.dumps(doc))
+    assert _apply(validated_repo, validated_env)[e["key"]]["reason"] == \
+        "The only verdict on disk was for an earlier version of this finding."
+
+
+def test_apply_writes_the_ledger_and_run_and_reuse_follows(validated_repo, validated_env, tmp_path):
+    plan = _prepare(validated_repo, validated_env)
+    e = _entry(plan, "releases.ts")
+    _save(validated_repo, validated_env, tmp_path, _v(e["key"], "refuted", refuted_claims=[
+        {"field": "failure_mode", "claim": "60 requests per caller", "fact": "f", "evidence": [0]}],
+        evidence=[{"type": "code", "ref": "src/client/retry-wrapper.ts:1", "note": "n"}]))
+    _apply(validated_repo, validated_env)
+    ledger = c.load_json(validated_repo / ".thunderstruck" / "checks" / "ledger.json")["entries"]
+    assert set(ledger) == {e["key"]}  # unchecked findings are never remembered
+    assert "src/client/retry-wrapper.ts" in ledger[e["key"]]["files"]
+    run = c.load_json(validated_repo / ".thunderstruck" / "checks" / "run.json")
+    assert run["generated_at"] == plan["generated_at"] and run["counts"]["refuted"] == 1
+    again = _prepare(validated_repo, validated_env)
+    assert _entry(again, "releases.ts")["action"] == "reuse"
+    check = _apply(validated_repo, validated_env)[e["key"]]
+    assert check["status"] == "refuted"
+    assert check["reused_from"] == {"scan": plan["generated_at"], "head": plan["head"]}
