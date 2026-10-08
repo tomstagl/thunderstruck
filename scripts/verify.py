@@ -250,6 +250,65 @@ def _cmd_prepare(args) -> int:
     return 0
 
 
+def _plan(repo: Path) -> dict:
+    plan = c.load_json(checks_dir(repo) / "plan.json", None)
+    hotspots = c.load_json(c.out_dir(repo) / "hotspots.json", {}) or {}
+    if not isinstance(plan, dict) or plan.get("generated_at") != hotspots.get("generated_at"):
+        raise c.ThunderstruckError("no plan for this scan — run verify.py prepare first.")
+    return plan
+
+
+def result_state(repo: Path, plan: dict, key: str) -> str:
+    doc = c.load_json(checks_dir(repo) / "results" / f"{key}.json", None)
+    entry = finding_shape.find_plan_entry(plan, key)
+    if entry is None or not isinstance(doc, dict) or doc.get("scan") != plan["generated_at"]:
+        return "missing"
+    return "failed" if doc.get("failed") else "saved"
+
+
+def _cmd_check(args) -> int:
+    repo = c.find_repo_root(args.repo)
+    plan = _plan(repo)
+    for key in args.keys:
+        print(f"{key} {result_state(repo, plan, key)}")
+    return 0
+
+
+def _cmd_save(args) -> int:
+    repo = c.find_repo_root(args.repo)
+    plan = _plan(repo)
+    entry = finding_shape.find_plan_entry(plan, args.key)
+    if entry is None:
+        raise c.ThunderstruckError(f"{args.key} is not a planned check in checks/plan.json.")
+    out = c.out_dir(repo)
+    if args.failed:
+        doc = {"key": entry["key"], "failed": True, "reason": args.reason or "no reason given"}
+    else:
+        try:
+            doc = finding_shape.parse_result(Path(args.src).read_text(encoding="utf-8"))
+        except ValueError as exc:
+            doc = {"key": entry["key"], "unparsed": str(exc)}
+    finding_shape.write_json_atomic(out / "checks" / "results" / f"{entry['key']}.json",
+                                    finding_shape.stamp_verdict(doc, plan, entry))
+    extra: dict = {"fallback": True} if args.fallback else {}
+    if args.usage:
+        try:
+            raw = json.loads(args.usage)
+        except json.JSONDecodeError as exc:
+            raise c.ThunderstruckError(f"--usage is not JSON: {exc}")
+        keep = ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
+        extra["relayed_usage"] = {k: raw[k] for k in keep if isinstance(raw.get(k), int)}
+        if isinstance(raw.get("model"), str):
+            extra["relayed_usage"]["model"] = raw["model"]
+    finding_shape.record_skeptic(out, plan, entry, {"kind": "fallback" if args.fallback else "first"})
+    if extra:
+        path = out / "checks" / "agents" / f"{entry['key']}.json"
+        rec = c.load_json(path, {}) or {}
+        c.write_json(path, {**rec, **extra})
+    print(f"{entry['key']}: {'failed' if args.failed else 'saved'}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="verify.py", description="verification of findings (#37)")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -258,6 +317,20 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--model", default="sonnet", choices=sorted(c.MODEL_ALIASES))
     p.add_argument("--frozen", default=None)
     p.set_defaults(fn=_cmd_prepare)
+    p = sub.add_parser("check")
+    p.add_argument("--repo", default=None)
+    p.add_argument("keys", nargs="+")
+    p.set_defaults(fn=_cmd_check)
+    p = sub.add_parser("save")
+    p.add_argument("--repo", default=None)
+    p.add_argument("--key", required=True)
+    source = p.add_mutually_exclusive_group(required=True)
+    source.add_argument("--from", dest="src")
+    source.add_argument("--failed", action="store_true")
+    p.add_argument("--reason", default=None)
+    p.add_argument("--fallback", action="store_true")
+    p.add_argument("--usage", default=None)
+    p.set_defaults(fn=_cmd_save)
     args = ap.parse_args(argv)
     try:
         return args.fn(args)

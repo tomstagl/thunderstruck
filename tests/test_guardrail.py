@@ -207,7 +207,10 @@ def test_hooks_json_declares_each_event_once():
     assert set(hooks) == {"PreToolUse", "SubagentStop"}
     assert all(len(entries) == 1 for entries in hooks.values())
     stop = hooks["SubagentStop"][0]
-    assert stop["matcher"] == "thunderstruck-investigator"
+    investigator = "thunderstruck-investigator"
+    # #37: the skeptic is a second alternative of the investigator's form
+    skeptic = investigator.replace("thunderstruck-investigator", "thunderstruck-skeptic")
+    assert stop["matcher"] == f"{investigator}|{skeptic}"
     command = stop["hooks"][0]["command"]
     assert "${CLAUDE_PLUGIN_ROOT}/scripts/capture_finding.py" in command
     assert command.endswith("|| exit 0"), "the hook command must fail open"

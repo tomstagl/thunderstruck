@@ -214,3 +214,31 @@ def test_frozen_mode_plans_the_celery_keys(tmp_path):
     items = verify.load_frozen(frozen)
     assert len(items) == 21 and all(i["path"] is None for i in items)
     assert len({i["finding"]["key"] for i in items}) == 21
+
+
+# --- Task 9 -----------------------------------------------------------------
+def _verify(repo: Path, env: dict, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run([sys.executable, str(SCRIPTS / "verify.py"), *args, "--repo", str(repo)],
+                          capture_output=True, text=True, cwd=str(repo), env=env)
+
+
+def test_check_and_save(validated_repo, validated_env, tmp_path):
+    plan = _prepare(validated_repo, validated_env)
+    a, b = plan["findings"][0]["key"], plan["findings"][1]["key"]
+    assert _verify(validated_repo, validated_env, "check", a, b).stdout.splitlines() == [f"{a} missing", f"{b} missing"]
+    result = tmp_path / "r.json"
+    result.write_text("```json\n" + json.dumps({"key": a, "verdict": "upheld"}) + "\n```")
+    assert _verify(validated_repo, validated_env, "save", "--key", a, "--from", str(result), "--fallback",
+                   "--usage", '{"input_tokens": 5, "output_tokens": 2, "model": "haiku"}').returncode == 0
+    assert _verify(validated_repo, validated_env, "save", "--key", b, "--failed", "--reason", "timed out").returncode == 0
+    assert _verify(validated_repo, validated_env, "check", a, b).stdout.splitlines() == [f"{a} saved", f"{b} failed"]
+    rec = c.load_json(validated_repo / ".thunderstruck" / "checks" / "agents" / f"{a}.json")
+    assert rec["fallback"] is True and rec["relayed_usage"] == {"input_tokens": 5, "output_tokens": 2, "model": "haiku"}
+
+
+def test_save_refuses_an_unplanned_key(validated_repo, validated_env, tmp_path):
+    _prepare(validated_repo, validated_env)
+    result = tmp_path / "r.json"
+    result.write_text(json.dumps({"key": "ffffffffffff", "verdict": "upheld"}))
+    proc = _verify(validated_repo, validated_env, "save", "--key", "ffffffffffff", "--from", str(result))
+    assert proc.returncode == 2 and "is not a planned check" in proc.stderr

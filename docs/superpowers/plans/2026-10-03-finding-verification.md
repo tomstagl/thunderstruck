@@ -2124,7 +2124,7 @@ git commit -m "Verification: the skeptic agent and its verdict contract (#37)"
 - Consumes: `finding_shape.parse_result`, `write_json_atomic` (#5); `checks/plan.json` (Task 7).
 - Produces, in `finding_shape`: `find_plan_entry(plan: dict, key) -> dict | None` (an entry with `action == "check"` whose `key` equals `key` as an exact string); `stamp_verdict(doc: dict, plan: dict, entry: dict) -> dict` (adds `brief_hash`, `scan`); `record_skeptic(out: Path, plan: dict, entry: dict, agent: dict) -> None` (writes `checks/agents/<key>.json` `{"key", "scan", "agents": [...]}`, appending for the same `scan`, resetting otherwise). In `verify`: `verify.py check K…` prints `K saved|missing|failed`; `verify.py save --key K (--from FILE | --failed --reason TEXT) [--fallback] [--usage JSON]`.
 
-- [ ] **Step 1: Write the failing tests.** Payload fixtures follow #5's investigator payloads with `agent_type: "plugin:thunderstruck:thunderstruck-skeptic"`; the test rewrites `cwd` and fills `last_assistant_message`'s `key` from the plan. In `tests/test_capture_finding.py` add:
+- [x] **Step 1: Write the failing tests.** Payload fixtures follow #5's investigator payloads with `agent_type: "plugin:thunderstruck:thunderstruck-skeptic"`; the test rewrites `cwd` and fills `last_assistant_message`'s `key` from the plan. In `tests/test_capture_finding.py` add:
 
 ```python
 # --- #37 ---------------------------------------------------------------------
@@ -2217,9 +2217,9 @@ def test_save_refuses_an_unplanned_key(validated_repo, validated_env, tmp_path):
     assert proc.returncode == 2 and "is not a planned check" in proc.stderr
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** `... pytest tests/test_capture_finding.py tests/test_verification.py -q -k "skeptic or check_and_save or unplanned"`. Expected: failures (nothing written; `invalid choice: 'check'`).
+- [x] **Step 2: Run them to verify they fail.** `... pytest tests/test_capture_finding.py tests/test_verification.py -q -k "skeptic or check_and_save or unplanned"`. Expected: failures (nothing written; `invalid choice: 'check'`).
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 In `scripts/finding_shape.py` (stdlib only):
 
@@ -2351,9 +2351,9 @@ def _cmd_save(args) -> int:
 
 Register them in `main` (`check` takes `keys` as `nargs="+"`; `save` takes `--key` required, `--from` as `src`, `--failed`, `--reason`, `--fallback`, `--usage`, with `--from` and `--failed` mutually exclusive and one required). (`verify.py` already imports `finding_shape`, Task 7.) A result saved from unparsable text is kept as `{"unparsed": …}` so `apply` can say why (AC-6) rather than the file being missing.
 
-- [ ] **Step 4: Run the tests**, the full suite and `claude plugin validate . --strict`. Expected: PASS.
+- [x] **Step 4: Run the tests**, the full suite and `claude plugin validate . --strict`. Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/finding_shape.py scripts/capture_finding.py hooks/hooks.json scripts/verify.py tests/

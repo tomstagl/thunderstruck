@@ -19,6 +19,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 HOOK = ROOT / "scripts" / "capture_finding.py"
+SCRIPTS = ROOT / "scripts"
 PAYLOADS = ROOT / "tests" / "fixtures" / "hook_payloads"
 
 
@@ -157,3 +158,62 @@ def test_a_new_session_starts_a_fresh_record(scanned_copy):
     rec = json.loads((out / "agents" / "H01.json").read_text())
     assert [(a["agent_id"], a["kind"]) for a in rec["agents"]] == [("b-1", "first")]
     assert not (out / "agents" / "H01.attempt1.json").exists()
+
+
+# --- #37 ---------------------------------------------------------------------
+def _skeptic_payload(repo: Path, message: str, agent_id: str = "s1") -> str:
+    return json.dumps({"session_id": "sess", "transcript_path": "/x/sess.jsonl", "cwd": str(repo),
+                       "hook_event_name": "SubagentStop", "agent_id": agent_id,
+                       "agent_type": "plugin:thunderstruck:thunderstruck-skeptic",
+                       "stop_reason": "completed", "last_assistant_message": message})
+
+
+def _planned(validated_repo, validated_env) -> tuple[dict, dict]:
+    subprocess.run([sys.executable, str(SCRIPTS / "verify.py"), "prepare", "--repo", str(validated_repo)],
+                   check=True, capture_output=True, cwd=str(validated_repo), env=validated_env)
+    plan = json.loads((validated_repo / ".thunderstruck" / "checks" / "plan.json").read_text())
+    return plan, plan["findings"][0]
+
+
+def test_a_skeptic_verdict_is_captured(validated_repo, validated_env):
+    plan, entry = _planned(validated_repo, validated_env)
+    verdict = {"key": entry["key"], "verdict": "upheld", "reason": "held", "holds": None,
+               "refuted_claims": [], "evidence": [], "dependencies_read": [], "duplicate_of": None}
+    _run(_skeptic_payload(validated_repo, json.dumps(verdict)))
+    saved = json.loads((validated_repo / ".thunderstruck" / "checks" / "results" / f"{entry['key']}.json").read_text())
+    assert saved["verdict"] == "upheld" and saved["brief_hash"] == entry["brief_hash"]
+    assert saved["scan"] == plan["generated_at"]
+    agents = json.loads((validated_repo / ".thunderstruck" / "checks" / "agents" / f"{entry['key']}.json").read_text())
+    assert [a["kind"] for a in agents["agents"]] == ["first"]
+
+
+@pytest.mark.parametrize("message", [
+    lambda k: json.dumps({"key": "ffffffffffff", "verdict": "upheld"}),   # not planned
+    lambda k: json.dumps({"key": "../../x", "verdict": "upheld"}),        # path-shaped
+    lambda k: "Here is my verdict:\n" + json.dumps({"key": k, "verdict": "upheld"}),
+    lambda k: json.dumps([k]),
+])
+def test_a_skeptic_message_without_a_planned_key_writes_nothing(validated_repo, validated_env, message):
+    """Review Focus 2."""
+    _, entry = _planned(validated_repo, validated_env)
+    before = sorted(p for p in (validated_repo / ".thunderstruck").rglob("*"))
+    _run(_skeptic_payload(validated_repo, message(entry["key"])))
+    assert sorted(p for p in (validated_repo / ".thunderstruck").rglob("*")) == before
+
+
+def test_a_second_delivery_is_a_respawn_and_wins(validated_repo, validated_env):
+    _, entry = _planned(validated_repo, validated_env)
+    for agent_id, verdict in (("s1", "upheld"), ("s2", "refuted")):
+        _run(_skeptic_payload(validated_repo, json.dumps({"key": entry["key"], "verdict": verdict}), agent_id))
+    out = validated_repo / ".thunderstruck" / "checks"
+    assert json.loads((out / "results" / f"{entry['key']}.json").read_text())["verdict"] == "refuted"
+    assert [a["kind"] for a in json.loads((out / "agents" / f"{entry['key']}.json").read_text())["agents"]] == \
+        ["first", "respawn"]
+
+
+def test_the_hook_still_ignores_other_agents_and_stays_fast(validated_repo, validated_env):
+    _planned(validated_repo, validated_env)
+    payload = json.loads(_skeptic_payload(validated_repo, "{}"))
+    payload["agent_type"] = "Explore"
+    _run(json.dumps(payload))
+    assert not (validated_repo / ".thunderstruck" / "checks" / "results").exists()

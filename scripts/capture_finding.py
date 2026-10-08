@@ -2,7 +2,7 @@
 # /// script
 # requires-python = ">=3.11"
 # ///
-"""SubagentStop hook: save a thunderstruck investigator's result to disk.
+"""SubagentStop hook: save a thunderstruck investigator's or skeptic's result to disk.
 
 The orchestrator used to re-type every result into save_finding.py, and
 results that never reached it were paid for twice (#5). This hook takes the
@@ -17,7 +17,8 @@ Contract, the guardrail's:
 4. **It writes only where the index says.** The message is model output that
    read the scanned repository. The destination comes from
    bundles/index.json, never from the payload, and only under
-   .thunderstruck/findings/ and .thunderstruck/agents/.
+   .thunderstruck/findings/ and .thunderstruck/agents/. A skeptic's verdict
+   goes under .thunderstruck/checks/, by a key from checks/plan.json (#37).
 """
 
 from __future__ import annotations
@@ -57,13 +58,39 @@ def _listed_invalid(out: Path, hotspot_id: str) -> bool:
                for r in (results if isinstance(results, list) else []))
 
 
+def _capture_skeptic(payload: dict) -> None:
+    root = _root(payload.get("cwd") or os.getcwd())
+    out = root / ".thunderstruck" if root else None
+    plan_path = out / "checks" / "plan.json" if out else None
+    if not plan_path or not plan_path.is_file():
+        return
+    message = payload.get("last_assistant_message")
+    if not isinstance(message, str):
+        return
+    doc = finding_shape.parse_result(message)
+    plan = json.loads(plan_path.read_text("utf-8"))
+    entry = finding_shape.find_plan_entry(plan, doc.get("key"))
+    if entry is None:
+        return
+    dest = out / "checks" / "results" / f"{entry['key']}.json"
+    prior = _load(dest)
+    kind = "respawn" if prior and prior.get("scan") == plan["generated_at"] else "first"
+    finding_shape.write_json_atomic(dest, finding_shape.stamp_verdict(doc, plan, entry))
+    agent = {k: payload.get(k) for k in ("agent_id", "session_id", "transcript_path", "stop_reason")}
+    finding_shape.record_skeptic(out, plan, entry, {**agent, "kind": kind})
+
+
 def main(stdin_text: str) -> None:
     if len(stdin_text) > MAX_PAYLOAD:
         return
     payload = json.loads(stdin_text)
     if not isinstance(payload, dict):
         return
-    if not str(payload.get("agent_type", "")).endswith("thunderstruck-investigator"):
+    agent_type = str(payload.get("agent_type", ""))
+    if agent_type.endswith("thunderstruck-skeptic"):
+        _capture_skeptic(payload)
+        return
+    if not agent_type.endswith("thunderstruck-investigator"):
         return
     root = _root(payload.get("cwd") or os.getcwd())
     out = root / ".thunderstruck" if root else None
