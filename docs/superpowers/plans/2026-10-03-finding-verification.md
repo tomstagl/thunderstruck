@@ -86,7 +86,7 @@ Expected: `ok` and `1`.
 **Interfaces:**
 - Produces, in `_common`: `VERIFY_BY_DEFAULT: bool` (provisionally `True`; Task 22 sets it); `VERIFY_MEASURED_COST: str | None` (`None` until Task 22); `VERDICTS = ("upheld", "narrowed", "refuted", "inconclusive")`; `REFUTABLE_FIELDS: tuple[str, ...]`; `MISSING_GATE_PHRASE = "on default settings"`; `CHECKS_DIRNAME = "checks"`; `DEPS_DIRNAME = "deps"`; `finding_gate(finding)` extended (§14); `skeptic_settings(finding: dict) -> list[dict]` (the kept `setting` objects of a narrowed check's `preconditions` claims).
 
-- [ ] **Step 1: Write the failing tests.** Create `tests/test_verification.py`:
+- [x] **Step 1: Write the failing tests.** Create `tests/test_verification.py`:
 
 ```python
 """#37: refuting findings before they reach the report."""
@@ -141,12 +141,12 @@ def test_investigator_preconditions_still_gate():
     assert c.skeptic_settings(f) == []
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_verification.py -q`
 Expected: FAIL, `AttributeError: module '_common' has no attribute 'VERDICTS'`.
 
-- [ ] **Step 3: Write the implementation.** In `scripts/_common.py`, after #56's vocabulary block:
+- [x] **Step 3: Write the implementation.** In `scripts/_common.py`, after #56's vocabulary block:
 
 ```python
 # Verification (spec 2026-10-03-finding-verification-design.md). A verdict is a
@@ -188,9 +188,9 @@ and replace #56's `finding_gate` body so its last line reads:
 
 (`skeptic_settings` must be defined above `finding_gate`; move the block there.) Update `finding_gate`'s docstring: "non_default_setting when any precondition needs a setting changed, or a check narrowed the finding to one (#37 §14)."
 
-- [ ] **Step 4: Run the tests** (same command as Step 2, then the full suite). Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests** (same command as Step 2, then the full suite). Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/_common.py tests/test_verification.py
