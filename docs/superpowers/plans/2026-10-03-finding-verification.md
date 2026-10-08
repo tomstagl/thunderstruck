@@ -1369,7 +1369,7 @@ git commit -m "Verification: Maven and Gradle dependencies, and the dependency i
 - Consumes: `deps.resolve_dependency_ref`, `deps.REF_FORM` (Task 2).
 - Produces: `Validator(..., deps_index: dict | None = None)`; `Validator.check_ref(ref, where, errors, allow_dependency: bool = False) -> tuple[str, int, int] | None` (for a dependency ref the tuple is `("<id>@<version>:<path>", start, end)`); `Validator.check_verdict_evidence(ev, where, errors, finding_files: list[str]) -> str | None` (returns the type when the item resolved, `None` otherwise); `VERDICT_EVIDENCE_TYPES = ("code", "commit", "dependency")`.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_verification.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_verification.py`:
 
 ```python
 # --- Task 6 -----------------------------------------------------------------
@@ -1431,9 +1431,9 @@ def test_a_verdict_commit_may_touch_a_file_only_the_verdict_cites(scanned_copy):
     assert "does not touch" in errors[0]
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** `... pytest tests/test_verification.py -q -k "check_ref_rejects or verdict_evidence or verdict_commit"`. Expected: `TypeError: Validator.__init__() got an unexpected keyword argument 'deps_index'`.
+- [x] **Step 2: Run them to verify they fail.** `... pytest tests/test_verification.py -q -k "check_ref_rejects or verdict_evidence or verdict_commit"`. Expected: `TypeError: Validator.__init__() got an unexpected keyword argument 'deps_index'`.
 
-- [ ] **Step 3: Write the implementation.** In `scripts/validate.py`:
+- [x] **Step 3: Write the implementation.** In `scripts/validate.py`:
 
 ```python
 import deps  # noqa: E402  (after `import _common as c`)
@@ -1492,9 +1492,9 @@ New method:
         return etype if len(errors) == before else None
 ```
 
-- [ ] **Step 4: Run the tests**, then the full suite. Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests**, then the full suite. Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/validate.py tests/test_verification.py
