@@ -217,7 +217,7 @@ git commit -m "Verification: the verdict vocabulary and the gate a check can set
   - `snapshot(repo: Path, index: dict, limits: Limits = LIMITS) -> dict` (fills `snapshot`, may turn a package `unavailable`).
   - `resolve_dependency_ref(repo: Path, index: dict | None, ref: str) -> tuple[dict | None, str | None]` → `({"id", "version", "path", "start", "end"}, None)` or `(None, error)`.
 
-- [ ] **Step 1: Write the failing tests.** Create `tests/test_deps.py`:
+- [x] **Step 1: Write the failing tests.** Create `tests/test_deps.py`:
 
 ```python
 """#37: dependency source at declared or locked versions (spec §4)."""
@@ -394,12 +394,12 @@ def test_unsafe_names_never_become_directories(tmp_path):
     assert not (repo / ".thunderstruck" / "x").exists()
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_deps.py -q`
 Expected: collection error, `ModuleNotFoundError: No module named 'deps'`.
 
-- [ ] **Step 3: Write the implementation.** Create `scripts/deps.py` (Tasks 3–5 add the discoverers to it):
+- [x] **Step 3: Write the implementation.** Create `scripts/deps.py` (Tasks 3–5 add the discoverers to it):
 
 ```python
 #!/usr/bin/env python3
@@ -606,9 +606,9 @@ def resolve_dependency_ref(repo: Path, index: dict | None, ref: str) -> tuple[di
 
 `c.path_problem` (`_common.py:604`) words the "is absolute" and "climbs out of the repository with '..'" messages the tests match.
 
-- [ ] **Step 4: Run the tests** (same command as Step 2). Expected: PASS.
+- [x] **Step 4: Run the tests** (same command as Step 2). Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/deps.py tests/test_deps.py
