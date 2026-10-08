@@ -934,7 +934,7 @@ git commit -m "Verification: Python dependencies at their declared or locked ver
 **Interfaces:**
 - Produces: `npm_satisfies(version: str, rng: str) -> bool | None` (`None`: a range outside the supported subset); `discover_npm(repo: Path) -> tuple[list[dict], list[str]]`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```python
 # --- Task 4 -----------------------------------------------------------------
@@ -996,9 +996,9 @@ def test_npm_range_that_cannot_be_checked(tmp_path):
     assert p["reason"] == 'declared range "workspace:*" could not be checked'
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** `... pytest tests/test_deps.py -q -k "npm or pnpm"`. Expected: `AttributeError: ... 'npm_satisfies'`.
+- [x] **Step 2: Run them to verify they fail.** `... pytest tests/test_deps.py -q -k "npm or pnpm"`. Expected: `AttributeError: ... 'npm_satisfies'`.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 ```python
 NPM_SUFFIXES = (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts")
@@ -1120,9 +1120,9 @@ def discover_npm(repo: Path) -> tuple[list[dict], list[str]]:
     return packages, []
 ```
 
-- [ ] **Step 4: Run the tests.** Expected: PASS.
+- [x] **Step 4: Run the tests.** Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/deps.py tests/test_deps.py

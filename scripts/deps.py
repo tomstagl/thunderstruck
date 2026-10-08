@@ -381,3 +381,122 @@ def discover_pypi(repo: Path, env: dict[str, str]) -> tuple[list[dict], list[str
                 files.append(rel)
         p.update(status="available", source=str(site), files=sorted(files))
     return packages, []
+
+
+NPM_SUFFIXES = (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts")
+_SEMVER = re.compile(r"^v?(\d+)(?:\.(\d+|x|\*))?(?:\.(\d+|x|\*))?(?:-[0-9A-Za-z.-]+)?\Z")
+
+
+def _ver(v: str) -> tuple[int, int, int] | None:
+    m = re.match(r"^v?(\d+)\.(\d+)\.(\d+)", v.strip())
+    return (int(m[1]), int(m[2]), int(m[3])) if m else None
+
+
+def _bounds(token: str) -> list[tuple[str, tuple[int, int, int]]] | None:
+    """One comparator set token as (op, version) pairs; None when unsupported."""
+    t = token.strip()
+    if t in ("*", "x", ""):
+        return []
+    op = re.match(r"^(>=|<=|>|<|=|\^|~)?", t)[0]
+    m = _SEMVER.match(t[len(op):])
+    if not m:
+        return None
+    major = int(m[1])
+    minor = None if m[2] in (None, "x", "*") else int(m[2])
+    patch = None if m[3] in (None, "x", "*") else int(m[3])
+    lo = (major, minor or 0, patch or 0)
+    if op in (">=", ">", "<=", "<"):
+        return [(op, lo)]
+    if op == "^":
+        hi = (major + 1, 0, 0) if major else ((0, (minor or 0) + 1, 0) if minor else (0, 0, (patch or 0) + 1))
+        return [(">=", lo), ("<", hi)]
+    if op == "~" or minor is None or patch is None:
+        hi = (major + 1, 0, 0) if minor is None else (major, minor + 1, 0)
+        return [(">=", lo), ("<", hi)]
+    return [("=", lo)]
+
+
+def npm_satisfies(version: str, rng: str) -> bool | None:
+    v = _ver(version)
+    if v is None or " - " in rng or ":" in rng or "/" in rng:
+        return None
+    for alt in rng.split("||"):
+        pairs: list[tuple[str, tuple[int, int, int]]] = []
+        for token in alt.split():
+            b = _bounds(token)
+            if b is None:
+                return None
+            pairs += b
+        cmp = {">=": v.__ge__, ">": v.__gt__, "<=": v.__le__, "<": v.__lt__, "=": v.__eq__}
+        if all(cmp[op](bound) for op, bound in pairs):
+            return True
+    return False
+
+
+def _npm_locked(repo: Path) -> dict[str, str]:
+    lock = repo / "package-lock.json"
+    if lock.is_file():
+        doc = json.loads(lock.read_text(encoding="utf-8"))
+        if isinstance(doc.get("packages"), dict):
+            return {k[len("node_modules/"):]: str(v.get("version")) for k, v in doc["packages"].items()
+                    if k.startswith("node_modules/") and "/node_modules/" not in k and isinstance(v, dict)
+                    and v.get("version")}
+        return {k: str(v.get("version")) for k, v in (doc.get("dependencies") or {}).items()
+                if isinstance(v, dict) and v.get("version")}
+    pnpm = repo / "pnpm-lock.yaml"
+    if pnpm.is_file():
+        import yaml
+        doc = yaml.safe_load(pnpm.read_text(encoding="utf-8")) or {}
+        root = ((doc.get("importers") or {}).get(".") or doc)
+        out: dict[str, str] = {}
+        for section in ("dependencies", "devDependencies", "optionalDependencies"):
+            for name, spec in (root.get(section) or {}).items():
+                version = spec.get("version") if isinstance(spec, dict) else spec
+                if isinstance(version, str):
+                    out[name] = version.split("(", 1)[0]
+        return out
+    return {}
+
+
+def discover_npm(repo: Path) -> tuple[list[dict], list[str]]:
+    manifest = repo / "package.json"
+    if not manifest.is_file():
+        return [], []
+    doc = json.loads(manifest.read_text(encoding="utf-8"))
+    declared: dict[str, str] = {}
+    for section in ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies"):
+        for name, rng in (doc.get(section) or {}).items():
+            declared.setdefault(name, str(rng))
+    locked = _npm_locked(repo)
+    packages: list[dict] = []
+    for name, rng in sorted(declared.items()):
+        p = {"id": f"npm:{name}", "ecosystem": "npm", "name": name, "declared": rng,
+             "declared_in": ["package.json"], "version": None, "basis": None, "status": "unavailable",
+             "reason": None, "source": None, "snapshot": None}
+        packages.append(p)
+        d = repo / "node_modules" / name
+        meta = c.load_json(d / "package.json", None)
+        if not isinstance(meta, dict) or not meta.get("version"):
+            p["reason"] = "no installed copy in node_modules"
+            continue
+        installed = str(meta["version"])
+        p["version"] = installed
+        if name in locked:
+            p["basis"] = "locked"
+            if locked[name] != installed:
+                p["reason"] = f"installed {installed}, the lock says {locked[name]}"
+                continue
+        else:
+            ok = npm_satisfies(installed, rng)
+            p["basis"] = "pinned" if _ver(rng) and rng.strip() == installed else "declared_range"
+            if ok is None:
+                p["reason"] = f'declared range "{rng}" could not be checked'
+                continue
+            if not ok:
+                p["reason"] = f'installed {installed} does not satisfy the declared "{rng}"'
+                continue
+        files = sorted(f.relative_to(d).as_posix() for f in d.rglob("*")
+                       if f.is_file() and not f.is_symlink() and f.name.endswith(NPM_SUFFIXES)
+                       and "node_modules" not in f.relative_to(d).parts)
+        p.update(status="available", source=str(d), files=files)
+    return packages, []

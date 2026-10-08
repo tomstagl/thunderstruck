@@ -261,3 +261,60 @@ def test_no_python_manifest_is_no_package_and_no_warning(tmp_path):
 
 def test_pep503():
     assert deps.pep503("SQLAlchemy") == "sqlalchemy" and deps.pep503("zope.Interface__x") == "zope-interface-x"
+# --- Task 4 -----------------------------------------------------------------
+@pytest.mark.parametrize("version, rng, ok", [
+    ("1.2.3", "1.2.3", True), ("1.2.4", "1.2.3", False),
+    ("1.9.0", "^1.2.3", True), ("2.0.0", "^1.2.3", False), ("0.2.9", "^0.2.3", True), ("0.3.0", "^0.2.3", False),
+    ("1.2.9", "~1.2.3", True), ("1.3.0", "~1.2.3", False),
+    ("1.4.0", "1.x", True), ("2.0.0", "1.x", False), ("9.9.9", "*", True),
+    ("1.5.0", ">=1.2.0 <2.0.0", True), ("2.0.0", ">=1.2.0 <2.0.0", False),
+    ("3.1.0", "^1.0.0 || ^3.0.0", True),
+    ("1.0.0", "workspace:*", None), ("1.0.0", "git+https://x/y.git", None), ("1.0.0", "1.0.0 - 2.0.0", None),
+])
+def test_npm_range_subset(version, rng, ok):
+    assert deps.npm_satisfies(version, rng) is ok
+
+
+def _node_pkg(repo: Path, name: str, version: str, files: dict[str, str]) -> None:
+    d = repo / "node_modules" / name
+    d.mkdir(parents=True)
+    (d / "package.json").write_text(json.dumps({"name": name, "version": version}))
+    for rel, body in files.items():
+        (d / rel).parent.mkdir(parents=True, exist_ok=True)
+        (d / rel).write_text(body)
+
+
+def test_npm_lock_and_install(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "package.json").write_text(json.dumps({
+        "dependencies": {"@aws-sdk/client-s3": "^3.400.0", "axios": "^1.6.0"},
+        "devDependencies": {"left-pad": "1.3.0"}}))
+    (repo / "package-lock.json").write_text(json.dumps({"lockfileVersion": 3, "packages": {
+        "": {}, "node_modules/@aws-sdk/client-s3": {"version": "3.500.0"},
+        "node_modules/axios": {"version": "1.7.2"}}}))
+    _node_pkg(repo, "@aws-sdk/client-s3", "3.500.0", {"dist-cjs/index.js": "x\n", "README.md": "x",
+                                                       "node_modules/inner/index.js": "x"})
+    _node_pkg(repo, "axios", "1.6.0", {"index.js": "x\n"})
+    by_id = {p["id"]: p for p in deps.discover_npm(repo)[0]}
+    s3 = by_id["npm:@aws-sdk/client-s3"]
+    assert (s3["basis"], s3["status"], s3["files"]) == ("locked", "available", ["dist-cjs/index.js"])
+    assert by_id["npm:axios"]["reason"] == "installed 1.6.0, the lock says 1.7.2"
+    assert by_id["npm:left-pad"]["reason"] == "no installed copy in node_modules"
+
+
+def test_pnpm_lock_strips_peer_suffixes(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "package.json").write_text(json.dumps({"dependencies": {"react-dom": "^18.0.0"}}))
+    (repo / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n"
+                                         "      react-dom:\n        specifier: ^18.0.0\n        version: 18.3.1(react@18.3.1)\n")
+    _node_pkg(repo, "react-dom", "18.3.1", {"index.js": "x\n"})
+    [p], _ = deps.discover_npm(repo)
+    assert (p["basis"], p["version"], p["status"]) == ("locked", "18.3.1", "available")
+
+
+def test_npm_range_that_cannot_be_checked(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "package.json").write_text(json.dumps({"dependencies": {"lib": "workspace:*"}}))
+    _node_pkg(repo, "lib", "1.0.0", {"index.js": "x\n"})
+    [p], _ = deps.discover_npm(repo)
+    assert p["reason"] == 'declared range "workspace:*" could not be checked'
