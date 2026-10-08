@@ -627,7 +627,7 @@ git commit -m "Verification: dependency refs and source snapshots (#37)"
 **Interfaces:**
 - Produces: `pep503(name: str) -> str`; `discover_pypi(repo: Path, env: dict[str, str]) -> tuple[list[dict], list[str]]` (package records with `source` and `files`, and warnings); `pypi_declared(repo) -> dict[str, tuple[str, list[str]]]` (normalised name → (specifier text, declared_in)); `pypi_locked(repo) -> dict[str, str]`; `site_packages(repo, env) -> list[Path]`.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_deps.py` a helper that writes a fake installed package, and the tests:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_deps.py` a helper that writes a fake installed package, and the tests:
 
 ```python
 # --- Task 3 -----------------------------------------------------------------
@@ -723,9 +723,9 @@ def test_pep503():
     assert deps.pep503("SQLAlchemy") == "sqlalchemy" and deps.pep503("zope.Interface__x") == "zope-interface-x"
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** Run: `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_deps.py -q -k "requirements or minimum or lock or pinned or virtual_env or python_manifest or pep503"`. Expected: `AttributeError: module 'deps' has no attribute 'discover_pypi'`.
+- [x] **Step 2: Run them to verify they fail.** Run: `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_deps.py -q -k "requirements or minimum or lock or pinned or virtual_env or python_manifest or pep503"`. Expected: `AttributeError: module 'deps' has no attribute 'discover_pypi'`.
 
-- [ ] **Step 3: Write the implementation.** Add to `scripts/deps.py`:
+- [x] **Step 3: Write the implementation.** Add to `scripts/deps.py`:
 
 ```python
 import os
@@ -914,9 +914,9 @@ def discover_pypi(repo: Path, env: dict[str, str]) -> tuple[list[dict], list[str
 
 `prereleases=True` is deliberate: an installed pre-release inside a range is what the environment runs, and the version is recorded. Tighten the kombu assertion in `test_requirements_range_satisfied_by_the_installed_copy` to `"available"` once this is in.
 
-- [ ] **Step 4: Run the tests** (same command as Step 2, then all of `tests/test_deps.py`). Expected: PASS.
+- [x] **Step 4: Run the tests** (same command as Step 2, then all of `tests/test_deps.py`). Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/deps.py tests/test_deps.py .github/workflows/ci.yml CLAUDE.md

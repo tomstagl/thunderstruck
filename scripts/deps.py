@@ -17,9 +17,11 @@ downloads, never runs a package manager or anything from a package.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import sys
+import tomllib
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -198,3 +200,184 @@ def resolve_dependency_ref(repo: Path, index: dict | None, ref: str) -> tuple[di
     if not 1 <= start <= end <= total:
         return None, f"lines {start}-{end} are outside {m['path']}, which has {total} lines"
     return {"id": pid, "version": pkg["version"], "path": m["path"], "start": start, "end": end}, None
+
+
+
+def pep503(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def _requirement_lines(repo: Path, path: Path, seen: set[Path]) -> list[tuple[str, str]]:
+    """(requirement text, repo-relative file) from a requirements file, following -r inside the repo."""
+    if path in seen or not path.is_file():
+        return []
+    seen.add(path)
+    out: list[tuple[str, str]] = []
+    rel = path.relative_to(repo).as_posix()
+    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw.split(" #", 1)[0].strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith(("-r ", "--requirement ")):
+            child = (path.parent / line.split(None, 1)[1]).resolve()
+            if repo.resolve() in child.parents:
+                out += _requirement_lines(repo, child, seen)
+            continue
+        if line.startswith("-") or "://" in line:
+            continue  # options, editables and URLs name no released version
+        out.append((line, rel))
+    return out
+
+
+def pypi_declared(repo: Path) -> dict[str, tuple[str, list[str]]]:
+    from packaging.requirements import InvalidRequirement, Requirement
+
+    texts: list[tuple[str, str]] = []
+    pyproject = repo / "pyproject.toml"
+    if pyproject.is_file():
+        doc = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+        project = doc.get("project") or {}
+        groups = [project.get("dependencies") or []]
+        groups += list((project.get("optional-dependencies") or {}).values())
+        groups += [[x for x in g if isinstance(x, str)] for g in (doc.get("dependency-groups") or {}).values()]
+        for group in groups:
+            texts += [(t, "pyproject.toml") for t in group if isinstance(t, str)]
+        poetry = (doc.get("tool") or {}).get("poetry") or {}
+        tables = [poetry.get("dependencies") or {}, poetry.get("dev-dependencies") or {}]
+        tables += [(g or {}).get("dependencies") or {} for g in (poetry.get("group") or {}).values()]
+        for table in tables:
+            for name, spec in table.items():
+                if name.lower() == "python":
+                    continue
+                version = spec if isinstance(spec, str) else (spec or {}).get("version", "")
+                texts.append((f"{name}{_poetry_spec(version)}", "pyproject.toml"))
+    seen: set[Path] = set()
+    for path in sorted([*repo.glob("requirements*.txt"), *(repo / "requirements").rglob("*.txt")]):
+        texts += _requirement_lines(repo, path.resolve(), seen)
+    declared: dict[str, tuple[str, list[str]]] = {}
+    for text, where in texts:
+        try:
+            req = Requirement(text)
+        except InvalidRequirement:
+            continue
+        key = pep503(req.name)
+        spec, files = declared.get(key, (str(req.specifier), []))
+        declared[key] = (spec or str(req.specifier), sorted({*files, where}))
+    return declared
+
+
+def _poetry_spec(version: str) -> str:
+    """Poetry's ^ and ~ as PEP 440; anything else unchanged."""
+    v = version.strip()
+    if v in ("", "*"):
+        return ""
+    if v.startswith("^"):
+        parts = v[1:].split(".")
+        major = int(parts[0]) if parts[0].isdigit() else 0
+        return f">={v[1:]},<{major + 1}" if major else f">={v[1:]}"
+    if v.startswith("~"):
+        return f"~={v[1:]}" if v.count(".") >= 1 else f">={v[1:]}"
+    return v if v[0] in "<>=!~" else f"=={v}"
+
+
+def pypi_locked(repo: Path) -> dict[str, str]:
+    locked: dict[str, str] = {}
+    for name in ("uv.lock", "poetry.lock", "pdm.lock"):
+        path = repo / name
+        if path.is_file():
+            for pkg in tomllib.loads(path.read_text(encoding="utf-8")).get("package") or []:
+                if isinstance(pkg, dict) and pkg.get("name") and pkg.get("version"):
+                    locked.setdefault(pep503(pkg["name"]), str(pkg["version"]))
+    pipfile = repo / "Pipfile.lock"
+    if pipfile.is_file():
+        doc = json.loads(pipfile.read_text(encoding="utf-8"))
+        for section in ("default", "develop"):
+            for name, spec in (doc.get(section) or {}).items():
+                version = str((spec or {}).get("version", ""))
+                if version.startswith("=="):
+                    locked.setdefault(pep503(name), version[2:])
+    return locked
+
+
+def site_packages(repo: Path, env: dict[str, str]) -> list[Path]:
+    roots = [repo / ".venv", repo / "venv"]
+    if env.get("VIRTUAL_ENV"):
+        roots.append(Path(env["VIRTUAL_ENV"]))
+    out: list[Path] = []
+    for root in roots:
+        out += sorted(root.glob("lib/python3*/site-packages")) + sorted(root.glob("Lib/site-packages"))
+    return [p for p in out if p.is_dir()]
+
+
+def _installed(sites: list[Path], key: str) -> tuple[Path, Path] | None:
+    """(site-packages, dist-info) of the first environment holding the package."""
+    for site in sites:
+        for dist in sorted(site.glob("*.dist-info")):
+            meta = dist / "METADATA"
+            if meta.is_file():
+                head = meta.read_text(encoding="utf-8", errors="replace").split("\n\n", 1)[0]
+                name = next((l.split(":", 1)[1].strip() for l in head.splitlines()
+                             if l.lower().startswith("name:")), "")
+                if pep503(name) == key:
+                    return site, dist
+    return None
+
+
+def _metadata_version(dist: Path) -> str:
+    head = (dist / "METADATA").read_text(encoding="utf-8", errors="replace").split("\n\n", 1)[0]
+    return next((l.split(":", 1)[1].strip() for l in head.splitlines()
+                 if l.lower().startswith("version:")), "")
+
+
+def discover_pypi(repo: Path, env: dict[str, str]) -> tuple[list[dict], list[str]]:
+    from packaging.specifiers import InvalidSpecifier, SpecifierSet
+    from packaging.version import InvalidVersion, Version
+
+    declared = pypi_declared(repo)
+    if not declared:
+        return [], []
+    locked, sites = pypi_locked(repo), site_packages(repo, env)
+    packages: list[dict] = []
+    for key, (spec, where) in sorted(declared.items()):
+        p = {"id": f"pypi:{key}", "ecosystem": "pypi", "name": key, "declared": spec,
+             "declared_in": where, "version": None, "basis": None, "status": "unavailable",
+             "reason": None, "source": None, "snapshot": None}
+        packages.append(p)
+        found = _installed(sites, key)
+        if found is None:
+            p["reason"] = "no installed copy in .venv, venv or $VIRTUAL_ENV"
+            continue
+        site, dist = found
+        installed = _metadata_version(dist)
+        p["version"] = installed
+        direct = c.load_json(dist / "direct_url.json", None)
+        if isinstance(direct, dict) and (direct.get("dir_info") or {}).get("editable"):
+            p["reason"] = "editable install, not a released version"
+            continue
+        if key in locked:
+            p["basis"] = "locked"
+            if locked[key] != installed:
+                p["reason"] = f"installed {installed}, the lock says {locked[key]}"
+                continue
+        elif spec.startswith("==") and "," not in spec and "*" not in spec:
+            p["basis"] = "pinned"
+            if spec[2:] != installed:
+                p["reason"] = f"installed {installed}, pinned at {spec[2:]}"
+                continue
+        else:
+            p["basis"] = "declared_range"
+            try:
+                ok = Version(installed) in SpecifierSet(spec, prereleases=True)
+            except (InvalidSpecifier, InvalidVersion):
+                p["reason"] = f'declared range "{spec}" could not be checked'
+                continue
+            if not ok:
+                p["reason"] = f'installed {installed} does not satisfy the declared "{spec}"'
+                continue
+        files = []
+        for line in (dist / "RECORD").read_text(encoding="utf-8", errors="replace").splitlines():
+            rel = line.split(",", 1)[0]
+            if rel.endswith((".py", ".pyi")) and not rel.startswith("..") and ".dist-info/" not in rel:
+                files.append(rel)
+        p.update(status="available", source=str(site), files=sorted(files))
+    return packages, []

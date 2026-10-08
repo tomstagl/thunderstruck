@@ -170,3 +170,94 @@ def test_unsafe_names_never_become_directories(tmp_path):
     assert out["packages"][0]["status"] == "unavailable"
     assert "unsafe" in out["packages"][0]["reason"]
     assert not (repo / ".thunderstruck" / "x").exists()
+# --- Task 3 -----------------------------------------------------------------
+def _install(site: Path, name: str, version: str, files: dict[str, str], editable: bool = False) -> None:
+    dist = site / f"{name.replace('-', '_')}-{version}.dist-info"
+    dist.mkdir(parents=True)
+    (dist / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n")
+    record = []
+    for rel, body in files.items():
+        (site / rel).parent.mkdir(parents=True, exist_ok=True)
+        (site / rel).write_text(body)
+        record.append(f"{rel},,")
+    record += [f"{dist.name}/METADATA,,", f"../../bin/{name},,"]
+    (dist / "RECORD").write_text("\n".join(record) + "\n")
+    if editable:
+        (dist / "direct_url.json").write_text(json.dumps({"url": "file:///x", "dir_info": {"editable": True}}))
+
+
+def _venv(repo: Path) -> Path:
+    site = repo / ".venv" / "lib" / "python3.12" / "site-packages"
+    site.mkdir(parents=True)
+    return site
+
+
+def test_requirements_range_satisfied_by_the_installed_copy(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "requirements").mkdir()
+    (repo / "requirements" / "default.txt").write_text("kombu>=5.6,<6.0\n-r extras.txt\n")
+    (repo / "requirements" / "extras.txt").write_text("SQLAlchemy>=2.0  # comment\n")
+    site = _venv(repo)
+    _install(site, "kombu", "5.7.0a1", {"kombu/__init__.py": "x\n"})
+    _install(site, "SQLAlchemy", "2.1.3", {"sqlalchemy/__init__.py": "x\n"})
+    pkgs, warnings = deps.discover_pypi(repo, {})
+    by_id = {p["id"]: p for p in pkgs}
+    assert by_id["pypi:sqlalchemy"]["basis"] == "declared_range"
+    assert by_id["pypi:sqlalchemy"]["files"] == ["sqlalchemy/__init__.py"]
+    # 5.7.0a1 is a pre-release: PEP 440 excludes it from ">=5.6,<6.0" unless pre-releases are allowed
+    assert by_id["pypi:kombu"]["status"] == "available"
+    assert by_id["pypi:kombu"]["declared_in"] == ["requirements/default.txt"]
+
+
+def test_installed_below_the_declared_minimum_is_unavailable(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "requirements.txt").write_text("kombu>=5.6\n")
+    _install(_venv(repo), "kombu", "5.5.0", {"kombu/__init__.py": "x\n"})
+    [p], _ = deps.discover_pypi(repo, {})
+    assert p["status"] == "unavailable"
+    assert p["reason"] == 'installed 5.5.0 does not satisfy the declared ">=5.6"'
+
+
+def test_a_lock_decides_the_version(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "pyproject.toml").write_text('[project]\nname="x"\ndependencies=["redis>=8"]\n'
+                                         '[project.optional-dependencies]\nsql=["sqlalchemy"]\n')
+    (repo / "uv.lock").write_text('version = 1\n[[package]]\nname = "redis"\nversion = "8.1.0"\n'
+                                  '[[package]]\nname = "sqlalchemy"\nversion = "2.1.3"\n')
+    site = _venv(repo)
+    _install(site, "redis", "8.1.0", {"redis/client.py": "x\n"})
+    _install(site, "SQLAlchemy", "2.0.0", {"sqlalchemy/__init__.py": "x\n"})
+    by_id = {p["id"]: p for p in deps.discover_pypi(repo, {})[0]}
+    assert (by_id["pypi:redis"]["basis"], by_id["pypi:redis"]["status"]) == ("locked", "available")
+    assert by_id["pypi:sqlalchemy"]["reason"] == "installed 2.0.0, the lock says 2.1.3"
+
+
+def test_pinned_editable_and_missing(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "requirements.txt").write_text("billiard==4.3.0\nvine==5.1.0\nclick>=8\n")
+    site = _venv(repo)
+    _install(site, "billiard", "4.3.0", {"billiard/pool.py": "x\n"})
+    _install(site, "vine", "5.1.0", {"vine/__init__.py": "x\n"}, editable=True)
+    by_id = {p["id"]: p for p in deps.discover_pypi(repo, {})[0]}
+    assert by_id["pypi:billiard"]["basis"] == "pinned"
+    assert by_id["pypi:vine"]["reason"] == "editable install, not a released version"
+    assert by_id["pypi:click"]["reason"] == "no installed copy in .venv, venv or $VIRTUAL_ENV"
+
+
+def test_virtual_env_from_the_environment(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "requirements.txt").write_text("redis==8.1.0\n")
+    venv = tmp_path / "elsewhere"
+    site = venv / "lib" / "python3.12" / "site-packages"
+    site.mkdir(parents=True)
+    _install(site, "redis", "8.1.0", {"redis/client.py": "x\n"})
+    [p], _ = deps.discover_pypi(repo, {"VIRTUAL_ENV": str(venv)})
+    assert p["status"] == "available" and p["source"] == str(site)
+
+
+def test_no_python_manifest_is_no_package_and_no_warning(tmp_path):
+    assert deps.discover_pypi(_repo(tmp_path), {}) == ([], [])
+
+
+def test_pep503():
+    assert deps.pep503("SQLAlchemy") == "sqlalchemy" and deps.pep503("zope.Interface__x") == "zope-interface-x"
