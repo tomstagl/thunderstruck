@@ -1140,7 +1140,7 @@ git commit -m "Verification: npm dependencies at their declared or locked versio
 **Interfaces:**
 - Produces: `discover_maven(repo: Path, home: Path) -> tuple[list[dict], list[str]]` (records carry `jar` instead of `files`); `discover(repo: Path, env: dict[str, str] | None = None, home: Path | None = None) -> dict` (the whole index, packages sorted by `id`, warnings, before snapshot); CLI `deps.py [--repo P]` runs `discover` + `snapshot` + `write_index` and prints `dependency source: N of M declared packages available`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```python
 # --- Task 5 -----------------------------------------------------------------
@@ -1211,9 +1211,9 @@ def test_the_cli_writes_only_under_deps(tmp_path):
 
 (`test_the_cli_writes_only_under_deps` calls `deps.main` in-process; `deps.discover` reads `os.environ` when `env` is `None`, so the test's `_venv` inside the repo is what is found.)
 
-- [ ] **Step 2: Run them to verify they fail.** `... -k "pom or gradle or discover or cli_writes"`. Expected: `AttributeError: ... 'discover_maven'`.
+- [x] **Step 2: Run them to verify they fail.** `... -k "pom or gradle or discover or cli_writes"`. Expected: `AttributeError: ... 'discover_maven'`.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 ```python
 import argparse
@@ -1348,9 +1348,9 @@ if __name__ == "__main__":
 
 The catalog's `version.ref` handling above is written for both TOML spellings (`version.ref = "x"` parses as a nested table `{"version": {"ref": "x"}}`); simplify it to the nested-table branch if the test passes without the second branch.
 
-- [ ] **Step 4: Run the tests** (all of `tests/test_deps.py`). Expected: PASS.
+- [x] **Step 4: Run the tests** (all of `tests/test_deps.py`). Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/deps.py tests/test_deps.py

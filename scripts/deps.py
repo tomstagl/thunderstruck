@@ -16,12 +16,14 @@ downloads, never runs a package manager or anything from a package.
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
 import shutil
 import sys
 import tomllib
+import xml.etree.ElementTree as ET
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -500,3 +502,128 @@ def discover_npm(repo: Path) -> tuple[list[dict], list[str]]:
                        and "node_modules" not in f.relative_to(d).parts)
         p.update(status="available", source=str(d), files=files)
     return packages, []
+
+
+_GRADLE_COORD = re.compile(r"""["']([A-Za-z0-9_.-]+):([A-Za-z0-9_.-]+):([A-Za-z0-9_.+-]+)["']""")
+
+
+def _maven_declared(repo: Path) -> dict[str, tuple[str | None, str]]:
+    """groupId/artifactId → (version or None, declared_in)."""
+    out: dict[str, tuple[str | None, str]] = {}
+    pom = repo / "pom.xml"
+    if pom.is_file():
+        root = ET.fromstring(pom.read_text(encoding="utf-8"))
+        ns = {"m": root.tag[1:].split("}")[0]} if root.tag.startswith("{") else {}
+        q = (lambda t: f"m:{t}") if ns else (lambda t: t)
+        props = {e.tag.split("}")[-1]: (e.text or "").strip()
+                 for e in root.findall(f"{q('properties')}/*", ns)}
+        for dep in root.findall(f".//{q('dependencies')}/{q('dependency')}", ns):
+            g = (dep.findtext(q("groupId"), "", ns) or "").strip()
+            a = (dep.findtext(q("artifactId"), "", ns) or "").strip()
+            v = (dep.findtext(q("version"), "", ns) or "").strip() or None
+            if v and v.startswith("${") and v.endswith("}"):
+                v = props.get(v[2:-1])
+            if g and a:
+                out.setdefault(f"{g}/{a}", (v, "pom.xml"))
+    for name in ("build.gradle", "build.gradle.kts"):
+        path = repo / name
+        if path.is_file():
+            for g, a, v in _GRADLE_COORD.findall(path.read_text(encoding="utf-8")):
+                out.setdefault(f"{g}/{a}", (v, name))
+    catalog = repo / "gradle" / "libs.versions.toml"
+    if catalog.is_file():
+        doc = tomllib.loads(catalog.read_text(encoding="utf-8"))
+        versions = doc.get("versions") or {}
+        for lib in (doc.get("libraries") or {}).values():
+            if not isinstance(lib, dict) or ":" not in str(lib.get("module", "")):
+                continue
+            g, a = lib["module"].split(":", 1)
+            v = lib.get("version")
+            if isinstance(v, dict):
+                v = versions.get(v.get("ref")) if v.get("ref") else v.get("strictly") or v.get("require")
+            out.setdefault(f"{g}/{a}", (str(v) if v else None, "gradle/libs.versions.toml"))
+    return out
+
+
+def _gradle_locked(repo: Path) -> dict[str, str]:
+    lock = repo / "gradle.lockfile"
+    out: dict[str, str] = {}
+    if lock.is_file():
+        for line in lock.read_text(encoding="utf-8").splitlines():
+            coord = line.split("=", 1)[0].strip()
+            if coord.count(":") == 2 and not coord.startswith("#"):
+                g, a, v = coord.split(":")
+                out[f"{g}/{a}"] = v
+    return out
+
+
+def _sources_jar(home: Path, group: str, artifact: str, version: str) -> Path | None:
+    m2 = home / ".m2" / "repository" / Path(*group.split(".")) / artifact / version / f"{artifact}-{version}-sources.jar"
+    if m2.is_file():
+        return m2
+    cache = home / ".gradle" / "caches" / "modules-2" / "files-2.1" / group / artifact / version
+    hits = sorted(cache.glob(f"*/{artifact}-{version}-sources.jar")) if cache.is_dir() else []
+    return hits[0] if hits else None
+
+
+def discover_maven(repo: Path, home: Path) -> tuple[list[dict], list[str]]:
+    declared, locked = _maven_declared(repo), _gradle_locked(repo)
+    packages: list[dict] = []
+    for name, (version, where) in sorted(declared.items()):
+        p = {"id": f"maven:{name}", "ecosystem": "maven", "name": name, "declared": version or "",
+             "declared_in": [where], "version": None, "basis": None, "status": "unavailable",
+             "reason": None, "source": None, "snapshot": None}
+        packages.append(p)
+        if name in locked:
+            p["version"], p["basis"] = locked[name], "locked"
+        elif version and not any(ch in version for ch in "[](),+$"):
+            p["version"], p["basis"] = version, "pinned"
+        else:
+            p["reason"] = (f"no version declared in this {where}" if not version
+                           else f'declared version "{version}" is a range, which is not resolved')
+            continue
+        group, artifact = name.split("/", 1)
+        jar = _sources_jar(home, group, artifact, p["version"])
+        if jar is None:
+            p["reason"] = "no sources jar in the local Maven or Gradle cache"
+            continue
+        p.update(status="available", source=str(jar), jar=str(jar))
+    return packages, []
+
+
+NO_MANIFEST = ("No dependency manifest was found (pyproject.toml, requirements*.txt, package.json, "
+               "pom.xml, build.gradle); verification reads the repository only.")
+
+
+def discover(repo: Path, env: dict[str, str] | None = None, home: Path | None = None) -> dict:
+    env = dict(os.environ) if env is None else env
+    home = Path.home() if home is None else home
+    packages: list[dict] = []
+    warnings: list[str] = []
+    for found, warns in (discover_pypi(repo, env), discover_npm(repo), discover_maven(repo, home)):
+        packages += found
+        warnings += warns
+    if not packages:
+        warnings.append(NO_MANIFEST)
+    return {"schema": DEPS_SCHEMA, "packages": sorted(packages, key=lambda p: p["id"]),
+            "warnings": warnings}
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="deps.py", description="snapshot declared dependency source")
+    ap.add_argument("--repo", default=None)
+    args = ap.parse_args(argv)
+    try:
+        repo = c.find_repo_root(args.repo)
+    except c.ThunderstruckError as exc:
+        c.die(str(exc))
+        return 2
+    index = snapshot(repo, discover(repo))
+    write_index(repo, index)
+    ok = sum(1 for p in index["packages"] if p["status"] == "available")
+    print(f"dependency source: {ok} of {len(index['packages'])} declared packages available")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

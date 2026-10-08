@@ -318,3 +318,67 @@ def test_npm_range_that_cannot_be_checked(tmp_path):
     _node_pkg(repo, "lib", "1.0.0", {"index.js": "x\n"})
     [p], _ = deps.discover_npm(repo)
     assert p["reason"] == 'declared range "workspace:*" could not be checked'
+# --- Task 5 -----------------------------------------------------------------
+def _sources_jar(home: Path, group: str, artifact: str, version: str) -> Path:
+    d = home / ".m2" / "repository" / Path(*group.split(".")) / artifact / version
+    d.mkdir(parents=True)
+    jar = d / f"{artifact}-{version}-sources.jar"
+    with zipfile.ZipFile(jar, "w") as z:
+        z.writestr("org/x/A.java", "class A {}\n")
+    return jar
+
+
+def test_pom_literal_and_property_versions(tmp_path):
+    repo, home = _repo(tmp_path), tmp_path / "home"
+    (repo / "pom.xml").write_text(
+        '<project xmlns="http://maven.apache.org/POM/4.0.0"><properties><redisson.version>3.27.0</redisson.version></properties>'
+        "<dependencies>"
+        "<dependency><groupId>org.redisson</groupId><artifactId>redisson</artifactId><version>${redisson.version}</version></dependency>"
+        "<dependency><groupId>com.x</groupId><artifactId>y</artifactId><version>1.0</version></dependency>"
+        "<dependency><groupId>com.x</groupId><artifactId>managed</artifactId></dependency>"
+        "</dependencies></project>")
+    _sources_jar(home, "org.redisson", "redisson", "3.27.0")
+    by_id = {p["id"]: p for p in deps.discover_maven(repo, home)[0]}
+    assert by_id["maven:org.redisson/redisson"]["status"] == "available"
+    assert by_id["maven:org.redisson/redisson"]["basis"] == "pinned"
+    assert by_id["maven:com.x/y"]["reason"] == "no sources jar in the local Maven or Gradle cache"
+    assert by_id["maven:com.x/managed"]["reason"] == "no version declared in this pom.xml"
+
+
+def test_gradle_lockfile_and_catalog(tmp_path):
+    repo, home = _repo(tmp_path), tmp_path / "home"
+    (repo / "build.gradle.kts").write_text('dependencies { implementation("io.x:client:2.0.0") }\n')
+    (repo / "gradle").mkdir()
+    (repo / "gradle" / "libs.versions.toml").write_text(
+        '[versions]\nok = "4.12.0"\n[libraries]\nokhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "ok" }\n')
+    (repo / "gradle.lockfile").write_text("io.x:client:2.0.1=runtimeClasspath\n")
+    _sources_jar(home, "com.squareup.okhttp3", "okhttp", "4.12.0")
+    by_id = {p["id"]: p for p in deps.discover_maven(repo, home)[0]}
+    assert by_id["maven:com.squareup.okhttp3/okhttp"]["status"] == "available"
+    client = by_id["maven:io.x/client"]
+    assert (client["basis"], client["version"]) == ("locked", "2.0.1")
+
+
+def test_discover_is_sorted_deterministic_and_warns_without_manifests(tmp_path):
+    repo = _repo(tmp_path)
+    empty = deps.discover(repo, env={}, home=tmp_path / "home")
+    assert empty["packages"] == [] and empty["warnings"] == [
+        "No dependency manifest was found (pyproject.toml, requirements*.txt, package.json, "
+        "pom.xml, build.gradle); verification reads the repository only."]
+    (repo / "requirements.txt").write_text("b==1\na==1\n")
+    first = deps.discover(repo, env={}, home=tmp_path / "home")
+    assert [p["id"] for p in first["packages"]] == ["pypi:a", "pypi:b"]
+    assert first == deps.discover(repo, env={}, home=tmp_path / "home")
+
+
+def test_the_cli_writes_only_under_deps(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "requirements.txt").write_text("redis==8.1.0\n")
+    site = _venv(repo)
+    _install(site, "redis", "8.1.0", {"redis/client.py": "x\n"})
+    before = {p for p in repo.rglob("*")}
+    assert deps.main(["--repo", str(repo)]) == 0
+    new = {p for p in repo.rglob("*")} - before
+    assert new and all(".thunderstruck/deps" in p.as_posix() for p in new)
+    index = deps.load_index(repo)
+    assert index["packages"][0]["snapshot"] == ".thunderstruck/deps/pypi/redis@8.1.0"
