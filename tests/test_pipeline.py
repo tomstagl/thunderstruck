@@ -317,3 +317,44 @@ def test_findings_have_stable_keys(scanned_repo, plugin_root):
     c = stable_key("src/b.ts", "Sync dies on 429")
     assert a == b, "key should be insensitive to case and surrounding space"
     assert a != c, "key must distinguish different files"
+
+
+def _boundaries_section(scanned_repo, rel: str) -> str:
+    index = json.loads((scanned_repo / ".thunderstruck" / "bundles" / "index.json").read_text())
+    entry = next(b for b in index["bundles"] if b["file"] == rel)
+    body = (scanned_repo / ".thunderstruck" / "bundles" / f"{entry['id']}.md").read_text()
+    return body.split("## External boundaries", 1)[1].split("\n## ", 1)[0]
+
+
+def test_bundle_lists_calls_not_sleeps_as_boundaries(scanned_repo):
+    section = _boundaries_section(scanned_repo, "src/client/releases.ts")
+    assert "fetch(`https://api.example.com/releases/" in section
+    assert "setTimeout" not in section and "**scheduler**" not in section
+    assert "A call through a wrapper or an injected client" in section
+
+
+def test_bundle_says_when_a_language_has_no_boundary_rules(catalog):
+    # The fixture's VirtualService ranks only with a larger --top than
+    # scanned_repo uses, so the section is built directly.
+    import bundle
+    text = "kind: VirtualService\nspec:\n  http:\n    - route: []\n"
+    section = bundle.section_boundaries(text, "deploy/releases-virtualservice.yaml", "yaml",
+                                       catalog, {})
+    assert section == ("## External boundaries\n\nNot looked for: no boundary rules exist "
+                       "for yaml files.\n\n")
+
+
+def test_bundle_shows_no_boundary_from_a_comment(scanned_repo):
+    section = _boundaries_section(scanned_repo, "src/sync/scheduler.ts")
+    assert "None detected in this file." in section
+
+
+def test_bundle_boundaries_say_when_own_packages_are_unknown(catalog):
+    import bundle
+    text = "import requests\n\n\ndef get(u):\n    return requests.get(u, timeout=3)\n"
+    assert bundle.section_boundaries(text, "src/a.py", "python", catalog, None) == (
+        "## External boundaries\n\nNone detected in this file.\n\n"
+        "Calls through a library's own name were not looked for: the project's "
+        "own package names are not recorded with the hotspots.\n\n")
+    assert "requests.get(u, timeout=3)" in bundle.section_boundaries(
+        text, "src/a.py", "python", catalog, {})

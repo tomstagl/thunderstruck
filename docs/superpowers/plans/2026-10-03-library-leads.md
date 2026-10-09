@@ -1607,7 +1607,7 @@ git commit -m "Boundaries: call-shaped catalog rules with samples, not vocabular
 - Consumes: `detectors.find_boundaries`, `detectors.Boundary`, `hotspots.json`'s `own_packages` (Task 5).
 - Produces: `section_boundaries(text: str, rel: str, lang: str, catalog: dict, own: dict[str, list[str]] | None) -> str`.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_pipeline.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_pipeline.py`:
 
 ```python
 def _boundaries_section(scanned_repo, rel: str) -> str:
@@ -1651,12 +1651,12 @@ def test_bundle_boundaries_say_when_own_packages_are_unknown(catalog):
         text, "src/a.py", "python", catalog, {})
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_pipeline.py -q -k "boundar"`
 Expected: FAIL on all four (today `releases.ts` lists `setTimeout` under **scheduler**, `section_boundaries` takes two arguments, and `scheduler.ts` tags `fetchRelease(` and a comment).
 
-- [ ] **Step 3: Rewrite the section.** In `scripts/bundle.py`:
+- [x] **Step 3: Rewrite the section.** In `scripts/bundle.py`:
 
 1. Delete the whole `BOUNDARY_PATTERNS: list[tuple[str, re.Pattern]] = [ … ]` assignment.
 2. After `import _common as c  # noqa: E402` add `from detectors import Boundary, find_boundaries  # noqa: E402`.
@@ -1711,12 +1711,12 @@ and change `section_boundaries(text, hs["file"]),` to `section_boundaries(text, 
 
 6. In the module docstring, change "the boundaries it crosses" to "the boundary calls the catalog's rules find".
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_pipeline.py -q`
 Expected: PASS, including `test_bundles_are_within_budget_and_deterministic` and `test_bundle_contains_the_sections_the_investigator_needs`.
 
-- [ ] **Step 5: Measure Celery (AC-1).** Save as `/tmp/thunderstruck-58/count_boundaries.py` (not in the repository):
+- [x] **Step 5: Measure Celery (AC-1).** Save as `/tmp/thunderstruck-58/count_boundaries.py` (not in the repository):
 
 ```python
 """Count the boundary lines in a scan's bundles, and how many come from a
@@ -1770,7 +1770,7 @@ uv run --no-project --with pyyaml python "/tmp/thunderstruck-58/count_boundaries
 
 Expected: `total: 68 shown, 51 from a comment, docstring or import` for the frozen bundles, and `total: 11 shown, 0 from a comment, docstring or import` after, with `hotspots.json`'s `own_packages` `{"python": ["celery", "t"], "typescript": [], "java": []}` and the ten bundles at 48,637 estimated tokens in total (`index.json`'s `tokens_estimated`), the figure with Tasks 2–4's detector corrections applied before this task; the boundary rules alone give 48,901 (spec §2.6). Keep both outputs for Task 8 and the PR.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/bundle.py tests/test_pipeline.py
