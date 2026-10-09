@@ -64,7 +64,7 @@ Every command in this plan uses the fixed scratch path `/tmp/thunderstruck-58`, 
 **Interfaces:**
 - Produces: detector keys `absent_before` (regex, `MULTILINE`) and `absent_before_window` (int ≥ 1); private helper `_excused_before(lines: list[str], idx: int, det: dict) -> bool` where `idx` is the hit's 0-based line index.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_engine_v2.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_engine_v2.py`:
 
 ```python
 # --- #58: absent_before ------------------------------------------------------
@@ -132,12 +132,12 @@ and in `test_every_catalog_regex_compiles` change the key tuple to:
                             "require", "absent_before"):
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_engine_v2.py tests/detectors/test_detectors.py -q -k "absent_before or unchanged or compiles"`
 Expected: FAIL in `test_absent_before_excuses_a_regex_hit_within_its_window`, `test_absent_before_includes_the_hits_own_line`, both `file_absent` tests and the CRLF test (the key is ignored today). `test_a_detector_without_absent_before_is_unchanged` and the catalog tests PASS.
 
-- [ ] **Step 3: Write the implementation.** In `scripts/detectors/__init__.py`, add after `_snippet`:
+- [x] **Step 3: Write the implementation.** In `scripts/detectors/__init__.py`, add after `_snippet`:
 
 ```python
 def _excused_before(lines: list[str], idx: int, det: dict) -> bool:
@@ -202,12 +202,12 @@ In `catalog/stability.yaml`'s header, after the `module` entry under "Detector k
 #                present_within accepts.
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass** (same command as Step 2), then the detector suite:
+- [x] **Step 4: Run the tests to verify they pass** (same command as Step 2), then the detector suite:
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/detectors tests/test_engine_v2.py -q`
 Expected: PASS. No catalog detector uses the key yet, so every existing sample is unchanged.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/detectors/__init__.py catalog/stability.yaml tests/test_engine_v2.py tests/detectors/test_detectors.py

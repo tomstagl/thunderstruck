@@ -22,6 +22,12 @@
 #                Hit is reported at the first anchor line.
 #   module       dispatches to a handler in scripts/detectors/. For patterns
 #                where a regex cannot see the structure that matters.
+#   absent_before  (regex and file_absent) a regex, with absent_before_window
+#                N: the hit is dropped when it matches the N lines before the
+#                hit plus the hit's own line. For file_absent each anchor is
+#                tried in turn and the hit lands on the first one not excused.
+#                Its window is its own, so excusing a hit never widens what
+#                present_within accepts.
 #
 # `confidence` is the detector's own self-assessment and feeds hit weighting.
 # It is NOT the finding's confidence — only the investigator sets that.

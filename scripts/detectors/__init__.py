@@ -18,6 +18,10 @@ Three kinds, declared in catalog/stability.yaml:
   module       dispatches to a handler in detectors/modules.py, for structure
                a regex cannot see.
 
+Any regex or file_absent detector may set `absent_before` with
+`absent_before_window`: a hit (for file_absent, an anchor) is dropped when
+the regex matches that many lines before it together with its own line.
+
 Comments are blanked before matching (see _common.strip_comments) so that a
 file which *describes* honouring Retry-After but never reads it still trips
 the S03 detector. String literals are kept: header names and SQL live there.
@@ -100,6 +104,19 @@ def _snippet(ctx: DetectorContext, line_no: int) -> str:
     return ""
 
 
+def _excused_before(lines: list[str], idx: int, det: dict) -> bool:
+    """`absent_before`: drop the hit when this regex matches the
+    `absent_before_window` lines before it together with its own line. A
+    separate window from `window_before`, which `absent_within` and
+    `present_within` share, so excusing a hit never widens what counts as one."""
+    rx = det.get("absent_before")
+    if not rx:
+        return False
+    n = max(1, int(det.get("absent_before_window", 1)))
+    chunk = "\n".join(line.rstrip("\r") for line in lines[max(0, idx - n):idx + 1])
+    return _rx(rx, True).search(chunk) is not None
+
+
 def _run_regex(ctx: DetectorContext, pattern: dict, det: dict) -> list[Hit]:
     lines = ctx.raw_lines if det.get("include_comments") else ctx.code_lines
     main = _rx(det["pattern"])
@@ -125,6 +142,8 @@ def _run_regex(ctx: DetectorContext, pattern: dict, det: dict) -> list[Hit]:
                 continue
             if present is not None and not present.search(chunk):
                 continue
+        if _excused_before(lines, i, det):
+            continue
         hits.append(Hit(
             pattern_id=pattern["id"], detector_id=det["id"], file=ctx.rel_path,
             line=i + 1, note=det.get("note", ""),
@@ -144,10 +163,15 @@ def _run_file_absent(ctx: DetectorContext, pattern: dict, det: dict) -> list[Hit
         return []  # the file never does the thing the pattern guards
     if absent.search(text):
         return []
-    m = anchor.search(text)
-    if not m:
+    lines = text.split("\n")
+    line_no = None
+    for m in anchor.finditer(text):
+        n = text.count("\n", 0, m.start()) + 1
+        if not _excused_before(lines, n - 1, det):
+            line_no = n  # the first anchor nothing before it excuses
+            break
+    if line_no is None:
         return []
-    line_no = text.count("\n", 0, m.start()) + 1
     return [Hit(
         pattern_id=pattern["id"], detector_id=det["id"], file=ctx.rel_path,
         line=line_no, note=det.get("note", ""),
