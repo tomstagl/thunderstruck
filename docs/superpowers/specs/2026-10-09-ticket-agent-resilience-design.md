@@ -1,6 +1,6 @@
 # Ticket agent resilience: design
 
-**Requirements:** ticket to be opened as `DRAFT:` (number filled in here when it exists).
+**Requirements:** [#79](https://github.com/tomstagl/thunderstruck/issues/79). Acceptance criteria are cited as `AC-n` and live there.
 **Builds on:** [`2026-09-25-daily-ticket-agent-design.md`](2026-09-25-daily-ticket-agent-design.md) (#39). Its sections are cited as `#39 §n`; bare `§n` is this document.
 
 ## 1. Problem and shape
@@ -198,12 +198,14 @@ edits the spec or plan, in *Out* as well), **AC-12** (the set of outcomes),
   already the thing a human acts on; a label would be a second marker to keep
   in step.
 
-## 10. Open design questions
+## 10. Decisions on what was open
 
-- Can the GitHub MCP tools mark a draft PR ready? If not, resume closes the
-  draft and opens a ready PR from the same branch. Check before the plan.
-- Is the `Task: <k>` trailer enough to re-tick a plan after a conflicted merge,
-  or should resume instead refuse to continue when the plan file conflicts?
-- Should the baseline suite in §2 run only when drift is non-empty? It costs a
-  full suite per night in the common case; the benefit is the figures and an
-  early red.
+- **Marking a draft ready.** Resume calls `update_pull_request` with
+  `draft: false`. If the tool offers no such field, the agent closes the draft
+  with a comment and opens a ready PR from the same branch, linking the draft.
+  Either way the branch and its commits are the same.
+- **Plan conflicts on resume.** The `Task: <k>` trailer re-ticks tasks. A merge
+  conflict anywhere in the plan file other than `- [ ]` / `- [x]` lines is not
+  resolved by the agent: it uses `agent:blocked` (#79 AC-9).
+- **Baseline cost.** The baseline suite runs only when the drift list is
+  non-empty (§2), so a quiet night costs one `git log`.
