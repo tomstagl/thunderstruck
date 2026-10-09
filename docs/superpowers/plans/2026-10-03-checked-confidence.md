@@ -48,7 +48,7 @@ New tests go in one file, `tests/test_checked_confidence.py`, appended task by t
 
 **Satisfies:** none directly; every later task assumes it.
 
-- [ ] **Step 1: Check #5 and #55 are on `main`.**
+- [x] **Step 1: Check #5 and #55 are on `main`.**
 
 ```bash
 git fetch -q origin
@@ -62,7 +62,7 @@ git show origin/main:scripts/finding_shape.py | grep -q "def shape" && echo "ok 
 
 Expected: every line `ok`.
 
-- [ ] **Step 2: Stop if anything is missing.** Any `MISSING` line ends the run before Task 1: replace `agent:in-progress` with `agent:blocked` on #56, comment "Blocked at Task 0: <the missing files>. #5 (finding_shape.py, capture_finding.py, the SubagentStop hook) / #55 (benchmark.py, labels.json) is not merged", open no PR. Do not build Tasks 1–8 without #55: a branch that cannot finish Task 9 cannot merge.
+- [x] **Step 2: Stop if anything is missing.** Any `MISSING` line ends the run before Task 1: replace `agent:in-progress` with `agent:blocked` on #56, comment "Blocked at Task 0: <the missing files>. #5 (finding_shape.py, capture_finding.py, the SubagentStop hook) / #55 (benchmark.py, labels.json) is not merged", open no PR. Do not build Tasks 1–8 without #55: a branch that cannot finish Task 9 cannot merge.
 
 No commit: this task changes nothing.
 
@@ -77,7 +77,7 @@ No commit: this task changes nothing.
 **Interfaces:**
 - Produces, in `_common`: `CONFIDENCE_LEVELS: tuple[str, ...]`, `CHECK_STATUSES`, `CONFIDENCE_CEILING: dict[str, str]`, `CHECK_SENTENCES: dict[str, str]`, `COMMIT_ROLES`, `PRECONDITION_NEEDS`, `DOCUMENTED`, `GATES`, `GATE_MARKERS: dict[str, str]`; `check_status(finding: dict) -> str`; `effective_confidence(claimed, status: str) -> str`; `finding_gate(finding: dict) -> str`.
 
-- [ ] **Step 1: Write the failing tests.** Create `tests/test_checked_confidence.py`:
+- [x] **Step 1: Write the failing tests.** Create `tests/test_checked_confidence.py`:
 
 ```python
 """#56: confidence that means the claim was checked, preconditions, and the
@@ -155,12 +155,12 @@ def test_vocabularies_are_the_spec_spelling():
     assert set(c.GATE_MARKERS) == set(c.GATES) - {"none"}
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_checked_confidence.py -q`
 Expected: FAIL, `AttributeError: module '_common' has no attribute 'effective_confidence'` (and the like).
 
-- [ ] **Step 3: Write the implementation.** In `scripts/_common.py`, directly after `classify_commit`, add:
+- [x] **Step 3: Write the implementation.** In `scripts/_common.py`, directly after `classify_commit`, add:
 
 ```python
 # --------------------------------------------------------------------------
@@ -215,9 +215,9 @@ def finding_gate(finding: dict) -> str:
     return "none"
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass** (same command as Step 2). Expected: PASS.
+- [x] **Step 4: Run the tests to verify they pass** (same command as Step 2). Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/_common.py tests/test_checked_confidence.py
@@ -241,7 +241,7 @@ git commit -m "Checked confidence: the confidence ceiling and the gate (#56)"
 - Consumes: `c.COMMIT_ROLES`, `c.PRECONDITION_NEEDS`, `c.DOCUMENTED`, `c.CHECK_STATUSES` (Task 1).
 - Produces: in `validate`: `PRECONDITION_KEYS: frozenset[str]`; `Validator.check_ref(ref, where: str, errors: list[str]) -> tuple[str, int, int] | None`; `Validator.check_preconditions(pre, where: str, errors: list[str]) -> None`; `Validator.history(finding: dict) -> list[dict]` (entries `{sha, class, role, wrote_cited_line}`). Findings files that pass carry `check` and `history`.
 
-- [ ] **Step 1: Update the test data to the new contract.** Two mechanical rules, applied to every finding a test builds by hand:
+- [x] **Step 1: Update the test data to the new contract.** Two mechanical rules, applied to every finding a test builds by hand:
   1. every finding dict gains `"preconditions": []` (place it after `"evidence"`);
   2. every `{"type": "commit", …}` evidence item gains `"role": "changed"`, except where Step 2's tests set another role.
 
@@ -262,7 +262,7 @@ git commit -m "Checked confidence: the confidence ceiling and the gate (#56)"
 
   Then delete `tests/test_high_gate.py`. (Checked: with Tasks 1–2 applied to today's `main`, these are the only changes the existing suite needs.)
 
-- [ ] **Step 2: Write the failing tests.** Append to `tests/test_checked_confidence.py`:
+- [x] **Step 2: Write the failing tests.** Append to `tests/test_checked_confidence.py`:
 
 ```python
 # --- Task 2 -----------------------------------------------------------------
@@ -491,12 +491,12 @@ def test_findings_validated_under_rules_3_are_investigated_again(scanned_copy, p
     assert not bundle._still_valid(v, doc)
 ```
 
-- [ ] **Step 3: Run them to verify they fail**
+- [x] **Step 3: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_checked_confidence.py -q`
 Expected: FAIL on the Task 2 tests (e.g. `preconditions is missing` not reported, `VALIDATION_RULES == 3`).
 
-- [ ] **Step 4: Write the implementation.**
+- [x] **Step 4: Write the implementation.**
 
 In `scripts/_common.py`: `VALIDATION_RULES = 4`. In `scripts/finding_shape.py`: `FINDING_SCHEMA_VERSION = "thunderstruck.finding/v2"` (`_common` re-exports it unchanged).
 
@@ -717,12 +717,12 @@ In `scripts/gen_sample_report.py`, `_corroborating_commit` returns a third value
 
 and every built item gets `item["preconditions"] = []` (Task 8 fills one in).
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_checked_confidence.py tests/test_validate_paths.py tests/test_investigator_contract.py tests/test_pipeline.py -q`
 Expected: PASS. Then run the full suite (command in the header); expected `exit=0`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A scripts/validate.py scripts/_common.py scripts/finding_shape.py scripts/gen_sample_report.py tests/
@@ -743,7 +743,7 @@ git commit -m "Validator: preconditions, commit roles and history; the fix gate 
 - Consumes: `c.check_status`, `c.effective_confidence`, `c.finding_gate`, `c.GATES`, `c.CHECK_STATUSES` (Task 1); `check`, `history` in findings files (Task 2).
 - Produces: each finding in `collect()`'s data carries `confidence` (reported), `confidence_claimed`, `check` (`{status, by, reason, …}`), `gate`, `preconditions[]` with `default_url`/`doc_url`, `history[]` with `subject`/`url`; `report.order_key(f: dict) -> tuple`; `report._preconditions(f) -> list[dict]`; `report._history(f) -> list[dict]`; `report.json` `counts.check_status`, `counts.gate`; `index.json` entries with `check_status`, `gate`, `preconditions`, `history`.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 3 -----------------------------------------------------------------
@@ -858,12 +858,12 @@ def test_preconditions_and_history_are_linked(linked_copy, plugin_root):
     assert all("kind" not in ev for ev in f["evidence"])
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_checked_confidence.py -q -k "capped or upheld or malformed or gated or order_key or linked"`
 Expected: FAIL (`KeyError: 'confidence_claimed'`, `AttributeError: module 'report' has no attribute 'order_key'`).
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 `scripts/_common.py`: `REPORT_SCHEMA_VERSION = "thunderstruck.report/v2"`. `tests/test_report_html.py::test_wrong_schema_writes_nothing`: expect `thunderstruck.report/v2` in stderr.
 
@@ -990,9 +990,9 @@ In `render_index`, the item becomes:
             item["sustaining_effect"] = f["sustaining_effect"]
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass** (same command as Step 2, then the full suite). Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests to verify they pass** (same command as Step 2, then the full suite). Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/report.py scripts/_common.py tests/test_checked_confidence.py tests/test_report_html.py
@@ -1012,7 +1012,7 @@ git commit -m "Report: confidence capped by check status, default-path findings 
 - Consumes: Task 3's per-finding fields; `c.CHECK_SENTENCES`, `c.GATE_MARKERS`.
 - Produces: `report.render_check(f) -> list[str]`, `report.render_preconditions(f) -> list[str]`, `report.render_history(f) -> list[str]`.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 4 -----------------------------------------------------------------
@@ -1089,12 +1089,12 @@ def test_report_md_states_what_validation_proved(scanned_copy, plugin_root):
     assert commit_line.count("(fix)") == 0
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_checked_confidence.py -q -k "check_line or block or validation_proved"`
 Expected: FAIL, `AttributeError: module 'report' has no attribute 'render_check'`.
 
-- [ ] **Step 3: Write the implementation.** In `scripts/report.py`, add after `_shared_line`:
+- [x] **Step 3: Write the implementation.** In `scripts/report.py`, add after `_shared_line`:
 
 ```python
 def _not_stated(value) -> str:
@@ -1201,9 +1201,9 @@ In `tests/test_inert_report.py::test_hostile_model_text_stays_inert`, after the 
 
   and, after `_validate` and before `report.py`, set `check.reason` to `f"reason: {HOSTILE}"` in the saved findings file (read, edit, write the JSON). The assertions are unchanged.
 
-- [ ] **Step 4: Run the tests to verify they pass** (Step 2's command, `tests/test_inert_report.py`, then the full suite). Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests to verify they pass** (Step 2's command, `tests/test_inert_report.py`, then the full suite). Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/report.py tests/test_checked_confidence.py tests/test_inert_report.py
@@ -1223,7 +1223,7 @@ git commit -m "report.md: check status, preconditions and history per finding (#
 - Consumes: `report.json` v2 fields (Task 3); `c.CHECK_SENTENCES`, `c.GATE_MARKERS`.
 - Produces: in the template script, `var CHECK_SENTENCES = {…}` and `var GATE_MARKERS = {…}` written as JSON object literals (double-quoted keys), on one line each.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 5 -----------------------------------------------------------------
@@ -1274,12 +1274,12 @@ def test_dossier_shows_check_preconditions_and_history(page, scanned_copy, plugi
     assert "Not stated." in body and "History" in body
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_checked_confidence.py -q -k "template"`
 Expected: FAIL, `AssertionError: CHECK_SENTENCES`.
 
-- [ ] **Step 3: Write the implementation.** In `templates/report.html`'s script:
+- [x] **Step 3: Write the implementation.** In `templates/report.html`'s script:
 
 - After `var KIND = …`, add (one line each, JSON-compatible):
 
@@ -1339,12 +1339,12 @@ Expected: FAIL, `AssertionError: CHECK_SENTENCES`.
 - `renderHead`: the counts gain `h("span", null, [h("b", { text: String(nUnchecked) }), "unchecked"])` when `nUnchecked` (the number of findings whose `check.status` is `unchecked` or missing) is non-zero.
 - The overview's `hypo` text becomes: `"Findings are falsifiable hypotheses. Every citation in them was resolved mechanically: each cited file:line, commit, detector hit and catalog edge exists. That is all validation proves. Whether a claim holds is its check status; a finding nobody has tried to refute is unchecked, and its confidence is at most medium. Check it before you act on one."` The coverage sentence ends "leads confirmed counts those cited by a finding whose citations resolved."
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_checked_confidence.py tests/test_report_html.py -q`, then, where Chromium is installed, `THUNDERSTRUCK_REQUIRE_BROWSER=1 uv run --with pytest --with pyyaml --with lizard --with playwright==1.56.0 pytest tests/test_report_html_browser.py -q`, then the full suite.
 Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add templates/report.html tests/test_checked_confidence.py tests/test_report_html.py tests/test_report_html_browser.py
@@ -1363,7 +1363,7 @@ git commit -m "HTML report: check status, preconditions and history; the report'
 - Consumes: `index.json` entries from Task 3 (`check_status`, `gate`, `preconditions`, `history`, reported `confidence`).
 - Produces: in `guardrail`: `CEILING: dict[str, str]`, `LEVELS`, `GATE_ORDER` (pinned to `_common.GATES` by a test), `effective(confidence, status) -> str` (a copy of `_common.effective_confidence`), `precondition_line(f) -> str | None`, `history_line(f) -> str | None`.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 6 -----------------------------------------------------------------
@@ -1426,12 +1426,12 @@ def test_guardrail_lists_at_most_three_items(project):
     assert "S2 set to v (default d) and 2 more." in text and "S3" not in text
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_checked_confidence.py -q -k guardrail`
 Expected: FAIL, `AttributeError: module 'guardrail' has no attribute 'effective'`.
 
-- [ ] **Step 3: Write the implementation.** In `scripts/guardrail.py`, add after the constants:
+- [x] **Step 3: Write the implementation.** In `scripts/guardrail.py`, add after the constants:
 
 ```python
 # A copy of _common's confidence rule: this hook may not import _common.
@@ -1513,12 +1513,12 @@ and, per shown finding:
             lines.append(f"  what keeps it failing: {f['sustaining_effect']}")
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_checked_confidence.py tests/test_guardrail.py -q`, then the full suite.
 Expected: PASS (including `test_hook_needs_no_third_party_imports`, `test_context_is_phrased_as_fact_not_instruction` and `test_latency_is_within_budget`), `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/guardrail.py tests/test_checked_confidence.py
@@ -1539,7 +1539,7 @@ git commit -m "Guardrail: check status, preconditions and cited history as facts
 **Interfaces:**
 - Consumes: `validate.REQUIRED_FIELDS`, `validate.PRECONDITION_KEYS`, `c.COMMIT_ROLES` (Task 2).
 
-- [ ] **Step 1: Write the failing tests.** In `tests/test_investigator_contract.py`:
+- [x] **Step 1: Write the failing tests.** In `tests/test_investigator_contract.py`:
 
 ```python
 from validate import PRECONDITION_KEYS, REQUIRED_FIELDS
@@ -1583,12 +1583,12 @@ def test_the_prompt_never_ties_confidence_to_a_fix():
 
 and in `test_the_repair_round_asks_for_the_whole_object`, add `assert "`preconditions` may be `[]` but must be present" in flat`.
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_investigator_contract.py -q`
 Expected: FAIL (the example has no `preconditions`; the old `[fix]` ceiling sentence is present).
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 In `agents/thunderstruck-investigator.md`:
 
@@ -1617,12 +1617,12 @@ In `scripts/bundle.py`'s `write_catalog_brief`, the metastability paragraph's la
 
 In `skills/thunderstruck-verify/SKILL.md`, where it describes building the test from the finding, add: "Set every precondition with `needs: changed` to its stated `value` in the test, and leave the others at their defaults: a gated finding's test that passes on defaults proves nothing."
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_investigator_contract.py tests/test_docs_in_sync.py -q`, then the full suite.
 Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add agents/thunderstruck-investigator.md skills/thunderstruck-scan/SKILL.md skills/thunderstruck-verify/SKILL.md scripts/bundle.py tests/test_investigator_contract.py
@@ -1639,7 +1639,7 @@ git commit -m "Investigator: preconditions, commit roles, confidence as a claim 
 - Modify: `tests/test_docs_in_sync.py`
 - Regenerate: `examples/sample-report.md`, `examples/sample-report.html`
 
-- [ ] **Step 1: Write the failing tests.** In `tests/test_docs_in_sync.py`, `test_sample_report_is_a_real_artefact` expects `"thunderstruck.report/v2"`, and add:
+- [x] **Step 1: Write the failing tests.** In `tests/test_docs_in_sync.py`, `test_sample_report_is_a_real_artefact` expects `"thunderstruck.report/v2"`, and add:
 
 ```python
 def test_sample_report_shows_check_status_preconditions_and_history():
@@ -1654,12 +1654,12 @@ def test_sample_report_shows_check_status_preconditions_and_history():
     assert "_not stated_" in sample and "**History** — a signal" in sample
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_docs_in_sync.py -q -k sample`
 Expected: FAIL (the committed sample is still `report/v1` with no check status).
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 In `tests/fixtures/build_fixture.py`, `IGNORES_RETRY_AFTER` becomes:
 
@@ -1714,12 +1714,12 @@ uv run scripts/gen_sample_report.py --check; echo "exit=$?"
 
 Read the regenerated `examples/sample-report.md` in full before committing: five findings, all `unchecked`; the three `high` claims shown as `medium` with "(claimed high)"; the api.ts finding last with "needs a non-default setting"; *not stated* under the scheduler and format findings' Sustaining effect; a History block under every finding with a cited commit.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_docs_in_sync.py tests/test_sample_report.py tests/test_pipeline.py -q`, then the full suite.
 Expected: PASS (`test_pipeline`'s S03 lead on `client/api.ts` still fires), `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tests/fixtures/build_fixture.py scripts/gen_sample_report.py tests/test_docs_in_sync.py examples/sample-report.md examples/sample-report.html
@@ -1741,7 +1741,7 @@ git commit -m "Sample: a gated finding, check status, preconditions and history 
 - Consumes: from #55's `benchmark`: `RUN_SCHEMA`, `load_label_sets`, `load_run`, `run_from_report`, `split_run`, `score_confidence`; `c.effective_confidence`.
 - Produces: `test_checked_confidence.checked_confidence_run() -> dict`.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 9 -----------------------------------------------------------------
@@ -1793,12 +1793,12 @@ def test_the_report_adapter_reads_preconditions(tmp_path):
     assert "preconditions" not in run["findings"]["k2"]
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_checked_confidence.py -q -k "after_run or agreement or adapter"`
 Expected: FAIL (`FileNotFoundError` for the run file; the adapter drops preconditions).
 
-- [ ] **Step 3: Write the implementation.** In `scripts/benchmark.py`'s `run_from_report`, the loop becomes:
+- [x] **Step 3: Write the implementation.** In `scripts/benchmark.py`'s `run_from_report`, the loop becomes:
 
 ```python
     for f in report.get("findings") or []:
@@ -1821,7 +1821,7 @@ open('docs/calibration/correctness/celery/runs/checked-confidence.json', 'w').wr
     json.dumps(t.checked_confidence_run(), indent=2) + '\n')"
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass** (Step 2's command, then the full suite). Expected: PASS, `exit=0`. Then record the figures for the PR description:
+- [x] **Step 4: Run the tests to verify they pass** (Step 2's command, then the full suite). Expected: PASS, `exit=0`. Then record the figures for the PR description:
 
 ```bash
 uv run scripts/benchmark.py --report docs/calibration/correctness/celery/scan/report.json
@@ -1830,7 +1830,7 @@ uv run scripts/benchmark.py --run docs/calibration/correctness/celery/runs/check
 
 Expected: confidence 8/21 exact before and after; `high` above deserved FR-001, FR-003 before and none after; each line with `celery/celery@508c112`, `n=21` and `labels: 21 claude-fable-5-1`. Paste both outputs into the PR.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/benchmark.py docs/calibration/correctness/celery/runs/checked-confidence.json tests/test_checked_confidence.py
@@ -1844,7 +1844,7 @@ git commit -m "Benchmark: confidence before and after checked confidence (#56)"
 **Files:**
 - Modify: `README.md`, `CLAUDE.md`, `skills/thunderstruck-scan/references/report-format.md`, `CHANGELOG.md`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `pyproject.toml`
 
-- [ ] **Step 1: README.** In "Findings are falsifiable, and checked", replace the "`high` confidence requires corroborating history" and "`sustaining_effect` is mandatory" bullets with:
+- [x] **Step 1: README.** In "Findings are falsifiable, and checked", replace the "`high` confidence requires corroborating history" and "`sustaining_effect` is mandatory" bullets with:
 
 ```markdown
 - **Confidence says whether the claim was checked.** Only a finding whose
@@ -1864,7 +1864,7 @@ git commit -m "Benchmark: confidence before and after checked confidence (#56)"
 
   Update the guardrail example to the new lines (`confidence: medium; check status: unchecked.` and `It happens on default settings.`).
 
-- [ ] **Step 2: CLAUDE.md.** Replace the "**`high` needs a corroborating commit.**" paragraph with:
+- [x] **Step 2: CLAUDE.md.** Replace the "**`high` needs a corroborating commit.**" paragraph with:
 
 ```markdown
 **Confidence is capped by check status, never by history.** A finding's
@@ -1882,9 +1882,9 @@ are listed after default-path findings and marked. Tightening a validator
 rule means bumping `VALIDATION_RULES`.
 ```
 
-- [ ] **Step 3: report-format.md.** The tree line reads `thunderstruck.report/v2`. The finding contract's `high` and `sustaining_effect` bullets are replaced by: `preconditions` required (may be `[]`) with its keys and rules; commit `role` with the `introduced` rule; `amplifier`/`sustaining_effect` optional, never empty; `confidence` is a claim, reported through the check-status ceiling. A new section "Check status, preconditions and history" lists §6.2's per-finding fields, `counts.check_status` and `counts.gate`, §6.3's `index.json` additions, and names the keys reserved for #37 (`check.by`, `check.reason`, `check.holds`, `check.refuted_claims`, `check.evidence`, `check.model`, `check.dependency_versions`, `check.reused_from`, `check.duplicate_of`, `check.confirmations`; and #37's extension of `finding_gate` to a narrowed verdict naming a missing setting) and #57 (`preconditions[].confirmation`, gate `unconfirmed_default`, placed in `GATES` by #57). The "Sections of `report.md` in `report.json`" intro notes that `run_warnings` now ends with check-status warnings, and that v2 changed `confidence`'s meaning.
+- [x] **Step 3: report-format.md.** The tree line reads `thunderstruck.report/v2`. The finding contract's `high` and `sustaining_effect` bullets are replaced by: `preconditions` required (may be `[]`) with its keys and rules; commit `role` with the `introduced` rule; `amplifier`/`sustaining_effect` optional, never empty; `confidence` is a claim, reported through the check-status ceiling. A new section "Check status, preconditions and history" lists §6.2's per-finding fields, `counts.check_status` and `counts.gate`, §6.3's `index.json` additions, and names the keys reserved for #37 (`check.by`, `check.reason`, `check.holds`, `check.refuted_claims`, `check.evidence`, `check.model`, `check.dependency_versions`, `check.reused_from`, `check.duplicate_of`, `check.confirmations`; and #37's extension of `finding_gate` to a narrowed verdict naming a missing setting) and #57 (`preconditions[].confirmation`, gate `unconfirmed_default`, placed in `GATES` by #57). The "Sections of `report.md` in `report.json`" intro notes that `run_warnings` now ends with check-status warnings, and that v2 changed `confidence`'s meaning.
 
-- [ ] **Step 4: Version and CHANGELOG.** Bump the minor version in all four places to `<version>`, the next minor above `main`'s at the time (read it from `pyproject.toml` on `origin/main`; e.g. `0.9.3` becomes `0.10.0`), and add, with that version in the heading:
+- [x] **Step 4: Version and CHANGELOG.** Bump the minor version in all four places to `<version>`, the next minor above `main`'s at the time (read it from `pyproject.toml` on `origin/main`; e.g. `0.9.3` becomes `0.10.0`), and add, with that version in the heading:
 
 ```markdown
 ## <version>
@@ -1907,7 +1907,7 @@ Confidence that means the claim was checked (#56).
 - On the Celery benchmark (#55): 0 findings rated `high` above their deserved confidence (2 before); exact agreement 8 of 21 before and after.
 ```
 
-- [ ] **Step 5: Run the full suite and the generated-file checks**
+- [x] **Step 5: Run the full suite and the generated-file checks**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/ -q; echo "exit=$?"
@@ -1919,7 +1919,7 @@ claude plugin marketplace add "$PWD" && claude plugin install thunderstruck@thun
 
 Expected: every `exit=0`; `test_versions_agree` passes; `claude plugin list` shows thunderstruck `enabled`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add README.md CLAUDE.md skills/thunderstruck-scan/references/report-format.md CHANGELOG.md .claude-plugin/plugin.json .claude-plugin/marketplace.json pyproject.toml

@@ -63,6 +63,10 @@ missing pattern is present. Aim at the mechanism, not the symptom:
 Prefer a fake or a local stub over the network. A verification test that needs
 the real dependency is one more thing that fails for unrelated reasons.
 
+Set every precondition with `needs: changed` to its stated `value` in the test,
+and leave the others at their defaults: a gated finding's test that passes on
+defaults proves nothing.
+
 ## Step 5 — run it and report honestly
 
 Run the test. Then say plainly which happened:

@@ -17,6 +17,7 @@ So every ref is resolved mechanically:
   detector  S0x@path:line — copied exactly from a hit in hotspots.json
   catalog   <type> <entity ref> — an edge in context.json, from the same
             snapshot the finding's bundle was built from
+  precondition  default_ref / doc_ref — path:line, resolved like a code ref
 
 Anything that fails gets one repair round with the error text, then it is
 recorded as analysis_failed. No retry loops.
@@ -46,9 +47,17 @@ EVIDENCE_TYPES = {"code", "commit", "detector", "catalog"}
 
 REQUIRED_FIELDS = [
     "location", "missing_patterns", "failure_mode", "trigger_condition",
-    "amplifier", "sustaining_effect", "blast_radius", "evidence",
+    "blast_radius", "evidence", "preconditions",
     "confidence", "confidence_rationale", "how_to_verify",
 ]
+# Present or absent; never an empty string (#56 AC-6)
+OPTIONAL_TEXT = ("amplifier", "sustaining_effect")
+# The keys an investigator may write. #57 adds "confirmation", written after validation.
+PRECONDITION_KEYS = frozenset({"setting", "default", "default_ref", "needs", "value",
+                               "documented", "doc_ref"})
+PRECONDITION_FORM = ('{"setting": "API_RETRY_ON_429", "default": "false", '
+                     '"default_ref": "src/client/api.ts:1", "needs": "changed", "value": "true", '
+                     '"documented": "no", "doc_ref": null}')
 
 # [0-9] and \Z, not \d and $: "١٦" and a trailing newline are not line numbers
 CODE_REF = re.compile(r"^(?P<path>[^:]+):(?P<start>[0-9]+)(?:-(?P<end>[0-9]+))?\Z")
@@ -225,6 +234,14 @@ class Validator:
                           f"ref is one string: {REF_FORMS[etype]}")
             return None
         ref = ref.strip()
+        role = ev.get("role")
+        if etype == "commit" and role not in c.COMMIT_ROLES:
+            errors.append(f"{where}.role {role!r} is not one of {list(c.COMMIT_ROLES)}: what this "
+                          f"commit did to the cited code (introduced = wrote it; fixed = an "
+                          f"earlier fix attempt; mitigated = added a guard or option; changed = "
+                          f"anything else)")
+        elif etype != "commit" and "role" in ev:
+            errors.append(f"{where}.role is only given on commit evidence")
 
         if etype == "code":
             m = CODE_REF.match(ref)
@@ -271,6 +288,116 @@ class Validator:
                     f"ref verbatim from the bundle's 'Service context' section.")
         return etype
 
+    def check_ref(self, ref: Any, where: str, errors: list[str]) -> tuple[str, int, int] | None:
+        """A path:line or path:start-end that must resolve exactly as a `code`
+        evidence ref does. The one place a precondition ref is resolved (spec §7)."""
+        if not isinstance(ref, str) or not ref.strip():
+            errors.append(f"{where} must be one string, {REF_FORMS['code']}; got {shown(ref)}")
+            return None
+        ref = ref.strip()
+        m = CODE_REF.match(ref)
+        if not m:
+            errors.append(f"{where} {ref!r} is not path:line or path:start-end, e.g. "
+                          f"{REF_FORMS['code']}")
+            return None
+        rel, total, problem = self._resolve(m["path"])
+        if problem:
+            errors.append(f"{where} {ref!r} — {m['path']!r} {problem}")
+            return None
+        span = (int(m["start"]), int(m["end"] or m["start"]))
+        if not range_fits(span, total):
+            errors.append(f"{where} {ref!r} — {range_error(rel, total)}")
+            return None
+        return rel, *span
+
+    def check_preconditions(self, pre: Any, where: str, errors: list[str]) -> None:
+        if not isinstance(pre, list):
+            errors.append(f"{where} must be a list ([] when the failure happens on default "
+                          f"settings); got {shown(pre)}")
+            return
+        seen: set[str] = set()
+        for j, p in enumerate(pre):
+            pw = f"{where}[{j}]"
+            if not isinstance(p, dict):
+                errors.append(f"{pw} is not an object: got {shown(p)}. Use {PRECONDITION_FORM}")
+                continue
+            unknown = sorted(set(p) - PRECONDITION_KEYS)
+            if unknown:
+                errors.append(f"{pw} has unknown key(s) {unknown}; the keys are "
+                              f"{sorted(PRECONDITION_KEYS)}")
+            for key in ("setting", "default"):
+                if not isinstance(p.get(key), str) or not p[key].strip():
+                    errors.append(f"{pw}.{key} must be a non-empty string; got {shown(p.get(key))}")
+            name = p.get("setting")
+            if isinstance(name, str) and name.strip():
+                norm = "".join(name.split()).casefold()
+                if norm in seen:
+                    errors.append(f"{pw}.setting {name!r} is listed twice; one item per setting")
+                seen.add(norm)
+            self.check_ref(p.get("default_ref"), f"{pw}.default_ref", errors)
+            needs, value = p.get("needs"), p.get("value")
+            if needs not in c.PRECONDITION_NEEDS:
+                errors.append(f'{pw}.needs {needs!r} is not one of {list(c.PRECONDITION_NEEDS)}: '
+                              f'"changed" when the failure needs the setting changed from its '
+                              f'default, "default" when it happens on the default')
+            elif needs == "changed" and (not isinstance(value, str) or not value.strip()):
+                errors.append(f'{pw}.value must name the value the failure needs when needs is '
+                              f'"changed"; got {shown(value)}')
+            elif needs == "default" and value is not None:
+                errors.append(f'{pw}.value must be absent or null when needs is "default"; the '
+                              f'default is the value')
+            documented = p.get("documented")
+            if documented not in c.DOCUMENTED:
+                errors.append(f"{pw}.documented {documented!r} is not one of {list(c.DOCUMENTED)}")
+            elif documented == "yes":
+                self.check_ref(p.get("doc_ref"), f"{pw}.doc_ref", errors)
+            elif p.get("doc_ref") is not None:
+                errors.append(f'{pw}.doc_ref is only given when documented is "yes"')
+
+    def _written(self, evidence: list) -> set[str]:
+        """Full SHAs that wrote any line of any cited code range (git blame)."""
+        out: set[str] = set()
+        for ev in evidence:
+            if not isinstance(ev, dict) or ev.get("type") != "code":
+                continue
+            m = CODE_REF.match(str(ev.get("ref") or "").strip())
+            if not m:
+                continue
+            rel, total, err = self._resolve(m.group("path"))
+            start, end = int(m["start"]), int(m["end"] or m["start"])
+            if err or not range_fits((start, end), total or 0):
+                continue
+            out |= self._introduced(rel, start, end)
+        return out
+
+    @staticmethod
+    def _wrote(sha: str, written: set[str]) -> bool:
+        return any(full.startswith(sha.lower()) for full in written)
+
+    def history(self, finding: dict) -> list[dict]:
+        """One entry per distinct cited commit: its class, its stated role and
+        whether it wrote a cited line. A signal of fragility; never confidence."""
+        evidence = [ev for ev in finding.get("evidence") or [] if isinstance(ev, dict)]
+        if not any(ev.get("type") == "commit" for ev in evidence):
+            return []  # nothing to blame for
+        written = self._written(evidence)
+        out: list[dict] = []
+        seen: set[str] = set()
+        for ev in evidence:
+            if ev.get("type") != "commit":
+                continue
+            sha = str(ev.get("ref") or "").strip().split()[0]
+            if sha in seen:
+                continue
+            seen.add(sha)
+            subject = self._subject(sha)
+            out.append({"sha": sha,
+                        "class": (c.classify_commit(subject, self.extra_fix)
+                                  if subject is not None else None),
+                        "role": ev.get("role"),
+                        "wrote_cited_line": self._wrote(sha, written)})
+        return out
+
     # ------------------------------------------------------------ findings
 
     def check_finding(self, f: Any, idx: int, errors: list[str]) -> None:
@@ -282,8 +409,8 @@ class Validator:
         for key in REQUIRED_FIELDS:
             if key not in f:
                 errors.append(f"{where}.{key} is missing"
-                              + (" (it may be null, but the key must be present)"
-                                 if key == "sustaining_effect" else ""))
+                              + (" (it may be [], but the key must be present)"
+                                 if key == "preconditions" else ""))
 
         loc = f.get("location")
         if not isinstance(loc, dict) or not loc.get("file"):
@@ -323,6 +450,23 @@ class Validator:
             if field in f and (not isinstance(value, str) or not value.strip()):
                 errors.append(f"{where}.{field} must be a non-empty string; got {shown(value)}")
 
+        for field in OPTIONAL_TEXT:
+            value = f.get(field)
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                errors.append(f"{where}.{field} must be a non-empty string when present; leave it "
+                              f"out when there is nothing to state (got {shown(value)})")
+        if "preconditions" in f:
+            self.check_preconditions(f["preconditions"], f"{where}.preconditions", errors)
+        check = f.get("check")
+        if check is not None:
+            if not isinstance(check, dict) or check.get("status") not in c.CHECK_STATUSES:
+                errors.append(f"{where}.check.status must be one of {list(c.CHECK_STATUSES)}; "
+                              f"got {shown(check)}")
+            else:
+                for key in ("by", "reason"):
+                    if check.get(key) is not None and not isinstance(check[key], str):
+                        errors.append(f"{where}.check.{key} must be a string or null")
+
         evidence = f.get("evidence")
         if not isinstance(evidence, list) or not evidence:
             errors.append(f"{where}.evidence must be a non-empty list of "
@@ -336,47 +480,25 @@ class Validator:
             errors.append(
                 f"{where}.evidence has no item of type 'code'. A detector hit on "
                 f"its own never justifies a finding — cite the code that fails.")
-        if conf == "high" and "commit" not in types:
-            errors.append(
-                f"{where}.confidence is 'high' but there is no 'commit' evidence. "
-                f"High confidence needs both code and history; otherwise use 'medium'.")
-        elif conf == "high" and touching and not self._corroborates(f, evidence, touching):
-            other_only = f.get("missing_patterns") == ["OTHER"]
-            errors.append(
-                f"{where}.confidence is 'high' but no cited commit is a fix. The most "
-                f"recent change to a file is not corroboration; cite a commit the "
-                f"bundle's change history labels [fix]"
-                + (", or the commit that introduced the cited lines" if other_only else "")
-                + ", or use 'medium'.")
-
-    def _corroborates(self, f: dict, evidence: list, touching: list[str]) -> bool:
-        """A commit corroborates when it is a fix, or, for a finding whose only
-        pattern is OTHER, when it wrote a line inside a cited code range."""
-        for sha in touching:
-            subject = self._subject(sha)
-            if subject is not None and c.classify_commit(subject, self.extra_fix) == "fix":
-                return True
-        if f.get("missing_patterns") != ["OTHER"]:
-            return False
-        for ev in evidence:
-            if not isinstance(ev, dict) or ev.get("type") != "code":
+        written: set[str] | None = None
+        for i, (ev, etype) in enumerate(zip(evidence, types)):
+            if etype != "commit" or ev.get("role") != "introduced":
                 continue
-            m = CODE_REF.match(str(ev.get("ref") or "").strip())
-            if not m:
-                continue
-            rel, total, err = self._resolve(m.group("path"))
-            start, end = int(m["start"]), int(m["end"] or m["start"])
-            if err or not range_fits((start, end), total or 0):
-                continue
-            written = self._introduced(rel, start, end)
-            if any(full.startswith(sha.lower()) for sha in touching for full in written):
-                return True
-        return False
+            short = str(ev["ref"]).strip().split()[0]
+            if short not in touching:
+                continue  # unresolvable or not touching: already reported
+            written = self._written(evidence) if written is None else written
+            if not self._wrote(short, written):
+                errors.append(
+                    f"{where}.evidence[{i}] is cited as having introduced the cited code, but it "
+                    f"wrote none of the cited lines (git blame). Use role \"changed\", or cite "
+                    f"the commit that wrote them.")
 
     def check_commits_touch(self, f: dict, evidence: list, types: list,
                             where: str, errors: list[str]) -> list[str]:
         """A commit is evidence only if it changed the code the finding is
-        about. Without this, any SHA from the bundle buys 'high' confidence."""
+        about. Without this, any SHA from the bundle could pass as the
+        history of code it never touched."""
         cited: list[str] = []
         loc = f.get("location")
         if isinstance(loc, dict) and loc.get("file"):
@@ -443,10 +565,21 @@ def canonicalise(finding: dict) -> None:
         loc["file"] = c.ref_path(loc["file"])
     for ev in finding.get("evidence") or []:
         if isinstance(ev, dict) and ev.get("type") == "code":
-            m = CODE_REF.match(str(ev.get("ref") or "").strip())
-            if m:
-                rng = m["start"] + (f"-{m['end']}" if m["end"] else "")
-                ev["ref"] = f"{c.ref_path(m['path'])}:{rng}"
+            ev["ref"] = _canonical_ref(ev.get("ref"))
+    for p in finding.get("preconditions") or []:
+        if isinstance(p, dict):
+            for key in ("default_ref", "doc_ref"):
+                if p.get(key) is not None:
+                    p[key] = _canonical_ref(p[key])
+
+
+def _canonical_ref(ref: Any) -> Any:
+    """path:line with the canonical path; anything else unchanged."""
+    m = CODE_REF.match(str(ref or "").strip())
+    if not m:
+        return ref
+    rng = m["start"] + (f"-{m['end']}" if m["end"] else "")
+    return f"{c.ref_path(m['path'])}:{rng}"
 
 
 def evidence_hashes(repo: Path, finding: dict) -> dict[str, str]:
@@ -540,6 +673,9 @@ def main(argv: list[str] | None = None) -> int:
                     repo / c.ref_path(f.get("location", {}).get("file", "")))
                 f["catalog_evidence"] = catalog_evidence(f, validator.catalog_edges)
                 f["evidence_hashes"] = evidence_hashes(repo, f)
+                f["history"] = validator.history(f)
+                if "check" not in f:
+                    f["check"] = {"status": "unchecked", "by": None, "reason": None}
             doc["validated_with"] = c.VALIDATION_RULES
             path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
         results.append({"path": str(path), "hotspot_id": doc.get("hotspot_id", path.stem)

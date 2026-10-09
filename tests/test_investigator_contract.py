@@ -23,14 +23,13 @@ import _common as c
 from save_finding import normalise
 from test_pipeline import _hotspots, _valid_finding
 from test_validate_paths import _bundle, _doc, _validator, repo  # noqa: F401
+from validate import PRECONDITION_KEYS, REQUIRED_FIELDS
 
 ROOT = Path(__file__).resolve().parent.parent
 AGENT = ROOT / "agents" / "thunderstruck-investigator.md"
 SCAN = ROOT / "skills" / "thunderstruck-scan" / "SKILL.md"
 
-REQUIRED = ["location", "missing_patterns", "failure_mode", "trigger_condition",
-            "amplifier", "sustaining_effect", "blast_radius", "evidence",
-            "confidence", "confidence_rationale", "how_to_verify"]
+REQUIRED = list(REQUIRED_FIELDS)
 
 
 def _malformed(doc: dict) -> dict:
@@ -179,19 +178,25 @@ def test_the_prompt_example_is_a_complete_valid_shape():
         assert set(REQUIRED) <= set(f), set(REQUIRED) - set(f)
         assert isinstance(f["location"], dict) and "file" in f["location"]
         for ev in f["evidence"]:
-            assert set(ev) == {"type", "ref", "note"} and isinstance(ev["ref"], str)
+            expected = {"type", "ref", "role", "note"} if ev["type"] == "commit" else {"type", "ref", "note"}
+            assert set(ev) == expected and isinstance(ev["ref"], str)
             assert ev["type"] in {"code", "commit", "detector", "catalog"}
-        if f["confidence"] == "high":
-            assert {"code", "commit"} <= {ev["type"] for ev in f["evidence"]}
-    assert any(f["sustaining_effect"] is None for f in findings), \
-        "the example must show a null sustaining_effect with the key present"
+            if ev["type"] == "commit":
+                assert ev["role"] in c.COMMIT_ROLES
+        for p in f["preconditions"]:
+            assert set(p) <= PRECONDITION_KEYS and p["needs"] in c.PRECONDITION_NEEDS
+    assert any(f["preconditions"] for f in findings), "the example must show a precondition"
+    assert any(f["preconditions"] == [] for f in findings), "and a default-path finding"
+    assert any("sustaining_effect" not in f for f in findings), \
+        "the example must show an optional field left out"
 
 
 def test_the_prompt_states_each_field_observed_rule():
     text = AGENT.read_text(encoding="utf-8")
     flat = " ".join(text.split())
     for fragment in ("The top-level key is `findings`", "`hypotheses`",
-                     "never 4", '"sustaining_effect": null', "there is no `git` type",
+                     "never 4", '"preconditions": []', "`role`",
+                     "History never raises or caps your confidence", "there is no `git` type",
                      "no `commit:` prefix", "`location` is an object", "[fix]"):
         assert fragment in flat, fragment
     numbered = re.findall(r"^\s*(\d+)\. \*\*", text, re.MULTILINE)
@@ -203,6 +208,13 @@ def test_the_repair_round_asks_for_the_whole_object():
     assert "Fix only these problems" not in flat
     assert "**complete** corrected JSON object" in flat
     assert "not only the parts that changed" in flat
+    assert "`preconditions` may be `[]` but must be present" in flat
+
+
+def test_the_prompt_never_ties_confidence_to_a_fix():
+    flat = " ".join(AGENT.read_text(encoding="utf-8").split())
+    assert "needs a cited commit labelled `[fix]`" not in flat
+    assert "Without such a commit the ceiling is" not in flat
 
 
 def test_the_example_confidence_rule_matches_the_classifier():

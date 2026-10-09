@@ -1,0 +1,74 @@
+{
+  "schema": "thunderstruck.benchmark-run/v1",
+  "commit": "508c1129269d2b1baffc516d8f5c05da06273ef0",
+  "produced_by": {
+    "stage": "confidence",
+    "model": null,
+    "source": "scan/report.json via _common.effective_confidence, every finding unchecked"
+  },
+  "findings": {
+    "25300c62e151": {
+      "confidence": "medium"
+    },
+    "293417791dc2": {
+      "confidence": "low"
+    },
+    "2b1793902d2d": {
+      "confidence": "low"
+    },
+    "34e3742160f1": {
+      "confidence": "medium"
+    },
+    "39e3d9a88104": {
+      "confidence": "low"
+    },
+    "50df890ef774": {
+      "confidence": "low"
+    },
+    "5fc6c6cb450e": {
+      "confidence": "medium"
+    },
+    "6105880fd01e": {
+      "confidence": "medium"
+    },
+    "6345778fa223": {
+      "confidence": "medium"
+    },
+    "6bd1a259060b": {
+      "confidence": "medium"
+    },
+    "8196e104b15a": {
+      "confidence": "medium"
+    },
+    "8bcddcb49b5d": {
+      "confidence": "medium"
+    },
+    "9be5cf13811a": {
+      "confidence": "medium"
+    },
+    "a0ba5bc31036": {
+      "confidence": "medium"
+    },
+    "a4b8d7590c34": {
+      "confidence": "medium"
+    },
+    "b1af3746845c": {
+      "confidence": "medium"
+    },
+    "bb3600c042ef": {
+      "confidence": "medium"
+    },
+    "c15996fba8db": {
+      "confidence": "medium"
+    },
+    "d710c0302beb": {
+      "confidence": "medium"
+    },
+    "df2cb49b3e2c": {
+      "confidence": "medium"
+    },
+    "f62fb0c3468b": {
+      "confidence": "medium"
+    }
+  }
+}

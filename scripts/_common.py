@@ -25,7 +25,7 @@ from finding_shape import FINDING_SCHEMA_VERSION  # noqa: F401  (re-exported)
 
 OUTPUT_DIRNAME = ".thunderstruck"
 PROFILE_FILENAME = ".thunderstruck.toml"
-REPORT_SCHEMA_VERSION = "thunderstruck.report/v1"
+REPORT_SCHEMA_VERSION = "thunderstruck.report/v2"
 USAGE_SCHEMA = "thunderstruck.usage/v1"
 
 # Every token weighted by its published price relative to Claude Sonnet 5.5
@@ -530,6 +530,58 @@ def classify_commit(subject: str, extra_fix: tuple[str, ...] = ()) -> str:
     return "feature"
 
 
+# --------------------------------------------------------------------------
+# check status, confidence and gate (spec 2026-10-03-checked-confidence-design.md)
+# --------------------------------------------------------------------------
+
+CONFIDENCE_LEVELS = ("low", "medium", "high")
+# #37 writes these into a finding's check.status; a sixth needs the spec changed first.
+CHECK_STATUSES = ("unchecked", "upheld", "narrowed", "inconclusive", "refuted")
+CONFIDENCE_CEILING = {"upheld": "high", "unchecked": "medium", "narrowed": "medium",
+                      "inconclusive": "medium", "refuted": "low"}
+CHECK_SENTENCES = {
+    "unchecked": "No one has tried to refute this claim",
+    "upheld": "A check tried to refute this claim and it held",
+    "narrowed": "A check found that only part of this claim holds",
+    "inconclusive": "A check could not settle this claim",
+    "refuted": "A check refuted this claim",
+}
+COMMIT_ROLES = ("introduced", "fixed", "mitigated", "changed")
+PRECONDITION_NEEDS = ("changed", "default")
+DOCUMENTED = ("yes", "no", "not_checked")
+# Report order: default-path findings first. #57 inserts "unconfirmed_default" (its spec).
+GATES = ("none", "non_default_setting")
+GATE_MARKERS = {"non_default_setting": "needs a non-default setting"}
+
+
+def check_status(finding: dict) -> str:
+    """The finding's check status; anything missing or unrecognised is unchecked."""
+    check = finding.get("check") if isinstance(finding, dict) else None
+    status = check.get("status") if isinstance(check, dict) else None
+    return status if status in CHECK_STATUSES else "unchecked"
+
+
+def effective_confidence(claimed, status: str) -> str:
+    """The reported confidence: the investigator's claim, one level lower when
+    narrowed, never above the check status's ceiling. History plays no part."""
+    level = CONFIDENCE_LEVELS.index(claimed) if claimed in CONFIDENCE_LEVELS else 0
+    status = status if status in CHECK_STATUSES else "unchecked"
+    if status == "narrowed":
+        level = max(0, level - 1)
+    ceiling = CONFIDENCE_LEVELS.index(CONFIDENCE_CEILING[status])
+    return CONFIDENCE_LEVELS[min(level, ceiling)]
+
+
+def finding_gate(finding: dict) -> str:
+    """non_default_setting when any precondition needs a setting changed.
+    The one gate rule: #37 extends it to read the check, #57 adds a gate (spec §7)."""
+    pre = finding.get("preconditions") if isinstance(finding, dict) else None
+    items = pre if isinstance(pre, list) else []
+    if any(isinstance(p, dict) and p.get("needs") == "changed" for p in items):
+        return "non_default_setting"
+    return "none"
+
+
 def path_glob_to_re(glob: str) -> re.Pattern:
     """A repo-relative path glob: `*` and `?` stay inside one directory,
     `**` crosses directories (`src/**/batch/*.java` matches `src/batch/X.java`
@@ -607,7 +659,7 @@ def load_suppressions(profile: dict[str, Any]) -> tuple[list[Suppression], list[
 # Bumped whenever validate.py's rules tighten. A findings file carries the
 # version that validated it; older ones are re-checked before they are reused
 # (bundle.py) and never reported unchecked (report.py).
-VALIDATION_RULES = 3
+VALIDATION_RULES = 4
 
 
 def ref_path(path: Any) -> str:

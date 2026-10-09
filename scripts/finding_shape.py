@@ -14,14 +14,15 @@ import re
 from pathlib import Path
 from typing import Any
 
-FINDING_SCHEMA_VERSION = "thunderstruck.finding/v1"
+FINDING_SCHEMA_VERSION = "thunderstruck.finding/v2"
 
 # "path:42" or "path:42-118"; anything else stays a bare path
 _PATH_LINES = re.compile(r"^(?P<file>.+?):(?P<lines>[0-9]+(?:-[0-9]+)?)\Z")
 _COMMIT_PREFIX = re.compile(r"^(?:commit|sha)\s*[:=]\s*", re.IGNORECASE)
 _TYPE_ALIASES = {"git": "commit", "sha": "commit"}
-# validate.py owns these; a model echoing them must not pass as validated
-_OWNED = ("key", "content_hash", "catalog_evidence", "evidence_hashes")
+# Written by validate.py or a later stage, never by a model (spec §3.4).
+OWNED_FINDING_KEYS = ("key", "content_hash", "catalog_evidence", "evidence_hashes",
+                      "check", "history", "confidence_claimed")
 
 
 def _lines_of(obj: dict) -> str | None:
@@ -123,7 +124,7 @@ def shape(doc: dict, entry: dict) -> dict:
     findings = doc.get("findings")
     for f in findings if isinstance(findings, list) else []:
         if isinstance(f, dict):
-            for owned in _OWNED:
+            for owned in OWNED_FINDING_KEYS:
                 f.pop(owned, None)
     return _stamp(doc, entry)
 

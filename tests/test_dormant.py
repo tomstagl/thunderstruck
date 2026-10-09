@@ -185,8 +185,9 @@ def test_lead_precision_counts_what_was_read(tmp_path):
         "trigger_condition": "legacy host stalls", "amplifier": "no bound",
         "sustaining_effect": None, "blast_radius": "every caller",
         "evidence": [{"type": "code", "ref": f"{LEGACY}:4", "note": "no timeout"},
-                     {"type": "commit", "ref": sha, "note": "added"},
+                     {"type": "commit", "ref": sha, "role": "changed", "note": "added"},
                      {"type": "detector", "ref": hit["ref"], "note": "lead"}],
+        "preconditions": [],
         "confidence": "medium", "confidence_rationale": "plain in code",
         "how_to_verify": "stall the host", "prediction": "a hang"}]}
     out = repo / ".thunderstruck" / "findings"
