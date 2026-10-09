@@ -91,7 +91,8 @@ def reason(repo, tmp_path, *issues, **kw) -> str:
 def test_a_ready_ticket_is_picked(repo, tmp_path):
     code, out, proc = run(repo, tmp_path, candidates(issue()))
     assert code == 0, proc.stderr
-    assert out["picked"] == {"number": 39, "title": "A ready ticket", "spec": SPEC, "plan": PLAN}
+    assert out["picked"] == {"number": 39, "title": "A ready ticket", "spec": SPEC, "plan": PLAN,
+                              "resume": None}
     assert out["skipped"] == [] and out["ignored_drafts"] == []
 
 
@@ -269,7 +270,7 @@ def test_the_next_ticket_is_picked_while_one_waits(repo, tmp_path):
     dep = issue(number=56, title="DRAFT: prerequisite")
     _, out, _ = run(repo, tmp_path, candidates(waiting, ready, dep))
     assert out["picked"] == {"number": 41, "title": "A ready ticket",
-                             "spec": NEXT_SPEC, "plan": NEXT_PLAN}
+                             "spec": NEXT_SPEC, "plan": NEXT_PLAN, "resume": None}
     assert out["skipped"] == [{"number": 39, "reason": "waits for #56"}]
 
 
@@ -349,3 +350,65 @@ def test_the_skill_names_every_step():
                    "gen_sample_report.py --check", "claude plugin validate . --strict",
                    "subscribe_pr_activity", "red:", "Nothing ready", "Blocked:", "PR opened:"):
         assert needle in text, f"SKILL.md no longer mentions {needle!r}"
+
+
+# -- amendment and draft PRs (#79) --------------------------------------------------------
+
+REPO = "tomstagl/thunderstruck"
+
+
+def pr(number, head, draft=False, head_repo=REPO, title="x", body="Refs #39."):
+    return {"number": number, "title": title, "body": body, "head": head,
+            "draft": draft, "head_repo": head_repo}
+
+
+def test_an_open_amendment_pr_holds_the_ticket(repo, tmp_path):
+    amend = pr(80, "agent/39-amend", title="Amend spec and plan for #39: x")
+    assert reason(repo, tmp_path, issue(), prs=[amend]) == "waits for amendment PR #80"
+
+
+def test_a_merged_amendment_releases_the_ticket(repo, tmp_path):
+    _, out, _ = run(repo, tmp_path, candidates(issue(), prs=[]))
+    assert out["picked"]["number"] == 39
+
+
+def test_an_amendment_from_a_fork_is_an_ordinary_pr(repo, tmp_path):
+    amend = pr(80, "agent/39-amend", head_repo="stranger/thunderstruck")
+    assert reason(repo, tmp_path, issue(), prs=[amend]) == "open PR #80 references it"
+
+
+def test_an_agent_draft_does_not_block_and_is_resumed(repo, tmp_path):
+    draft = pr(81, "agent/39-library-leads", draft=True)
+    _, out, _ = run(repo, tmp_path, candidates(issue(), prs=[draft]))
+    assert out["picked"]["resume"] == {"branch": "agent/39-library-leads", "pr": 81}
+
+
+def test_the_lowest_draft_is_resumed(repo, tmp_path):
+    drafts = [pr(83, "agent/39-b", draft=True), pr(81, "agent/39-a", draft=True)]
+    _, out, _ = run(repo, tmp_path, candidates(issue(), prs=drafts))
+    assert out["picked"]["resume"]["pr"] == 81
+
+
+def test_a_draft_from_a_fork_still_blocks(repo, tmp_path):
+    draft = pr(81, "agent/39-x", draft=True, head_repo="stranger/thunderstruck")
+    assert reason(repo, tmp_path, issue(), prs=[draft]) == "open PR #81 references it"
+
+
+def test_a_draft_without_head_repo_still_blocks(repo, tmp_path):
+    draft = {"number": 81, "title": "x", "body": "Refs #39.", "head": "agent/39-x", "draft": True}
+    assert reason(repo, tmp_path, issue(), prs=[draft]) == "open PR #81 references it"
+
+
+def test_a_ready_agent_pr_still_blocks(repo, tmp_path):
+    ready = pr(81, "agent/39-x", draft=False)
+    assert reason(repo, tmp_path, issue(), prs=[ready]) == "open PR #81 references it"
+
+
+def test_a_draft_for_a_longer_number_is_not_this_tickets(repo, tmp_path):
+    other = pr(81, "agent/390-x", draft=True, body="Closes #39.")
+    assert reason(repo, tmp_path, issue(), prs=[other]) == "open PR #81 references it"
+
+
+def test_another_pr_still_blocks_beside_a_draft(repo, tmp_path):
+    prs = [pr(81, "agent/39-x", draft=True), pr(82, "claude/y", body="Closes #39.")]
+    assert reason(repo, tmp_path, issue(), prs=prs) == "open PR #82 references it"
