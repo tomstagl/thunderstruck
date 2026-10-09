@@ -234,3 +234,102 @@ def run_detectors(
                 seen.add(key)
                 hits.append(hit)
     return hits
+
+
+# ------------------------------------------------------------- boundaries --
+# An import statement is never a boundary, whatever a rule says.
+_IMPORT_LINE = re.compile(
+    r"""^\s*(?:import\b|from\s+[\w.]+\s+import\b|export\s+[^=]*\bfrom\s+['"])""")
+
+
+@dataclass(frozen=True)
+class Boundary:
+    label: str
+    rule_id: str
+    line: int
+    snippet: str
+
+
+# An import of the scanned project's own package never opens a `require`
+# gate: inside Celery every file imports `celery`, and `self.apply_async(` there
+# is Celery calling itself, not a client sending a message (#58).
+_PY_FROM = re.compile(r"^[ \t]*from[ \t]+([\w.]+)[ \t]+import\b")
+_PY_IMPORT = re.compile(r"^([ \t]*import[ \t]+)([\w. \t,]+?)[ \t]*$")
+_JAVA_IMPORT = re.compile(r"^[ \t]*import[ \t]+(?:static[ \t]+)?([\w.]+?)(?:\.\*)?[ \t]*;")
+_TS_SPECIFIER = re.compile(r"""(\b(?:from|import|require)\s*\(?\s*)(['"])([^'"\n]+)\2""")
+
+
+def _own_module(module: str, own: frozenset[str]) -> bool:
+    return module.split(".")[0] in own
+
+
+def _without_own_imports(code: str, det_lang: str, own: frozenset[str]) -> str:
+    """`code` with every import of the project's own packages removed: what a
+    boundary rule's `require` is searched in."""
+    if not own:
+        return code
+    if det_lang == "typescript":
+        def blank(m: re.Match) -> str:
+            spec = m.group(3)
+            if any(spec == n or spec.startswith(n + "/") for n in own):
+                return m.group(1) + "''"
+            return m.group(0)
+        return _TS_SPECIFIER.sub(blank, code)
+    out = []
+    for line in code.split("\n"):
+        line = line.rstrip("\r")
+        if det_lang == "python":
+            m = _PY_FROM.match(line)
+            if m and _own_module(m.group(1), own):
+                line = ""
+            elif (m := _PY_IMPORT.match(line)):
+                # `import celery, os` keeps `import os`
+                items = [x.strip() for x in m.group(2).split(",") if x.strip()]
+                kept = [x for x in items if not _own_module(x.split()[0], own)]
+                if len(kept) < len(items):
+                    line = m.group(1) + ", ".join(kept) if kept else ""
+        elif det_lang == "java":
+            m = _JAVA_IMPORT.match(line)
+            if m:
+                parts = m.group(1).split(".")
+                if any(".".join(parts[:k]) in own for k in range(1, len(parts) + 1)):
+                    line = ""
+        out.append(line)
+    return "\n".join(out)
+
+
+def find_boundaries(catalog: dict[str, Any], rel_path: str, text: str,
+                    lang: str, own: dict[str, list[str]] | None) -> list[Boundary] | None:
+    """Every line that calls across a boundary, by the catalog's `boundaries`
+    rules, in line order and one rule per line (the first that matches).
+    None when the language has no rules, so a caller can say it never looked.
+
+    `own` is hotspots.json's `own_packages`. None means the project's own
+    package names are unknown: every rule with a `require` is skipped rather
+    than opened by the project's imports of itself."""
+    det_lang = _common.detector_language(catalog, lang)
+    rules = (catalog.get("boundaries") or {}).get(det_lang)
+    if not rules:
+        return None
+    ctx = build_context(rel_path, text, lang)
+    gate = (None if own is None else
+            _without_own_imports(ctx.code_text, det_lang, frozenset(own.get(det_lang) or ())))
+    active: list[tuple[str, str, re.Pattern]] = []
+    for rule in rules:
+        try:
+            if rule.get("require") and (gate is None
+                                        or not _rx(rule["require"], True).search(gate)):
+                continue  # the call goes through a library this file never imports
+            active.append((rule["label"], rule["id"], _rx(rule["pattern"])))
+        except re.error:
+            continue  # a malformed catalog regex must not sink the scan
+    out: list[Boundary] = []
+    for i, line in enumerate(ctx.code_lines, 1):
+        line = line.rstrip("\r")
+        if not line.strip() or _IMPORT_LINE.match(line):
+            continue
+        for label, rule_id, rx in active:
+            if rx.search(line):
+                out.append(Boundary(label, rule_id, i, _snippet(ctx, i)[:120]))
+                break
+    return out

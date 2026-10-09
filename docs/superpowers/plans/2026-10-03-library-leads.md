@@ -516,7 +516,7 @@ git commit -m "S07: a get-or-create on the row's own key is not a duplicate inse
 - Produces: `Boundary(label: str, rule_id: str, line: int, snippet: str)` (frozen dataclass); `find_boundaries(catalog: dict, rel_path: str, text: str, lang: str, own: dict[str, list[str]] | None) -> list[Boundary] | None` (`None`: the language has no rules; otherwise every line that matches, in line order, one rule per line; `own` as in spec §2.4); `_common.own_packages(repo_root: Path, index: dict[str, str]) -> tuple[dict[str, list[str]], list[str]]`; `hotspots.json` key `own_packages` (`{"python": [...], "typescript": [...], "java": [...]}`, sorted).
 - Consumes: `build_context`, `_rx`, `_snippet` and `_common.detector_language` from the same module; `_common.tracked_index`.
 
-- [ ] **Step 1: Write the samples.** Each path is under `tests/boundaries/samples/`. In a `positive_*` sample every line that must be tagged ends with a `boundary: <label>` comment, and exactly those lines must be tagged, with exactly those labels; any other stem carries no marker and must not be tagged with its directory's label; files under `none/` must cross no boundary. An `own-packages: …` comment names the packages the sample's project owns (spec §9).
+- [x] **Step 1: Write the samples.** Each path is under `tests/boundaries/samples/`. In a `positive_*` sample every line that must be tagged ends with a `boundary: <label>` comment, and exactly those lines must be tagged, with exactly those labels; any other stem carries no marker and must not be tagged with its directory's label; files under `none/` must cross no boundary. An `own-packages: …` comment names the packages the sample's project owns (spec §9).
 
 `http/python/positive_requests_get.py`:
 ```python
@@ -955,7 +955,7 @@ import java.nio.file.Files;
 class Imports {}
 ```
 
-- [ ] **Step 2: Write the failing tests.** Create `tests/boundaries/test_boundaries.py`:
+- [x] **Step 2: Write the failing tests.** Create `tests/boundaries/test_boundaries.py`:
 
 ```python
 """Boundary rules (#58): a boundary is a call, never a name.
@@ -1231,12 +1231,12 @@ def test_hotspots_record_own_packages(scanned_repo):
     assert data["own_packages"] == {"python": [], "typescript": ["fixture"], "java": []}
 ```
 
-- [ ] **Step 3: Run them to verify they fail**
+- [x] **Step 3: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/boundaries tests/test_own_packages.py -q`
 Expected: collection error, `ImportError: cannot import name 'find_boundaries' from 'detectors'`; `tests/test_own_packages.py` fails with `AttributeError: module '_common' has no attribute 'own_packages'` and `KeyError: 'own_packages'`.
 
-- [ ] **Step 4: Write the matcher.** Append to `scripts/detectors/__init__.py`:
+- [x] **Step 4: Write the matcher.** Append to `scripts/detectors/__init__.py`:
 
 ```python
 # ------------------------------------------------------------- boundaries --
@@ -1338,7 +1338,7 @@ def find_boundaries(catalog: dict[str, Any], rel_path: str, text: str,
     return out
 ```
 
-- [ ] **Step 5: Work out the project's own packages (spec §2.3).** Append to `scripts/_common.py` (it already imports `json` and `re`):
+- [x] **Step 5: Work out the project's own packages (spec §2.3).** Append to `scripts/_common.py` (it already imports `json` and `re`):
 
 ```python
 # ---------------------------------------------------------- own packages --
@@ -1443,7 +1443,7 @@ In `scripts/signals.py`, in `build`, directly after `index = c.tracked_index(rep
 
 and in the returned dict, directly after `"warnings": warnings,` add `"own_packages": own,`.
 
-- [ ] **Step 6: Add the rules.** Append to the end of `catalog/stability.yaml`:
+- [x] **Step 6: Add the rules.** Append to the end of `catalog/stability.yaml`:
 
 ```yaml
 
@@ -1581,12 +1581,12 @@ boundaries:
       require: '^\s*import\s+(?:org\.springframework\.scheduling|java\.util\.concurrent)\b'
 ```
 
-- [ ] **Step 7: Run the tests to verify they pass**
+- [x] **Step 7: Run the tests to verify they pass**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/boundaries tests/test_own_packages.py tests/detectors -q`
 Expected: PASS (50 sample cases plus the rule and own-package tests; the detector suite is unaffected, since `run_detectors` reads only `patterns`).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add scripts/detectors/__init__.py scripts/_common.py scripts/signals.py catalog/stability.yaml tests/boundaries/ tests/test_own_packages.py

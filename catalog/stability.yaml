@@ -1417,3 +1417,136 @@ tier_c:
     name: Leader-election hardening
     failure_if_absent: "Split brain or a stuck leader stalls all coordinated work."
     references: ["Google SRE Book, ch. 23 — Managing Critical State"]
+
+# ------------------------------------------------------------- boundaries --
+# Where a file calls out of the process: the "External boundaries" section of
+# every bundle. A boundary is a CALL, never a name: a rule matches one line of
+# comment-stripped text (comments and Python docstrings blank, strings kept),
+# an import line never counts, and the first rule in this order wins a line.
+# A call through a library's own name (`requests.get(`) carries a `require`
+# on that library's import, so a variable that shares the name
+# (`requests.pop(...)` on a dict) is not a boundary. A method only a boundary
+# client has (`.execute(`, `.publish(`) carries none, because services reach
+# it through an injected client. Samples: tests/boundaries/samples/.
+boundaries:
+  python:
+    - id: B-py-requests
+      label: HTTP
+      pattern: '\b(?:requests|httpx)\s*\.\s*(?:get|post|put|patch|delete|head|options|request|stream)\s*\('
+      require: '^\s*(?:import|from)\s+(?:requests|httpx)\b'
+    - id: B-py-urlopen
+      label: HTTP
+      pattern: '(?<!def )\burlopen\s*\('
+      require: '^\s*(?:import|from)\s+urllib\b'
+    - id: B-py-aiohttp
+      label: HTTP
+      pattern: '\baiohttp\s*\.\s*(?:ClientSession|request)\s*\('
+      require: '^\s*(?:import|from)\s+aiohttp\b'
+    - id: B-py-execute
+      label: database
+      pattern: '\.\s*(?:execute|executemany|executescript)\s*\('
+    - id: B-py-session
+      label: database
+      pattern: '\b\w*session\s*\.\s*(?:query|scalars?|commit|flush|add|add_all|merge)\s*\('
+    - id: B-py-django-orm
+      label: database
+      pattern: '\.objects\s*\.\s*\w+\s*\('
+      require: '^\s*(?:import|from)\s+django\b'
+    - id: B-py-sql
+      label: database
+      pattern: '\b(?:SELECT\s[^\n]*\bFROM|INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM)\b'
+    - id: B-py-broker
+      label: queue/messaging
+      pattern: '\.\s*(?:publish|basic_publish|basic_consume|basic_get|drain_events|send_message|send_messages|receive_message)\s*\('
+    - id: B-py-celery-send
+      label: queue/messaging
+      # Not a process pool's apply_async: that is multiprocessing.
+      pattern: '(?<!pool)(?<!Pool)\s*\.\s*(?:apply_async|send_task|delay)\s*\('
+      require: '^\s*(?:import|from)\s+celery\b'
+    - id: B-py-llm
+      label: LLM
+      pattern: '\.\s*(?:chat\s*\.\s*)?(?:completions|messages|embeddings|responses)\s*\.\s*create\s*\(|\.\s*generate_content\s*\('
+    - id: B-py-boto3
+      label: cloud SDK
+      pattern: '\bboto3\s*\.\s*(?:client|resource|Session)\s*\('
+      require: '^\s*import\s+boto3\b'
+    - id: B-py-file
+      label: filesystem
+      pattern: '(?<![\w.])(?<!def )open\s*\(|\.\s*(?:read_text|write_text|read_bytes|write_bytes)\s*\('
+    - id: B-py-scheduler
+      label: scheduler
+      pattern: '\bschedule\s*\.\s*every\s*\(|\b(?:Background|Blocking|AsyncIO)Scheduler\s*\(|\.\s*add_job\s*\(|\bthreading\s*\.\s*Timer\s*\(|\.\s*call_later\s*\(|\.\s*add_periodic_task\s*\('
+  typescript:
+    - id: B-ts-fetch
+      label: HTTP
+      pattern: '(?<![\w.$])(?<!function )(?<!async )fetch\s*\('
+    - id: B-ts-axios
+      label: HTTP
+      pattern: '\baxios\s*(?:\.\s*(?:get|post|put|patch|delete|head|request)\s*)?\('
+      require: '[''"]axios[''"]'
+    - id: B-ts-http-clients
+      label: HTTP
+      pattern: '\b(?:got|superagent|ky)\s*(?:\.\s*(?:get|post|put|patch|delete)\s*)?\('
+      require: '[''"](?:got|superagent|ky)[''"]'
+    - id: B-ts-undici
+      label: HTTP
+      pattern: '\b(?:undici\s*\.\s*)?request\s*\('
+      require: '[''"]undici[''"]'
+    - id: B-ts-node-http
+      label: HTTP
+      pattern: '\bhttps?\s*\.\s*(?:get|request)\s*\('
+      require: '[''"](?:node:)?https?[''"]'
+    - id: B-ts-prisma
+      label: database
+      pattern: '\b(?:db|prisma|tx)\s*\.\s*\w+\s*\.\s*(?:create|createMany|findMany|findUnique|findFirst|update|updateMany|upsert|delete|deleteMany|count|aggregate)\s*\(|\$(?:queryRaw|executeRaw)\w*'
+    - id: B-ts-query
+      label: database
+      pattern: '\.\s*query\s*\('
+    - id: B-ts-sql
+      label: database
+      pattern: '\b(?:SELECT\s[^\n]*\bFROM|INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM)\b'
+    - id: B-ts-broker
+      label: queue/messaging
+      pattern: '\.\s*(?:publish|sendMessage|sendMessageBatch)\s*\(|\bnew\s+(?:SendMessage|SendMessageBatch|Publish)Command\s*\('
+    - id: B-ts-llm
+      label: LLM
+      pattern: '\.\s*(?:chat\s*\.\s*)?(?:completions|messages|embeddings|responses)\s*\.\s*create\s*\(|\.\s*generateContent\s*\('
+    - id: B-ts-aws-sdk
+      label: cloud SDK
+      pattern: '\.\s*send\s*\(\s*new\s+\w+Command\s*\('
+      require: '[''"]@aws-sdk/[\w-]+[''"]'
+    - id: B-ts-file
+      label: filesystem
+      pattern: '\bfs(?:Promises)?\s*\.\s*(?:promises\s*\.\s*)?(?:read|write|append)\w*\s*\(|(?<![\w.])(?:readFile|writeFile|appendFile)(?:Sync)?\s*\('
+    - id: B-ts-scheduler
+      label: scheduler
+      # Not setTimeout: in the code this tool reads it is a sleep (S02's job).
+      pattern: '\bsetInterval\s*\(|\bcron\s*\.\s*schedule\s*\(|\bnew\s+CronJob\s*\(|@Cron\s*\(|@Interval\s*\('
+  java:
+    - id: B-java-http
+      label: HTTP
+      pattern: '\.\s*(?:getForObject|getForEntity|postForObject|postForEntity|patchForObject|exchange)\s*\(|\.\s*retrieve\s*\(\s*\)|\.\s*newCall\s*\(|\bhttpClient\s*\.\s*send(?:Async)?\s*\('
+      require: '^\s*import\s+(?:org\.springframework\.web\.(?:client|reactive)|java\.net\.http|okhttp3|org\.apache\.hc|org\.apache\.http|feign)\b'
+    - id: B-java-db
+      label: database
+      pattern: '\.\s*(?:query|queryForObject|queryForList|queryForMap|update|batchUpdate|executeQuery|executeUpdate|execute|createQuery|createNativeQuery|find|persist|merge)\s*\('
+      require: '^\s*import\s+(?:java\.sql|javax\.sql|org\.springframework\.jdbc|jakarta\.persistence|javax\.persistence|org\.hibernate|org\.jooq)\b'
+    - id: B-java-sql
+      label: database
+      pattern: '\b(?:SELECT\s[^\n]*\bFROM|INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM)\b'
+    - id: B-java-messaging
+      label: queue/messaging
+      pattern: '\.\s*(?:send|convertAndSend|publish|basicPublish|sendMessage)\s*\(|@(?:KafkaListener|RabbitListener|JmsListener|SqsListener)\b'
+      require: '^\s*import\s+(?:org\.springframework\.(?:kafka|amqp|jms)|org\.apache\.kafka|com\.rabbitmq|software\.amazon\.awssdk\.services\.sq[sn]|io\.awspring|jakarta\.jms|javax\.jms)\b'
+    - id: B-java-aws-sdk
+      label: cloud SDK
+      pattern: '\b\w+Client\s*\.\s*builder\s*\(\s*\)'
+      require: '^\s*import\s+software\.amazon\.awssdk\b'
+    - id: B-java-file
+      label: filesystem
+      pattern: '\bFiles\s*\.\s*(?:read|write|newBuffered|newInput|newOutput|lines|copy|move|delete)\w*\s*\(|\bnew\s+File(?:Input|Output)Stream\s*\(|\bnew\s+File(?:Reader|Writer)\s*\('
+      require: '^\s*import\s+java\.(?:nio\.file|io)\b'
+    - id: B-java-scheduler
+      label: scheduler
+      pattern: '@Scheduled\b|\.\s*schedule(?:AtFixedRate|WithFixedDelay)?\s*\('
+      require: '^\s*import\s+(?:org\.springframework\.scheduling|java\.util\.concurrent)\b'
