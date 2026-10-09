@@ -130,6 +130,13 @@ def test_the_list_is_capped_and_says_so(repo):
     assert out["drifted"][0]["subject"] == "Edit 30"
 
 
+def test_a_non_ascii_named_path_is_listed(repo):
+    plan = PLAN_TEXT + "\nAlso `docs/café.md`.\n"
+    commit(repo, "Name a non-ASCII file", {PLAN: plan, "docs/café.md": "a\n"})
+    commit(repo, "Edit it", {"docs/café.md": "b\n"})
+    assert [d["paths"] for d in run(repo)[1]["drifted"]] == [["docs/café.md"]]
+
+
 def test_output_is_byte_stable(repo):
     commit(repo, "Edit a", {"scripts/a.py": "changed\n"})
     assert run(repo)[2].stdout == run(repo)[2].stdout

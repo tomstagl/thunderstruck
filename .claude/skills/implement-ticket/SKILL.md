@@ -83,7 +83,7 @@ that amendment on an earlier night, and the ticket is picked once it merges.
 Read-only: nothing is claimed, labelled or commented yet (#79 spec §2).
 
 ```bash
-[ "$(git rev-parse --is-shallow-repository)" = true ] && git fetch --unshallow
+if [ "$(git rev-parse --is-shallow-repository)" = true ]; then git fetch --unshallow; fi
 python3 $T/plan_drift.py --plan <plan> --spec <spec> --ref origin/main
 ```
 
@@ -192,7 +192,10 @@ When you stop, classify the gap first:
   for a cause outside this branch. Do all the steps below.
 
 1. If a branch exists: commit whatever is sound and push it as it stands, then
-   open a **draft** PR for it unless one exists. Title
+   open a **draft** PR for it unless one exists. The picker only resumes a draft
+   whose head is `agent/<n>-<topic>`, so if your branch has another name push it
+   under that one (`git push origin HEAD:refs/heads/agent/<n>-<topic>`) and open
+   the PR from it. Title
    `<ticket title> (blocked at Task <k>)`. The body starts `Refs #<n>`, never
    `Closes`, then lists the tasks done, the task stopped at, the checks last
    run, and a link to the ticket comment. When step 6a then opens an amendment
@@ -200,8 +203,8 @@ When you stop, classify the gap first:
 2. Comment on the ticket. Give the task number, the exact gap (quote the plan or spec
    line), and the decision that would unblock it. End with the attribution
    footer.
-3. Not amendable only: replace `agent:in-progress` with `agent:blocked`. The
-   maintainer removes `agent:blocked` to release the ticket. For an amendable
+3. Not amendable only: add `agent:blocked`, and remove `agent:in-progress` if
+   you set it (a preflight stop claimed nothing). The maintainer removes `agent:blocked` to release the ticket. For an amendable
    gap that you claimed, remove `agent:in-progress`; the amendment PR is the gate.
 4. End with the *Blocked* summary, or the *Amendment proposed* summary for an
    amendable gap.
@@ -210,7 +213,8 @@ When you stop, classify the gap first:
 
 Only for an amendable gap (#79 spec §3):
 
-1. `list_pull_requests`, state `closed`, head `agent/<n>-amend`. Any result,
+1. `list_pull_requests`, state `closed`, head `<owner>:agent/<n>-amend` (GitHub's filter wants
+   `owner:branch`; keep only results whose `head.ref` and `head.repo` match). Any result,
    merged or not, means one amendment has already been proposed for this
    ticket: treat the gap as not amendable, say so in the comment, and stop.
 2. Branch `agent/<n>-amend` from `origin/main`. Change only the ticket's spec

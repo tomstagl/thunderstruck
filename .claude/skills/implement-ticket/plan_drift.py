@@ -34,7 +34,8 @@ class BadInput(Exception):
 
 
 def git(*args: str) -> str:
-    proc = subprocess.run(["git", "--literal-pathspecs", *args], capture_output=True, text=True)
+    proc = subprocess.run(["git", "-c", "core.quotepath=off", "--literal-pathspecs", *args],
+                          capture_output=True, encoding="utf-8", errors="replace")
     if proc.returncode != 0:
         raise BadInput(proc.stderr.strip() or f"git {args[0]} failed")
     return proc.stdout
