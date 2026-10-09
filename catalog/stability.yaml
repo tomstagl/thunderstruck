@@ -353,6 +353,13 @@ patterns:
           confidence: medium
           note: "catch-all except followed by a retry — retries permanent errors too"
           window_before: 6
+          # The retry decision belongs to the except whose handler checks a
+          # retryability predicate. A catch-all further down that branch
+          # guards something else (a hook, a log call) inside a retry that
+          # already discriminates (celery backends/base.py, #58). Its own
+          # window, so present_within's look-behind stays at 6.
+          absent_before: '\b\w*(?:safe_to_retry|is_retryable|is_transient|should_retry)\w*\s*\('
+          absent_before_window: 12
         - id: S04-py-retry-without-discrimination
           kind: file_absent
           # A retry this file runs: a loop whose header says attempt/retry

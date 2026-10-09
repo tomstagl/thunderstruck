@@ -224,7 +224,7 @@ git commit -m "Detectors: absent_before excuses a hit by what precedes it (#58)"
 - Create: `tests/detectors/samples/S04/python/negative_hook_in_retry_branch.py`
 - Modify: `catalog/stability.yaml` (`S04-py-bare-except-retry`)
 
-- [ ] **Step 1: Write the negative sample**, reproducing Celery's `_ensure_retryable` (spec §3.2):
+- [x] **Step 1: Write the negative sample**, reproducing Celery's `_ensure_retryable` (spec §3.2):
 
 ```python
 import logging
@@ -259,12 +259,12 @@ class Backend:
                     raise
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/detectors -q -k "S04-python"`
 Expected: FAIL on `S04-python-negative_hook_in_retry_branch` (line 24 fires: the predicate is 8 lines above it, outside today's `window_before: 6`).
 
-- [ ] **Step 3: Correct the detector.** In `catalog/stability.yaml`, under `S04-py-bare-except-retry`, after `window_before: 6` add:
+- [x] **Step 3: Correct the detector.** In `catalog/stability.yaml`, under `S04-py-bare-except-retry`, after `window_before: 6` add:
 
 ```yaml
           # The retry decision belongs to the except whose handler checks a
@@ -276,7 +276,7 @@ Expected: FAIL on `S04-python-negative_hook_in_retry_branch` (line 24 fires: the
           absent_before_window: 12
 ```
 
-- [ ] **Step 4: Run the detector suite and the Celery check**
+- [x] **Step 4: Run the detector suite and the Celery check**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/detectors -q`
 Expected: PASS, every S04 positive included.
@@ -284,7 +284,7 @@ Expected: PASS, every S04 positive included.
 Run: `uv run scripts/calibrate.py --repo "/tmp/thunderstruck-58/celery" --lang python --patterns S04`
 Expected: exactly one hit, `S04-py-bare-except-retry celery/app/builtins.py:71`; `celery/backends/base.py:773` is gone.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add catalog/stability.yaml tests/detectors/samples/S04/python/negative_hook_in_retry_branch.py
