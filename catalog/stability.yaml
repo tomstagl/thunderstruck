@@ -549,6 +549,12 @@ patterns:
           kind: file_absent
           anchor: '\bsession\w*\s*\.\s*(add|add_all|bulk_save_objects)\s*\(|\b(db|conn|cursor|collection|table|model|engine)\w*\s*\.\s*(insert|insert_one|insert_many)\s*\(|INSERT\s+INTO'
           absent: '(?i)\b(upsert|ON\s+CONFLICT|ON\s+DUPLICATE\s+KEY|MERGE\s+INTO|idempotenc|IntegrityError|UniqueViolation|DuplicateKey)'
+          # Get-or-create: the row is added only after a lookup of it found
+          # nothing (`if not task:` ... `session.add(task)`), so a replay finds
+          # the row (celery backends/database, #58). Per anchor: another, plain
+          # insert in the same file still fires.
+          absent_before: '^[ \t]*if\s+(?:not\s+(\w+)|(\w+)\s+is\s+None)\s*:[^\n]*\n(?:[^\n]*\n)*?[^\n]*\.\s*add\s*\(\s*(?:\1|\2)\s*\)[^\n]*\Z'
+          absent_before_window: 4
           confidence: medium
           note: "inserts with no upsert / ON CONFLICT — a replayed job duplicates rows"
       java:

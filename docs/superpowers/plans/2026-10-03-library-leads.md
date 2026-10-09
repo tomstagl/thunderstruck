@@ -432,7 +432,7 @@ git commit -m "S19: best-effort teardown after a logged failure is not a silent 
 - Create: `tests/detectors/samples/S07/python/positive_guard_on_other_name.py`
 - Modify: `catalog/stability.yaml` (`S07-py-insert-without-upsert`)
 
-- [ ] **Step 1: Write the samples.** `negative_get_or_create.py`:
+- [x] **Step 1: Write the samples.** `negative_get_or_create.py`:
 
 ```python
 def store_result(session, task_cls, task_id, result):
@@ -466,12 +466,12 @@ def import_rows(session, rows, dry_run):
     session.commit()
 ```
 
-- [ ] **Step 2: Run them to verify the negative fails**
+- [x] **Step 2: Run them to verify the negative fails**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/detectors -q -k "S07-python"`
 Expected: FAIL on `S07-python-negative_get_or_create`; both new positives PASS.
 
-- [ ] **Step 3: Correct the detector.** In `catalog/stability.yaml`, under `S07-py-insert-without-upsert`, after its `absent:` line add (leave `confidence: medium` as it is; spec §3.2):
+- [x] **Step 3: Correct the detector.** In `catalog/stability.yaml`, under `S07-py-insert-without-upsert`, after its `absent:` line add (leave `confidence: medium` as it is; spec §3.2):
 
 ```yaml
           # Get-or-create: the row is added only after a lookup of it found
@@ -482,7 +482,7 @@ Expected: FAIL on `S07-python-negative_get_or_create`; both new positives PASS.
           absent_before_window: 4
 ```
 
-- [ ] **Step 4: Run the detector suite and the Celery check**
+- [x] **Step 4: Run the detector suite and the Celery check**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/detectors -q`
 Expected: PASS.
@@ -490,7 +490,7 @@ Expected: PASS.
 Run: `uv run scripts/calibrate.py --repo "/tmp/thunderstruck-58/celery" --lang python --patterns S07`
 Expected: two hits, `celery/backends/cassandra.py:40` and `celery/backends/database/__init__.py:295` (the lead moved off the get-or-create at 168; 295 is the accepted unique-constraint case, spec §3.2).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add catalog/stability.yaml tests/detectors/samples/S07/python/
