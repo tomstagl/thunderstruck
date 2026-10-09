@@ -305,7 +305,7 @@ git commit -m "S04: an except inside a discriminating retry branch is not the re
 - Create: `tests/detectors/samples/S19/python/positive_decode_swallow.py`
 - Modify: `catalog/stability.yaml` (`S19-py-except-pass`)
 
-- [ ] **Step 1: Write the samples.** `negative_teardown_after_logged_error.py`:
+- [x] **Step 1: Write the samples.** `negative_teardown_after_logged_error.py`:
 
 ```python
 import logging
@@ -387,12 +387,12 @@ def meta_from_row(self, data):
     return self.meta_from_decoded(data)
 ```
 
-- [ ] **Step 2: Run them to verify the negative fails**
+- [x] **Step 2: Run them to verify the negative fails**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/detectors -q -k "S19-python"`
 Expected: FAIL on `S19-python-negative_teardown_after_logged_error`; all four new positives PASS (the two Celery ones fire on line 11 and line 12).
 
-- [ ] **Step 3: Correct the detector.** In `catalog/stability.yaml`, under `S19-py-except-pass`, after its `note:` line add:
+- [x] **Step 3: Correct the detector.** In `catalog/stability.yaml`, under `S19-py-except-pass`, after its `note:` line add:
 
 ```yaml
           # Best-effort teardown in an error path that already logged the
@@ -405,7 +405,7 @@ Expected: FAIL on `S19-python-negative_teardown_after_logged_error`; all four ne
           absent_before_window: 8
 ```
 
-- [ ] **Step 4: Run the detector suite and the Celery check**
+- [x] **Step 4: Run the detector suite and the Celery check**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/detectors -q`
 Expected: PASS.
@@ -413,7 +413,7 @@ Expected: PASS.
 Run: `uv run scripts/calibrate.py --repo "/tmp/thunderstruck-58/celery" --lang python --patterns S19`
 Expected: 8 hits; `celery/worker/consumer/consumer.py:435` is gone, `celery/backends/base.py:489` and `celery/backends/database/__init__.py:240` remain, as their samples already show.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add catalog/stability.yaml tests/detectors/samples/S19/python/

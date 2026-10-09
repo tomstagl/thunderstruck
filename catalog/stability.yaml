@@ -1228,6 +1228,14 @@ patterns:
           window_offset: 1
           confidence: medium
           note: "except:/except Exception: with only pass — the failure leaves no trace"
+          # Best-effort teardown in an error path that already logged the
+          # failure with a traceback: a `try:` whose one statement closes,
+          # collects or releases something, right after an exc_info log
+          # (celery worker/consumer/consumer.py, #58). Both are needed: a
+          # swallowed write after a log, or a swallowed close() with nothing
+          # logged, still fires.
+          absent_before: '(?:exc_info\s*=\s*True|\.\s*exception\s*\()[^\n]*\n(?:[^\n]*\n)*?[ \t]*try\s*:[ \t]*\n[^\n]*\b(?:close|collect|release|shutdown|cleanup|clean_up|disconnect|stop|terminate|dispose|settimeout)\w*\s*\([^\n]*\n[ \t]*except\b[^\n]*\Z'
+          absent_before_window: 8
         - id: S19-py-bare-except
           kind: regex
           pattern: 'except\s*:\s*$'
