@@ -348,7 +348,9 @@ def test_the_skill_names_every_step():
     for needle in ("pick_ticket.py", "agent:in-progress", "agent:blocked", "Closes #",
                    "THUNDERSTRUCK_REQUIRE_RENDERER=1", "gen_catalog_docs.py --check",
                    "gen_sample_report.py --check", "claude plugin validate . --strict",
-                   "subscribe_pr_activity", "red:", "Nothing ready", "Blocked:", "PR opened:"):
+                   "subscribe_pr_activity", "red:", "Nothing ready", "Blocked:", "PR opened:",
+                   "plan_drift.py", "--unshallow", "agent/<n>-amend", "Amendment proposed:",
+                   "Task: <k>", "Refs #", "draft: false"):
         assert needle in text, f"SKILL.md no longer mentions {needle!r}"
 
 
