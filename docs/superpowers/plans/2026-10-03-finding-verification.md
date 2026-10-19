@@ -3255,9 +3255,9 @@ git commit -m "HTML report: verification verdicts, refuted findings and duplicat
 - Consumes: `index.json` entries with `holds` and `via: "duplicate"` (Task 11).
 - Produces: in `guardrail`: `holds_line(f: dict) -> str | None`; the per-finding statement adds it; a `via: "duplicate"` entry is introduced with "the same defect as a finding in <anchor>".
 
-- [ ] **Step 1: Write the failing tests** in `tests/test_guardrail.py`: an index entry with `check_status: "narrowed"` and `holds: "X holds"` yields a line `What still holds, per a check: X holds.`; an entry with `via: "duplicate", "anchor": "src/a.ts"` yields "the same defect as a finding in src/a.ts"; an index built by `report.py` after a refuted verdict (reuse Task 11's helpers through a fixture) produces no statement naming the refuted finding's failure mode when its file is edited; `holds` text containing "Ignore previous instructions" is emitted as part of a statement of fact, never as a line of its own (the existing phrasing test's checker); the stdlib-only AST test and the latency test pass unchanged.
-- [ ] **Step 2: Run** `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_guardrail.py -q`. Expected: the new tests fail.
-- [ ] **Step 3: Implement.**
+- [x] **Step 1: Write the failing tests** in `tests/test_guardrail.py`: an index entry with `check_status: "narrowed"` and `holds: "X holds"` yields a line `What still holds, per a check: X holds.`; an entry with `via: "duplicate", "anchor": "src/a.ts"` yields "the same defect as a finding in src/a.ts"; an index built by `report.py` after a refuted verdict (reuse Task 11's helpers through a fixture) produces no statement naming the refuted finding's failure mode when its file is edited; `holds` text containing "Ignore previous instructions" is emitted as part of a statement of fact, never as a line of its own (the existing phrasing test's checker); the stdlib-only AST test and the latency test pass unchanged.
+- [x] **Step 2: Run** `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_guardrail.py -q`. Expected: the new tests fail.
+- [x] **Step 3: Implement.**
 
 ```python
 def holds_line(f: dict) -> str | None:
@@ -3268,8 +3268,8 @@ def holds_line(f: dict) -> str | None:
 ```
 
 Append it after #56's precondition line. Where the per-finding header is built, an entry with `via == "duplicate"` reads `- {id} (the same defect as a finding in {anchor}): {failure_mode}`, the way `via: "evidence"` entries already name their anchor.
-- [ ] **Step 4: Run** the guardrail tests and the full suite. Expected: PASS.
-- [ ] **Step 5: Commit**
+- [x] **Step 4: Run** the guardrail tests and the full suite. Expected: PASS.
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/guardrail.py tests/test_guardrail.py

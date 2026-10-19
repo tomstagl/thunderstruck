@@ -86,6 +86,14 @@ def history_line(f: dict) -> str | None:
          for h in items], "; ") + "."
 
 
+def holds_line(f: dict) -> str | None:
+    """What a check found still holds of a narrowed finding (#37 §11.6)."""
+    holds = f.get("holds")
+    if f.get("check_status") != "narrowed" or not isinstance(holds, str) or not holds.strip():
+        return None
+    return f"  What still holds, per a check: {' '.join(holds.split())[:300]}."
+
+
 def _project_dir(hook_input: dict) -> Path | None:
     for candidate in (os.environ.get("CLAUDE_PROJECT_DIR"), hook_input.get("cwd"), os.getcwd()):
         if not candidate:
@@ -192,12 +200,14 @@ def build_context(entry: dict, rel: str, stale: bool) -> str | None:
         where = f" (lines {f['lines']})" if f.get("lines") else ""
         if f.get("via") == "evidence":
             where = f" (cited as evidence; finding is on {f.get('anchor', '?')})"
+        elif f.get("via") == "duplicate":
+            where = f" (the same defect as a finding in {f.get('anchor', '?')})"
         lines.append(f"- {f.get('id', '?')}{where}: {f.get('failure_mode', '')}")
         lines.append(f"  missing patterns: {pats}; confidence: {f['_confidence']}; "
                      f"check status: {f['_status']}.")
-        for fact in (precondition_line(f), history_line(f)):
+        for fact in (precondition_line(f), holds_line(f), history_line(f)):
             if fact:
-                lines.append(f"  {fact}")
+                lines.append(fact if fact.startswith("  ") else f"  {fact}")
         if f.get("sustaining_effect"):
             lines.append(f"  what keeps it failing: {f['sustaining_effect']}")
     if extra > 0:
