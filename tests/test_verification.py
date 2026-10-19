@@ -384,3 +384,114 @@ def test_apply_writes_the_ledger_and_run_and_reuse_follows(validated_repo, valid
     check = _apply(validated_repo, validated_env)[e["key"]]
     assert check["status"] == "refuted"
     assert check["reused_from"] == {"scan": plan["generated_at"], "head": plan["head"]}
+
+
+# --- Task 11 ----------------------------------------------------------------
+import report  # noqa: E402
+
+
+def _report(repo: Path, env: dict) -> tuple[dict, dict, str]:
+    proc = subprocess.run([sys.executable, str(SCRIPTS / "report.py"), "--repo", str(repo)],
+                          capture_output=True, text=True, cwd=str(repo), env=env)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    out = repo / ".thunderstruck"
+    return (json.loads((out / "report.json").read_text()), json.loads((out / "index.json").read_text()),
+            (out / "report.md").read_text())
+
+
+def _verified(repo: Path, env: dict, tmp_path: Path, verdicts: dict[str, dict]) -> dict:
+    """prepare, save one verdict per file fragment, apply. Returns the plan."""
+    plan = _prepare(repo, env)
+    for fragment, v in verdicts.items():
+        e = _entry(plan, fragment)
+        _save(repo, env, tmp_path, {**_v(e["key"], v.pop("verdict")), **v, "key": e["key"]})
+    _apply(repo, env)
+    return plan
+
+
+def _refute_releases(repo: Path) -> dict:
+    return {"verdict": "refuted", "refuted_claims": [
+        {"field": "failure_mode", "claim": "60 requests per caller", "fact": "f", "evidence": [0]}],
+        "evidence": [{"type": "code", "ref": "src/client/retry-wrapper.ts:1", "note": "n"}]}
+
+
+def test_without_a_run_every_finding_is_unchecked(validated_repo, validated_env, tmp_path):
+    """AC-1 and Review Focus 1: an earlier verified scan's checks never leak."""
+    _verified(validated_repo, validated_env, tmp_path, {"releases.ts": _refute_releases(validated_repo)})
+    (validated_repo / ".thunderstruck" / "checks" / "run.json").unlink()
+    rj, ij, md = _report(validated_repo, validated_env)
+    assert rj["verification"]["ran"] is False
+    assert {f["check"]["status"] for f in rj["findings"]} == {"unchecked"}
+    assert rj["refuted"] == [] and any(p.endswith("releases.ts") for p in ij["files"])
+
+
+def test_a_refuted_finding_leaves_findings_and_the_index(validated_repo, validated_env, tmp_path):
+    _verified(validated_repo, validated_env, tmp_path, {"releases.ts": _refute_releases(validated_repo)})
+    rj, ij, _ = _report(validated_repo, validated_env)
+    assert rj["verification"]["ran"] is True
+    assert [f["location"]["file"] for f in rj["refuted"]] == ["src/client/releases.ts"]
+    assert "id" not in rj["refuted"][0]
+    assert all(not f["location"]["file"].endswith("releases.ts") for f in rj["findings"])
+    assert not any(it["key"] == rj["refuted"][0]["key"] for e in ij["files"].values() for it in e["findings"])
+    assert rj["counts"]["refuted"] == 1 and rj["counts"]["check_status"]["refuted"] == 1
+    assert [f["id"] for f in rj["findings"]] == [f"FR-{n:03d}" for n in range(1, len(rj["findings"]) + 1)]
+
+
+def test_check_evidence_is_linked_and_dependency_refs_are_not(linked_copy):
+    f = {"location": {"file": "src/client/api.ts"}, "evidence": [], "check": {"status": "narrowed", "evidence": [
+        {"type": "code", "ref": "src/client/api.ts:1", "note": "n"},
+        {"type": "dependency", "ref": "pypi:x@1:x/y.py:1", "note": "n"}], "refuted_claims": []}}
+    head = c.load_json(linked_copy / ".thunderstruck" / "hotspots.json")["repo"]["head"]
+    report.link_refs(linked_copy, head, [f], [], [])
+    assert f["check"]["evidence"][0]["url"].startswith("https://github.com/acme/fixture/")
+    assert f["check"]["evidence"][1]["url"] is None
+
+
+def _dup(key: str, file: str, dup: str | None, conf: str = "medium", status: str = "upheld") -> dict:
+    return {"key": key, "location": {"file": file, "lines": "1"}, "hotspot_id": "H01",
+            "confidence": conf, "gate": "none", "hotspot_score": 0.1,
+            "check": {"status": status, "duplicate_of": dup}}
+
+
+def test_duplicate_groups():
+    """Review Focus 5: a cycle is one group; the survivor is first by report order."""
+    a, b = _dup("a", "x.ts", "b", "low"), _dup("b", "y.ts", "a", "high")
+    chain = [_dup("c", "c.ts", "d"), _dup("d", "d.ts", "e"), _dup("e", "e.ts", None, "high")]
+    groups = report.duplicate_groups([a, b, *chain, _dup("f", "f.ts", "zzz")])
+    assert {k: [x["key"] for x in v] for k, v in groups.items()} == {"b": ["a"], "e": ["c", "d"]}
+
+
+def test_a_duplicate_is_reported_once_and_indexed_under_both_files(validated_repo, validated_env, tmp_path):
+    plan = _prepare(validated_repo, validated_env)
+    sched, coll = _entry(plan, "scheduler.ts"), _entry(plan, "collection.ts")
+    _save(validated_repo, validated_env, tmp_path, _v(sched["key"], "upheld", duplicate_of=coll["key"]))
+    _save(validated_repo, validated_env, tmp_path, _v(coll["key"], "upheld"))
+    _apply(validated_repo, validated_env)
+    rj, ij, _ = _report(validated_repo, validated_env)
+    keys = [f["key"] for f in rj["findings"]]
+    assert sched["key"] not in keys or coll["key"] not in keys
+    survivor = next(f for f in rj["findings"] if f["key"] in (sched["key"], coll["key"]))
+    assert len(survivor["also_at"]) == 1 and rj["counts"]["duplicates_merged"] == 1
+    other_file = survivor["also_at"][0]["location"]["file"]
+    assert any(it.get("via") == "duplicate" and it["key"] == survivor["key"]
+               for it in ij["files"][other_file]["findings"])
+
+
+def test_a_duplicate_of_a_refuted_finding_is_not_merged(validated_repo, validated_env, tmp_path):
+    """Review Focus 5."""
+    plan = _prepare(validated_repo, validated_env)
+    rel, api = _entry(plan, "releases.ts"), _entry(plan, "api.ts")
+    _save(validated_repo, validated_env, tmp_path, {**_v(rel["key"], "refuted"), **_refute_releases(validated_repo)})
+    _save(validated_repo, validated_env, tmp_path, _v(api["key"], "upheld", duplicate_of=rel["key"]))
+    _apply(validated_repo, validated_env)
+    rj, _, _ = _report(validated_repo, validated_env)
+    assert api["key"] in [f["key"] for f in rj["findings"]] and rj["counts"]["duplicates_merged"] == 0
+
+
+def test_unavailable_dependency_source_is_a_run_warning(validated_repo, validated_env, tmp_path):
+    (validated_repo / "requirements.txt").write_text("kombu>=5.6\n")
+    _verified(validated_repo, validated_env, tmp_path, {})
+    rj, _, _ = _report(validated_repo, validated_env)
+    dep = rj["verification"]["dependencies"][0]
+    assert dep["id"] == "pypi:kombu" and dep["status"] == "unavailable" and "source" not in dep
+    assert any("Dependency source not available for pypi:kombu" in w for w in rj["run_warnings"])

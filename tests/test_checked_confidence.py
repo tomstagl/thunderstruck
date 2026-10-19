@@ -340,16 +340,29 @@ def test_reported_confidence_is_capped_and_the_claim_kept(scanned_copy, plugin_r
                                 for h in f["history"]]
 
 
+def _verification_ran(repo: Path) -> None:
+    """#37 §11.1: a `check` in a findings file counts only when checks/run.json
+    belongs to this scan. These tests write checks by hand, so they declare it."""
+    out = repo / ".thunderstruck"
+    (out / "checks").mkdir(exist_ok=True)
+    stamp = json.loads((out / "hotspots.json").read_text())["generated_at"]
+    (out / "checks" / "run.json").write_text(json.dumps({"generated_at": stamp}))
+
+
 def test_an_upheld_check_allows_high_and_a_narrowed_one_drops_a_level(scanned_copy, plugin_root):
     hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
     _write_finding(scanned_copy, hid, doc)
     assert _validate(scanned_copy, plugin_root).returncode == 0
+    _verification_ran(scanned_copy)
     path = scanned_copy / ".thunderstruck" / "findings" / f"{hid}.json"
     for status, expected in (("upheld", "high"), ("narrowed", "medium"), ("refuted", "low")):
         saved = json.loads(path.read_text())
         saved["findings"][0]["check"] = {"status": status, "by": "test", "reason": None}
         path.write_text(json.dumps(saved))
-        assert _report(scanned_copy, plugin_root)[0]["findings"][0]["confidence"] == expected
+        payload = _report(scanned_copy, plugin_root)[0]
+        # A refuted finding leaves Findings for `refuted` (#37 AC-4); it keeps its capped confidence.
+        shown = payload["refuted"] if status == "refuted" else payload["findings"]
+        assert shown[0]["confidence"] == expected
 
 
 def test_a_malformed_check_is_reported_unchecked_with_a_warning(scanned_copy, plugin_root):
@@ -360,6 +373,7 @@ def test_a_malformed_check_is_reported_unchecked_with_a_warning(scanned_copy, pl
     saved = json.loads(path.read_text())
     saved["findings"][0]["check"] = {"status": "upheld!"}     # tampered after validation
     path.write_text(json.dumps(saved))
+    _verification_ran(scanned_copy)
     payload, _ = _report(scanned_copy, plugin_root)
     assert payload["findings"][0]["check"]["status"] == "unchecked"
     assert payload["findings"][0]["confidence"] == "medium"

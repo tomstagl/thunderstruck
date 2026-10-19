@@ -2099,9 +2099,9 @@ Return only the JSON object, no prose, no fence:
 
 The frontmatter `model` is provisional; Task 21 sets the measured default.
 
-- [ ] **Step 4: Run the tests.** Expected: PASS. Then `claude plugin validate . --strict`. Expected: passes.
+- [x] **Step 4: Run the tests.** Expected: PASS. Then `claude plugin validate . --strict`. Expected: passes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add agents/thunderstruck-skeptic.md scripts/verify.py tests/test_skeptic_contract.py
@@ -2778,7 +2778,7 @@ git commit -m "Verification: settle each verdict mechanically and remember it (#
 - Consumes: `checks/run.json`, `deps/index.json`, findings files' `check` (Task 10); #56's `order_key`, `c.check_status`, `c.effective_confidence`, `c.finding_gate`.
 - Produces: `report.verification_run(out: Path, hotspots: dict) -> dict | None`; `report.duplicate_groups(findings: list[dict]) -> dict[str, list[dict]]` (survivor key → absorbed findings, survivors chosen by `order_key`); `collect()` data gains `refuted: list[dict]`, `verification: dict` (§11.3's block), `dependency_warnings: list[str]`, `duplicates_merged: int`; each finding may carry `also_at: [{"key", "hotspot_id", "location", "url"}]`; check evidence items gain `url`, a kept setting gains `default_url`; `report.json` gains `verification`, `refuted`, `counts.refuted`, `counts.duplicates_merged`; `index.json` gains `via: "duplicate"` entries and `holds` on narrowed entries.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_verification.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_verification.py`:
 
 ```python
 # --- Task 11 ----------------------------------------------------------------
@@ -2892,9 +2892,9 @@ def test_unavailable_dependency_source_is_a_run_warning(validated_repo, validate
     assert any("Dependency source not available for pypi:kombu" in w for w in rj["run_warnings"])
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** `... -k "without_a_run or leaves_findings or linked_and or duplicate or unavailable_dependency"`. Expected: `KeyError: 'verification'`, `AttributeError: ... duplicate_groups`.
+- [x] **Step 2: Run them to verify they fail.** `... -k "without_a_run or leaves_findings or linked_and or duplicate or unavailable_dependency"`. Expected: `KeyError: 'verification'`, `AttributeError: ... duplicate_groups`.
 
-- [ ] **Step 3: Write the implementation.** In `scripts/report.py`:
+- [x] **Step 3: Write the implementation.** In `scripts/report.py`:
 
 ```python
 import deps  # noqa: E402
@@ -3008,7 +3008,7 @@ Return from `collect()` additionally: `"refuted": refuted`, `"verification": blo
 
 Set the absorbed file's `content_hash` from `c.sha256_file(repo / path)` (pass `repo` into `render_index`, or compute in `collect` and carry it on `also_at[].content_hash`; the latter keeps `render_index` pure; do that).
 
-- [ ] **Step 4: Update #56's two tests that write a `check` by hand.** §11.1 makes a `check` in a findings file count only when `checks/run.json` belongs to this scan, and AC-4 moves a refuted finding out of *Findings*. Two tests in `tests/test_checked_confidence.py` were written for the world before that: they put a `check` straight into a findings file and run `report.py` with no `checks/run.json`. Updating them is part of this task, and these are the only edits to that file: the rule they test (a check caps confidence: `upheld` may be `high`, `narrowed` drops a level, everything else is at most `medium`; a malformed check is reported `unchecked` with a warning) is unchanged. Add the helper above `test_an_upheld_check_allows_high_and_a_narrowed_one_drops_a_level`:
+- [x] **Step 4: Update #56's two tests that write a `check` by hand.** §11.1 makes a `check` in a findings file count only when `checks/run.json` belongs to this scan, and AC-4 moves a refuted finding out of *Findings*. Two tests in `tests/test_checked_confidence.py` were written for the world before that: they put a `check` straight into a findings file and run `report.py` with no `checks/run.json`. Updating them is part of this task, and these are the only edits to that file: the rule they test (a check caps confidence: `upheld` may be `high`, `narrowed` drops a level, everything else is at most `medium`; a malformed check is reported `unchecked` with a warning) is unchanged. Add the helper above `test_an_upheld_check_allows_high_and_a_narrowed_one_drops_a_level`:
 
 ```python
 def _verification_ran(repo: Path) -> None:
@@ -3031,9 +3031,9 @@ In `test_an_upheld_check_allows_high_and_a_narrowed_one_drops_a_level`, call `_v
 
 In `test_a_malformed_check_is_reported_unchecked_with_a_warning`, call `_verification_ran(scanned_copy)` between `path.write_text(json.dumps(saved))` and `payload, _ = _report(...)`. Run `pytest tests/test_checked_confidence.py -q`. Expected: PASS (99 tests as of #56's merge).
 
-- [ ] **Step 5: Run the tests**, then the full suite. Expected: PASS, `exit=0`.
+- [x] **Step 5: Run the tests**, then the full suite. Expected: PASS, `exit=0`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/report.py tests/test_verification.py tests/test_checked_confidence.py
