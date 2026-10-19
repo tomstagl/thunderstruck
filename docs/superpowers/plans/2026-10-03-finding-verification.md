@@ -3053,7 +3053,7 @@ git commit -m "Report: verification state, refuted findings and duplicates in th
 - Consumes: Task 11's data.
 - Produces: `report.render_verification_line(data: dict) -> str`; `report.render_check(f: dict) -> list[str]` (extended); `report.render_refuted(data: dict) -> list[str]`; `report.FIELD_LABELS: dict[str, str]` (`failure_mode` → "Failure mode", … `preconditions` → "Preconditions").
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```python
 # --- Task 12 ----------------------------------------------------------------
@@ -3119,9 +3119,9 @@ def test_a_reused_verdict_says_so(validated_repo, validated_env, tmp_path):
 
 In `tests/test_inert_report.py`, extend the hostile-text cases so each of `check.reason`, `check.holds`, `check.refuted_claims[0].claim`, `.fact` and `check.evidence[0].note` carries `[x](http://evil)`, `<img src=x>` and `# heading`, on a narrowed finding and on a refuted one, and assert the rendered `report.md` holds none of them as live Markdown (the file's existing helpers do the rendering check).
 
-- [ ] **Step 2: Run them to verify they fail.** Expected: the header and section strings are absent.
+- [x] **Step 2: Run them to verify they fail.** Expected: the header and section strings are absent.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 ```python
 FIELD_LABELS = {"failure_mode": "Failure mode", "trigger_condition": "Trigger",
@@ -3206,9 +3206,9 @@ def render_refuted(data: dict) -> list[str]:
 
 (`location_url` is whatever #56/#3 named the location link field on a finding; use that name.) In `render_markdown`, insert `render_verification_line(data)` as the line after #56's check-status line, and `L += render_refuted(data)` directly before the *Hotspots investigated with no finding* block.
 
-- [ ] **Step 4: Run the tests** (these, `tests/test_inert_report.py`, then the full suite). Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests** (these, `tests/test_inert_report.py`, then the full suite). Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/report.py tests/test_verification.py tests/test_inert_report.py

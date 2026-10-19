@@ -495,3 +495,64 @@ def test_unavailable_dependency_source_is_a_run_warning(validated_repo, validate
     dep = rj["verification"]["dependencies"][0]
     assert dep["id"] == "pypi:kombu" and dep["status"] == "unavailable" and "source" not in dep
     assert any("Dependency source not available for pypi:kombu" in w for w in rj["run_warnings"])
+
+
+# --- Task 12 ----------------------------------------------------------------
+def test_header_states_whether_verification_ran(validated_repo, validated_env, tmp_path):
+    _, _, md = _report(validated_repo, validated_env)
+    assert "Verification: not run for this scan; every finding is unchecked." in md
+    _verified(validated_repo, validated_env, tmp_path, {"releases.ts": _refute_releases(validated_repo)})
+    _, _, md = _report(validated_repo, validated_env)
+    line = next(l for l in md.splitlines() if l.startswith("Verification: ran on "))
+    assert "checked by `claude-sonnet-5-5`" in line and "1 refuted (listed separately)" in line
+
+
+def test_off_by_default_states_the_flag_and_the_measured_cost(validated_repo, validated_env, monkeypatch):
+    monkeypatch.setattr(c, "VERIFY_BY_DEFAULT", False)
+    monkeypatch.setattr(c, "VERIFY_MEASURED_COST", "about 640k weighted tokens per scan")
+    data = report.collect(validated_repo)
+    assert report.render_verification_line(data) == (
+        "Verification: not run for this scan; every finding is unchecked. It is off by default; "
+        "`--verify` runs it, measured at about 640k weighted tokens per scan.")
+
+
+def test_narrowed_shows_what_holds_and_the_refuted_claim_beside_its_field(validated_repo, validated_env, tmp_path):
+    wait = _line(validated_repo, "src/client/api.ts", "setTimeout(resolve, 5000)")
+    _verified(validated_repo, validated_env, tmp_path, {"api.ts": {
+        "verdict": "narrowed", "holds": "A 429 is retried after a fixed 5 s.",
+        "refuted_claims": [{"field": "amplifier", "claim": "immediately schedules another",
+                            "fact": "It waits 5 s first.", "evidence": [0]}],
+        "evidence": [{"type": "code", "ref": f"src/client/api.ts:{wait}", "note": "n"}]}})
+    _, _, md = _report(validated_repo, validated_env)
+    section = md[md.index("A 429 is retried after a fixed 5s"):]
+    assert "What still holds: A 429 is retried after a fixed 5 s." in section
+    assert "- *Amplifier*: “immediately schedules another”. It waits 5 s first." in section
+    amp_row = next(l for l in section.splitlines() if l.startswith("| Amplifier"))
+    assert amp_row.endswith("*(part refuted, see Check)* |")
+
+
+def test_the_refuted_section(validated_repo, validated_env, tmp_path):
+    _verified(validated_repo, validated_env, tmp_path, {"releases.ts": _refute_releases(validated_repo)})
+    _, _, md = _report(validated_repo, validated_env)
+    sec = md[md.index("## Refuted by verification"):]
+    assert sec.index("## Refuted by verification") < sec.index("###")
+    assert "the edit guardrail does not warn about them" in sec
+    assert "- *Failure mode*: “60 requests per caller”." in sec
+    assert md.index("## Findings") < md.index("## Refuted by verification") < md.index("## Ranked hotspots")
+
+
+def test_a_failed_skeptic_is_shown_with_its_reason(validated_repo, validated_env):
+    plan = _prepare(validated_repo, validated_env)
+    _verify(validated_repo, validated_env, "save", "--key", plan["findings"][0]["key"], "--failed",
+            "--reason", "timed out")
+    _apply(validated_repo, validated_env)
+    _, _, md = _report(validated_repo, validated_env)
+    assert "The skeptic returned nothing usable: timed out" in md
+
+
+def test_a_reused_verdict_says_so(validated_repo, validated_env, tmp_path):
+    plan = _verified(validated_repo, validated_env, tmp_path, {"releases.ts": _refute_releases(validated_repo)})
+    _prepare(validated_repo, validated_env)
+    _apply(validated_repo, validated_env)
+    _, _, md = _report(validated_repo, validated_env)
+    assert f"Refuted in an earlier scan of {plan['generated_at'][:10]} at `{plan['head'][:7]}`" in md

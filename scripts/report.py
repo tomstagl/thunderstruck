@@ -559,9 +559,126 @@ def render_check(f: dict) -> list[str]:
         line += (f", so it is reported at {md.text(f.get('confidence') or '?')} confidence "
                  f"(claimed {claimed})")
     line += "."
-    if f["check"].get("reason"):
-        line += f" {md.text(f['check']['reason'])}"
-    return [line, ""]
+    check = f["check"]
+    if check.get("reason"):
+        line += f" {md.text(check['reason'])}"
+    L = [line, ""]
+    if status in ("narrowed", "upheld") and check.get("holds"):
+        L += [f"What still holds: {md.text(check['holds'])}", ""]
+    if (claims := _claim_lines(check)):
+        L += ["Refuted in part:" if status == "narrowed" else "Refuted:", "", *claims, ""]
+    if (provenance := _provenance(check)):
+        L += [*provenance, ""]
+    return L
+
+
+FIELD_LABELS = {"failure_mode": "Failure mode", "trigger_condition": "Trigger",
+                "amplifier": "Amplifier", "sustaining_effect": "Sustaining effect",
+                "blast_radius": "Blast radius", "how_to_verify": "Verify",
+                "prediction": "Prediction", "preconditions": "Preconditions"}
+PART_REFUTED = " *(part refuted, see Check)*"
+
+
+def render_verification_line(data: dict) -> str:
+    """Whether verification ran for this scan, and what it settled (#37 §11.2)."""
+    v = data["verification"]
+    if not v["ran"]:
+        line = "Verification: not run for this scan; every finding is unchecked."
+        if not c.VERIFY_BY_DEFAULT:
+            line += (" It is off by default; `--verify` runs it"
+                     + (f", measured at {md.text(c.VERIFY_MEASURED_COST)}." if c.VERIFY_MEASURED_COST
+                        else "."))
+        return line
+    counts: dict[str, int] = {}
+    for f in data["findings"] + data["refuted"]:
+        counts[f["check"]["status"]] = counts.get(f["check"]["status"], 0) + 1
+    parts = [f"{counts.get(s, 0)} {s}" + (" (listed separately)" if s == "refuted" else "")
+             for s in ("upheld", "narrowed", "refuted", "inconclusive", "unchecked")]
+    total = len(data["findings"]) + len(data["refuted"])
+    return (f"Verification: ran on {total} findings, {v['checked']} checked by {md.code(v['model'])}"
+            f" and {v['reused']} reused — " + " · ".join(parts))
+
+
+def _refuted_claims(check: dict) -> list[dict]:
+    return [rc for rc in (check.get("refuted_claims") or []) if isinstance(rc, dict)]
+
+
+def _part_refuted_fields(f: dict) -> set[str]:
+    return {str(rc.get("field")) for rc in _refuted_claims(f.get("check") or {})}
+
+
+def _evidence_refs(check: dict, idx: list) -> str:
+    items = _check_evidence(check)
+    out = []
+    for i in idx if isinstance(idx, list) else []:
+        if isinstance(i, int) and 0 <= i < len(items):
+            ev = items[i]
+            out.append(_linked(str(ev.get("ref")), ev.get("url")))
+    return "; ".join(out)
+
+
+def _claim_lines(check: dict) -> list[str]:
+    L = []
+    for rc in _refuted_claims(check):
+        label = FIELD_LABELS.get(str(rc.get("field")), str(rc.get("field")))
+        line = f"- *{md.text(label)}*: “{md.text(rc.get('claim') or '')}”. {md.text(rc.get('fact') or '')}"
+        if (refs := _evidence_refs(check, rc.get("evidence"))):
+            line += f" Evidence: {refs}"
+        s = rc.get("setting")
+        if isinstance(s, dict):
+            where = _linked(str(s.get("default_ref")), s.get("default_url"))
+            line += (f". Needs {md.code(s.get('setting'))} set to {md.code(s.get('value'))}; default "
+                     f"{md.code(s.get('default'))}, registered at {where}.")
+        L.append(line)
+    return L
+
+
+def _provenance(check: dict) -> list[str]:
+    if isinstance(check.get("reused_from"), dict):
+        r = check["reused_from"]
+        verb = "Refuted" if check["status"] == "refuted" else "Verdict from"
+        return [f"{verb} in an earlier scan of {md.text(str(r.get('scan'))[:10])} at "
+                f"{md.code(str(r.get('head'))[:7])}; the claim and its cited files are unchanged."]
+    if check.get("by") == "skeptic" and check.get("model"):
+        read = ", ".join(md.code(f"{k} {v}") for k, v in (check.get("dependency_versions") or {}).items())
+        return [f"Checked by {md.code(check['model'])}" + (f" · dependency source read: {read}" if read else "")]
+    return []
+
+
+def _also_at_lines(f: dict) -> list[str]:
+    L = []
+    for at in f.get("also_at") or []:
+        loc = at.get("location") or {}
+        where = f"{loc.get('file', '?')}" + (f":{loc['lines']}" if loc.get("lines") else "")
+        L.append(f"Also reported at {_linked(where, at.get('url'))} (from hotspot "
+                 f"{md.text(at.get('hotspot_id'))}): the same defect.")
+    return L + [""] if L else []
+
+
+def render_refuted(data: dict) -> list[str]:
+    """Findings a check refuted, apart from the findings (#37 §11.2, AC-4)."""
+    if not data["refuted"]:
+        return []
+    L = ["## Refuted by verification", "",
+         "Findings a check refuted. They are not in the findings above and the edit guardrail "
+         "does not warn about them.", ""]
+    for f in data["refuted"]:
+        loc = f.get("location") or {}
+        where = f"{loc.get('file', '?')}" + (f":{loc['lines']}" if loc.get("lines") else "")
+        head = [_linked(where, loc.get("url"))]
+        if loc.get("symbol"):
+            head.append(md.code(loc["symbol"]))
+        head += [f"hotspot {f['hotspot_id']}", f"key {md.code(f.get('key', '—'))}"]
+        check = f["check"]
+        L += [f"### {md.text(f.get('failure_mode', '(no failure mode)'), heading=True)}", "",
+              " · ".join(head), ""]
+        if check.get("reason"):
+            L += [md.text(check["reason"]), ""]
+        if (claims := _claim_lines(check)):
+            L += [*claims, ""]
+        if (provenance := _provenance(check)):
+            L += [*provenance, ""]
+    return L
 
 
 def _precondition_line(p: dict) -> str:
@@ -815,7 +932,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
     check_line = ("Check status: " + " · ".join(f"{n} {s}" for s, n in by_status if n)
                   + (f" · {gated} {'finding needs' if gated == 1 else 'findings need'} a "
                      f"non-default setting and {'is' if gated == 1 else 'are'} listed last"
-                     if gated else "")) if findings else None
+                     if gated else "") + "  ") if findings else None
 
     L: list[str] = [
         f"# thunderstruck — {md.text(repo_name, heading=True)}",
@@ -828,6 +945,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
         f"**{len(findings)} finding(s)** across {files_affected} file(s)"
         + (f" — {breakdown}" if breakdown else "") + "  ",
         *([check_line] if check_line else []),
+        render_verification_line(data),
         "",
         "> Findings are **falsifiable hypotheses**. Every citation in them was resolved "
         "mechanically: each cited file:line, commit, detector hit and catalog edge exists. "
@@ -880,11 +998,15 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
             symbol = f" · {md.code(loc['symbol'])}" if loc.get("symbol") else ""
             lines = f":{loc['lines']}" if loc.get("lines") else ""
             where = _linked(f"{loc.get('file', '?')}{lines}", loc.get("url"))
+            part = _part_refuted_fields(f)
+
+            def mark(key: str) -> str:
+                return PART_REFUTED if key in part else ""
             rows = ["| | |", "|---|---|",
-                    f"| Trigger | {md.text(f.get('trigger_condition', '—'), cell=True)} |",
-                    f"| Amplifier | {_not_stated(f.get('amplifier'))} |",
-                    f"| Sustaining effect | {_not_stated(f.get('sustaining_effect'))} |",
-                    f"| Blast radius | {md.text(f.get('blast_radius', '—'), cell=True)} |"]
+                    f"| Trigger | {md.text(f.get('trigger_condition', '—'), cell=True)}{mark('trigger_condition')} |",
+                    f"| Amplifier | {_not_stated(f.get('amplifier'))}{mark('amplifier')} |",
+                    f"| Sustaining effect | {_not_stated(f.get('sustaining_effect'))}{mark('sustaining_effect')} |",
+                    f"| Blast radius | {md.text(f.get('blast_radius', '—'), cell=True)}{mark('blast_radius')} |"]
             if f.get("catalog_evidence"):
                 rows.append(f"| Dependents / dependencies | {_deps(f['catalog_evidence'])} |")
             rows.append(f"| Missing patterns | {', '.join(md.code(p, cell=True) for p in f.get('missing_patterns') or []) or '—'} |")
@@ -895,6 +1017,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
                   "",
                   badge + f"{where}{symbol} · hotspot {f['hotspot_id']} (score {f.get('hotspot_score')})",
                   "",
+                  *_also_at_lines(f),
                   *_shared_line(f),
                   *rows,
                   "",
@@ -912,6 +1035,8 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
         L += ["## Findings", "",
               "None. Every investigated hotspot came back clean — see below for "
               "what each one checked.", ""]
+
+    L += render_refuted(data)
 
     if data["clean"]:
         L += ["## Hotspots investigated with no finding", ""]
