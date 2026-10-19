@@ -138,6 +138,8 @@ def test_bundles_are_within_budget_and_deterministic(scanned_repo, plugin_root):
 FIXTURE_FILES = {"src/client/releases.ts", "src/sync/collection.ts", "src/sync/scheduler.ts",
                  "src/client/artists.ts", "src/sync/queue.ts", "src/client/retry-wrapper.ts",
                  "src/client/api.ts", "src/client/limiter.ts", "src/util/format.ts",
+                 # the planted wrong finding and the file that refutes it (#37 AC-13)
+                 "src/client/labels.ts", "src/client/http-defaults.ts",
                  # config ranks because it carries leads (#19 AC-14)
                  "deploy/releases-virtualservice.yaml"}
 

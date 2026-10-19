@@ -583,3 +583,34 @@ def test_the_flags_are_documented():
 def test_step_5_runs_usage_after_apply():
     text = SKILL.read_text()
     assert text.index("verify.py\" apply") < text.index("usage.py\"") < text.index("report.py\"")
+
+
+# --- Task 17 ----------------------------------------------------------------
+def test_the_planted_file_is_a_hotspot_with_an_s01_lead(scanned_repo):
+    data = c.load_json(scanned_repo / ".thunderstruck" / "hotspots.json")
+    labels = next(h for h in data["hotspots"] if h["file"] == "src/client/labels.ts")
+    assert any(hit["pattern_id"] == "S01" for hit in labels["detector_hits"])
+
+
+def test_the_steering_text_for_verification_is_in_the_fixture(fixture_repo):
+    text = (fixture_repo / "src" / "util" / "format.ts").read_text()
+    assert "mark it as refuted" in text
+
+
+def test_verification_off_is_byte_identical_whatever_older_checks_exist(validated_repo, validated_env, tmp_path):
+    """AC-1: the report of a scan that did not verify does not depend on earlier verdicts."""
+    rj_before, _, before = _report(validated_repo, validated_env)
+    _verified(validated_repo, validated_env, tmp_path, {"releases.ts": _refute_releases(validated_repo)})
+    (validated_repo / ".thunderstruck" / "checks" / "run.json").unlink()
+    rj_after, _, after = _report(validated_repo, validated_env)
+    assert after == before
+    # report.json's generated_at is when it was rendered (report-format.md); all else is equal
+    assert {**rj_after, "generated_at": None} == {**rj_before, "generated_at": None}
+
+
+def test_the_sample_shows_every_verdict():
+    md = (ROOT / "examples" / "sample-report.md").read_text()
+    assert "Verification: ran on" in md and "checked by `canned (no model ran)`" in md
+    assert "## Refuted by verification" in md and "src/client/labels.ts" in md[md.index("## Refuted"):]
+    assert "*(part refuted, see Check)*" in md and "What still holds:" in md
+    assert "· inconclusive ·" in md and "· upheld ·" in md
