@@ -125,3 +125,29 @@ def test_model_names_are_inert(scanned_copy):
     usage["source"] = "partial"
     markdown, _ = _report(scanned_copy, usage)
     _assert_inert(markdown)
+
+
+# --- #37 Task 15 ------------------------------------------------------------
+def test_skeptics_get_their_own_line(scanned_copy):
+    usage = _usage(scanned_copy, skeptics={
+        "agents": 18, "respawns": 0, "fallback_saves": 0, "failed": 0,
+        "by_model": {"claude-haiku-4-5": _row(300_000)}, "by_finding": {}})
+    markdown, doc = _report(scanned_copy, usage)
+    section = _section(markdown)
+    assert "Skeptics 300k across 18 agents (`claude-haiku-4-5`), 0 verdicts reused." in section
+    assert doc["consumption"]["skeptics"]["agents"] == 18
+
+
+def test_reused_verdicts_are_counted_in_the_skeptics_line():
+    usage = {"source": "transcripts", "total_weighted": 1,
+             "orchestrator": {"calls": 1, "by_model": {"claude-opus-5-5": _row(1)}},
+             "investigators": {"agents": 1, "by_model": {}},
+             "skeptics": {"agents": 18, "by_model": {"claude-haiku-4-5": _row(300_000)}}}
+    lines = report.render_consumption(usage, reused=3)
+    assert "Skeptics 300k across 18 agents (`claude-haiku-4-5`), 3 verdicts reused.  " in lines
+
+
+def test_without_skeptics_the_section_is_unchanged(scanned_copy):
+    before = _section(_report(scanned_copy, _usage(scanned_copy))[0])
+    after = _section(_report(scanned_copy, _usage(scanned_copy, skeptics=None))[0])
+    assert after == before and "Skeptics" not in after

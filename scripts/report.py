@@ -834,7 +834,7 @@ def _part(part: dict) -> tuple[int, str]:
     return weighted, ", ".join(md.code(m) for m in by_model)
 
 
-def render_consumption(usage: dict | None) -> list[str]:
+def render_consumption(usage: dict | None, reused: int = 0) -> list[str]:
     """## Consumption: what the scan consumed, or why it was not measured (#5)."""
     if not usage:
         return []
@@ -860,6 +860,10 @@ def render_consumption(usage: dict | None) -> list[str]:
     if inv.get("fallback_saves"):
         lines.append(f"{inv['fallback_saves']} result(s) saved by the orchestrator because "
                      f"the hook did not deliver them.")
+    if isinstance(sk := usage.get("skeptics"), dict):
+        s_weighted, s_models = _part(sk)
+        lines.append(f"Skeptics {_k(s_weighted)} across {_plural(sk.get('agents') or 0, 'agent')} "
+                     f"({s_models or 'none measured'}), {_plural(reused, 'verdict')} reused.")
     if partial:
         covers = (["the orchestrator"] if orch.get("by_model") else []) + \
             [f"investigators for {_plural(len(inv.get('by_hotspot') or {}), 'hotspot')}"]
@@ -966,7 +970,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
             L += [f"  - {md.code(r['detector'])} on {md.code(r['path'])}: "
                   f"{r['hits']} hit(s) — {md.text(r['reason'])}" for r in suppressed]
         L.append("")
-    L += render_consumption(data.get("usage"))
+    L += render_consumption(data.get("usage"), data["verification"]["reused"])
     L += render_not_scanned(hs.get("coverage_gaps"))
     L += render_service_context(data.get("context"), now or datetime.now(timezone.utc))
 

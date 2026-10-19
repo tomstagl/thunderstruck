@@ -170,6 +170,89 @@ def _relayed(rec: dict) -> dict | None:
     return {"model": c.MODEL_ALIASES.get(model, model), "usage": usage}
 
 
+def _measure(rec: dict, label: str, missing: list[str], sessions: list[str]) -> dict:
+    """One agent record (#5's per-hotspot rules): its subagent transcripts, or
+    the usage the orchestrator relayed when a transcript is not readable."""
+    listed = [a for a in rec.get("agents") or [] if isinstance(a, dict)]
+    fallback = rec.get("fallback") is True
+    hs_entries: list[dict] = []
+    relayed_used = False
+    respawns = repairs = 0
+    for a in listed:
+        kind = a.get("kind")
+        respawns += kind == "respawn"
+        repairs += kind == "repair"
+        session = safe_transcript(a.get("transcript_path"))
+        if session is not None:
+            sessions.append(str(session))
+        sub = None
+        if session is not None and isinstance(a.get("agent_id"), str):
+            sub = safe_transcript(session.with_suffix("") / "subagents"
+                                  / f"agent-{a['agent_id']}.jsonl")
+        entries = read_entries(sub) if sub is not None else None
+        if entries is None:
+            relayed = None if relayed_used else _relayed(rec)
+            if relayed is not None:
+                relayed_used = True
+                hs_entries.append(relayed)
+                missing.append(f"{label}: subagent transcript not readable, "
+                               f"used the usage the orchestrator relayed")
+            else:
+                missing.append(f"{label}: subagent transcript not readable")
+            continue
+        if entries.skipped:
+            missing.append(f"{label}: {entries.skipped} line(s) of a subagent "
+                           f"transcript were not readable")
+        hs_entries.extend(entries)
+    n_agents = len(listed)
+    relayed = None if relayed_used else _relayed(rec)
+    if relayed is not None:
+        # a fallback save: an agent the hook never recorded
+        hs_entries.append(relayed)
+        n_agents += 1
+        if listed:
+            missing.append(f"{label}: one agent measured from the usage the "
+                           f"orchestrator relayed")
+    elif not listed:
+        missing.append(f"{label}: no agent recorded")
+    return {"entries": hs_entries, "agents": n_agents, "respawns": respawns,
+            "repairs": repairs, "fallback": fallback}
+
+
+def skeptic_records(out: Path, generated_at: str) -> list[dict]:
+    """checks/agents/*.json written for this scan (#37 §12.1); earlier scans' are ignored."""
+    records = []
+    for path in sorted((out / c.CHECKS_DIRNAME / "agents").glob("*.json")):
+        rec = c.load_json(path, None)
+        if isinstance(rec, dict) and rec.get("scan") == generated_at and isinstance(rec.get("key"), str):
+            records.append(rec)
+    return records
+
+
+def _skeptics(out: Path, since: str, missing: list[str], sessions: list[str]) -> tuple[dict | None, list[dict]]:
+    records = skeptic_records(out, since)
+    if not records:
+        return None, []
+    all_entries: list[dict] = []
+    by_finding: dict[str, dict] = {}
+    agents = respawns = fallback_saves = 0
+    for rec in records:
+        m = _measure(rec, f"skeptic {rec['key']}", missing, sessions)
+        agents += m["agents"]
+        respawns += m["respawns"]
+        fallback_saves += m["fallback"]
+        all_entries.extend(m["entries"])
+        t = tally(m["entries"])
+        by_finding[rec["key"]] = {"agents": m["agents"], "calls": t["calls"], "weighted": _total(t)}
+    failed = 0
+    for path in sorted((out / c.CHECKS_DIRNAME / "results").glob("*.json")):
+        doc = c.load_json(path, None)
+        failed += isinstance(doc, dict) and doc.get("scan") == since and doc.get("failed") is True
+    skeptics = tally(all_entries, missing)
+    return ({"agents": agents, "respawns": respawns, "fallback_saves": fallback_saves,
+             "failed": failed, **skeptics, "by_finding": by_finding}, all_entries)
+
+
 def build(repo: Path, now: str) -> dict:
     out = c.out_dir(repo)
     hotspots = c.load_json(out / "hotspots.json", None)
@@ -191,53 +274,18 @@ def build(repo: Path, now: str) -> dict:
         if not isinstance(rec, dict) or rec.get("bundle_hash") != b.get("bundle_hash"):
             missing.append(f"{hid}: no agent record, the hook did not fire")
             continue
-        listed = [a for a in rec.get("agents") or [] if isinstance(a, dict)]
-        fallback_saves += rec.get("fallback") is True
-        hs_entries: list[dict] = []
-        relayed_used = False
-        for a in listed:
-            kind = a.get("kind")
-            respawns += kind == "respawn"
-            repairs += kind == "repair"
-            session = safe_transcript(a.get("transcript_path"))
-            if session is not None:
-                sessions.append(str(session))
-            sub = None
-            if session is not None and isinstance(a.get("agent_id"), str):
-                sub = safe_transcript(session.with_suffix("") / "subagents"
-                                      / f"agent-{a['agent_id']}.jsonl")
-            entries = read_entries(sub) if sub is not None else None
-            if entries is None:
-                relayed = None if relayed_used else _relayed(rec)
-                if relayed is not None:
-                    relayed_used = True
-                    hs_entries.append(relayed)
-                    missing.append(f"{hid}: subagent transcript not readable, "
-                                   f"used the usage the orchestrator relayed")
-                else:
-                    missing.append(f"{hid}: subagent transcript not readable")
-                continue
-            if entries.skipped:
-                missing.append(f"{hid}: {entries.skipped} line(s) of a subagent "
-                               f"transcript were not readable")
-            hs_entries.extend(entries)
-        n_agents = len(listed)
-        relayed = None if relayed_used else _relayed(rec)
-        if relayed is not None:
-            # a fallback save: an agent the hook never recorded
-            hs_entries.append(relayed)
-            n_agents += 1
-            if listed:
-                missing.append(f"{hid}: one agent measured from the usage the "
-                               f"orchestrator relayed")
-        elif not listed:
-            missing.append(f"{hid}: no agent recorded")
+        m = _measure(rec, hid, missing, sessions)
+        hs_entries, n_agents = m["entries"], m["agents"]
+        respawns += m["respawns"]
+        repairs += m["repairs"]
+        fallback_saves += m["fallback"]
         agents += n_agents
         inv_entries.extend(hs_entries)
         hs = tally(hs_entries)
         by_hotspot[hid] = {"agents": n_agents, "calls": hs["calls"], "weighted": _total(hs)}
 
     investigators = tally(inv_entries, missing)
+    skeptics, sk_entries = _skeptics(out, since, missing, sessions)
     # An earlier session can be recorded for a bundle this scan did not
     # re-investigate; only a session with calls in the window ran this scan.
     orch_entries = None
@@ -255,7 +303,7 @@ def build(repo: Path, now: str) -> dict:
                            f"transcript were not readable")
         orchestrator = tally(orch_entries, missing)
 
-    read_any = bool(inv_entries) or bool(orch_entries)
+    read_any = bool(inv_entries) or bool(sk_entries) or bool(orch_entries)
     source = "transcripts" if not missing else "partial" if read_any else "unavailable"
     return {
         "schema": c.USAGE_SCHEMA,
@@ -265,7 +313,9 @@ def build(repo: Path, now: str) -> dict:
         "investigators": {"agents": agents, "respawns": respawns, "repairs": repairs,
                           "fallback_saves": fallback_saves, **investigators,
                           "by_hotspot": by_hotspot},
-        "total_weighted": _total(orchestrator) + _total(investigators),
+        "skeptics": skeptics,
+        "total_weighted": (_total(orchestrator) + _total(investigators)
+                           + (_total(skeptics) if skeptics else 0)),
         "missing": missing,
     }
 
