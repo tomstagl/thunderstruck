@@ -217,7 +217,7 @@ Today it is headed **Pattern coverage**, a word that reads as "these patterns ar
 The table, its columns and the JSON keys (`pattern_coverage`, `coverage_rows`) stay; the words change, the same for every repository (ticket, product decision):
 
 - Heading: **Detector leads by pattern**.
-- Intro: *Each row is a stability pattern the detectors searched for. A lead is a line where a detector's text rule matched: a place to read, never a finding, and never proof that the pattern is missing. Where code leaves a setting to its caller, as a library's configurable timeout does, a lead describes the default the code ships with, not every deployment. Leads read counts the leads inside investigated hotspots; leads confirmed counts those a validated finding cites.*
+- Intro: *Each row is a stability pattern the detectors searched for. A lead is a line where a detector's text rule matched: a place to read, never a finding, and never proof that the pattern is missing. Where code leaves a setting to its caller, as a library's configurable timeout does, a lead describes the default the code ships with, not every deployment. Leads read counts the leads inside investigated hotspots; leads confirmed counts those cited by a finding whose citations resolved.*
 - Footnote: *No lead means no line matched a detector's rule. It does not mean the pattern is present: a detector sees only the shapes its rule describes.*
 
 The three strings are constants in `report.py`. `templates/report.html` carries the same text, and a test asserts each constant appears verbatim in the template, so the two cannot drift. The Overview rail's "Run, coverage, hotspots, and what was not analysed" becomes "Run, leads, hotspots, and what was not analysed". No reader-facing text in either report uses "coverage" for this table; *Not scanned* keeps its own wording, which is about files, not patterns.
@@ -273,7 +273,7 @@ The Celery log is the judgment record; `python.md` keeps its own and gains one l
 
 ## 10. Consumption
 
-No model call is added. The investigator reads slightly less: Celery's ten bundles shrink by about 1,200 estimated tokens from the boundary rules (50,076 to 48,901), and to 48,637 with §3's detector corrections. Working out own packages reads every tracked `package.json` outside the non-own directories once per `signals.py` run, and each such `.java` file up to its first line that is not blank, a comment or an annotation: the `package` line, or the head of a default-package file.
+No model call is added. The investigator reads slightly less: Celery's ten bundles shrink by 1,175 estimated tokens from the boundary rules and by 1,439 with §3's detector corrections. Those are differences between bundles that `main`'s code and this change's code generate over the same Celery checkout (the frozen scan's 50,076 became 48,901 and 48,637 against the `main` of the day); the absolute totals move as bundle content grows, so a measurement states both its ends. Working out own packages reads every tracked `package.json` outside the non-own directories once per `signals.py` run, and each such `.java` file up to its first line that is not blank, a comment or an annotation: the `package` line, or the head of a default-package file.
 
 ## 11. Decisions
 

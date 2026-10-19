@@ -2,6 +2,7 @@
 
 **Requirements:** [#39](https://github.com/tomstagl/thunderstruck/issues/39). The problem, stories, scope, acceptance criteria (AC-n) and product decisions are in the ticket and are not repeated here.
 **Plan:** `docs/superpowers/plans/2026-09-25-daily-ticket-agent.md`
+**Superseded in part by** [`2026-10-09-ticket-agent-resilience-design.md`](2026-10-09-ticket-agent-resilience-design.md) (#79): §2 rule 12, §3 markers, §4 *What counts as blocked* and §8 summaries.
 
 ## 1. Shape
 

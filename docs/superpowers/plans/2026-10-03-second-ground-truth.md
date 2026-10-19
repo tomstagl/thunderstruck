@@ -15,7 +15,7 @@
 **Who runs it.**
 - Task 1 needs two decisions recorded on #59, the repository and the set's role. It also needs Docker for the test check.
 - **The scan (Task 2 from Step 3) and the labelling (Task 3) are maintainer-run** (spec §14). They are interactive Claude Code sessions on chosen models, and the labelling takes Docker and hours of judgement. The nightly ticket agent cannot do them honestly.
-- The ticket agent may do Task 1. At Task 2 Step 3 it stops with `agent:blocked` and the comment "needs maintainer: scan and labelling sessions (Task 2 Step 3, Task 3)". It does not commit Task 2's failing tests; it leaves them for the maintainer.
+- **Task 1 from Step 3 is maintainer-run too** (spec §14). The test check installs the repository's dependencies and runs its suite, which executes upstream install scripts and tests; the ticket agent never executes the scanned project's code. The agent may do Task 1's Steps 1–2 (they read the ticket and clone and pin with git, writing only under `$WORK`), then stops at Step 3 with `agent:blocked` and the comment "needs maintainer: the test check, the scan and the labelling sessions (Task 1 Step 3, Task 2 Step 3, Task 3)". It commits nothing for Tasks 1–3. The maintainer runs Task 1 from Step 3 on the day they pin (Step 2 pins the head of the default branch, and C-6 wants it within a month of today), then Tasks 2 and 3.
 - Task 4 is deterministic: either the maintainer or the agent runs it, once Task 3 has merged or is on the branch.
 
 **Branch:** `feat/second-ground-truth`. One commit per task. The full suite passes on every commit, and its real exit code is checked, never piped through `tail`:
@@ -104,7 +104,7 @@ python3 -c "import sys, datetime as d; t = d.date.fromisoformat(sys.argv[1]); pr
 cat "$WORK/pin" "$WORK/since" "$WORK/role"
 ```
 
-- [ ] **Step 3: Run the test check at the pin (C-4).** Start Docker, then run the table's test check from `$UP`, for trigger.dev:
+- [ ] **Step 3 (maintainer): Run the test check at the pin (C-4).** The ticket agent stops here (see "Who runs it"). Start Docker, then run the table's test check from `$UP`, for trigger.dev:
 
 ```bash
 cd "$UP" && corepack enable && pnpm install --frozen-lockfile \

@@ -2771,6 +2771,7 @@ git commit -m "Verification: settle each verdict mechanically and remember it (#
 
 **Files:**
 - Modify: `scripts/report.py` (`collect`, `_set_urls`, `link_refs`, `run_warnings`, `render_json`, `render_index`; new `verification_run`, `duplicate_groups`, `verification_block`)
+- Modify: `tests/test_checked_confidence.py` (the two tests that write a `check` by hand; Step 4)
 - Test: `tests/test_verification.py`
 
 **Interfaces:**
@@ -3007,12 +3008,35 @@ Return from `collect()` additionally: `"refuted": refuted`, `"verification": blo
 
 Set the absorbed file's `content_hash` from `c.sha256_file(repo / path)` (pass `repo` into `render_index`, or compute in `collect` and carry it on `also_at[].content_hash`; the latter keeps `render_index` pure; do that).
 
-- [ ] **Step 4: Run the tests**, then the full suite. Expected: PASS, `exit=0`.
+- [ ] **Step 4: Update #56's two tests that write a `check` by hand.** §11.1 makes a `check` in a findings file count only when `checks/run.json` belongs to this scan, and AC-4 moves a refuted finding out of *Findings*. Two tests in `tests/test_checked_confidence.py` were written for the world before that: they put a `check` straight into a findings file and run `report.py` with no `checks/run.json`. Updating them is part of this task, and these are the only edits to that file: the rule they test (a check caps confidence: `upheld` may be `high`, `narrowed` drops a level, everything else is at most `medium`; a malformed check is reported `unchecked` with a warning) is unchanged. Add the helper above `test_an_upheld_check_allows_high_and_a_narrowed_one_drops_a_level`:
 
-- [ ] **Step 5: Commit**
+```python
+def _verification_ran(repo: Path) -> None:
+    """#37 §11.1: a `check` in a findings file counts only when checks/run.json
+    belongs to this scan. These tests write checks by hand, so they declare it."""
+    out = repo / ".thunderstruck"
+    (out / "checks").mkdir(exist_ok=True)
+    stamp = json.loads((out / "hotspots.json").read_text())["generated_at"]
+    (out / "checks" / "run.json").write_text(json.dumps({"generated_at": stamp}))
+```
+
+In `test_an_upheld_check_allows_high_and_a_narrowed_one_drops_a_level`, call `_verification_ran(scanned_copy)` right after the `_validate(...)` assertion, and replace the last line of the loop:
+
+```python
+        payload = _report(scanned_copy, plugin_root)[0]
+        # A refuted finding leaves Findings for `refuted` (#37 AC-4); it keeps its capped confidence.
+        shown = payload["refuted"] if status == "refuted" else payload["findings"]
+        assert shown[0]["confidence"] == expected
+```
+
+In `test_a_malformed_check_is_reported_unchecked_with_a_warning`, call `_verification_ran(scanned_copy)` between `path.write_text(json.dumps(saved))` and `payload, _ = _report(...)`. Run `pytest tests/test_checked_confidence.py -q`. Expected: PASS (99 tests as of #56's merge).
+
+- [ ] **Step 5: Run the tests**, then the full suite. Expected: PASS, `exit=0`.
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add scripts/report.py tests/test_verification.py
+git add scripts/report.py tests/test_verification.py tests/test_checked_confidence.py
 git commit -m "Report: verification state, refuted findings and duplicates in the data (#37)"
 ```
 
