@@ -73,7 +73,7 @@ def test_sample_report_links_its_refs():
     assert refs and locations
     unlinked = [line for line in refs if not re.match(r"- _\w+_ " + link, line)]
     unlinked += [line for line in locations
-                 if not re.search(r"\*\* · unchecked (?:· needs a non-default setting )?· " + link,
+                 if not re.search(r"\*\* · (?:unchecked|upheld|narrowed|inconclusive) (?:· needs a non-default setting )?· " + link,
                                   line)]
     assert not unlinked, "unlinked refs in sample-report.md:\n" + "\n".join(unlinked)
 
@@ -228,7 +228,7 @@ def test_cost_control_uses_measured_figures():
 
 def test_sample_report_shows_check_status_preconditions_and_history():
     sample = (ROOT / "examples" / "sample-report.md").read_text()
-    assert "· unchecked ·" in sample and "(claimed high)" in sample
+    assert "· upheld ·" in sample and "· narrowed ·" in sample and "(claimed medium)" in sample
     assert "That is all validation proves." in sample
     findings = sample.split("## Findings", 1)[1].split("\n## ", 1)[0]
     headings = [l for l in findings.splitlines() if l.startswith("### FR-")]
