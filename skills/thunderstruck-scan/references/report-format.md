@@ -16,7 +16,11 @@ All output lives in `.thunderstruck/` in the scanned repository.
 ├── context/raw/       raw catalog responses, kept for audit, never read by bundles
 ├── bundles/           one briefing per hotspot, plus index.json
 ├── agents/            per hotspot: which investigators delivered, and a replaced first attempt
-└── findings/          per-hotspot investigator output, keyed by bundle hash
+├── findings/          per-hotspot investigator output, keyed by bundle hash
+├── checks/            verification (#37): plan.json, briefs/, results/, agents/,
+│                      verdicts.json, ledger.json (kept across scans), run.json
+└── deps/              dependency source the skeptics may read: index.json, and one
+                       read-only snapshot per <ecosystem>/<name>@<version>/
 ```
 
 ## Sections of `report.md` in `report.json`
@@ -122,6 +126,58 @@ Reserved for #37 (verification), under `check`: `by`, `reason`, `holds`,
 `duplicate_of` and `confirmations`. `validate.py` accepts them unread and
 `report.json` passes `check` through whole. #37 also extends `finding_gate` so
 that a `narrowed` verdict naming a missing setting gates the finding.
+
+## Verification
+
+Step 4b (`verify.py`) gives each validated finding to one read-only skeptic
+whose only task is to refute it, and writes the settled result into the
+finding's `check`. `checks/run.json` belonging to this scan (its
+`generated_at` equals `hotspots.json`'s) is what says verification ran;
+without it `report.py` reports every finding `unchecked`, whatever an earlier
+scan left in the findings files.
+
+Keys under `check`, all written by `verify.py apply`:
+
+| Key | Content |
+|---|---|
+| `status` | `upheld`, `narrowed`, `refuted`, `inconclusive` from a verdict; `unchecked` when there is none |
+| `by` | `"skeptic"`, or `null` when the pass did not reach the finding |
+| `reason` | One line: the skeptic's, or the script's when it downgrades or cannot settle a verdict |
+| `holds` | What still holds; required for `narrowed` |
+| `refuted_claims` | `[{field, claim, fact, evidence, setting?}]`: `claim` quotes the finding's `field`, `evidence` indexes into `check.evidence` |
+| `evidence` | `[{type, ref, note}]`, `type` one of `code`, `commit`, `dependency` (`ecosystem:name@version:path:lines`, into `.thunderstruck/deps/` only); every item resolved |
+| `model` | The model id the skeptic ran as |
+| `dependency_versions` | `{"pypi:kombu": "5.7.0a1"}`: the packages the skeptic read |
+| `reused_from` | `null`, or `{scan, head}` of the scan whose skeptic produced a reused verdict |
+| `duplicate_of` | `null`, or the key of another finding in this scan |
+
+The skeptic returns exactly one JSON object with the top-level keys `key`,
+`verdict`, `reason`, `holds`, `refuted_claims`, `evidence`,
+`dependencies_read` and `duplicate_of`; an unknown key, a `verdict` outside
+the four, or a `key` it was not given leaves the finding `unchecked` with the
+reason. A `refuted` or `narrowed` verdict with no resolving evidence is
+`inconclusive`.
+
+In `report.json`:
+
+- `verification`: `{ran, model, checked, reused, dependencies: [{id, version,
+  basis, status, reason}], warnings}`.
+- `findings[]` leaves out refuted findings and findings merged into another;
+  a survivor of a duplicate group gains `also_at: [{key, hotspot_id,
+  location, url}]`. Check evidence items gain `url` (repository refs only;
+  a dependency ref is never a link), and a refuted claim's `setting` gains
+  `default_url`.
+- `refuted`: the refuted findings, each shaped like a `findings[]` item
+  without an `id`.
+- `counts.check_status` counts reported and refuted findings, each duplicate
+  group once; `counts.refuted` and `counts.duplicates_merged` are integers.
+- `consumption.skeptics`: the skeptics' consumption, separately from the
+  investigators'.
+
+In `index.json`: refuted findings are left out, so the guardrail never states
+them; a narrowed entry gains `holds`; a survivor of a duplicate group is also
+filed under each absorbed finding's file with `"via": "duplicate"` and
+`"anchor"` its own file.
 
 Reserved for #57 (confirmed defaults): `preconditions[].confirmation`, and the
 gate `unconfirmed_default`, placed in `GATES` by #57.

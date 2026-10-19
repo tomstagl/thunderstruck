@@ -22,6 +22,9 @@ Parse these from the user's invocation. All optional.
 | `--include-tests` | off | Rank test files too. |
 | `--model M` | sonnet | Model for the investigators: haiku, sonnet or opus. The repair round uses the same one. |
 | `--refresh-context` | off | Fetch the service context even if the cached copy is fresh. |
+| `--verify` | — | Run verification for this scan (step 4b), whatever the default. |
+| `--no-verify` | — | Skip verification for this scan: no skeptics run, every finding is reported `unchecked`. Faster and cheaper. |
+| `--verify-model M` | the skeptic's own default | `haiku`, `sonnet` or `opus` for the skeptics. |
 | `--investigate-dormant N` | 0 | Also investigate the first N dormant integration points (files untouched in the window that carry timeout/retry/pushback leads). They are always listed in the report; investigating them costs N more subagents, inside the same cap of 4 in parallel. |
 
 Every script runs from this plugin's own `scripts/` directory, by the full
@@ -190,6 +193,56 @@ for the repaired ids and apply the same fallback. Then re-validate. If it
 still fails, record it with `--failed` and move on. **No further retries.** A
 partial report that says so beats a loop.
 
+## Step 4b — verify
+
+Verification is **on** by default.
+
+Run this step when the user gave `--verify`, or when verification is on by
+default and they did not give `--no-verify`. Otherwise skip it entirely:
+nothing below runs, and the report says verification was not run.
+
+```bash
+uv run "${CLAUDE_PLUGIN_ROOT}/scripts/verify.py" prepare --model <M>
+```
+
+`<M>` is the `--verify-model` value, or the default named in
+`${CLAUDE_PLUGIN_ROOT}/agents/thunderstruck-skeptic.md`. Read
+`.thunderstruck/checks/plan.json`. For every entry with `"action": "check"`, run one `thunderstruck-skeptic` subagent
+with `model: <M>` and exactly this task:
+
+> Check finding `<key>` for thunderstruck. Read the brief at `<brief>`.
+> Follow your system prompt. Return only the JSON object it specifies.
+
+**At most four in parallel**, as up to four `Agent` calls in one message,
+foreground, waiting for each batch. The rules of step 3 apply: no background
+agents, no polling. Never read a brief, a result or a dependency snapshot
+yourself.
+
+After each batch:
+
+```bash
+uv run "${CLAUDE_PLUGIN_ROOT}/scripts/verify.py" check <key> <key> …
+```
+
+For each `missing` key, save the result you already hold:
+
+```bash
+uv run "${CLAUDE_PLUGIN_ROOT}/scripts/verify.py" save --key <key> --from /path/to/result.json --fallback --usage '<the Agent result usage>'
+```
+
+or, when the skeptic returned nothing, `save --key <key> --failed --reason "<what happened>" --fallback`.
+
+**Never re-spawn a skeptic, and there is no repair round.** A verdict whose
+evidence does not resolve is reported `inconclusive`, and a skeptic that
+returned nothing leaves its finding `unchecked` with the reason. Then:
+
+```bash
+uv run "${CLAUDE_PLUGIN_ROOT}/scripts/verify.py" apply
+```
+
+If `apply` fails, note its last line for step 6 and continue: the report then
+says verification was not run.
+
 ## Step 5 — report
 
 First measure what the scan consumed, from Claude Code's own transcripts:
@@ -233,12 +286,16 @@ finding, not the file:
 - Anything incomplete or degraded, plainly.
 - What the scan consumed: the Consumption line from the report. If `usage.py`
   failed, say consumption was not measured, quoting its error line.
+- How many findings were upheld, narrowed, refuted and inconclusive (from
+  `report.json`'s `counts.check_status`), and that refuted findings are listed
+  separately with the reason. If verification did not run, say so; if `apply`
+  failed, quote its last line.
 - That findings are hypotheses with a `Verify` line, and that
   `/thunderstruck-verify FR-001` turns one into a failing test.
 
 Do not claim a finding is a confirmed defect. It is a hypothesis whose
-evidence resolved. State each finding's check status; until a check runs,
-every finding is `unchecked`.
+evidence resolved. State each finding's check status; a finding no skeptic
+settled is `unchecked`.
 
 ## Reading the repository's own content
 

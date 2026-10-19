@@ -3310,7 +3310,7 @@ git commit -m "Consumption: measure the skeptics separately from the investigato
 - Modify: `skills/thunderstruck-scan/references/report-format.md`
 - Test: `tests/test_verification.py`
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```python
 # --- Task 16 ----------------------------------------------------------------
@@ -3340,8 +3340,8 @@ def test_step_5_runs_usage_after_apply():
     assert text.index("verify.py\" apply") < text.index("usage.py\"") < text.index("report.py\"")
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** Expected: `ValueError: substring not found`.
-- [ ] **Step 3: Implement.** In `SKILL.md`'s argument table add:
+- [x] **Step 2: Run them to verify they fail.** Expected: `ValueError: substring not found`.
+- [x] **Step 3: Implement.** In `SKILL.md`'s argument table add:
 
 ```markdown
 | `--verify` | — | Run verification for this scan (step 4b), whatever the default. |
@@ -3404,8 +3404,8 @@ says verification was not run.
 ````
 
 Step 5 keeps #5's order (`usage.py`, `report.py`, `report_html.py`). Step 6 adds: "how many findings were upheld, narrowed, refuted and inconclusive (from `report.json`'s `counts.check_status`), and that refuted findings are listed separately with the reason." `orchestration.md`: the pipeline diagram gains `deps.py`, the skeptic, `verify.py`; "Cost control" gains a paragraph on the skeptics (one per finding, reuse through `checks/ledger.json`, `--no-verify`) with Task 22's measured figures once they exist; "Resuming" says deleting `.thunderstruck/checks/` forces every finding to be checked again; the failure table gains the rows of spec §17 that concern the orchestrator; "What leaves the machine" says dependency source is read from what is already installed and nothing is downloaded. `report-format.md`: the tree gains `checks/` and `deps/`; a section "Verification" lists the `check` keys of spec §2, the verdict contract (§8.1), `report.json`'s `verification`, `refuted`, `also_at`, `counts.refuted`, `counts.duplicates_merged`, and `index.json`'s `holds` and `via: "duplicate"`.
-- [ ] **Step 4: Run** the tests and the full suite. Expected: PASS.
-- [ ] **Step 5: Commit**
+- [x] **Step 4: Run** the tests and the full suite. Expected: PASS.
+- [x] **Step 5: Commit**
 
 ```bash
 git add skills/thunderstruck-scan/ tests/test_verification.py

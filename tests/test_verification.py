@@ -556,3 +556,30 @@ def test_a_reused_verdict_says_so(validated_repo, validated_env, tmp_path):
     _apply(validated_repo, validated_env)
     _, _, md = _report(validated_repo, validated_env)
     assert f"Refuted in an earlier scan of {plan['generated_at'][:10]} at `{plan['head'][:7]}`" in md
+
+
+# --- Task 16 ----------------------------------------------------------------
+SKILL = ROOT / "skills" / "thunderstruck-scan" / "SKILL.md"
+
+
+def test_the_skill_runs_verification_between_validation_and_the_report():
+    text = SKILL.read_text()
+    assert text.index("## Step 4 —") < text.index("## Step 4b — verify") < text.index("## Step 5 —")
+    step = text[text.index("## Step 4b — verify"):text.index("## Step 5 —")]
+    for phrase in ("verify.py\" prepare --model", "thunderstruck-skeptic", "At most four",
+                   "verify.py\" check", "verify.py\" save", "--fallback", "verify.py\" apply",
+                   "Never re-spawn a skeptic", "no repair round", "--verify", "--no-verify", "Never read a brief"):
+        assert phrase in step, phrase
+
+
+def test_the_flags_are_documented():
+    text = SKILL.read_text()
+    table = text[text.index("| Argument |"):text.index("Every script runs")]
+    assert "| `--no-verify` |" in table and "| `--verify` |" in table and "| `--verify-model M` |" in table
+    default = "on" if c.VERIFY_BY_DEFAULT else "off"
+    assert f"Verification is **{default}** by default." in text  # pinned to _common (AC-16)
+
+
+def test_step_5_runs_usage_after_apply():
+    text = SKILL.read_text()
+    assert text.index("verify.py\" apply") < text.index("usage.py\"") < text.index("report.py\"")
