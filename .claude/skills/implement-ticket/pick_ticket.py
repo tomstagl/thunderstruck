@@ -24,6 +24,11 @@ CLAIM = "agent:in-progress"
 BLOCKED = "agent:blocked"
 STALE_AFTER = timedelta(hours=24)
 
+
+def amend_head(n: int) -> str:
+    """The branch of the agent's amendment PR for ticket n (#79 spec §3)."""
+    return f"agent/{n}-amend"
+
 # A placeholder such as YYYY-MM-DD-topic-design.md never matches, so a ticket
 # whose spec is "to be written" reports that it has no spec path.
 _EDGE = r"(?<![\w.-])"  # a "/" may precede: a blob URL names the same path
@@ -82,9 +87,20 @@ def depends_on(body: str, number: int) -> list[int]:
     return sorted(found - {number})
 
 
+def _own(pr: dict, repo: str) -> bool:
+    """A PR from a branch of this repository. A fork's PR can name any branch it likes."""
+    return bool(repo) and pr.get("head_repo") == repo
+
+
+def _is_agent_draft(pr: dict, n: int, repo: str) -> bool:
+    head = str(pr.get("head") or "")
+    return (pr.get("draft") is True and _own(pr, repo)
+            and head.startswith(f"agent/{n}-") and head != amend_head(n))
+
+
 def skip_reason(issue: dict, writers: set[str], prs: list[dict], ref: Ref,
-                now: datetime, open_issues: set[int]) -> tuple[str | None, dict]:
-    """The first rule the ticket fails (spec §2, rules 3–13), or None."""
+                now: datetime, open_issues: set[int], repo: str = "") -> tuple[str | None, dict]:
+    """The first rule the ticket fails (spec §2, rules 3–13, #79 spec §5), or None."""
     n = issue["number"]
     author = str(issue.get("author") or "")
     if author.casefold() not in writers:
@@ -118,8 +134,15 @@ def skip_reason(issue: dict, writers: set[str], prs: list[dict], ref: Ref,
     if BLOCKED in labels:
         return "blocked, see ticket comments", {}
 
-    for pr in prs:
-        if mentions(pr.get("title") or "", n) or mentions(pr.get("body") or "", n):
+    prs = sorted(prs, key=lambda pr: pr["number"])
+    for pr in prs:  # rule 12a: the amendment PR is the gate
+        if pr.get("head") == amend_head(n) and _own(pr, repo):
+            return f"waits for amendment PR #{pr['number']}", {}
+    resume = None
+    for pr in prs:  # rule 12: an agent draft is work to resume, not a reason to wait
+        if _is_agent_draft(pr, n, repo):
+            resume = resume or {"branch": pr["head"], "pr": pr["number"]}
+        elif mentions(pr.get("title") or "", n) or mentions(pr.get("body") or "", n):
             return f"open PR #{pr['number']} references it", {}
 
     # Only open issues are gathered, so a dependency that is not among them has closed.
@@ -127,7 +150,7 @@ def skip_reason(issue: dict, writers: set[str], prs: list[dict], ref: Ref,
     if waiting:
         return "waits for " + ", ".join(f"#{d}" for d in waiting), {}
 
-    return None, {"spec": spec, "plan": plan}
+    return None, {"spec": spec, "plan": plan, "resume": resume}
 
 
 def _load(path: str) -> dict:
@@ -166,7 +189,8 @@ def pick(data: dict, ref: Ref, now: datetime) -> dict:
             continue
         if picked is not None:
             continue  # not skipped, just not first (AC-2)
-        why, paths = skip_reason(issue, writers, data["open_prs"], ref, now, open_issues)
+        why, paths = skip_reason(issue, writers, data["open_prs"], ref, now, open_issues,
+                                  str(data.get("repo") or ""))
         if why:
             skipped.append({"number": issue["number"], "reason": why})
         else:

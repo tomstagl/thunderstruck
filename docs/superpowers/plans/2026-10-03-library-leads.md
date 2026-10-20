@@ -1768,7 +1768,7 @@ uv run scripts/bundle.py --repo "/tmp/thunderstruck-58/celery"
 uv run --no-project --with pyyaml python "/tmp/thunderstruck-58/count_boundaries.py" . "/tmp/thunderstruck-58/celery" "/tmp/thunderstruck-58/celery/.thunderstruck/bundles"
 ```
 
-Expected: `total: 68 shown, 51 from a comment, docstring or import` for the frozen bundles, and `total: 11 shown, 0 from a comment, docstring or import` after, with `hotspots.json`'s `own_packages` `{"python": ["celery", "t"], "typescript": [], "java": []}` and the ten bundles at 48,637 estimated tokens in total (`index.json`'s `tokens_estimated`), the figure with Tasks 2–4's detector corrections applied before this task; the boundary rules alone give 48,901 (spec §2.6). Keep both outputs for Task 8 and the PR.
+Expected: `total: 68 shown, 51 from a comment, docstring or import` for the frozen bundles, and `total: 11 shown, 0 from a comment, docstring or import` after, with `hotspots.json`'s `own_packages` `{"python": ["celery", "t"], "typescript": [], "java": []}` and the ten bundles' total `tokens_estimated` (from `index.json`) 1,439 below what `main`'s code generates over the same Celery checkout, the drop with Tasks 2–4's detector corrections applied before this task (the boundary rules alone account for 1,175; spec §2.6). Generate the "before" total with `main`'s `bundle.py` on that checkout, not from the frozen bundles: the absolute figure moves as bundle content grows. Keep both outputs and both totals for Task 8 and the PR.
 
 - [x] **Step 6: Commit**
 
@@ -1853,7 +1853,7 @@ LEADS_INTRO = ("Each row is a stability pattern the detectors searched for. A le
                "never proof that the pattern is missing. Where code leaves a setting to its "
                "caller, as a library's configurable timeout does, a lead describes the default "
                "the code ships with, not every deployment. Leads read counts the leads inside "
-               "investigated hotspots; leads confirmed counts those a validated finding cites.")
+               "investigated hotspots; leads confirmed counts those cited by a finding whose citations resolved.")
 LEADS_FOOTNOTE = ("No lead means no line matched a detector's rule. It does not mean the "
                   "pattern is present: a detector sees only the shapes its rule describes.")
 ```
@@ -1865,7 +1865,7 @@ In `render_markdown`, replace
           "Leads are detector hits — mechanical, noisy, and never a finding on "
           "their own. Findings are what survived an investigator reading the code. "
           "*Leads read* counts the hits inside investigated hotspots; *Leads "
-          "confirmed* counts those a validated finding cites.",
+          "confirmed* counts those cited by a finding whose citations resolved.",
           "",
 ```
 
@@ -1896,14 +1896,14 @@ Change the comment `# ---- coverage table` to `# ---- lead table`, the module do
         el.appendChild(section("Pattern coverage", [
           para("Leads are detector hits — mechanical, noisy, and never a finding on their own. Findings are what " +
             "survived an investigator reading the code. Leads read counts the hits inside investigated hotspots; " +
-            "leads confirmed counts those a validated finding cites."),
+            "leads confirmed counts those cited by a finding whose citations resolved."),
 ```
 
 with
 
 ```javascript
         el.appendChild(section("Detector leads by pattern", [
-          para("Each row is a stability pattern the detectors searched for. A lead is a line where a detector's text rule matched: a place to read, never a finding, and never proof that the pattern is missing. Where code leaves a setting to its caller, as a library's configurable timeout does, a lead describes the default the code ships with, not every deployment. Leads read counts the leads inside investigated hotspots; leads confirmed counts those a validated finding cites."),
+          para("Each row is a stability pattern the detectors searched for. A lead is a line where a detector's text rule matched: a place to read, never a finding, and never proof that the pattern is missing. Where code leaves a setting to its caller, as a library's configurable timeout does, a lead describes the default the code ships with, not every deployment. Leads read counts the leads inside investigated hotspots; leads confirmed counts those cited by a finding whose citations resolved."),
 ```
 
 replace

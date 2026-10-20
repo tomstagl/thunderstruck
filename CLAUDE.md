@@ -306,7 +306,7 @@ written in two of them.
 A scheduled Routine runs `.claude/skills/implement-ticket/` on weekday nights
 (#39). It builds the lowest-numbered **ready** ticket: no "draft" anywhere in
 the title, opened by a writer, spec and plan on `main` and both naming the
-ticket back, and no open PR for it. `pick_ticket.py` decides that, and
+ticket back, and no open PR for it other than the agent's own, below. `pick_ticket.py` decides that, and
 the rules are in the spec (`2026-09-25-daily-ticket-agent-design.md` §2). So a
 plan is only ready to build once it has merged.
 
@@ -317,10 +317,25 @@ plan is only ready to build once it has merged.
 - `agent:in-progress`: the agent has claimed the ticket. A claim that
   outlives its run is reported as stale every night and never cleared
   automatically.
-- `agent:blocked`: the agent stopped, and its comment on the ticket names the
-  task and the gap. Fix the spec or plan, then **remove the label** to release
-  the ticket for the next run.
+- `agent:blocked`: the agent stopped on a gap only a human can close (a design
+  choice, an acceptance criterion, a CLAUDE.md rule), and its comment on the
+  ticket names the task and the gap. Fix the spec or plan, then **remove the
+  label** to release the ticket for the next run.
+- An **amendment PR** (`agent/<n>-amend`, "Amend spec and plan for #n"): the plan
+  or spec no longer fits `main` and one conforming text is clear. It changes
+  only that ticket's spec and plan. **Merge it** and the ticket is picked the next
+  night; there is no label to clear. It holds the ticket while open. At most one
+  per ticket: after that the agent labels `agent:blocked` instead.
+- A **draft PR** (`agent/<n>-…`, "Refs #n", "blocked at Task k"): finished tasks
+  from a run that stopped part-way. Leave it: the next run resumes on that
+  branch and marks the same PR ready.
 
-The agent never merges, and never edits a spec, plan or ticket body.
+Before it claims a ticket the agent runs `plan_drift.py`, which lists commits
+on `main` since the spec and plan were last touched that change files they
+name (`2026-10-09-ticket-agent-resilience-design.md` §2). It narrows what the
+agent reads; it does not decide.
+
+The agent never merges and never edits a ticket body. It edits a spec or plan
+only on an amendment branch, for a human to merge.
 `.claude/` is session configuration for this checkout, not plugin content;
 nothing in it ships to plugin users.
