@@ -551,9 +551,11 @@ patterns:
           absent: '(?i)\b(upsert|ON\s+CONFLICT|ON\s+DUPLICATE\s+KEY|MERGE\s+INTO|idempotenc|IntegrityError|UniqueViolation|DuplicateKey)'
           # Get-or-create: the row is added only after a lookup of it found
           # nothing (`if not task:` ... `session.add(task)`), so a replay finds
-          # the row (celery backends/database, #58). Per anchor: another, plain
-          # insert in the same file still fires.
-          absent_before: '^[ \t]*if\s+(?:not\s+(\w+)|(\w+)\s+is\s+None)\s*:[^\n]*\n(?:[^\n]*\n)*?[^\n]*\.\s*add\s*\(\s*(?:\1|\2)\s*\)[^\n]*\Z'
+          # the row (celery backends/database, #58). The add must sit in that
+          # if's body: `if not item: continue` then `session.add(item)` is a
+          # plain insert. Per anchor: another, plain insert in the same file
+          # still fires.
+          absent_before: '^([ \t]*)if\s+(?:not\s+(\w+)|(\w+)\s+is\s+None)\s*:[^\n]*\n(?:\1[ \t]+[^\n]*\n|[ \t]*\n)*?\1[ \t]+[^\n]*\.\s*add\s*\(\s*(?:\2|\3)\s*\)[^\n]*\Z'
           absent_before_window: 4
           confidence: medium
           note: "inserts with no upsert / ON CONFLICT — a replayed job duplicates rows"
@@ -1240,7 +1242,7 @@ patterns:
           # (celery worker/consumer/consumer.py, #58). Both are needed: a
           # swallowed write after a log, or a swallowed close() with nothing
           # logged, still fires.
-          absent_before: '(?:exc_info\s*=\s*True|\.\s*exception\s*\()[^\n]*\n(?:[^\n]*\n)*?[ \t]*try\s*:[ \t]*\n[^\n]*\b(?:close|collect|release|shutdown|cleanup|clean_up|disconnect|stop|terminate|dispose|settimeout)\w*\s*\([^\n]*\n[ \t]*except\b[^\n]*\Z'
+          absent_before: '(?:exc_info\s*=\s*True|\.\s*exception\s*\()[^\n]*\n(?:[^\n]*\n)*?[ \t]*try\s*:[ \t]*\n[^\n]*\b(?:close|collect|release|shutdown|cleanup|clean_up|disconnect|stop|terminate|dispose|settimeout)(?:_\w+)?\s*\([^\n]*\n[ \t]*except\b[^\n]*\Z'
           absent_before_window: 8
         - id: S19-py-bare-except
           kind: regex

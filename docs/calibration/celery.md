@@ -109,8 +109,8 @@ Each fix was preceded by a `negative_<shape>.py` sample built from the Celery
 code that fired, and is a catalog `absent_before` with its own window.
 
 - `S04-py-bare-except-retry` `celery/backends/base.py:773` → `S04/python/negative_hook_in_retry_branch.py`. The `except Exception:` guards the `on_backend_retryable_error` hook inside a branch already gated by `exception_safe_to_retry` (executed review, FR-007: false lead).
-- `S19-py-except-pass` `celery/worker/consumer/consumer.py:435` → `S19/python/negative_teardown_after_logged_error.py`. A swallowed `connection.collect()` while tearing down a connection whose failure was logged with `exc_info` a few lines earlier (executed review, FR-013: false lead). Guards: `positive_write_after_logged_error.py`, `positive_teardown_without_log.py`.
-- `S07-py-insert-without-upsert` `celery/backends/database/__init__.py:168` → `S07/python/negative_get_or_create.py`; the file's lead moves to `:295` (Surfaced, FP-accepted). A get-or-create on the unique `task_id` (executed review, FR-014: false lead). Guards: `positive_add_unguarded.py`, `positive_guard_on_other_name.py`.
+- `S19-py-except-pass` `celery/worker/consumer/consumer.py:435` → `S19/python/negative_teardown_after_logged_error.py`. A swallowed `connection.collect()` while tearing down a connection whose failure was logged with `exc_info` a few lines earlier (executed review, FR-013: false lead). Guards: `positive_write_after_logged_error.py`, `positive_teardown_without_log.py`, `positive_collection_write_after_logged_error.py` (a `collection(` call is not the teardown verb `collect(`).
+- `S07-py-insert-without-upsert` `celery/backends/database/__init__.py:168` → `S07/python/negative_get_or_create.py`; the file's lead moves to `:295` (Surfaced, FP-accepted). A get-or-create on the unique `task_id` (executed review, FR-014: false lead). Guards: `positive_add_unguarded.py`, `positive_guard_on_other_name.py`, `positive_add_after_skip_guard.py` (the add must sit in the `if`'s body: `if not item: continue` then `session.add(item)` is a plain insert).
 
 ### Silences checked
 
