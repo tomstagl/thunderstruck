@@ -161,7 +161,17 @@ Three detector kinds: `regex` (line match with a look-ahead/behind window),
 `file_absent` (anchor present *and* absent-regex matching nowhere, optionally
 gated by a `require` regex so it only fires on files that do the thing the
 pattern guards), `module`
-(dispatches to a handler in `scripts/detectors/modules.py`).
+(dispatches to a handler in `scripts/detectors/modules.py`). `regex` and
+`file_absent` may add `absent_before` with its own `absent_before_window`:
+the hit is excused by what precedes it, without widening what counts as one.
+
+The bundle's **External boundaries** also come from the catalog
+(`boundaries:`, per language, matched by `detectors.find_boundaries`), with
+samples under `tests/boundaries/samples/`. A boundary is a call, never a
+name: a call through a library's own name needs that library's import, so a
+dict called `requests` is not HTTP. An import of the scanned project's own
+package never counts (`own_packages` in `hotspots.json`), so a library
+calling itself is not a call through it.
 
 Gotchas that cost real debugging time here:
 

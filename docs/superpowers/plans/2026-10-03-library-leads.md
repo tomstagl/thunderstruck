@@ -2060,7 +2060,7 @@ git commit -m "Calibration: every Celery detector hit and boundary line, judged 
 - Modify: `CLAUDE.md`, `CHANGELOG.md`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `pyproject.toml`
 - Regenerate if stale: `skills/stability-catalog/references/patterns.md`
 
-- [ ] **Step 1: CLAUDE.md.** In "The catalog is the source of truth", replace the sentence beginning "Three detector kinds:" with:
+- [x] **Step 1: CLAUDE.md.** In "The catalog is the source of truth", replace the sentence beginning "Three detector kinds:" with:
 
 ```markdown
 Three detector kinds: `regex` (line match with a look-ahead/behind window),
@@ -2080,7 +2080,7 @@ package never counts (`own_packages` in `hotspots.json`), so a library
 calling itself is not a call through it.
 ```
 
-- [ ] **Step 2: Version and CHANGELOG.** Bump the minor version in all four places (the next minor above `main`'s at the time; `0.10.0` if `main` is still `0.9.x`), and add, with `<version>` the version just set:
+- [x] **Step 2: Version and CHANGELOG.** Bump the minor version in all four places (the next minor above `main`'s at the time; `0.10.0` if `main` is still `0.9.x`), and add, with `<version>` the version just set:
 
 ```markdown
 ## <version>
@@ -2098,7 +2098,7 @@ Detector and boundary leads that hold up on library code (#58).
 - **`docs/calibration/celery.md`**: every detector hit and boundary line on Celery at the benchmark commit, judged, with lead precision before and after.
 ```
 
-- [ ] **Step 3: Run the full suite and the generated-file checks**
+- [x] **Step 3: Run the full suite and the generated-file checks**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/ -q; echo "exit=$?"
@@ -2108,7 +2108,7 @@ uv run scripts/gen_sample_report.py --check; echo "exit=$?"
 
 Expected: all three `exit=0`. If `gen_catalog_docs.py --check` reports stale, run `uv run scripts/gen_catalog_docs.py` and include `skills/stability-catalog/references/patterns.md` in the commit.
 
-- [ ] **Step 4: Validate and install the plugin**
+- [x] **Step 4: Validate and install the plugin**
 
 ```bash
 claude plugin validate . --strict
@@ -2118,7 +2118,7 @@ claude plugin list
 
 Expected: validate passes; `claude plugin list` shows thunderstruck `enabled`, not "failed to load".
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add CLAUDE.md CHANGELOG.md .claude-plugin/plugin.json .claude-plugin/marketplace.json pyproject.toml skills/stability-catalog/references/patterns.md
