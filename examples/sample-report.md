@@ -44,9 +44,9 @@ Component-level context from the service catalog: it describes the whole compone
 | `dependsOn component:default/payments-api` | outbound | tier: 1 |
 | `dependsOn component:default/releases-api` | outbound | tier: 1 |
 
-## Pattern coverage
+## Detector leads by pattern
 
-Leads are detector hits — mechanical, noisy, and never a finding on their own. Findings are what survived an investigator reading the code. *Leads read* counts the hits inside investigated hotspots; *Leads confirmed* counts those cited by a finding whose citations resolved.
+Each row is a stability pattern the detectors searched for. A lead is a line where a detector's text rule matched: a place to read, never a finding, and never proof that the pattern is missing. Where code leaves a setting to its caller, as a library's configurable timeout does, a lead describes the default the code ships with, not every deployment. Leads read counts the leads inside investigated hotspots; leads confirmed counts those cited by a finding whose citations resolved.
 
 | ID | Pattern | Tier | Files with an unconfirmed lead | Leads read | Leads confirmed | Findings |
 |---|---|---|---|---|---|---|
@@ -75,7 +75,7 @@ Leads are detector hits — mechanical, noisy, and never a finding on their own.
 | `S30` | Liveness checks only the process itself | A | 0 | 0 | 0 | 0 |
 | `OTHER` | Not in the catalog | — | — | — | — | 1 |
 
-<sub>“0” leads means no file matched the detector's anchor. It does not mean the pattern is present.</sub>
+<sub>No lead means no line matched a detector's rule. It does not mean the pattern is present: a detector sees only the shapes its rule describes.</sub>
 
 ## Findings
 

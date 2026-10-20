@@ -1795,7 +1795,7 @@ git commit -m "Bundle: boundaries from the catalog, and say when none were looke
 **Interfaces:**
 - Produces: `report.LEADS_HEADING`, `report.LEADS_INTRO`, `report.LEADS_FOOTNOTE` (str).
 
-- [ ] **Step 1: Write the failing tests.** Create `tests/test_lead_wording.py`:
+- [x] **Step 1: Write the failing tests.** Create `tests/test_lead_wording.py`:
 
 ```python
 """The lead table states what a lead and no lead mean (#58 AC-5)."""
@@ -1837,12 +1837,12 @@ In `tests/test_pipeline.py`, in `test_report_renders_and_indexes`, replace `asse
 ```
  In `tests/test_coverage_gaps.py` change `report.index("## Pattern coverage")` to `report.index("## Detector leads by pattern")`. In `tests/test_report_json_fields.py` change `markdown.split("## Pattern coverage", 1)` to `markdown.split("## Detector leads by pattern", 1)`. In `tests/test_report_html_browser.py` change `"Pattern coverage",` in the expected section list to `"Detector leads by pattern",`.
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_lead_wording.py tests/test_pipeline.py tests/test_coverage_gaps.py tests/test_report_json_fields.py -q`
 Expected: FAIL (`AttributeError: module 'report' has no attribute 'LEADS_HEADING'`, and the renamed heading is not found).
 
-- [ ] **Step 3: Change `report.py`.** Near the other module constants add:
+- [x] **Step 3: Change `report.py`.** Near the other module constants add:
 
 ```python
 # The lead table's words (#58). templates/report.html carries the same strings;
@@ -1890,7 +1890,7 @@ with
 
 Change the comment `# ---- coverage table` to `# ---- lead table`, the module docstring's "run header, pattern coverage, ranked findings" to "run header, detector leads by pattern, ranked findings", and `coverage_rows`'s docstring to `"""The **Detector leads by pattern** table, one dict per row in report.md order.`.
 
-- [ ] **Step 4: Change the template.** In `templates/report.html`, replace the block
+- [x] **Step 4: Change the template.** In `templates/report.html`, replace the block
 
 ```javascript
         el.appendChild(section("Pattern coverage", [
@@ -1920,11 +1920,11 @@ with
 
 and replace `"Run, coverage, hotspots, and what was not analysed"` with `"Run, leads, hotspots, and what was not analysed"`. Each string stays on one source line so the template test finds it verbatim.
 
-- [ ] **Step 5: Change the docs.** In `skills/thunderstruck-scan/references/report-format.md` change `- \`coverage_rows\`: the **Pattern coverage** table, in order:` to `- \`coverage_rows\`: the **Detector leads by pattern** table, in order:`.
+- [x] **Step 5: Change the docs.** In `skills/thunderstruck-scan/references/report-format.md` change `- \`coverage_rows\`: the **Pattern coverage** table, in order:` to `- \`coverage_rows\`: the **Detector leads by pattern** table, in order:`.
 
 In `README.md`, in the table of files written to `.thunderstruck/`, change the `report.md` row's text `pattern coverage with leads read and confirmed` to `detector leads by pattern (what a lead and no lead mean, leads read and confirmed)`.
 
-- [ ] **Step 6: Regenerate the samples and run the tests**
+- [x] **Step 6: Regenerate the samples and run the tests**
 
 ```bash
 uv run scripts/gen_sample_report.py
@@ -1934,7 +1934,7 @@ THUNDERSTRUCK_REQUIRE_BROWSER=1 uv run --with pytest --with pyyaml --with lizard
 
 Expected: PASS. `git diff examples/` shows only the heading, intro and footnote in `sample-report.md`, and the same text plus the rail line and the script hash in `sample-report.html`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add scripts/report.py templates/report.html skills/thunderstruck-scan/references/report-format.md README.md tests/ examples/sample-report.md examples/sample-report.html

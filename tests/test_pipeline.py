@@ -292,7 +292,10 @@ def test_report_renders_and_indexes(scanned_repo, plugin_root):
     out = scanned_repo / ".thunderstruck"
     report = (out / "report.md").read_text()
     assert "# thunderstruck" in report
-    assert "## Pattern coverage" in report
+    import report as report_py
+    section = report.split(f"## {report_py.LEADS_HEADING}", 1)[1].split("\n## ", 1)[0]
+    assert report_py.LEADS_INTRO in section and report_py.LEADS_FOOTNOTE in section
+    assert "coverage" not in section.lower() and "## Pattern coverage" not in report
     assert "FR-001" in report
 
     payload = json.loads((out / "report.json").read_text())

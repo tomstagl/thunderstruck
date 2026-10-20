@@ -5,7 +5,7 @@
 # ///
 """Render validated findings into the three outputs.
 
-  report.md    the human artefact — run header, pattern coverage, ranked findings
+  report.md    the human artefact — run header, detector leads by pattern, ranked findings
   report.json  stable versioned schema, so a later run can compare against it
   index.json   file -> findings, the lookup the PreToolUse guardrail does
 
@@ -37,6 +37,17 @@ from validate import CODE_REF, DETECTOR_REF, _count_lines  # noqa: E402
 CONFIDENCE_RANK = {"high": 0, "medium": 1, "low": 2}
 MAX_CONTEXT_WARNINGS = 20
 BADGE = {"high": "high", "medium": "medium", "low": "low"}
+# The lead table's words (#58). templates/report.html carries the same strings;
+# tests/test_lead_wording.py keeps the two identical.
+LEADS_HEADING = "Detector leads by pattern"
+LEADS_INTRO = ("Each row is a stability pattern the detectors searched for. A lead is a line "
+               "where a detector's text rule matched: a place to read, never a finding, and "
+               "never proof that the pattern is missing. Where code leaves a setting to its "
+               "caller, as a library's configurable timeout does, a lead describes the default "
+               "the code ships with, not every deployment. Leads read counts the leads inside "
+               "investigated hotspots; leads confirmed counts those cited by a finding whose citations resolved.")
+LEADS_FOOTNOTE = ("No lead means no line matched a detector's rule. It does not mean the "
+                  "pattern is present: a detector sees only the shapes its rule describes.")
 
 
 def collect(repo: Path) -> dict[str, Any]:
@@ -640,7 +651,7 @@ def render_consumption(usage: dict | None) -> list[str]:
 
 
 def coverage_rows(data: dict) -> list[dict]:
-    """The **Pattern coverage** table, one dict per row in report.md order.
+    """The **Detector leads by pattern** table, one dict per row in report.md order.
     The OTHER row, when present, has None where report.md shows a dash."""
     hs, findings = data["hotspots"], data["findings"]
     lead_files = {pid: cov["files"] for pid, cov in hs["pattern_coverage"].items()}
@@ -739,13 +750,8 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
     L += render_not_scanned(hs.get("coverage_gaps"))
     L += render_service_context(data.get("context"), now or datetime.now(timezone.utc))
 
-    # ---- coverage table
-    L += ["## Pattern coverage", "",
-          "Leads are detector hits — mechanical, noisy, and never a finding on "
-          "their own. Findings are what survived an investigator reading the code. "
-          "*Leads read* counts the hits inside investigated hotspots; *Leads "
-          "confirmed* counts those cited by a finding whose citations resolved.",
-          "",
+    # ---- lead table
+    L += [f"## {LEADS_HEADING}", "", LEADS_INTRO, "",
           "| ID | Pattern | Tier | Files with an unconfirmed lead | Leads read "
           "| Leads confirmed | Findings |",
           "|---|---|---|---|---|---|---|"]
@@ -756,8 +762,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
         L.append(f"| {md.code(row['id'], cell=True)} | {md.text(row['name'], cell=True)} | "
                  f"{md.text(row['tier'], cell=True)} | {row['unconfirmed_files']} | "
                  f"{row['leads_read']} | {row['leads_confirmed']} | {row['findings']} |")
-    L += ["", "<sub>“0” leads means no file matched the detector's anchor. It "
-          "does not mean the pattern is present.</sub>", ""]
+    L += ["", f"<sub>{LEADS_FOOTNOTE}</sub>", ""]
 
     # ---- findings
     if findings:

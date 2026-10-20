@@ -27,7 +27,7 @@ def _report(repo: Path, plugin_root: Path) -> tuple[str, dict]:
 
 
 def _md_coverage_rows(markdown: str) -> list[list[str]]:
-    table = markdown.split("## Pattern coverage", 1)[1].split("\n\n<sub>", 1)[0]
+    table = markdown.split("## Detector leads by pattern", 1)[1].split("\n\n<sub>", 1)[0]
     rows = [line for line in table.splitlines() if line.startswith("| ")]
     return [[cell.strip() for cell in row.strip("|").split(" | ")] for row in rows[1:]]
 

@@ -142,7 +142,7 @@ def test_overview_has_every_report_md_section(page, scanned_copy, plugin_root):
                                  "truncated": {"inbound": 0, "outbound": 0}}
     p = page(report)
     sections = p.text("h2")
-    assert sections == ["Run warnings", "Not scanned", "Service context", "Pattern coverage",
+    assert sections == ["Run warnings", "Not scanned", "Service context", "Detector leads by pattern",
                         "Hotspots investigated with no finding", "Incomplete",
                         "Ranked hotspots", "Dormant integration points"]
     body = p.page.inner_text("#doc")

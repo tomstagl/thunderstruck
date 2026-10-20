@@ -84,7 +84,7 @@ def test_report_has_a_not_scanned_section(planted, plugin_root):
     report = (planted / ".thunderstruck" / "report.md").read_text()
     section = report.split("## Not scanned", 1)[1].split("\n## ", 1)[0]
     assert "`.kt`" in section and "migration" in section
-    assert report.index("## Not scanned") < report.index("## Pattern coverage")
+    assert report.index("## Not scanned") < report.index("## Detector leads by pattern")
 
 
 def test_coverage_table_shows_leads_read_and_confirmed(scanned_copy, plugin_root):

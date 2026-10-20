@@ -79,7 +79,7 @@ Written to `.thunderstruck/` in the scanned repository:
 
 | File | What it is |
 |---|---|
-| `report.md` | The human report: run header, what was *not* scanned, pattern coverage with leads read and confirmed, ranked findings, dormant integration points |
+| `report.md` | The human report: run header, what was *not* scanned, detector leads by pattern (what a lead and no lead mean, leads read and confirmed), ranked findings, dormant integration points |
 | `report.html` | The same report as one self-contained page: go through findings one by one, filter by confidence, step with `j`/`k`, mark them reviewed with `r`, copy the verify command. Opens offline, makes no network request, and is safe to send. `/thunderstruck-report` rebuilds it |
 | `report.json` | Stable versioned schema, for diffing runs over time |
 | `index.json` | file → findings, read by the edit guardrail |
