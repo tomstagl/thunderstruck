@@ -442,6 +442,7 @@ no branch rule and merged unchanged.
 
 ### Known limitations (noted, not fixed)
 
+- Three accepted false positives in this log are corrected since #58, with negative samples: S04 `celery/backends/base.py:757` (now `:773`), S19 `celery/worker/consumer/consumer.py:427` (now `:435`) and S07 `celery/backends/database/__init__.py:168`. See [celery.md](celery.md).
 - **Lost true positives.** Four rules silenced a real case:
   - `S02-py-backoff` celery `celery/backends/asynchronous.py:102`, `time.sleep(interval)` after a drain error with no jitter. Once `**kwargs` stopped counting as growth, a variable wait in a file with no growth reads as "cannot tell", which is the handler's rule for every language. The constant-wait twin at line 152 still fires, so the drainer still gets a lead.
   - `S05-py-http-without-limiter` celery `examples/eventlet/webcrawler.py:54`. The crawler fans out through `crawl.delay(url)` tasks, not a loop of requests, so no loop-call rule sees it. No file-local regex can.

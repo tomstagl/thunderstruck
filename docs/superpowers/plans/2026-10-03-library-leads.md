@@ -1951,7 +1951,7 @@ git commit -m "Report: the lead table says what a lead and no lead mean (#58)"
 - Create: `docs/calibration/celery.md`
 - Modify: `docs/calibration/python.md` (one pointer line under **Known limitations**)
 
-- [ ] **Step 1: Sweep Celery before and after.**
+- [x] **Step 1: Sweep Celery before and after.**
 
 The "before" side is this branch's merge base with `main` (the code before any task of this plan), unpacked into a scratch directory (no stash, no second checkout of this worktree):
 
@@ -1964,7 +1964,7 @@ diff "/tmp/thunderstruck-58/celery-before.txt" "/tmp/thunderstruck-58/celery-aft
 
 Expected: 27 hits before and 25 after, all Python. The diff removes `S04 … celery/backends/base.py:773` and `S19 … celery/worker/consumer/consumer.py:435`, and moves `S07 … database/__init__.py:168` to `:295`.
 
-- [ ] **Step 2: Sweep the five `python.md` repositories for lost true positives.** Clone each at the commit `python.md` pins (fastapi/full-stack-fastapi-template `cb740b6…`, netbox-community/netbox `785d0b9…`, httpie/cli `5b604c3…`, celery/celery `eb3dfa3…`, rq/rq `90a67a1…`; full SHAs in `python.md`'s table) into `/tmp/thunderstruck-58/py/<name>`, then for each:
+- [x] **Step 2: Sweep the five `python.md` repositories for lost true positives.** Clone each at the commit `python.md` pins (fastapi/full-stack-fastapi-template `cb740b6…`, netbox-community/netbox `785d0b9…`, httpie/cli `5b604c3…`, celery/celery `eb3dfa3…`, rq/rq `90a67a1…`; full SHAs in `python.md`'s table) into `/tmp/thunderstruck-58/py/<name>`, then for each:
 
 ```bash
 uv run --directory "/tmp/thunderstruck-58/before" scripts/calibrate.py --repo "/tmp/thunderstruck-58/py/<name>" --lang python --patterns S04,S07,S19 > "/tmp/thunderstruck-58/py/<name>.before"
@@ -1978,7 +1978,7 @@ Every line that disappears is looked up in `python.md`'s judgments. Then:
 - **It has no judgment in `python.md`:** stop. Do not judge it yourself; label the ticket `agent:blocked` and comment with the detector, repository, `file:line` and the code, so the maintainer judges it.
 - **It was judged TP:** add a `positive_<shape>` sample reproducing it to the task that silenced it (Task 2, 3 or 4), tighten that `absent_before` until the sample fires and the Celery negative stays silent, and re-run this step. If that cannot be done for S04 or S19, record the hit under **Lost** in Step 3 and lower that detector's `confidence` one step in the same commit (AC-3). If it cannot be done for **S07**, stop and label the ticket `agent:blocked`: S07 must stay `medium` (spec §3.2), so the trade between the lost lead and the ranking is the maintainer's call.
 
-- [ ] **Step 3: Write `docs/calibration/celery.md`** in the form of `python.md`, with these sections, every hit of `celery-after.txt` listed under its detector, and every judgment re-checked by reading the code at `508c112` (line numbers moved since `python.md`'s commit):
+- [x] **Step 3: Write `docs/calibration/celery.md`** in the form of `python.md`, with these sections, every hit of `celery-after.txt` listed under its detector, and every judgment re-checked by reading the code at `508c112` (line numbers moved since `python.md`'s commit):
 
 ```markdown
 # Celery detector and boundary calibration
@@ -2032,18 +2032,18 @@ Column meanings are `python.md`'s.
 
 Replace each placeholder line in parentheses or angle brackets with the measured content before committing; the committed log contains no placeholder. If Step 1 or 2 produced figures other than the expected ones, the log records the measured figures and the PR says why they differ.
 
-- [ ] **Step 4: Point `python.md` at it.** Under `python.md`'s **Known limitations**, add a first bullet:
+- [x] **Step 4: Point `python.md` at it.** Under `python.md`'s **Known limitations**, add a first bullet:
 
 ```markdown
 - Three accepted false positives in this log are corrected since #58, with negative samples: S04 `celery/backends/base.py:757` (now `:773`), S19 `celery/worker/consumer/consumer.py:427` (now `:435`) and S07 `celery/backends/database/__init__.py:168`. See [celery.md](celery.md).
 ```
 
-- [ ] **Step 5: Run the docs checks**
+- [x] **Step 5: Run the docs checks**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_docs_in_sync.py tests/test_links.py -q`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add docs/calibration/celery.md docs/calibration/python.md
