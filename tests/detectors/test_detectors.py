@@ -89,7 +89,8 @@ def test_every_catalog_regex_compiles(catalog):
     for pattern in catalog["patterns"]:
         for lang, dets in (pattern.get("detectors") or {}).items():
             for det in dets or []:
-                for key in ("pattern", "absent_within", "present_within", "anchor", "absent"):
+                for key in ("pattern", "absent_within", "present_within", "anchor", "absent",
+                            "require", "absent_before"):
                     if key in det:
                         try:
                             re.compile(det[key])
@@ -118,3 +119,15 @@ def test_module_handlers_exist(catalog):
                 if det.get("kind") == "module" and not hasattr(modules, det["handler"]):
                     missing.append(f"{det['id']} -> {det['handler']}")
     assert not missing, f"module detectors with no handler: {missing}"
+
+
+def test_absent_before_always_has_a_window(catalog):
+    bad = []
+    for pattern in catalog["patterns"]:
+        for dets in (pattern.get("detectors") or {}).values():
+            for det in dets or []:
+                if "absent_before" in det:
+                    w = det.get("absent_before_window")
+                    if not isinstance(w, int) or w < 1:
+                        bad.append(det["id"])
+    assert not bad, f"absent_before without an integer absent_before_window >= 1: {bad}"

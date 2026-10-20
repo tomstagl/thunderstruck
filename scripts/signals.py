@@ -452,6 +452,8 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
     # changed entry that fails it (a symlink, a submodule, a name that isn't
     # UTF-8) is counted, never warned about; one no longer tracked is history.
     index = c.tracked_index(repo)
+    own, own_warnings = c.own_packages(repo, index)
+    warnings.extend(own_warnings)
     candidates: list[str] = []
     not_citable = 0
     for p in per_file:
@@ -592,6 +594,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
                    "profile": bool(profile), "profile_file": c.PROFILE_FILENAME if profile else None},
         "degraded": degraded,
         "warnings": warnings,
+        "own_packages": own,
         "counts": {"files_considered": len(considered), "files_ranked": len(rows),
                    "files_not_citable": not_citable,
                    "hotspots": len(top),

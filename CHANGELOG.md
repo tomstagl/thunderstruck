@@ -4,6 +4,20 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.12.0
+
+Detector and boundary leads that hold up on library code (#58).
+
+### Changed
+
+- **External boundaries are calls, not names.** The bundle's boundaries come from per-language rules in the catalog, matched on comment-stripped code: no comment, docstring, import or definition is listed, and a variable that shares a library's name (`requests.pop(…)` on a dict) is not a call through that library. An import of the scanned project's own package never counts as importing a library, so a library calling its own code is not a boundary. On Celery's benchmark scan the ten bundles list 11 lines instead of 68, none from a comment, docstring or import. A language without rules says so. **Every bundle changes once, so cached findings are re-investigated on the first scan after upgrading.**
+- **Three false-lead shapes from Celery are corrected**, each with a negative sample: an `except` guarding a hook inside a retry branch that already discriminates (S04), best-effort teardown after a logged failure (S19), and a get-or-create on the row's own key (S07). Detectors gain `absent_before`.
+- **The report's lead table says what it means.** *Pattern coverage* is now *Detector leads by pattern*: a lead is a place to read, never proof a pattern is missing, and describes the default when code leaves a setting to its caller; no lead does not mean the pattern is present.
+
+### Added
+
+- **`docs/calibration/celery.md`**: every detector hit and boundary line on Celery at the benchmark commit, judged, with lead precision before and after.
+
 ## 0.11.0
 
 Confidence that means the claim was checked (#56).

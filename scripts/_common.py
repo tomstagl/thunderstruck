@@ -1008,3 +1008,96 @@ def normalize(values: list[float], floor: float = NORMALIZE_FLOOR) -> list[float
     if hi - lo < 1e-12:
         return [1.0] * len(values)
     return [floor + (1.0 - floor) * ((v - lo) / (hi - lo)) for v in values]
+
+
+# ---------------------------------------------------------- own packages --
+# The scanned project's own package names, per detector language (#58): an
+# import of one never opens a boundary rule's `require` gate, so a library
+# calling its own code (`self.apply_async(` inside Celery) is not a call
+# through that library. Worked out from tracked files only, so it is a
+# function of the commit.
+_JAVA_PACKAGE = re.compile(r"package[ \t]+([\w.]+)[ \t]*;")
+_REGULAR_FILE = ("100644", "100755")
+# Directories whose package.json or .java files are not the project's own: a
+# fixture's node_modules/axios/package.json must not make `axios` own (#58).
+NOT_OWN_DIRS = frozenset({
+    "node_modules", "test", "tests", "__tests__", "testing", "testdata",
+    "fixture", "fixtures", "example", "examples", "sample", "samples", "demo", "demos"})
+
+
+def _java_package(lines) -> str | None:
+    """The `package` declaration: the first line that is not blank, a
+    comment or an annotation, when it is one. Reads no further."""
+    in_block = False
+    for raw in lines:
+        line = raw.strip()
+        while line:
+            if in_block:
+                end = line.find("*/")
+                if end < 0:
+                    line = ""
+                else:
+                    line, in_block = line[end + 2:].strip(), False
+            elif line.startswith("/*"):
+                line, in_block = line[2:], True
+            elif line.startswith("//"):
+                line = ""
+            else:
+                break
+        if not line or line.startswith("@"):
+            continue
+        m = _JAVA_PACKAGE.match(line)
+        return m.group(1) if m else None
+    return None
+
+
+def own_packages(repo_root: Path, index: dict[str, str]) -> tuple[dict[str, list[str]], list[str]]:
+    """({"python": [...], "typescript": [...], "java": [...]}, warnings), each
+    list sorted.
+
+    python      every directory at the root, or directly under a root src/,
+                that holds a tracked __init__.py
+    typescript  the "name" of every tracked package.json
+    java        the `package` declaration of every tracked .java file
+    TypeScript and Java skip any file with a NOT_OWN_DIRS segment in its path.
+    Only regular files are read; a symlink is never followed. A file that
+    cannot be read or parsed is skipped, and one warning names the first.
+    """
+    py: set[str] = set()
+    ts: set[str] = set()
+    java: set[str] = set()
+    unreadable: list[str] = []
+    for rel in sorted(index):
+        parts = rel.split("/")
+        if parts[-1] in ("__init__.py", "__init__.pyi"):
+            if (len(parts) == 2 or (len(parts) == 3 and parts[0] == "src")) \
+                    and parts[-2].isidentifier():
+                py.add(parts[-2])
+            continue
+        if index[rel] not in _REGULAR_FILE or any(p.lower() in NOT_OWN_DIRS for p in parts[:-1]):
+            continue
+        if parts[-1] == "package.json":
+            try:
+                doc = json.loads((repo_root / rel).read_text(encoding="utf-8"))
+            except (OSError, ValueError, RecursionError):
+                unreadable.append(rel)
+                continue
+            name = doc.get("name") if isinstance(doc, dict) else None
+            if isinstance(name, str) and name.strip():
+                ts.add(name.strip())
+        elif rel.endswith(".java"):
+            try:
+                with open(repo_root / rel, encoding="utf-8", errors="replace") as fh:
+                    package = _java_package(fh)
+            except OSError:
+                unreadable.append(rel)
+                continue
+            if package:
+                java.add(package)
+    warnings = []
+    if unreadable:
+        warnings.append(
+            f"{len(unreadable)} tracked file(s) could not be read for the project's own "
+            f"package names (first: {unreadable[0]}); a call through a package one of "
+            f"them declares may be listed as a library boundary.")
+    return {"python": sorted(py), "typescript": sorted(ts), "java": sorted(java)}, warnings

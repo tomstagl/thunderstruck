@@ -6,8 +6,8 @@
 """Build one token-budgeted context bundle per hotspot.
 
 A bundle is the whole world an investigator subagent gets: the code, the
-change history with diffs, the boundaries it crosses, the detector leads and
-the files it moves with. Git history is extracted here rather than by the
+change history with diffs, the boundary calls the catalog's rules find, the
+detector leads and the files it moves with. Git history is extracted here rather than by the
 agent, so the agent needs no Bash.
 
 Bundles are deterministic — no timestamps in the body — so an unchanged repo
@@ -28,6 +28,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _common as c  # noqa: E402
+from detectors import Boundary, find_boundaries  # noqa: E402
 
 DEFAULT_BUDGET_TOKENS = 8000
 DEFAULT_COMMITS = 15
@@ -35,27 +36,6 @@ DEFAULT_COMMITS = 15
 # Share of the budget each section may claim. Source gets the most: everything
 # else is context for reading it.
 SHARE = {"source": 0.42, "history": 0.30, "context": 0.18, "header": 0.10}
-
-BOUNDARY_PATTERNS: list[tuple[str, re.Pattern]] = [
-    ("HTTP", re.compile(
-        r"\b(fetch|axios|got|undici|superagent|requests\s*\.|httpx|aiohttp|urlopen"
-        r"|http\s*\.\s*(get|request)|\.get\s*\(\s*[\"'`]https?://)", re.I)),
-    ("database", re.compile(
-        r"\b(prisma|knex|sequelize|typeorm|mongoose|sqlalchemy|psycopg|asyncpg"
-        r"|\.query\s*\(|findMany|findUnique|execute\s*\(|SELECT\s+|INSERT\s+INTO"
-        r"|UPDATE\s+\w+\s+SET|DELETE\s+FROM)", re.I)),
-    ("queue/messaging", re.compile(
-        r"\b(sqs|sns|kafka|rabbit|amqp|bullmq|celery|pubsub|redis\s*\.\s*(lpush|publish)"
-        r"|sendMessage|SendMessageCommand|enqueue|publish\s*\()", re.I)),
-    ("LLM", re.compile(
-        r"\b(openai|anthropic|claude|gemini|generativeai|generateContent|bedrock"
-        r"|completions?\s*\.\s*create|embedding|langchain)", re.I)),
-    ("cloud SDK", re.compile(r"\b(@aws-sdk|boto3|aws-sdk|@google-cloud|azure\.)", re.I)),
-    ("filesystem", re.compile(
-        r"\b(fs\s*\.\s*(read|write|append)|open\s*\(|readFile|writeFile|Path\s*\()", re.I)),
-    ("scheduler", re.compile(
-        r"\b(cron|setInterval|setTimeout|schedule|EventBridge|celery.?beat|apscheduler)", re.I)),
-]
 
 IMPORT_RES = [
     re.compile(r"""^\s*import\s+.*?\s+from\s+['"]([^'"]+)['"]"""),
@@ -175,25 +155,31 @@ def section_service_context(ctx: dict | None) -> str:
     return "\n".join(out)
 
 
-def section_boundaries(text: str, rel: str) -> str:
-    found: dict[str, list[tuple[int, str]]] = {}
-    for i, line in enumerate(text.split("\n"), 1):
-        stripped = line.strip()
-        if not stripped or stripped.startswith(("//", "#", "*")):
-            continue
-        for label, rx in BOUNDARY_PATTERNS:
-            if rx.search(line):
-                found.setdefault(label, [])
-                if len(found[label]) < 4:
-                    found[label].append((i, stripped[:120]))
-                break
-    if not found:
-        return "## External boundaries\n\nNone detected in this file.\n\n"
-    out = ["## External boundaries crossed in this file", ""]
-    for label, entries in found.items():
+def section_boundaries(text: str, rel: str, lang: str, catalog: dict,
+                       own: dict[str, list[str]] | None) -> str:
+    found = find_boundaries(catalog, rel, text, lang, own)
+    if found is None:
+        return (f"## External boundaries\n\nNot looked for: no boundary rules exist "
+                f"for {lang} files.\n\n")
+    gap = ([] if own is not None else
+           ["Calls through a library's own name were not looked for: the project's "
+            "own package names are not recorded with the hotspots.", ""])
+    shown: dict[str, list[Boundary]] = {}
+    for b in found:
+        shown.setdefault(b.label, [])
+        if len(shown[b.label]) < 4:
+            shown[b.label].append(b)
+    if not shown:
+        return "\n".join(["## External boundaries", "", "None detected in this file.", "",
+                          *gap, ""])
+    out = ["## External boundaries crossed in this file", "",
+           "Calls that match a boundary rule: a client library's call, or a method "
+           "only a boundary client has. A call through a wrapper or an injected "
+           "client of another name is not listed.", "", *gap]
+    for label, entries in shown.items():
         out.append(f"**{label}**")
-        for line_no, snippet in entries:
-            out.append(f"- `{rel}:{line_no}` — `{snippet}`")
+        for b in entries:
+            out.append(f"- `{rel}:{b.line}` — `{b.snippet}`")
         out.append("")
     return "\n".join(out)
 
@@ -418,6 +404,8 @@ def build_bundle(repo: Path, hs: dict, data: dict, catalog: dict, profile: dict,
                  budget: int, commits: int, all_hotspots: list[dict],
                  ctx: dict | None = None) -> str:
     text = c.read_text(repo / hs["file"]) or ""
+    own = data.get("own_packages")
+    own = own if isinstance(own, dict) else None  # None: gated boundary rules skipped
     service = section_service_context(ctx)
     # The service section is never trimmed; the other sections share what is left.
     rest = max(budget - c.estimate_tokens(service), budget // 2) if service else budget
@@ -425,7 +413,7 @@ def build_bundle(repo: Path, hs: dict, data: dict, catalog: dict, profile: dict,
         section_header(hs, data),
         section_profile(profile),
         service,
-        section_boundaries(text, hs["file"]),
+        section_boundaries(text, hs["file"], hs["language"], catalog, own),
         section_detectors(hs, catalog),
         section_retry_layers(hs, data, catalog),
         section_source(repo, hs, int(rest * SHARE["source"])),
@@ -550,6 +538,10 @@ def main(argv: list[str] | None = None) -> int:
         c.die(str(exc))
         return 2
 
+    if not isinstance(data.get("own_packages"), dict):
+        print("warning: hotspots.json records no own package names (written before "
+              "#58); calls through a library's own name are not listed as boundaries. "
+              "Re-run signals.py.", file=sys.stderr)
     dest_dir = c.out_dir(repo) / "bundles"
     dest_dir.mkdir(parents=True, exist_ok=True)
     hotspots = data["hotspots"]

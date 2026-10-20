@@ -37,7 +37,7 @@ history* below).
   (hotspot and link warnings only).
 - `suppressed`: `[{detector, path, hits, reason}]`, one per suppression rule
   in `.thunderstruck.toml`.
-- `coverage_rows`: the **Pattern coverage** table, in order:
+- `coverage_rows`: the **Detector leads by pattern** table, in order:
   `{id, name, tier, unconfirmed_files, leads_read, leads_confirmed, findings}`.
   The `OTHER` row, when present, has `null` where `report.md` shows `—`.
 - `files_affected`: the number of distinct files the findings are located in.

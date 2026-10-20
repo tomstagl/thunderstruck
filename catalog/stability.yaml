@@ -22,6 +22,12 @@
 #                Hit is reported at the first anchor line.
 #   module       dispatches to a handler in scripts/detectors/. For patterns
 #                where a regex cannot see the structure that matters.
+#   absent_before  (regex and file_absent) a regex, with absent_before_window
+#                N: the hit is dropped when it matches the N lines before the
+#                hit plus the hit's own line. For file_absent each anchor is
+#                tried in turn and the hit lands on the first one not excused.
+#                Its window is its own, so excusing a hit never widens what
+#                present_within accepts.
 #
 # `confidence` is the detector's own self-assessment and feeds hit weighting.
 # It is NOT the finding's confidence — only the investigator sets that.
@@ -347,6 +353,13 @@ patterns:
           confidence: medium
           note: "catch-all except followed by a retry — retries permanent errors too"
           window_before: 6
+          # The retry decision belongs to the except whose handler checks a
+          # retryability predicate. A catch-all further down that branch
+          # guards something else (a hook, a log call) inside a retry that
+          # already discriminates (celery backends/base.py, #58). Its own
+          # window, so present_within's look-behind stays at 6.
+          absent_before: '\b\w*(?:safe_to_retry|is_retryable|is_transient|should_retry)\w*\s*\('
+          absent_before_window: 12
         - id: S04-py-retry-without-discrimination
           kind: file_absent
           # A retry this file runs: a loop whose header says attempt/retry
@@ -536,6 +549,14 @@ patterns:
           kind: file_absent
           anchor: '\bsession\w*\s*\.\s*(add|add_all|bulk_save_objects)\s*\(|\b(db|conn|cursor|collection|table|model|engine)\w*\s*\.\s*(insert|insert_one|insert_many)\s*\(|INSERT\s+INTO'
           absent: '(?i)\b(upsert|ON\s+CONFLICT|ON\s+DUPLICATE\s+KEY|MERGE\s+INTO|idempotenc|IntegrityError|UniqueViolation|DuplicateKey)'
+          # Get-or-create: the row is added only after a lookup of it found
+          # nothing (`if not task:` ... `session.add(task)`), so a replay finds
+          # the row (celery backends/database, #58). The add must sit in that
+          # if's body: `if not item: continue` then `session.add(item)` is a
+          # plain insert. Per anchor: another, plain insert in the same file
+          # still fires.
+          absent_before: '^([ \t]*)if\s+(?:not\s+(\w+)|(\w+)\s+is\s+None)\s*:[^\n]*\n(?:\1[ \t]+[^\n]*\n|[ \t]*\n)*?\1[ \t]+[^\n]*\.\s*add\s*\(\s*(?:\2|\3)\s*\)[^\n]*\Z'
+          absent_before_window: 4
           confidence: medium
           note: "inserts with no upsert / ON CONFLICT — a replayed job duplicates rows"
       java:
@@ -1215,6 +1236,14 @@ patterns:
           window_offset: 1
           confidence: medium
           note: "except:/except Exception: with only pass — the failure leaves no trace"
+          # Best-effort teardown in an error path that already logged the
+          # failure with a traceback: a `try:` whose one statement closes,
+          # collects or releases something, right after an exc_info log
+          # (celery worker/consumer/consumer.py, #58). Both are needed: a
+          # swallowed write after a log, or a swallowed close() with nothing
+          # logged, still fires.
+          absent_before: '(?:exc_info\s*=\s*True|\.\s*exception\s*\()[^\n]*\n(?:[^\n]*\n)*?[ \t]*try\s*:[ \t]*\n[^\n]*\b(?:close|collect|release|shutdown|cleanup|clean_up|disconnect|stop|terminate|dispose|settimeout)(?:_\w+)?\s*\([^\n]*\n[ \t]*except\b[^\n]*\Z'
+          absent_before_window: 8
         - id: S19-py-bare-except
           kind: regex
           pattern: 'except\s*:\s*$'
@@ -1390,3 +1419,136 @@ tier_c:
     name: Leader-election hardening
     failure_if_absent: "Split brain or a stuck leader stalls all coordinated work."
     references: ["Google SRE Book, ch. 23 — Managing Critical State"]
+
+# ------------------------------------------------------------- boundaries --
+# Where a file calls out of the process: the "External boundaries" section of
+# every bundle. A boundary is a CALL, never a name: a rule matches one line of
+# comment-stripped text (comments and Python docstrings blank, strings kept),
+# an import line never counts, and the first rule in this order wins a line.
+# A call through a library's own name (`requests.get(`) carries a `require`
+# on that library's import, so a variable that shares the name
+# (`requests.pop(...)` on a dict) is not a boundary. A method only a boundary
+# client has (`.execute(`, `.publish(`) carries none, because services reach
+# it through an injected client. Samples: tests/boundaries/samples/.
+boundaries:
+  python:
+    - id: B-py-requests
+      label: HTTP
+      pattern: '\b(?:requests|httpx)\s*\.\s*(?:get|post|put|patch|delete|head|options|request|stream)\s*\('
+      require: '^\s*(?:import|from)\s+(?:requests|httpx)\b'
+    - id: B-py-urlopen
+      label: HTTP
+      pattern: '(?<!def )\burlopen\s*\('
+      require: '^\s*(?:import|from)\s+urllib\b'
+    - id: B-py-aiohttp
+      label: HTTP
+      pattern: '\baiohttp\s*\.\s*(?:ClientSession|request)\s*\('
+      require: '^\s*(?:import|from)\s+aiohttp\b'
+    - id: B-py-execute
+      label: database
+      pattern: '\.\s*(?:execute|executemany|executescript)\s*\('
+    - id: B-py-session
+      label: database
+      pattern: '\b\w*session\s*\.\s*(?:query|scalars?|commit|flush|add|add_all|merge)\s*\('
+    - id: B-py-django-orm
+      label: database
+      pattern: '\.objects\s*\.\s*\w+\s*\('
+      require: '^\s*(?:import|from)\s+django\b'
+    - id: B-py-sql
+      label: database
+      pattern: '\b(?:SELECT\s[^\n]*\bFROM|INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM)\b'
+    - id: B-py-broker
+      label: queue/messaging
+      pattern: '\.\s*(?:publish|basic_publish|basic_consume|basic_get|drain_events|send_message|send_messages|receive_message)\s*\('
+    - id: B-py-celery-send
+      label: queue/messaging
+      # Not a process pool's apply_async: that is multiprocessing.
+      pattern: '(?<!pool)(?<!Pool)\s*\.\s*(?:apply_async|send_task|delay)\s*\('
+      require: '^\s*(?:import|from)\s+celery\b'
+    - id: B-py-llm
+      label: LLM
+      pattern: '\.\s*(?:chat\s*\.\s*)?(?:completions|messages|embeddings|responses)\s*\.\s*create\s*\(|\.\s*generate_content\s*\('
+    - id: B-py-boto3
+      label: cloud SDK
+      pattern: '\bboto3\s*\.\s*(?:client|resource|Session)\s*\('
+      require: '^\s*import\s+boto3\b'
+    - id: B-py-file
+      label: filesystem
+      pattern: '(?<![\w.])(?<!def )open\s*\(|\.\s*(?:read_text|write_text|read_bytes|write_bytes)\s*\('
+    - id: B-py-scheduler
+      label: scheduler
+      pattern: '\bschedule\s*\.\s*every\s*\(|\b(?:Background|Blocking|AsyncIO)Scheduler\s*\(|\.\s*add_job\s*\(|\bthreading\s*\.\s*Timer\s*\(|\.\s*call_later\s*\(|\.\s*add_periodic_task\s*\('
+  typescript:
+    - id: B-ts-fetch
+      label: HTTP
+      pattern: '(?<![\w.$])(?<!function )(?<!async )fetch\s*\('
+    - id: B-ts-axios
+      label: HTTP
+      pattern: '\baxios\s*(?:\.\s*(?:get|post|put|patch|delete|head|request)\s*)?\('
+      require: '[''"]axios[''"]'
+    - id: B-ts-http-clients
+      label: HTTP
+      pattern: '\b(?:got|superagent|ky)\s*(?:\.\s*(?:get|post|put|patch|delete)\s*)?\('
+      require: '[''"](?:got|superagent|ky)[''"]'
+    - id: B-ts-undici
+      label: HTTP
+      pattern: '\b(?:undici\s*\.\s*)?request\s*\('
+      require: '[''"]undici[''"]'
+    - id: B-ts-node-http
+      label: HTTP
+      pattern: '\bhttps?\s*\.\s*(?:get|request)\s*\('
+      require: '[''"](?:node:)?https?[''"]'
+    - id: B-ts-prisma
+      label: database
+      pattern: '\b(?:db|prisma|tx)\s*\.\s*\w+\s*\.\s*(?:create|createMany|findMany|findUnique|findFirst|update|updateMany|upsert|delete|deleteMany|count|aggregate)\s*\(|\$(?:queryRaw|executeRaw)\w*'
+    - id: B-ts-query
+      label: database
+      pattern: '\.\s*query\s*\('
+    - id: B-ts-sql
+      label: database
+      pattern: '\b(?:SELECT\s[^\n]*\bFROM|INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM)\b'
+    - id: B-ts-broker
+      label: queue/messaging
+      pattern: '\.\s*(?:publish|sendMessage|sendMessageBatch)\s*\(|\bnew\s+(?:SendMessage|SendMessageBatch|Publish)Command\s*\('
+    - id: B-ts-llm
+      label: LLM
+      pattern: '\.\s*(?:chat\s*\.\s*)?(?:completions|messages|embeddings|responses)\s*\.\s*create\s*\(|\.\s*generateContent\s*\('
+    - id: B-ts-aws-sdk
+      label: cloud SDK
+      pattern: '\.\s*send\s*\(\s*new\s+\w+Command\s*\('
+      require: '[''"]@aws-sdk/[\w-]+[''"]'
+    - id: B-ts-file
+      label: filesystem
+      pattern: '\bfs(?:Promises)?\s*\.\s*(?:promises\s*\.\s*)?(?:read|write|append)\w*\s*\(|(?<![\w.])(?:readFile|writeFile|appendFile)(?:Sync)?\s*\('
+    - id: B-ts-scheduler
+      label: scheduler
+      # Not setTimeout: in the code this tool reads it is a sleep (S02's job).
+      pattern: '\bsetInterval\s*\(|\bcron\s*\.\s*schedule\s*\(|\bnew\s+CronJob\s*\(|@Cron\s*\(|@Interval\s*\('
+  java:
+    - id: B-java-http
+      label: HTTP
+      pattern: '\.\s*(?:getForObject|getForEntity|postForObject|postForEntity|patchForObject|exchange)\s*\(|\.\s*retrieve\s*\(\s*\)|\.\s*newCall\s*\(|\bhttpClient\s*\.\s*send(?:Async)?\s*\('
+      require: '^\s*import\s+(?:org\.springframework\.web\.(?:client|reactive)|java\.net\.http|okhttp3|org\.apache\.hc|org\.apache\.http|feign)\b'
+    - id: B-java-db
+      label: database
+      pattern: '\.\s*(?:query|queryForObject|queryForList|queryForMap|update|batchUpdate|executeQuery|executeUpdate|execute|createQuery|createNativeQuery|find|persist|merge)\s*\('
+      require: '^\s*import\s+(?:java\.sql|javax\.sql|org\.springframework\.jdbc|jakarta\.persistence|javax\.persistence|org\.hibernate|org\.jooq)\b'
+    - id: B-java-sql
+      label: database
+      pattern: '\b(?:SELECT\s[^\n]*\bFROM|INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM)\b'
+    - id: B-java-messaging
+      label: queue/messaging
+      pattern: '\.\s*(?:send|convertAndSend|publish|basicPublish|sendMessage)\s*\(|@(?:KafkaListener|RabbitListener|JmsListener|SqsListener)\b'
+      require: '^\s*import\s+(?:org\.springframework\.(?:kafka|amqp|jms)|org\.apache\.kafka|com\.rabbitmq|software\.amazon\.awssdk\.services\.sq[sn]|io\.awspring|jakarta\.jms|javax\.jms)\b'
+    - id: B-java-aws-sdk
+      label: cloud SDK
+      pattern: '\b\w+Client\s*\.\s*builder\s*\(\s*\)'
+      require: '^\s*import\s+software\.amazon\.awssdk\b'
+    - id: B-java-file
+      label: filesystem
+      pattern: '\bFiles\s*\.\s*(?:read|write|newBuffered|newInput|newOutput|lines|copy|move|delete)\w*\s*\(|\bnew\s+File(?:Input|Output)Stream\s*\(|\bnew\s+File(?:Reader|Writer)\s*\('
+      require: '^\s*import\s+java\.(?:nio\.file|io)\b'
+    - id: B-java-scheduler
+      label: scheduler
+      pattern: '@Scheduled\b|\.\s*schedule(?:AtFixedRate|WithFixedDelay)?\s*\('
+      require: '^\s*import\s+(?:org\.springframework\.scheduling|java\.util\.concurrent)\b'

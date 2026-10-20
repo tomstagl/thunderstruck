@@ -64,7 +64,7 @@ Every command in this plan uses the fixed scratch path `/tmp/thunderstruck-58`, 
 **Interfaces:**
 - Produces: detector keys `absent_before` (regex, `MULTILINE`) and `absent_before_window` (int ≥ 1); private helper `_excused_before(lines: list[str], idx: int, det: dict) -> bool` where `idx` is the hit's 0-based line index.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_engine_v2.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_engine_v2.py`:
 
 ```python
 # --- #58: absent_before ------------------------------------------------------
@@ -132,12 +132,12 @@ and in `test_every_catalog_regex_compiles` change the key tuple to:
                             "require", "absent_before"):
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_engine_v2.py tests/detectors/test_detectors.py -q -k "absent_before or unchanged or compiles"`
 Expected: FAIL in `test_absent_before_excuses_a_regex_hit_within_its_window`, `test_absent_before_includes_the_hits_own_line`, both `file_absent` tests and the CRLF test (the key is ignored today). `test_a_detector_without_absent_before_is_unchanged` and the catalog tests PASS.
 
-- [ ] **Step 3: Write the implementation.** In `scripts/detectors/__init__.py`, add after `_snippet`:
+- [x] **Step 3: Write the implementation.** In `scripts/detectors/__init__.py`, add after `_snippet`:
 
 ```python
 def _excused_before(lines: list[str], idx: int, det: dict) -> bool:
@@ -202,12 +202,12 @@ In `catalog/stability.yaml`'s header, after the `module` entry under "Detector k
 #                present_within accepts.
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass** (same command as Step 2), then the detector suite:
+- [x] **Step 4: Run the tests to verify they pass** (same command as Step 2), then the detector suite:
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/detectors tests/test_engine_v2.py -q`
 Expected: PASS. No catalog detector uses the key yet, so every existing sample is unchanged.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/detectors/__init__.py catalog/stability.yaml tests/test_engine_v2.py tests/detectors/test_detectors.py
@@ -224,7 +224,7 @@ git commit -m "Detectors: absent_before excuses a hit by what precedes it (#58)"
 - Create: `tests/detectors/samples/S04/python/negative_hook_in_retry_branch.py`
 - Modify: `catalog/stability.yaml` (`S04-py-bare-except-retry`)
 
-- [ ] **Step 1: Write the negative sample**, reproducing Celery's `_ensure_retryable` (spec §3.2):
+- [x] **Step 1: Write the negative sample**, reproducing Celery's `_ensure_retryable` (spec §3.2):
 
 ```python
 import logging
@@ -259,12 +259,12 @@ class Backend:
                     raise
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/detectors -q -k "S04-python"`
 Expected: FAIL on `S04-python-negative_hook_in_retry_branch` (line 24 fires: the predicate is 8 lines above it, outside today's `window_before: 6`).
 
-- [ ] **Step 3: Correct the detector.** In `catalog/stability.yaml`, under `S04-py-bare-except-retry`, after `window_before: 6` add:
+- [x] **Step 3: Correct the detector.** In `catalog/stability.yaml`, under `S04-py-bare-except-retry`, after `window_before: 6` add:
 
 ```yaml
           # The retry decision belongs to the except whose handler checks a
@@ -276,7 +276,7 @@ Expected: FAIL on `S04-python-negative_hook_in_retry_branch` (line 24 fires: the
           absent_before_window: 12
 ```
 
-- [ ] **Step 4: Run the detector suite and the Celery check**
+- [x] **Step 4: Run the detector suite and the Celery check**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/detectors -q`
 Expected: PASS, every S04 positive included.
@@ -284,7 +284,7 @@ Expected: PASS, every S04 positive included.
 Run: `uv run scripts/calibrate.py --repo "/tmp/thunderstruck-58/celery" --lang python --patterns S04`
 Expected: exactly one hit, `S04-py-bare-except-retry celery/app/builtins.py:71`; `celery/backends/base.py:773` is gone.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add catalog/stability.yaml tests/detectors/samples/S04/python/negative_hook_in_retry_branch.py
@@ -305,7 +305,7 @@ git commit -m "S04: an except inside a discriminating retry branch is not the re
 - Create: `tests/detectors/samples/S19/python/positive_decode_swallow.py`
 - Modify: `catalog/stability.yaml` (`S19-py-except-pass`)
 
-- [ ] **Step 1: Write the samples.** `negative_teardown_after_logged_error.py`:
+- [x] **Step 1: Write the samples.** `negative_teardown_after_logged_error.py`:
 
 ```python
 import logging
@@ -387,12 +387,12 @@ def meta_from_row(self, data):
     return self.meta_from_decoded(data)
 ```
 
-- [ ] **Step 2: Run them to verify the negative fails**
+- [x] **Step 2: Run them to verify the negative fails**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/detectors -q -k "S19-python"`
 Expected: FAIL on `S19-python-negative_teardown_after_logged_error`; all four new positives PASS (the two Celery ones fire on line 11 and line 12).
 
-- [ ] **Step 3: Correct the detector.** In `catalog/stability.yaml`, under `S19-py-except-pass`, after its `note:` line add:
+- [x] **Step 3: Correct the detector.** In `catalog/stability.yaml`, under `S19-py-except-pass`, after its `note:` line add:
 
 ```yaml
           # Best-effort teardown in an error path that already logged the
@@ -405,7 +405,7 @@ Expected: FAIL on `S19-python-negative_teardown_after_logged_error`; all four ne
           absent_before_window: 8
 ```
 
-- [ ] **Step 4: Run the detector suite and the Celery check**
+- [x] **Step 4: Run the detector suite and the Celery check**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/detectors -q`
 Expected: PASS.
@@ -413,7 +413,7 @@ Expected: PASS.
 Run: `uv run scripts/calibrate.py --repo "/tmp/thunderstruck-58/celery" --lang python --patterns S19`
 Expected: 8 hits; `celery/worker/consumer/consumer.py:435` is gone, `celery/backends/base.py:489` and `celery/backends/database/__init__.py:240` remain, as their samples already show.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add catalog/stability.yaml tests/detectors/samples/S19/python/
@@ -432,7 +432,7 @@ git commit -m "S19: best-effort teardown after a logged failure is not a silent 
 - Create: `tests/detectors/samples/S07/python/positive_guard_on_other_name.py`
 - Modify: `catalog/stability.yaml` (`S07-py-insert-without-upsert`)
 
-- [ ] **Step 1: Write the samples.** `negative_get_or_create.py`:
+- [x] **Step 1: Write the samples.** `negative_get_or_create.py`:
 
 ```python
 def store_result(session, task_cls, task_id, result):
@@ -466,12 +466,12 @@ def import_rows(session, rows, dry_run):
     session.commit()
 ```
 
-- [ ] **Step 2: Run them to verify the negative fails**
+- [x] **Step 2: Run them to verify the negative fails**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/detectors -q -k "S07-python"`
 Expected: FAIL on `S07-python-negative_get_or_create`; both new positives PASS.
 
-- [ ] **Step 3: Correct the detector.** In `catalog/stability.yaml`, under `S07-py-insert-without-upsert`, after its `absent:` line add (leave `confidence: medium` as it is; spec §3.2):
+- [x] **Step 3: Correct the detector.** In `catalog/stability.yaml`, under `S07-py-insert-without-upsert`, after its `absent:` line add (leave `confidence: medium` as it is; spec §3.2):
 
 ```yaml
           # Get-or-create: the row is added only after a lookup of it found
@@ -482,7 +482,7 @@ Expected: FAIL on `S07-python-negative_get_or_create`; both new positives PASS.
           absent_before_window: 4
 ```
 
-- [ ] **Step 4: Run the detector suite and the Celery check**
+- [x] **Step 4: Run the detector suite and the Celery check**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/detectors -q`
 Expected: PASS.
@@ -490,7 +490,7 @@ Expected: PASS.
 Run: `uv run scripts/calibrate.py --repo "/tmp/thunderstruck-58/celery" --lang python --patterns S07`
 Expected: two hits, `celery/backends/cassandra.py:40` and `celery/backends/database/__init__.py:295` (the lead moved off the get-or-create at 168; 295 is the accepted unique-constraint case, spec §3.2).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add catalog/stability.yaml tests/detectors/samples/S07/python/
@@ -516,7 +516,7 @@ git commit -m "S07: a get-or-create on the row's own key is not a duplicate inse
 - Produces: `Boundary(label: str, rule_id: str, line: int, snippet: str)` (frozen dataclass); `find_boundaries(catalog: dict, rel_path: str, text: str, lang: str, own: dict[str, list[str]] | None) -> list[Boundary] | None` (`None`: the language has no rules; otherwise every line that matches, in line order, one rule per line; `own` as in spec §2.4); `_common.own_packages(repo_root: Path, index: dict[str, str]) -> tuple[dict[str, list[str]], list[str]]`; `hotspots.json` key `own_packages` (`{"python": [...], "typescript": [...], "java": [...]}`, sorted).
 - Consumes: `build_context`, `_rx`, `_snippet` and `_common.detector_language` from the same module; `_common.tracked_index`.
 
-- [ ] **Step 1: Write the samples.** Each path is under `tests/boundaries/samples/`. In a `positive_*` sample every line that must be tagged ends with a `boundary: <label>` comment, and exactly those lines must be tagged, with exactly those labels; any other stem carries no marker and must not be tagged with its directory's label; files under `none/` must cross no boundary. An `own-packages: …` comment names the packages the sample's project owns (spec §9).
+- [x] **Step 1: Write the samples.** Each path is under `tests/boundaries/samples/`. In a `positive_*` sample every line that must be tagged ends with a `boundary: <label>` comment, and exactly those lines must be tagged, with exactly those labels; any other stem carries no marker and must not be tagged with its directory's label; files under `none/` must cross no boundary. An `own-packages: …` comment names the packages the sample's project owns (spec §9).
 
 `http/python/positive_requests_get.py`:
 ```python
@@ -955,7 +955,7 @@ import java.nio.file.Files;
 class Imports {}
 ```
 
-- [ ] **Step 2: Write the failing tests.** Create `tests/boundaries/test_boundaries.py`:
+- [x] **Step 2: Write the failing tests.** Create `tests/boundaries/test_boundaries.py`:
 
 ```python
 """Boundary rules (#58): a boundary is a call, never a name.
@@ -1231,12 +1231,12 @@ def test_hotspots_record_own_packages(scanned_repo):
     assert data["own_packages"] == {"python": [], "typescript": ["fixture"], "java": []}
 ```
 
-- [ ] **Step 3: Run them to verify they fail**
+- [x] **Step 3: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/boundaries tests/test_own_packages.py -q`
 Expected: collection error, `ImportError: cannot import name 'find_boundaries' from 'detectors'`; `tests/test_own_packages.py` fails with `AttributeError: module '_common' has no attribute 'own_packages'` and `KeyError: 'own_packages'`.
 
-- [ ] **Step 4: Write the matcher.** Append to `scripts/detectors/__init__.py`:
+- [x] **Step 4: Write the matcher.** Append to `scripts/detectors/__init__.py`:
 
 ```python
 # ------------------------------------------------------------- boundaries --
@@ -1338,7 +1338,7 @@ def find_boundaries(catalog: dict[str, Any], rel_path: str, text: str,
     return out
 ```
 
-- [ ] **Step 5: Work out the project's own packages (spec §2.3).** Append to `scripts/_common.py` (it already imports `json` and `re`):
+- [x] **Step 5: Work out the project's own packages (spec §2.3).** Append to `scripts/_common.py` (it already imports `json` and `re`):
 
 ```python
 # ---------------------------------------------------------- own packages --
@@ -1443,7 +1443,7 @@ In `scripts/signals.py`, in `build`, directly after `index = c.tracked_index(rep
 
 and in the returned dict, directly after `"warnings": warnings,` add `"own_packages": own,`.
 
-- [ ] **Step 6: Add the rules.** Append to the end of `catalog/stability.yaml`:
+- [x] **Step 6: Add the rules.** Append to the end of `catalog/stability.yaml`:
 
 ```yaml
 
@@ -1581,12 +1581,12 @@ boundaries:
       require: '^\s*import\s+(?:org\.springframework\.scheduling|java\.util\.concurrent)\b'
 ```
 
-- [ ] **Step 7: Run the tests to verify they pass**
+- [x] **Step 7: Run the tests to verify they pass**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/boundaries tests/test_own_packages.py tests/detectors -q`
 Expected: PASS (50 sample cases plus the rule and own-package tests; the detector suite is unaffected, since `run_detectors` reads only `patterns`).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add scripts/detectors/__init__.py scripts/_common.py scripts/signals.py catalog/stability.yaml tests/boundaries/ tests/test_own_packages.py
@@ -1607,7 +1607,7 @@ git commit -m "Boundaries: call-shaped catalog rules with samples, not vocabular
 - Consumes: `detectors.find_boundaries`, `detectors.Boundary`, `hotspots.json`'s `own_packages` (Task 5).
 - Produces: `section_boundaries(text: str, rel: str, lang: str, catalog: dict, own: dict[str, list[str]] | None) -> str`.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_pipeline.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_pipeline.py`:
 
 ```python
 def _boundaries_section(scanned_repo, rel: str) -> str:
@@ -1651,12 +1651,12 @@ def test_bundle_boundaries_say_when_own_packages_are_unknown(catalog):
         text, "src/a.py", "python", catalog, {})
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_pipeline.py -q -k "boundar"`
 Expected: FAIL on all four (today `releases.ts` lists `setTimeout` under **scheduler**, `section_boundaries` takes two arguments, and `scheduler.ts` tags `fetchRelease(` and a comment).
 
-- [ ] **Step 3: Rewrite the section.** In `scripts/bundle.py`:
+- [x] **Step 3: Rewrite the section.** In `scripts/bundle.py`:
 
 1. Delete the whole `BOUNDARY_PATTERNS: list[tuple[str, re.Pattern]] = [ … ]` assignment.
 2. After `import _common as c  # noqa: E402` add `from detectors import Boundary, find_boundaries  # noqa: E402`.
@@ -1711,12 +1711,12 @@ and change `section_boundaries(text, hs["file"]),` to `section_boundaries(text, 
 
 6. In the module docstring, change "the boundaries it crosses" to "the boundary calls the catalog's rules find".
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_pipeline.py -q`
 Expected: PASS, including `test_bundles_are_within_budget_and_deterministic` and `test_bundle_contains_the_sections_the_investigator_needs`.
 
-- [ ] **Step 5: Measure Celery (AC-1).** Save as `/tmp/thunderstruck-58/count_boundaries.py` (not in the repository):
+- [x] **Step 5: Measure Celery (AC-1).** Save as `/tmp/thunderstruck-58/count_boundaries.py` (not in the repository):
 
 ```python
 """Count the boundary lines in a scan's bundles, and how many come from a
@@ -1770,7 +1770,7 @@ uv run --no-project --with pyyaml python "/tmp/thunderstruck-58/count_boundaries
 
 Expected: `total: 68 shown, 51 from a comment, docstring or import` for the frozen bundles, and `total: 11 shown, 0 from a comment, docstring or import` after, with `hotspots.json`'s `own_packages` `{"python": ["celery", "t"], "typescript": [], "java": []}` and the ten bundles' total `tokens_estimated` (from `index.json`) 1,439 below what `main`'s code generates over the same Celery checkout, the drop with Tasks 2–4's detector corrections applied before this task (the boundary rules alone account for 1,175; spec §2.6). Generate the "before" total with `main`'s `bundle.py` on that checkout, not from the frozen bundles: the absolute figure moves as bundle content grows. Keep both outputs and both totals for Task 8 and the PR.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/bundle.py tests/test_pipeline.py
@@ -1795,7 +1795,7 @@ git commit -m "Bundle: boundaries from the catalog, and say when none were looke
 **Interfaces:**
 - Produces: `report.LEADS_HEADING`, `report.LEADS_INTRO`, `report.LEADS_FOOTNOTE` (str).
 
-- [ ] **Step 1: Write the failing tests.** Create `tests/test_lead_wording.py`:
+- [x] **Step 1: Write the failing tests.** Create `tests/test_lead_wording.py`:
 
 ```python
 """The lead table states what a lead and no lead mean (#58 AC-5)."""
@@ -1837,12 +1837,12 @@ In `tests/test_pipeline.py`, in `test_report_renders_and_indexes`, replace `asse
 ```
  In `tests/test_coverage_gaps.py` change `report.index("## Pattern coverage")` to `report.index("## Detector leads by pattern")`. In `tests/test_report_json_fields.py` change `markdown.split("## Pattern coverage", 1)` to `markdown.split("## Detector leads by pattern", 1)`. In `tests/test_report_html_browser.py` change `"Pattern coverage",` in the expected section list to `"Detector leads by pattern",`.
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_lead_wording.py tests/test_pipeline.py tests/test_coverage_gaps.py tests/test_report_json_fields.py -q`
 Expected: FAIL (`AttributeError: module 'report' has no attribute 'LEADS_HEADING'`, and the renamed heading is not found).
 
-- [ ] **Step 3: Change `report.py`.** Near the other module constants add:
+- [x] **Step 3: Change `report.py`.** Near the other module constants add:
 
 ```python
 # The lead table's words (#58). templates/report.html carries the same strings;
@@ -1890,7 +1890,7 @@ with
 
 Change the comment `# ---- coverage table` to `# ---- lead table`, the module docstring's "run header, pattern coverage, ranked findings" to "run header, detector leads by pattern, ranked findings", and `coverage_rows`'s docstring to `"""The **Detector leads by pattern** table, one dict per row in report.md order.`.
 
-- [ ] **Step 4: Change the template.** In `templates/report.html`, replace the block
+- [x] **Step 4: Change the template.** In `templates/report.html`, replace the block
 
 ```javascript
         el.appendChild(section("Pattern coverage", [
@@ -1920,11 +1920,11 @@ with
 
 and replace `"Run, coverage, hotspots, and what was not analysed"` with `"Run, leads, hotspots, and what was not analysed"`. Each string stays on one source line so the template test finds it verbatim.
 
-- [ ] **Step 5: Change the docs.** In `skills/thunderstruck-scan/references/report-format.md` change `- \`coverage_rows\`: the **Pattern coverage** table, in order:` to `- \`coverage_rows\`: the **Detector leads by pattern** table, in order:`.
+- [x] **Step 5: Change the docs.** In `skills/thunderstruck-scan/references/report-format.md` change `- \`coverage_rows\`: the **Pattern coverage** table, in order:` to `- \`coverage_rows\`: the **Detector leads by pattern** table, in order:`.
 
 In `README.md`, in the table of files written to `.thunderstruck/`, change the `report.md` row's text `pattern coverage with leads read and confirmed` to `detector leads by pattern (what a lead and no lead mean, leads read and confirmed)`.
 
-- [ ] **Step 6: Regenerate the samples and run the tests**
+- [x] **Step 6: Regenerate the samples and run the tests**
 
 ```bash
 uv run scripts/gen_sample_report.py
@@ -1934,7 +1934,7 @@ THUNDERSTRUCK_REQUIRE_BROWSER=1 uv run --with pytest --with pyyaml --with lizard
 
 Expected: PASS. `git diff examples/` shows only the heading, intro and footnote in `sample-report.md`, and the same text plus the rail line and the script hash in `sample-report.html`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add scripts/report.py templates/report.html skills/thunderstruck-scan/references/report-format.md README.md tests/ examples/sample-report.md examples/sample-report.html
@@ -1951,7 +1951,7 @@ git commit -m "Report: the lead table says what a lead and no lead mean (#58)"
 - Create: `docs/calibration/celery.md`
 - Modify: `docs/calibration/python.md` (one pointer line under **Known limitations**)
 
-- [ ] **Step 1: Sweep Celery before and after.**
+- [x] **Step 1: Sweep Celery before and after.**
 
 The "before" side is this branch's merge base with `main` (the code before any task of this plan), unpacked into a scratch directory (no stash, no second checkout of this worktree):
 
@@ -1964,7 +1964,7 @@ diff "/tmp/thunderstruck-58/celery-before.txt" "/tmp/thunderstruck-58/celery-aft
 
 Expected: 27 hits before and 25 after, all Python. The diff removes `S04 … celery/backends/base.py:773` and `S19 … celery/worker/consumer/consumer.py:435`, and moves `S07 … database/__init__.py:168` to `:295`.
 
-- [ ] **Step 2: Sweep the five `python.md` repositories for lost true positives.** Clone each at the commit `python.md` pins (fastapi/full-stack-fastapi-template `cb740b6…`, netbox-community/netbox `785d0b9…`, httpie/cli `5b604c3…`, celery/celery `eb3dfa3…`, rq/rq `90a67a1…`; full SHAs in `python.md`'s table) into `/tmp/thunderstruck-58/py/<name>`, then for each:
+- [x] **Step 2: Sweep the five `python.md` repositories for lost true positives.** Clone each at the commit `python.md` pins (fastapi/full-stack-fastapi-template `cb740b6…`, netbox-community/netbox `785d0b9…`, httpie/cli `5b604c3…`, celery/celery `eb3dfa3…`, rq/rq `90a67a1…`; full SHAs in `python.md`'s table) into `/tmp/thunderstruck-58/py/<name>`, then for each:
 
 ```bash
 uv run --directory "/tmp/thunderstruck-58/before" scripts/calibrate.py --repo "/tmp/thunderstruck-58/py/<name>" --lang python --patterns S04,S07,S19 > "/tmp/thunderstruck-58/py/<name>.before"
@@ -1978,7 +1978,7 @@ Every line that disappears is looked up in `python.md`'s judgments. Then:
 - **It has no judgment in `python.md`:** stop. Do not judge it yourself; label the ticket `agent:blocked` and comment with the detector, repository, `file:line` and the code, so the maintainer judges it.
 - **It was judged TP:** add a `positive_<shape>` sample reproducing it to the task that silenced it (Task 2, 3 or 4), tighten that `absent_before` until the sample fires and the Celery negative stays silent, and re-run this step. If that cannot be done for S04 or S19, record the hit under **Lost** in Step 3 and lower that detector's `confidence` one step in the same commit (AC-3). If it cannot be done for **S07**, stop and label the ticket `agent:blocked`: S07 must stay `medium` (spec §3.2), so the trade between the lost lead and the ranking is the maintainer's call.
 
-- [ ] **Step 3: Write `docs/calibration/celery.md`** in the form of `python.md`, with these sections, every hit of `celery-after.txt` listed under its detector, and every judgment re-checked by reading the code at `508c112` (line numbers moved since `python.md`'s commit):
+- [x] **Step 3: Write `docs/calibration/celery.md`** in the form of `python.md`, with these sections, every hit of `celery-after.txt` listed under its detector, and every judgment re-checked by reading the code at `508c112` (line numbers moved since `python.md`'s commit):
 
 ```markdown
 # Celery detector and boundary calibration
@@ -2032,18 +2032,18 @@ Column meanings are `python.md`'s.
 
 Replace each placeholder line in parentheses or angle brackets with the measured content before committing; the committed log contains no placeholder. If Step 1 or 2 produced figures other than the expected ones, the log records the measured figures and the PR says why they differ.
 
-- [ ] **Step 4: Point `python.md` at it.** Under `python.md`'s **Known limitations**, add a first bullet:
+- [x] **Step 4: Point `python.md` at it.** Under `python.md`'s **Known limitations**, add a first bullet:
 
 ```markdown
 - Three accepted false positives in this log are corrected since #58, with negative samples: S04 `celery/backends/base.py:757` (now `:773`), S19 `celery/worker/consumer/consumer.py:427` (now `:435`) and S07 `celery/backends/database/__init__.py:168`. See [celery.md](celery.md).
 ```
 
-- [ ] **Step 5: Run the docs checks**
+- [x] **Step 5: Run the docs checks**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_docs_in_sync.py tests/test_links.py -q`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add docs/calibration/celery.md docs/calibration/python.md
@@ -2060,7 +2060,7 @@ git commit -m "Calibration: every Celery detector hit and boundary line, judged 
 - Modify: `CLAUDE.md`, `CHANGELOG.md`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `pyproject.toml`
 - Regenerate if stale: `skills/stability-catalog/references/patterns.md`
 
-- [ ] **Step 1: CLAUDE.md.** In "The catalog is the source of truth", replace the sentence beginning "Three detector kinds:" with:
+- [x] **Step 1: CLAUDE.md.** In "The catalog is the source of truth", replace the sentence beginning "Three detector kinds:" with:
 
 ```markdown
 Three detector kinds: `regex` (line match with a look-ahead/behind window),
@@ -2080,7 +2080,7 @@ package never counts (`own_packages` in `hotspots.json`), so a library
 calling itself is not a call through it.
 ```
 
-- [ ] **Step 2: Version and CHANGELOG.** Bump the minor version in all four places (the next minor above `main`'s at the time; `0.10.0` if `main` is still `0.9.x`), and add, with `<version>` the version just set:
+- [x] **Step 2: Version and CHANGELOG.** Bump the minor version in all four places (the next minor above `main`'s at the time; `0.10.0` if `main` is still `0.9.x`), and add, with `<version>` the version just set:
 
 ```markdown
 ## <version>
@@ -2098,7 +2098,7 @@ Detector and boundary leads that hold up on library code (#58).
 - **`docs/calibration/celery.md`**: every detector hit and boundary line on Celery at the benchmark commit, judged, with lead precision before and after.
 ```
 
-- [ ] **Step 3: Run the full suite and the generated-file checks**
+- [x] **Step 3: Run the full suite and the generated-file checks**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/ -q; echo "exit=$?"
@@ -2108,7 +2108,7 @@ uv run scripts/gen_sample_report.py --check; echo "exit=$?"
 
 Expected: all three `exit=0`. If `gen_catalog_docs.py --check` reports stale, run `uv run scripts/gen_catalog_docs.py` and include `skills/stability-catalog/references/patterns.md` in the commit.
 
-- [ ] **Step 4: Validate and install the plugin**
+- [x] **Step 4: Validate and install the plugin**
 
 ```bash
 claude plugin validate . --strict
@@ -2118,7 +2118,7 @@ claude plugin list
 
 Expected: validate passes; `claude plugin list` shows thunderstruck `enabled`, not "failed to load".
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add CLAUDE.md CHANGELOG.md .claude-plugin/plugin.json .claude-plugin/marketplace.json pyproject.toml skills/stability-catalog/references/patterns.md
