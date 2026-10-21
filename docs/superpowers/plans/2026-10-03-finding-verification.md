@@ -3421,6 +3421,8 @@ git commit -m "Scan skill: verification as step 4b, --verify and --no-verify (#3
 - Modify: `scripts/gen_sample_report.py` (a canned `labels.ts` finding, `CANNED_VERDICTS`, the verification step, `--keep DIR`)
 - Modify: `examples/sample-report.md`, `examples/sample-report.html` (regenerated)
 - Modify: `tests/test_pipeline.py` (expectations about the fixture's files and hotspots, if any test counts them)
+- Modify: `tests/conftest.py` (`--top 8` → `--top 10` in `scanned_repo` and `context_scanned_repo`; Step 3)
+- Modify: `tests/test_docs_in_sync.py` (#56's two sample tests that assume every finding is `unchecked`; Step 4)
 - Test: `tests/test_verification.py`
 
 **Interfaces:**
@@ -3443,13 +3445,13 @@ def test_the_steering_text_for_verification_is_in_the_fixture(fixture_repo):
 
 def test_verification_off_is_byte_identical_whatever_older_checks_exist(validated_repo, validated_env, tmp_path):
     """AC-1: the report of a scan that did not verify does not depend on earlier verdicts."""
-    _, _, before = _report(validated_repo, validated_env)
-    rj_before = (validated_repo / ".thunderstruck" / "report.json").read_text()
+    rj_before, _, before = _report(validated_repo, validated_env)
     _verified(validated_repo, validated_env, tmp_path, {"releases.ts": _refute_releases(validated_repo)})
     (validated_repo / ".thunderstruck" / "checks" / "run.json").unlink()
-    _, _, after = _report(validated_repo, validated_env)
+    rj_after, _, after = _report(validated_repo, validated_env)
     assert after == before
-    assert (validated_repo / ".thunderstruck" / "report.json").read_text() == rj_before
+    # report.json's generated_at is when it was rendered (report-format.md); all else is equal
+    assert {**rj_after, "generated_at": None} == {**rj_before, "generated_at": None}
 
 
 def test_the_sample_shows_every_verdict():
@@ -3460,7 +3462,7 @@ def test_the_sample_shows_every_verdict():
     assert "· inconclusive ·" in md and "· upheld ·" in md
 ```
 
-(`report.md` and `report.json` take their dates from `hotspots.json`, so they compare byte for byte; `index.json` carries a wall-clock `generated_at` and is left out.)
+(`report.md` takes its dates from `hotspots.json`, so it compares byte for byte. `report.json` and `index.json` carry a wall-clock `generated_at`: `report.json` is compared without that one key, and `index.json` is left out.)
 
 - [ ] **Step 2: Run them to verify they fail.** Expected: `StopIteration` (no labels.ts hotspot), assertion errors.
 - [ ] **Step 3: Implement.** In `tests/fixtures/build_fixture.py`:
@@ -3514,7 +3516,7 @@ In `gen_sample_report.py`, add to `CANNED`:
     }],
 ```
 
-(with `preconditions: []` as #56 requires of every canned finding), and:
+(with `preconditions: []` as #56 requires of every canned finding). The two new files rank above `src/client/retry-wrapper.ts` and `src/util/format.ts` (on the tests' 24-month window: `http-defaults.ts` H04, `labels.ts` H05, `retry-wrapper.ts` H09, `format.ts` H11), so the scan depths go up by the two files and nothing else: `signals.py --top 9` in `build_validated` becomes `--top 11`, and `tests/conftest.py`'s `--top 8` (in `scanned_repo` and `context_scanned_repo`) becomes `--top 10`. Every file ranked before stays ranked, and the cross-file and `OTHER`-finding tests keep their hotspots. `verify.py prepare` imports `packaging` (through `deps.discover_pypi`), and the generator runs every script in its own pinned environment, so its PEP 723 header adds `"packaging==25.0"` beside `pyyaml` and `lizard`. And:
 
 ```python
 # Verdicts the sample shows (#37). Settled by the real verify.py apply, so
@@ -3559,6 +3561,10 @@ uv run scripts/gen_sample_report.py --check
 ```
 
 - [ ] **Step 4: Run** the tests, `tests/test_pipeline.py` (adjust any assertion that counts fixture files or hotspots to include the two new files, and nothing else), `tests/test_sample_report.py`, and the full suite. Read the regenerated `examples/sample-report.md` top to bottom once. Expected: PASS, `exit=0`.
+
+  Two #56 tests in `tests/test_docs_in_sync.py` read the sample as it was before verification, when every finding was `unchecked`. The canned verdicts settle every reported finding, so update them, and make no other edit to that file. What they check (every location and evidence ref is linked; the sample shows check status, the claimed confidence, the gated finding last, preconditions and history) is unchanged:
+  - `test_sample_report_links_its_refs`: the location-line pattern accepts any reported status, `r"\*\* · (?:unchecked|upheld|narrowed|inconclusive) (?:· needs a non-default setting )?· " + link`, in place of `· unchecked`.
+  - `test_sample_report_shows_check_status_preconditions_and_history`: `"· unchecked ·" in sample and "(claimed high)" in sample` becomes `"· upheld ·" in sample and "· narrowed ·" in sample and "(claimed medium)" in sample` (every high claim is now upheld and keeps `high`; the narrowed finding is the one whose confidence a check lowered); the rest of the test stays as it is.
 - [ ] **Step 5: Commit**
 
 ```bash
