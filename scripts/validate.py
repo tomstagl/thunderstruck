@@ -39,6 +39,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _common as c  # noqa: E402
+import deps  # noqa: E402
 
 VALIDATION_SCHEMA = "thunderstruck.validation/v1"
 MAX_FINDINGS_PER_HOTSPOT = 3
@@ -72,6 +73,8 @@ REF_FORMS = {
     "detector": '"S05@path/to/file.ts:12", copied from the bundle\'s Detector leads',
     "catalog": '"dependencyOf component:default/web-frontend", copied from the bundle\'s Service context',
 }
+VERDICT_EVIDENCE_TYPES = ("code", "commit", "dependency")
+REF_FORMS["dependency"] = deps.REF_FORM
 TYPE_ALIASES = {"git": "commit", "sha": "commit", "file": "code", "source": "code"}
 
 
@@ -115,8 +118,10 @@ class Validator:
     def __init__(self, repo: Path, hotspots: dict, catalog: dict,
                  context: dict | None = None,
                  bundle_context: dict[str, str | None] | None = None,
-                 extra_fix: tuple[str, ...] = ()) -> None:
+                 extra_fix: tuple[str, ...] = (),
+                 deps_index: dict | None = None) -> None:
         self.repo = repo
+        self.deps_index = deps_index
         self.extra_fix = tuple(extra_fix)
         self.valid_ids = c.catalog_ids(catalog)
         self.detector_refs: set[str] = set()
@@ -288,12 +293,24 @@ class Validator:
                     f"ref verbatim from the bundle's 'Service context' section.")
         return etype
 
-    def check_ref(self, ref: Any, where: str, errors: list[str]) -> tuple[str, int, int] | None:
+    def check_ref(self, ref: Any, where: str, errors: list[str],
+                  allow_dependency: bool = False) -> tuple[str, int, int] | None:
         """A path:line or path:start-end that must resolve exactly as a `code`
-        evidence ref does. The one place a precondition ref is resolved (spec §7)."""
+        evidence ref does. The one place a precondition ref is resolved (spec §7).
+        A dependency ref resolves only when allowed: in a verdict (#37 §4.5)."""
         if not isinstance(ref, str) or not ref.strip():
             errors.append(f"{where} must be one string, {REF_FORMS['code']}; got {shown(ref)}")
             return None
+        if deps.DEP_REF.match(ref.strip()):
+            if not allow_dependency:
+                errors.append(f"{where} {ref!r}: dependency refs are accepted in a verification "
+                              f"verdict only; cite a file in this repository")
+                return None
+            got, err = deps.resolve_dependency_ref(self.repo, self.deps_index, ref)
+            if err:
+                errors.append(f"{where} {ref!r} — {err}")
+                return None
+            return f"{got['id']}@{got['version']}:{got['path']}", got["start"], got["end"]
         ref = ref.strip()
         m = CODE_REF.match(ref)
         if not m:
@@ -309,6 +326,37 @@ class Validator:
             errors.append(f"{where} {ref!r} — {range_error(rel, total)}")
             return None
         return rel, *span
+
+    def check_verdict_evidence(self, ev: Any, where: str, errors: list[str],
+                               finding_files: list[str]) -> str | None:
+        """Resolve one item of a skeptic's evidence (#37 §8.2). A commit must
+        have changed one of finding_files: the finding's cited files plus the
+        files the verdict cites as code."""
+        if not isinstance(ev, dict) or not isinstance(ev.get("ref"), str) or not ev["ref"].strip():
+            errors.append(f"{where} must be {{\"type\", \"ref\", \"note\"}} with ref one string")
+            return None
+        etype, ref = ev.get("type"), ev["ref"].strip()
+        if etype not in VERDICT_EVIDENCE_TYPES:
+            errors.append(f"{where}.type {etype!r} is not verdict evidence; use one of "
+                          f"{list(VERDICT_EVIDENCE_TYPES)}")
+            return None
+        before = len(errors)
+        if etype == "dependency":
+            self.check_ref(ref, f"{where}.ref", errors, allow_dependency=True)
+        elif etype == "code":
+            self.check_evidence({"type": "code", "ref": ref, "note": ev.get("note")}, where, errors)
+        else:
+            # not through check_evidence: #56 requires a `role` on investigator
+            # commits, and a skeptic's commit has none
+            short = ref.split()[0]
+            if not SHA_REF.match(short) or not self._sha_ok(short):
+                errors.append(f"{where}.ref {ref!r} — no such commit in this repository")
+            else:
+                files = [rel for rel, _, err in map(self._resolve, finding_files) if not err]
+                if not files or not c.commit_touches(self.repo, short, files):
+                    errors.append(f"{where}.ref {short!r} does not touch the finding's files or a "
+                                  f"file this verdict cites as code")
+        return etype if len(errors) == before else None
 
     def check_preconditions(self, pre: Any, where: str, errors: list[str]) -> None:
         if not isinstance(pre, list):

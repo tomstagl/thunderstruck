@@ -234,7 +234,24 @@ def test_template_reads_the_repo_name_not_its_path():
 HOSTILE_TEXT = ('</script><script id="pwn">window.pwned=1</script>'
                 '<img src=x onerror="window.pwned=1"><a href="https://evil.example">x</a>')
 MODEL_FIELDS = ("failure_mode", "trigger_condition", "amplifier", "sustaining_effect",
-                "blast_radius", "how_to_verify", "confidence_rationale")
+                "blast_radius", "how_to_verify", "confidence_rationale",
+                "check.reason", "check.holds", "check.refuted_claims.0.claim",
+                "check.refuted_claims.0.fact", "check.evidence.0.note")
+
+
+def _set_path(doc: dict, path: str, value) -> None:
+    *parents, last = [int(p) if p.isdigit() else p for p in path.split(".")]
+    for p in parents:
+        doc = doc[p]
+    doc[last] = value
+
+
+def _verification_ran(repo: Path) -> None:
+    """#37 §11.1: a stored check is reported only when checks/run.json is this scan's."""
+    out = repo / ".thunderstruck"
+    (out / "checks").mkdir(exist_ok=True)
+    stamp = json.loads((out / "hotspots.json").read_text())["generated_at"]
+    (out / "checks" / "run.json").write_text(json.dumps({"generated_at": stamp, "model": "claude-haiku-4-5"}))
 
 
 def _outside_data(html: str) -> str:
@@ -245,13 +262,27 @@ def _outside_data(html: str) -> str:
 def test_hostile_model_text_stays_inside_the_data_block(scanned_copy, plugin_root):
     hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
     for field in MODEL_FIELDS:
-        doc["findings"][0][field] = f"{field}: {HOSTILE_TEXT}"
+        if "." not in field:
+            doc["findings"][0][field] = f"{field}: {HOSTILE_TEXT}"
     doc["findings"][0]["preconditions"] = [{
         "setting": HOSTILE_TEXT, "default": HOSTILE_TEXT,
         "default_ref": doc["findings"][0]["evidence"][0]["ref"], "needs": "changed",
         "value": HOSTILE_TEXT, "documented": "not_checked"}]
     _write_finding(scanned_copy, hid, doc)
     assert _validate(scanned_copy, plugin_root).returncode == 0
+    # a skeptic's text, written as verify.py apply writes it (#37)
+    path = scanned_copy / ".thunderstruck" / "findings" / f"{hid}.json"
+    saved = json.loads(path.read_text())
+    code_ref = next(ev["ref"] for ev in saved["findings"][0]["evidence"] if ev["type"] == "code")
+    saved["findings"][0]["check"] = {
+        "status": "narrowed", "by": "skeptic", "model": "claude-haiku-4-5", "duplicate_of": None,
+        "refuted_claims": [{"field": "amplifier", "evidence": [0]}],
+        "evidence": [{"type": "code", "ref": code_ref}]}
+    for field in MODEL_FIELDS:
+        if "." in field:
+            _set_path(saved["findings"][0], field, f"{field}: {HOSTILE_TEXT}")
+    path.write_text(json.dumps(saved))
+    _verification_ran(scanned_copy)
     subprocess.run([sys.executable, str(plugin_root / "scripts" / "report.py"),
                     "--repo", str(scanned_copy)], check=True, capture_output=True)
     assert _run(scanned_copy).returncode == 0
@@ -262,6 +293,7 @@ def test_hostile_model_text_stays_inside_the_data_block(scanned_copy, plugin_roo
     assert html.count("<script") == 2 and html.count("</script>") == 2
     page = _embedded(html)
     assert page["findings"][0]["failure_mode"] == f"failure_mode: {HOSTILE_TEXT}"
+    assert page["findings"][0]["check"]["holds"] == f"check.holds: {HOSTILE_TEXT}"
 
 
 def test_page_holds_exactly_the_validated_findings(scanned_copy, plugin_root):
@@ -301,3 +333,54 @@ def test_scan_step_5_renders_html_after_the_markdown_and_never_fails():
 def test_plugin_manifest_does_not_declare_skills():
     manifest = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())
     assert not {"skills", "hooks", "agents"} & set(manifest)
+
+
+# --- #37 Task 13 ------------------------------------------------------------
+import report  # noqa: E402
+
+
+def _js_object(name: str) -> dict:
+    m = re.search(rf"var {name} = (\{{.*?\}});", _template())
+    assert m, name
+    return json.loads(m.group(1))
+
+
+def test_template_field_labels_match_report():
+    assert _js_object("FIELD_LABELS") == report.FIELD_LABELS
+
+
+def test_template_renders_verification_through_named_functions():
+    template = _template()
+    for name in ("function verificationLine(", "function checkRows(", "function refutedGroup("):
+        assert name in template, name
+
+
+def _verified_report() -> dict:
+    narrowed = {"id": "FR-001", "key": "aaaaaaaaaaaa", "hotspot_id": "H01", "failure_mode": "fm",
+                "amplifier": "amp", "location": {"file": "src/a.ts", "lines": "1"},
+                "also_at": [{"key": "bbbbbbbbbbbb", "hotspot_id": "H02",
+                             "location": {"file": "src/b.ts", "lines": "2"}, "url": None}],
+                "check": {"status": "narrowed", "by": "skeptic", "holds": "part holds",
+                          "model": "claude-haiku-4-5",
+                          "refuted_claims": [{"field": "amplifier", "claim": "c", "fact": "f",
+                                              "evidence": [0, 1]}],
+                          "evidence": [{"type": "code", "ref": "src/a.ts:1", "note": "n",
+                                        "url": "https://github.com/acme/x/blob/abc/src/a.ts#L1"},
+                                       {"type": "dependency", "ref": "pypi:x@1:x/y.py:1", "note": "n",
+                                        "url": None}]}}
+    refuted = {"key": "cccccccccccc", "hotspot_id": "H03", "failure_mode": "gone",
+               "location": {"file": "src/c.ts", "lines": "3"},
+               "check": {"status": "refuted", "by": "skeptic", "reason": "not so",
+                         "refuted_claims": [], "evidence": []}}
+    return {"findings": [narrowed], "refuted": [refuted],
+            "verification": {"ran": True, "model": "claude-haiku-4-5", "checked": 2, "reused": 0,
+                             "dependencies": [], "warnings": []}}
+
+
+def test_page_embeds_verdicts_refuted_findings_and_duplicates():
+    data = _verified_report()
+    page = _embedded(report_html.render(report_html.page_data(data), _template()))
+    assert page["verification"]["ran"] is True
+    assert page["refuted"][0]["check"]["reason"] == "not so"
+    assert page["findings"][0]["also_at"][0]["location"]["file"] == "src/b.ts"
+    assert page["findings"][0]["check"]["refuted_claims"][0]["field"] == "amplifier"

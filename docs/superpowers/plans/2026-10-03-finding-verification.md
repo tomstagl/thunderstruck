@@ -64,7 +64,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 The merge order is #5 → #56 → #37. The ticket picker takes the lowest-numbered ready ticket, so it can pick #37 before #56 has merged; this task is what stops it.
 
-- [ ] **Step 1:** On `main`, confirm each of these exists. If any #56 item is missing, stop: label #37 `agent:blocked` and comment "Waits for #56: <the missing items>". If any #5 item is missing, the same with "Waits for #5". The maintainer removes the label once the missing ticket has merged; nothing is built before that. The items: `scripts/capture_finding.py`, `scripts/finding_shape.py` with `parse_result` and `write_json_atomic`, `scripts/usage.py` with `build`, `_common.MODEL_ALIASES`, `_common.effective_confidence`, `_common.finding_gate`, `_common.check_status`, `_common.CHECK_STATUSES`, `validate.Validator.check_ref`, `report.order_key`, `_common.REPORT_SCHEMA_VERSION == "thunderstruck.report/v2"`, and a `SubagentStop` entry in `hooks/hooks.json`.
+- [x] **Step 1:** On `main`, confirm each of these exists. If any #56 item is missing, stop: label #37 `agent:blocked` and comment "Waits for #56: <the missing items>". If any #5 item is missing, the same with "Waits for #5". The maintainer removes the label once the missing ticket has merged; nothing is built before that. The items: `scripts/capture_finding.py`, `scripts/finding_shape.py` with `parse_result` and `write_json_atomic`, `scripts/usage.py` with `build`, `_common.MODEL_ALIASES`, `_common.effective_confidence`, `_common.finding_gate`, `_common.check_status`, `_common.CHECK_STATUSES`, `validate.Validator.check_ref`, `report.order_key`, `_common.REPORT_SCHEMA_VERSION == "thunderstruck.report/v2"`, and a `SubagentStop` entry in `hooks/hooks.json`.
 
 ```bash
 git checkout main && git pull --ff-only
@@ -86,7 +86,7 @@ Expected: `ok` and `1`.
 **Interfaces:**
 - Produces, in `_common`: `VERIFY_BY_DEFAULT: bool` (provisionally `True`; Task 22 sets it); `VERIFY_MEASURED_COST: str | None` (`None` until Task 22); `VERDICTS = ("upheld", "narrowed", "refuted", "inconclusive")`; `REFUTABLE_FIELDS: tuple[str, ...]`; `MISSING_GATE_PHRASE = "on default settings"`; `CHECKS_DIRNAME = "checks"`; `DEPS_DIRNAME = "deps"`; `finding_gate(finding)` extended (§14); `skeptic_settings(finding: dict) -> list[dict]` (the kept `setting` objects of a narrowed check's `preconditions` claims).
 
-- [ ] **Step 1: Write the failing tests.** Create `tests/test_verification.py`:
+- [x] **Step 1: Write the failing tests.** Create `tests/test_verification.py`:
 
 ```python
 """#37: refuting findings before they reach the report."""
@@ -141,12 +141,12 @@ def test_investigator_preconditions_still_gate():
     assert c.skeptic_settings(f) == []
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_verification.py -q`
 Expected: FAIL, `AttributeError: module '_common' has no attribute 'VERDICTS'`.
 
-- [ ] **Step 3: Write the implementation.** In `scripts/_common.py`, after #56's vocabulary block:
+- [x] **Step 3: Write the implementation.** In `scripts/_common.py`, after #56's vocabulary block:
 
 ```python
 # Verification (spec 2026-10-03-finding-verification-design.md). A verdict is a
@@ -188,9 +188,9 @@ and replace #56's `finding_gate` body so its last line reads:
 
 (`skeptic_settings` must be defined above `finding_gate`; move the block there.) Update `finding_gate`'s docstring: "non_default_setting when any precondition needs a setting changed, or a check narrowed the finding to one (#37 §14)."
 
-- [ ] **Step 4: Run the tests** (same command as Step 2, then the full suite). Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests** (same command as Step 2, then the full suite). Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/_common.py tests/test_verification.py
@@ -217,7 +217,7 @@ git commit -m "Verification: the verdict vocabulary and the gate a check can set
   - `snapshot(repo: Path, index: dict, limits: Limits = LIMITS) -> dict` (fills `snapshot`, may turn a package `unavailable`).
   - `resolve_dependency_ref(repo: Path, index: dict | None, ref: str) -> tuple[dict | None, str | None]` → `({"id", "version", "path", "start", "end"}, None)` or `(None, error)`.
 
-- [ ] **Step 1: Write the failing tests.** Create `tests/test_deps.py`:
+- [x] **Step 1: Write the failing tests.** Create `tests/test_deps.py`:
 
 ```python
 """#37: dependency source at declared or locked versions (spec §4)."""
@@ -394,12 +394,12 @@ def test_unsafe_names_never_become_directories(tmp_path):
     assert not (repo / ".thunderstruck" / "x").exists()
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_deps.py -q`
 Expected: collection error, `ModuleNotFoundError: No module named 'deps'`.
 
-- [ ] **Step 3: Write the implementation.** Create `scripts/deps.py` (Tasks 3–5 add the discoverers to it):
+- [x] **Step 3: Write the implementation.** Create `scripts/deps.py` (Tasks 3–5 add the discoverers to it):
 
 ```python
 #!/usr/bin/env python3
@@ -606,9 +606,9 @@ def resolve_dependency_ref(repo: Path, index: dict | None, ref: str) -> tuple[di
 
 `c.path_problem` (`_common.py:604`) words the "is absolute" and "climbs out of the repository with '..'" messages the tests match.
 
-- [ ] **Step 4: Run the tests** (same command as Step 2). Expected: PASS.
+- [x] **Step 4: Run the tests** (same command as Step 2). Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/deps.py tests/test_deps.py
@@ -627,7 +627,7 @@ git commit -m "Verification: dependency refs and source snapshots (#37)"
 **Interfaces:**
 - Produces: `pep503(name: str) -> str`; `discover_pypi(repo: Path, env: dict[str, str]) -> tuple[list[dict], list[str]]` (package records with `source` and `files`, and warnings); `pypi_declared(repo) -> dict[str, tuple[str, list[str]]]` (normalised name → (specifier text, declared_in)); `pypi_locked(repo) -> dict[str, str]`; `site_packages(repo, env) -> list[Path]`.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_deps.py` a helper that writes a fake installed package, and the tests:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_deps.py` a helper that writes a fake installed package, and the tests:
 
 ```python
 # --- Task 3 -----------------------------------------------------------------
@@ -723,9 +723,9 @@ def test_pep503():
     assert deps.pep503("SQLAlchemy") == "sqlalchemy" and deps.pep503("zope.Interface__x") == "zope-interface-x"
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** Run: `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_deps.py -q -k "requirements or minimum or lock or pinned or virtual_env or python_manifest or pep503"`. Expected: `AttributeError: module 'deps' has no attribute 'discover_pypi'`.
+- [x] **Step 2: Run them to verify they fail.** Run: `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_deps.py -q -k "requirements or minimum or lock or pinned or virtual_env or python_manifest or pep503"`. Expected: `AttributeError: module 'deps' has no attribute 'discover_pypi'`.
 
-- [ ] **Step 3: Write the implementation.** Add to `scripts/deps.py`:
+- [x] **Step 3: Write the implementation.** Add to `scripts/deps.py`:
 
 ```python
 import os
@@ -914,9 +914,9 @@ def discover_pypi(repo: Path, env: dict[str, str]) -> tuple[list[dict], list[str
 
 `prereleases=True` is deliberate: an installed pre-release inside a range is what the environment runs, and the version is recorded. Tighten the kombu assertion in `test_requirements_range_satisfied_by_the_installed_copy` to `"available"` once this is in.
 
-- [ ] **Step 4: Run the tests** (same command as Step 2, then all of `tests/test_deps.py`). Expected: PASS.
+- [x] **Step 4: Run the tests** (same command as Step 2, then all of `tests/test_deps.py`). Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/deps.py tests/test_deps.py .github/workflows/ci.yml CLAUDE.md
@@ -934,7 +934,7 @@ git commit -m "Verification: Python dependencies at their declared or locked ver
 **Interfaces:**
 - Produces: `npm_satisfies(version: str, rng: str) -> bool | None` (`None`: a range outside the supported subset); `discover_npm(repo: Path) -> tuple[list[dict], list[str]]`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```python
 # --- Task 4 -----------------------------------------------------------------
@@ -996,9 +996,9 @@ def test_npm_range_that_cannot_be_checked(tmp_path):
     assert p["reason"] == 'declared range "workspace:*" could not be checked'
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** `... pytest tests/test_deps.py -q -k "npm or pnpm"`. Expected: `AttributeError: ... 'npm_satisfies'`.
+- [x] **Step 2: Run them to verify they fail.** `... pytest tests/test_deps.py -q -k "npm or pnpm"`. Expected: `AttributeError: ... 'npm_satisfies'`.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 ```python
 NPM_SUFFIXES = (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts")
@@ -1120,9 +1120,9 @@ def discover_npm(repo: Path) -> tuple[list[dict], list[str]]:
     return packages, []
 ```
 
-- [ ] **Step 4: Run the tests.** Expected: PASS.
+- [x] **Step 4: Run the tests.** Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/deps.py tests/test_deps.py
@@ -1140,7 +1140,7 @@ git commit -m "Verification: npm dependencies at their declared or locked versio
 **Interfaces:**
 - Produces: `discover_maven(repo: Path, home: Path) -> tuple[list[dict], list[str]]` (records carry `jar` instead of `files`); `discover(repo: Path, env: dict[str, str] | None = None, home: Path | None = None) -> dict` (the whole index, packages sorted by `id`, warnings, before snapshot); CLI `deps.py [--repo P]` runs `discover` + `snapshot` + `write_index` and prints `dependency source: N of M declared packages available`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```python
 # --- Task 5 -----------------------------------------------------------------
@@ -1211,9 +1211,9 @@ def test_the_cli_writes_only_under_deps(tmp_path):
 
 (`test_the_cli_writes_only_under_deps` calls `deps.main` in-process; `deps.discover` reads `os.environ` when `env` is `None`, so the test's `_venv` inside the repo is what is found.)
 
-- [ ] **Step 2: Run them to verify they fail.** `... -k "pom or gradle or discover or cli_writes"`. Expected: `AttributeError: ... 'discover_maven'`.
+- [x] **Step 2: Run them to verify they fail.** `... -k "pom or gradle or discover or cli_writes"`. Expected: `AttributeError: ... 'discover_maven'`.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 ```python
 import argparse
@@ -1348,9 +1348,9 @@ if __name__ == "__main__":
 
 The catalog's `version.ref` handling above is written for both TOML spellings (`version.ref = "x"` parses as a nested table `{"version": {"ref": "x"}}`); simplify it to the nested-table branch if the test passes without the second branch.
 
-- [ ] **Step 4: Run the tests** (all of `tests/test_deps.py`). Expected: PASS.
+- [x] **Step 4: Run the tests** (all of `tests/test_deps.py`). Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/deps.py tests/test_deps.py
@@ -1369,7 +1369,7 @@ git commit -m "Verification: Maven and Gradle dependencies, and the dependency i
 - Consumes: `deps.resolve_dependency_ref`, `deps.REF_FORM` (Task 2).
 - Produces: `Validator(..., deps_index: dict | None = None)`; `Validator.check_ref(ref, where, errors, allow_dependency: bool = False) -> tuple[str, int, int] | None` (for a dependency ref the tuple is `("<id>@<version>:<path>", start, end)`); `Validator.check_verdict_evidence(ev, where, errors, finding_files: list[str]) -> str | None` (returns the type when the item resolved, `None` otherwise); `VERDICT_EVIDENCE_TYPES = ("code", "commit", "dependency")`.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_verification.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_verification.py`:
 
 ```python
 # --- Task 6 -----------------------------------------------------------------
@@ -1431,9 +1431,9 @@ def test_a_verdict_commit_may_touch_a_file_only_the_verdict_cites(scanned_copy):
     assert "does not touch" in errors[0]
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** `... pytest tests/test_verification.py -q -k "check_ref_rejects or verdict_evidence or verdict_commit"`. Expected: `TypeError: Validator.__init__() got an unexpected keyword argument 'deps_index'`.
+- [x] **Step 2: Run them to verify they fail.** `... pytest tests/test_verification.py -q -k "check_ref_rejects or verdict_evidence or verdict_commit"`. Expected: `TypeError: Validator.__init__() got an unexpected keyword argument 'deps_index'`.
 
-- [ ] **Step 3: Write the implementation.** In `scripts/validate.py`:
+- [x] **Step 3: Write the implementation.** In `scripts/validate.py`:
 
 ```python
 import deps  # noqa: E402  (after `import _common as c`)
@@ -1492,9 +1492,9 @@ New method:
         return etype if len(errors) == before else None
 ```
 
-- [ ] **Step 4: Run the tests**, then the full suite. Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests**, then the full suite. Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/validate.py tests/test_verification.py
@@ -1519,7 +1519,7 @@ git commit -m "Verification: resolve a verdict's code, commit and dependency evi
   - `checks_dir(repo) -> Path`; `load_findings(repo) -> list[dict]` (items `{"finding", "hotspot_id", "index", "path"}`, report-eligible only); `load_frozen(frozen: Path) -> list[dict]` (same shape, `path: None`); `claim_hash(finding) -> str`; `cited_files(finding, verdict_evidence=()) -> list[str]`; `hash_files(repo, files) -> dict[str, str | None]`; `reusable(entry: dict | None, finding: dict, repo: Path, deps_index: dict | None) -> bool`; `commit_messages(repo, finding) -> list[tuple[str, str]]`; `render_brief(finding: dict, others: list[dict], deps_index: dict | None, messages: list[tuple[str, str]]) -> str`; `prepare(repo, model: str, frozen: Path | None = None) -> dict`; CLI `verify.py prepare [--repo] [--model] [--frozen DIR]`.
 - Produces, in `gen_sample_report`: `build_validated(dest: Path) -> tuple[Path, dict]` (the fixture repo with canned findings saved and validated, and the env the pipeline ran with). In `tests/conftest.py`: session fixture `validated_template` and per-test `validated_repo` (a copy) plus `validated_env`.
 
-- [ ] **Step 1: Factor the generator.** Move everything in `generate_all` from building the fixture through the successful `validate.py` run into `build_validated(dest)`, which returns `(repo, env)`; `generate_all` calls it inside its `TemporaryDirectory`. Run `uv run scripts/gen_sample_report.py --check`: Expected `exit 0` (no output change). Add to `tests/conftest.py`:
+- [x] **Step 1: Factor the generator.** Move everything in `generate_all` from building the fixture through the successful `validate.py` run into `build_validated(dest)`, which returns `(repo, env)`; `generate_all` calls it inside its `TemporaryDirectory`. Run `uv run scripts/gen_sample_report.py --check`: Expected `exit 0` (no output change). Add to `tests/conftest.py`:
 
 ```python
 @pytest.fixture(scope="session")
@@ -1541,7 +1541,7 @@ def validated_env(validated_template) -> dict:
     return dict(validated_template[1])
 ```
 
-- [ ] **Step 2: Write the failing tests.** Append to `tests/test_verification.py`:
+- [x] **Step 2: Write the failing tests.** Append to `tests/test_verification.py`:
 
 ```python
 # --- Task 7 -----------------------------------------------------------------
@@ -1651,9 +1651,9 @@ def test_frozen_mode_plans_the_celery_keys(tmp_path):
     assert len({i["finding"]["key"] for i in items}) == 21
 ```
 
-- [ ] **Step 3: Run them to verify they fail.** `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_verification.py -q -k "planned or brief or deterministic or reuse or cited_file or frozen"`. Expected: `ModuleNotFoundError: No module named 'verify'`.
+- [x] **Step 3: Run them to verify they fail.** `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_verification.py -q -k "planned or brief or deterministic or reuse or cited_file or frozen"`. Expected: `ModuleNotFoundError: No module named 'verify'`.
 
-- [ ] **Step 4: Write the implementation.** Create `scripts/verify.py` (Tasks 9, 10 and 18 add subcommands to it):
+- [x] **Step 4: Write the implementation.** Create `scripts/verify.py` (Tasks 9, 10 and 18 add subcommands to it):
 
 ```python
 #!/usr/bin/env python3
@@ -1926,9 +1926,9 @@ if __name__ == "__main__":
 
 `--model`'s default here is provisional and the skill always passes one; Task 21 sets it to the measured default (§12.3).
 
-- [ ] **Step 5: Run the tests**, then the full suite and `uv run scripts/gen_sample_report.py --check`. Expected: PASS, `exit=0`, samples unchanged.
+- [x] **Step 5: Run the tests**, then the full suite and `uv run scripts/gen_sample_report.py --check`. Expected: PASS, `exit=0`, samples unchanged.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/verify.py scripts/gen_sample_report.py tests/conftest.py tests/test_verification.py
@@ -1947,7 +1947,7 @@ git commit -m "Verification: plan the checks, write the briefs, reuse unchanged 
 **Interfaces:**
 - Produces, in `verify`: `VERDICT_KEYS = ("key", "verdict", "reason", "holds", "refuted_claims", "evidence", "dependencies_read", "duplicate_of")`; `REFUTED_CLAIM_KEYS = ("field", "claim", "fact", "evidence", "setting")`; `SETTING_KEYS = ("setting", "default", "default_ref", "value")`.
 
-- [ ] **Step 1: Write the failing tests.** Create `tests/test_skeptic_contract.py`:
+- [x] **Step 1: Write the failing tests.** Create `tests/test_skeptic_contract.py`:
 
 ```python
 """The skeptic's prompt states the contract verify.py enforces (#37 §6, §8)."""
@@ -2000,9 +2000,9 @@ def test_prompt_states_the_rules_that_matter():
     assert "confidence_rationale" not in text  # it is never given, so never mentioned
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** `... pytest tests/test_skeptic_contract.py -q`. Expected: `FileNotFoundError` / `AttributeError: VERDICT_KEYS`.
+- [x] **Step 2: Run them to verify they fail.** `... pytest tests/test_skeptic_contract.py -q`. Expected: `FileNotFoundError` / `AttributeError: VERDICT_KEYS`.
 
-- [ ] **Step 3: Write the implementation.** In `scripts/verify.py` add the three tuples. Create `agents/thunderstruck-skeptic.md`:
+- [x] **Step 3: Write the implementation.** In `scripts/verify.py` add the three tuples. Create `agents/thunderstruck-skeptic.md`:
 
 ````markdown
 ---
@@ -2099,9 +2099,9 @@ Return only the JSON object, no prose, no fence:
 
 The frontmatter `model` is provisional; Task 21 sets the measured default.
 
-- [ ] **Step 4: Run the tests.** Expected: PASS. Then `claude plugin validate . --strict`. Expected: passes.
+- [x] **Step 4: Run the tests.** Expected: PASS. Then `claude plugin validate . --strict`. Expected: passes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add agents/thunderstruck-skeptic.md scripts/verify.py tests/test_skeptic_contract.py
@@ -2124,7 +2124,7 @@ git commit -m "Verification: the skeptic agent and its verdict contract (#37)"
 - Consumes: `finding_shape.parse_result`, `write_json_atomic` (#5); `checks/plan.json` (Task 7).
 - Produces, in `finding_shape`: `find_plan_entry(plan: dict, key) -> dict | None` (an entry with `action == "check"` whose `key` equals `key` as an exact string); `stamp_verdict(doc: dict, plan: dict, entry: dict) -> dict` (adds `brief_hash`, `scan`); `record_skeptic(out: Path, plan: dict, entry: dict, agent: dict) -> None` (writes `checks/agents/<key>.json` `{"key", "scan", "agents": [...]}`, appending for the same `scan`, resetting otherwise). In `verify`: `verify.py check K…` prints `K saved|missing|failed`; `verify.py save --key K (--from FILE | --failed --reason TEXT) [--fallback] [--usage JSON]`.
 
-- [ ] **Step 1: Write the failing tests.** Payload fixtures follow #5's investigator payloads with `agent_type: "plugin:thunderstruck:thunderstruck-skeptic"`; the test rewrites `cwd` and fills `last_assistant_message`'s `key` from the plan. In `tests/test_capture_finding.py` add:
+- [x] **Step 1: Write the failing tests.** Payload fixtures follow #5's investigator payloads with `agent_type: "plugin:thunderstruck:thunderstruck-skeptic"`; the test rewrites `cwd` and fills `last_assistant_message`'s `key` from the plan. In `tests/test_capture_finding.py` add:
 
 ```python
 # --- #37 ---------------------------------------------------------------------
@@ -2217,9 +2217,9 @@ def test_save_refuses_an_unplanned_key(validated_repo, validated_env, tmp_path):
     assert proc.returncode == 2 and "is not a planned check" in proc.stderr
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** `... pytest tests/test_capture_finding.py tests/test_verification.py -q -k "skeptic or check_and_save or unplanned"`. Expected: failures (nothing written; `invalid choice: 'check'`).
+- [x] **Step 2: Run them to verify they fail.** `... pytest tests/test_capture_finding.py tests/test_verification.py -q -k "skeptic or check_and_save or unplanned"`. Expected: failures (nothing written; `invalid choice: 'check'`).
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 In `scripts/finding_shape.py` (stdlib only):
 
@@ -2351,9 +2351,9 @@ def _cmd_save(args) -> int:
 
 Register them in `main` (`check` takes `keys` as `nargs="+"`; `save` takes `--key` required, `--from` as `src`, `--failed`, `--reason`, `--fallback`, `--usage`, with `--from` and `--failed` mutually exclusive and one required). (`verify.py` already imports `finding_shape`, Task 7.) A result saved from unparsable text is kept as `{"unparsed": …}` so `apply` can say why (AC-6) rather than the file being missing.
 
-- [ ] **Step 4: Run the tests**, the full suite and `claude plugin validate . --strict`. Expected: PASS.
+- [x] **Step 4: Run the tests**, the full suite and `claude plugin validate . --strict`. Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/finding_shape.py scripts/capture_finding.py hooks/hooks.json scripts/verify.py tests/
@@ -2372,7 +2372,7 @@ git commit -m "Verification: capture each skeptic's verdict from the SubagentSto
 - Consumes: `Validator.check_verdict_evidence`, `Validator.check_ref` (Task 6); `deps.load_index`; the plan and results (Tasks 7, 9).
 - Produces: `Resolver(repo: Path, deps_index: dict | None)` with `.evidence(ev, where, errors, finding_files) -> bool` and `.ref(ref, where, errors) -> bool`; `settle(finding: dict, entry: dict, result: dict | None, resolver: Resolver, plan: dict, ledger_entry: dict | None) -> dict` (the `check`); `apply(repo: Path) -> dict` (the `run.json` document). Files written: findings files' `check` (not in frozen mode), `checks/verdicts.json`, `checks/ledger.json` (not in frozen mode), `checks/run.json`.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_verification.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_verification.py`:
 
 ```python
 # --- Task 10 ----------------------------------------------------------------
@@ -2517,9 +2517,9 @@ def test_apply_writes_the_ledger_and_run_and_reuse_follows(validated_repo, valid
     assert check["reused_from"] == {"scan": plan["generated_at"], "head": plan["head"]}
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** `... -k "upheld_is_written or unchecked_with_reasons or inconclusive or narrowed or other_finding or stale or ledger"`. Expected: `invalid choice: 'apply'`.
+- [x] **Step 2: Run them to verify they fail.** `... -k "upheld_is_written or unchecked_with_reasons or inconclusive or narrowed or other_finding or stale or ledger"`. Expected: `invalid choice: 'apply'`.
 
-- [ ] **Step 3: Write the implementation.** Add to `scripts/verify.py`:
+- [x] **Step 3: Write the implementation.** Add to `scripts/verify.py`:
 
 ```python
 import validate  # noqa: E402
@@ -2756,9 +2756,9 @@ def apply(repo: Path) -> dict:
 
 Register `apply` in `main`, printing `verification: 12 upheld · 4 narrowed · 2 refuted · 2 inconclusive · 1 unchecked`.
 
-- [ ] **Step 4: Run the tests**, then the full suite. Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests**, then the full suite. Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/verify.py tests/test_verification.py
@@ -2778,7 +2778,7 @@ git commit -m "Verification: settle each verdict mechanically and remember it (#
 - Consumes: `checks/run.json`, `deps/index.json`, findings files' `check` (Task 10); #56's `order_key`, `c.check_status`, `c.effective_confidence`, `c.finding_gate`.
 - Produces: `report.verification_run(out: Path, hotspots: dict) -> dict | None`; `report.duplicate_groups(findings: list[dict]) -> dict[str, list[dict]]` (survivor key → absorbed findings, survivors chosen by `order_key`); `collect()` data gains `refuted: list[dict]`, `verification: dict` (§11.3's block), `dependency_warnings: list[str]`, `duplicates_merged: int`; each finding may carry `also_at: [{"key", "hotspot_id", "location", "url"}]`; check evidence items gain `url`, a kept setting gains `default_url`; `report.json` gains `verification`, `refuted`, `counts.refuted`, `counts.duplicates_merged`; `index.json` gains `via: "duplicate"` entries and `holds` on narrowed entries.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_verification.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_verification.py`:
 
 ```python
 # --- Task 11 ----------------------------------------------------------------
@@ -2892,9 +2892,9 @@ def test_unavailable_dependency_source_is_a_run_warning(validated_repo, validate
     assert any("Dependency source not available for pypi:kombu" in w for w in rj["run_warnings"])
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** `... -k "without_a_run or leaves_findings or linked_and or duplicate or unavailable_dependency"`. Expected: `KeyError: 'verification'`, `AttributeError: ... duplicate_groups`.
+- [x] **Step 2: Run them to verify they fail.** `... -k "without_a_run or leaves_findings or linked_and or duplicate or unavailable_dependency"`. Expected: `KeyError: 'verification'`, `AttributeError: ... duplicate_groups`.
 
-- [ ] **Step 3: Write the implementation.** In `scripts/report.py`:
+- [x] **Step 3: Write the implementation.** In `scripts/report.py`:
 
 ```python
 import deps  # noqa: E402
@@ -3008,7 +3008,7 @@ Return from `collect()` additionally: `"refuted": refuted`, `"verification": blo
 
 Set the absorbed file's `content_hash` from `c.sha256_file(repo / path)` (pass `repo` into `render_index`, or compute in `collect` and carry it on `also_at[].content_hash`; the latter keeps `render_index` pure; do that).
 
-- [ ] **Step 4: Update #56's two tests that write a `check` by hand.** §11.1 makes a `check` in a findings file count only when `checks/run.json` belongs to this scan, and AC-4 moves a refuted finding out of *Findings*. Two tests in `tests/test_checked_confidence.py` were written for the world before that: they put a `check` straight into a findings file and run `report.py` with no `checks/run.json`. Updating them is part of this task, and these are the only edits to that file: the rule they test (a check caps confidence: `upheld` may be `high`, `narrowed` drops a level, everything else is at most `medium`; a malformed check is reported `unchecked` with a warning) is unchanged. Add the helper above `test_an_upheld_check_allows_high_and_a_narrowed_one_drops_a_level`:
+- [x] **Step 4: Update #56's two tests that write a `check` by hand.** §11.1 makes a `check` in a findings file count only when `checks/run.json` belongs to this scan, and AC-4 moves a refuted finding out of *Findings*. Two tests in `tests/test_checked_confidence.py` were written for the world before that: they put a `check` straight into a findings file and run `report.py` with no `checks/run.json`. Updating them is part of this task, and these are the only edits to that file: the rule they test (a check caps confidence: `upheld` may be `high`, `narrowed` drops a level, everything else is at most `medium`; a malformed check is reported `unchecked` with a warning) is unchanged. Add the helper above `test_an_upheld_check_allows_high_and_a_narrowed_one_drops_a_level`:
 
 ```python
 def _verification_ran(repo: Path) -> None:
@@ -3031,9 +3031,9 @@ In `test_an_upheld_check_allows_high_and_a_narrowed_one_drops_a_level`, call `_v
 
 In `test_a_malformed_check_is_reported_unchecked_with_a_warning`, call `_verification_ran(scanned_copy)` between `path.write_text(json.dumps(saved))` and `payload, _ = _report(...)`. Run `pytest tests/test_checked_confidence.py -q`. Expected: PASS (99 tests as of #56's merge).
 
-- [ ] **Step 5: Run the tests**, then the full suite. Expected: PASS, `exit=0`.
+- [x] **Step 5: Run the tests**, then the full suite. Expected: PASS, `exit=0`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/report.py tests/test_verification.py tests/test_checked_confidence.py
@@ -3053,7 +3053,7 @@ git commit -m "Report: verification state, refuted findings and duplicates in th
 - Consumes: Task 11's data.
 - Produces: `report.render_verification_line(data: dict) -> str`; `report.render_check(f: dict) -> list[str]` (extended); `report.render_refuted(data: dict) -> list[str]`; `report.FIELD_LABELS: dict[str, str]` (`failure_mode` → "Failure mode", … `preconditions` → "Preconditions").
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```python
 # --- Task 12 ----------------------------------------------------------------
@@ -3119,9 +3119,9 @@ def test_a_reused_verdict_says_so(validated_repo, validated_env, tmp_path):
 
 In `tests/test_inert_report.py`, extend the hostile-text cases so each of `check.reason`, `check.holds`, `check.refuted_claims[0].claim`, `.fact` and `check.evidence[0].note` carries `[x](http://evil)`, `<img src=x>` and `# heading`, on a narrowed finding and on a refuted one, and assert the rendered `report.md` holds none of them as live Markdown (the file's existing helpers do the rendering check).
 
-- [ ] **Step 2: Run them to verify they fail.** Expected: the header and section strings are absent.
+- [x] **Step 2: Run them to verify they fail.** Expected: the header and section strings are absent.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 ```python
 FIELD_LABELS = {"failure_mode": "Failure mode", "trigger_condition": "Trigger",
@@ -3206,9 +3206,9 @@ def render_refuted(data: dict) -> list[str]:
 
 (`location_url` is whatever #56/#3 named the location link field on a finding; use that name.) In `render_markdown`, insert `render_verification_line(data)` as the line after #56's check-status line, and `L += render_refuted(data)` directly before the *Hotspots investigated with no finding* block.
 
-- [ ] **Step 4: Run the tests** (these, `tests/test_inert_report.py`, then the full suite). Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests** (these, `tests/test_inert_report.py`, then the full suite). Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/report.py tests/test_verification.py tests/test_inert_report.py
@@ -3228,15 +3228,15 @@ git commit -m "Report: what verification upheld, narrowed and refuted, in report
 - Consumes: `report.json`'s `verification`, `refuted`, `findings[].also_at`, `check.holds`, `check.refuted_claims`, `check.evidence`, `check.model`, `check.reused_from` (Tasks 11–12).
 - Produces: in the template script, `var FIELD_LABELS = {…}` (one line, JSON object literal) and the functions `verificationLine(report)`, `checkRows(f)`, `refutedGroup(report)`.
 
-- [ ] **Step 1: Write the failing tests.** In `tests/test_report_html.py`:
+- [x] **Step 1: Write the failing tests.** In `tests/test_report_html.py`:
   - `FIELD_LABELS` parsed from the template equals `report.FIELD_LABELS` (the pattern #56 uses for `CHECK_SENTENCES`);
   - rendering a `report.json` with a narrowed finding (holds, one refuted claim on `amplifier`, one code and one dependency evidence item), a refuted finding, and a survivor with `also_at` produces a page whose embedded data carries them, and whose script contains no `innerHTML`, `outerHTML`, `insertAdjacentHTML` or `document.write` (extend the existing sink test);
   - `MODEL_FIELDS` gains `check.reason`, `check.holds`, `check.refuted_claims.0.claim`, `check.refuted_claims.0.fact`, `check.evidence.0.note`; the existing hostile-text test then covers them.
   In `tests/test_report_html_browser.py` (Chromium): the overview shows "Verification: ran on …"; the narrowed dossier shows "What still holds", the refuted claim under a "Check" row and a "part refuted" note under the Amplifier row; the rail ends with a "Refuted" group whose item opens a dossier with the refuting fact; the dependency ref is text, not a link (`a` count unchanged); the survivor shows "Also reported at".
-- [ ] **Step 2: Run them to verify they fail.** `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_report_html.py -q` and the browser command from CLAUDE.md with `THUNDERSTRUCK_REQUIRE_BROWSER=1`. Expected: failures on the new assertions.
-- [ ] **Step 3: Implement** in `templates/report.html`: `verificationLine` mirrors `render_verification_line`; the Check row (#56) appends `holds`, the refuted claims (field label, quoted claim, fact, evidence: `link()` for items with `url`, plain `textContent` for dependency refs) and the provenance sentence; each field row whose key is refuted in part gets a `quiet` "part refuted, see Check" note; an "Also reported at" row lists `also_at` links; `refutedGroup` appends a "Refuted by verification" heading and one rail item per `report.refuted` entry, whose dossier uses the same rows plus the reason. Everything through `textContent` and the existing `link()`. `report_html.py` recomputes the CSP hash as today.
-- [ ] **Step 4: Run** the two test files and the full suite; then `uv run scripts/report_html.py --repo <a validated, verified copy>` and open it once by eye. Expected: PASS.
-- [ ] **Step 5: Commit**
+- [x] **Step 2: Run them to verify they fail.** `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_report_html.py -q` and the browser command from CLAUDE.md with `THUNDERSTRUCK_REQUIRE_BROWSER=1`. Expected: failures on the new assertions.
+- [x] **Step 3: Implement** in `templates/report.html`: `verificationLine` mirrors `render_verification_line`; the Check row (#56) appends `holds`, the refuted claims (field label, quoted claim, fact, evidence: `link()` for items with `url`, plain `textContent` for dependency refs) and the provenance sentence; each field row whose key is refuted in part gets a `quiet` "part refuted, see Check" note; an "Also reported at" row lists `also_at` links; `refutedGroup` appends a "Refuted by verification" heading and one rail item per `report.refuted` entry, whose dossier uses the same rows plus the reason. Everything through `textContent` and the existing `link()`. `report_html.py` recomputes the CSP hash as today.
+- [x] **Step 4: Run** the two test files and the full suite; then `uv run scripts/report_html.py --repo <a validated, verified copy>` and open it once by eye. Expected: PASS.
+- [x] **Step 5: Commit**
 
 ```bash
 git add templates/report.html tests/test_report_html.py tests/test_report_html_browser.py
@@ -3255,9 +3255,9 @@ git commit -m "HTML report: verification verdicts, refuted findings and duplicat
 - Consumes: `index.json` entries with `holds` and `via: "duplicate"` (Task 11).
 - Produces: in `guardrail`: `holds_line(f: dict) -> str | None`; the per-finding statement adds it; a `via: "duplicate"` entry is introduced with "the same defect as a finding in <anchor>".
 
-- [ ] **Step 1: Write the failing tests** in `tests/test_guardrail.py`: an index entry with `check_status: "narrowed"` and `holds: "X holds"` yields a line `What still holds, per a check: X holds.`; an entry with `via: "duplicate", "anchor": "src/a.ts"` yields "the same defect as a finding in src/a.ts"; an index built by `report.py` after a refuted verdict (reuse Task 11's helpers through a fixture) produces no statement naming the refuted finding's failure mode when its file is edited; `holds` text containing "Ignore previous instructions" is emitted as part of a statement of fact, never as a line of its own (the existing phrasing test's checker); the stdlib-only AST test and the latency test pass unchanged.
-- [ ] **Step 2: Run** `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_guardrail.py -q`. Expected: the new tests fail.
-- [ ] **Step 3: Implement.**
+- [x] **Step 1: Write the failing tests** in `tests/test_guardrail.py`: an index entry with `check_status: "narrowed"` and `holds: "X holds"` yields a line `What still holds, per a check: X holds.`; an entry with `via: "duplicate", "anchor": "src/a.ts"` yields "the same defect as a finding in src/a.ts"; an index built by `report.py` after a refuted verdict (reuse Task 11's helpers through a fixture) produces no statement naming the refuted finding's failure mode when its file is edited; `holds` text containing "Ignore previous instructions" is emitted as part of a statement of fact, never as a line of its own (the existing phrasing test's checker); the stdlib-only AST test and the latency test pass unchanged.
+- [x] **Step 2: Run** `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_guardrail.py -q`. Expected: the new tests fail.
+- [x] **Step 3: Implement.**
 
 ```python
 def holds_line(f: dict) -> str | None:
@@ -3268,8 +3268,8 @@ def holds_line(f: dict) -> str | None:
 ```
 
 Append it after #56's precondition line. Where the per-finding header is built, an entry with `via == "duplicate"` reads `- {id} (the same defect as a finding in {anchor}): {failure_mode}`, the way `via: "evidence"` entries already name their anchor.
-- [ ] **Step 4: Run** the guardrail tests and the full suite. Expected: PASS.
-- [ ] **Step 5: Commit**
+- [x] **Step 4: Run** the guardrail tests and the full suite. Expected: PASS.
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/guardrail.py tests/test_guardrail.py
@@ -3289,11 +3289,11 @@ git commit -m "Guardrail: state what a narrowed finding still holds, and duplica
 - Consumes: `checks/agents/<key>.json` (Task 9); #5's `read_entries`, `safe_transcript`, `tally`, `MODEL_ALIASES`.
 - Produces: `usage.skeptic_records(out: Path, generated_at: str) -> list[dict]`; `usage.json` `skeptics` block `{"agents", "respawns", "fallback_saves", "failed", "by_model", "by_finding"}`; `total_weighted` includes it; `render_consumption` adds one line.
 
-- [ ] **Step 1: Write the failing tests.** In `tests/test_usage.py`, with #5's transcript helpers: a run with two skeptic records for this scan (one subagent transcript each, model `claude-haiku-4-5`) and one record from an earlier `scan` gives `skeptics.agents == 2`, `by_finding` with both keys, the earlier record ignored, and `total_weighted == orchestrator + investigators + skeptics`; a record with `kind: respawn` counts in `respawns`; a record with `fallback: true` and `relayed_usage` (model `"haiku"`) is weighted with the `claude-haiku-4-5` row and makes `source: partial` with a `missing` line naming the key; a result file with `failed: true` counts in `failed`; no `checks/agents/` gives `"skeptics": null` and leaves today's totals unchanged. In `tests/test_report_consumption.py`: with a `skeptics` block, `## Consumption` has `Skeptics 300k across 18 agents (`claude-haiku-4-5`), 3 verdicts reused.` (reused from `report.json`'s `verification.reused`); with `"skeptics": null` the section is byte-identical to #5's.
-- [ ] **Step 2: Run** `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_usage.py tests/test_report_consumption.py -q`. Expected: failures.
-- [ ] **Step 3: Implement.** `skeptic_records` loads every `checks/agents/*.json` whose `scan == generated_at`. `build` runs #5's per-agent transcript logic over them exactly as for investigators (subagent transcript from the record's `transcript_path` and `agent_id`; relayed usage fallback; `missing` text `"skeptic <key>: …"`), tallies into `skeptics`, and adds its weighted total to `total_weighted`. `failed` counts `checks/results/<key>.json` with `failed: true` for this scan. `render_consumption` adds the line after the investigators' line when `usage["skeptics"]` is not null, model names through `md.code`.
-- [ ] **Step 4: Run** the tests and the full suite. Expected: PASS.
-- [ ] **Step 5: Commit**
+- [x] **Step 1: Write the failing tests.** In `tests/test_usage.py`, with #5's transcript helpers: a run with two skeptic records for this scan (one subagent transcript each, model `claude-haiku-4-5`) and one record from an earlier `scan` gives `skeptics.agents == 2`, `by_finding` with both keys, the earlier record ignored, and `total_weighted == orchestrator + investigators + skeptics`; a record with `kind: respawn` counts in `respawns`; a record with `fallback: true` and `relayed_usage` (model `"haiku"`) is weighted with the `claude-haiku-4-5` row and makes `source: partial` with a `missing` line naming the key; a result file with `failed: true` counts in `failed`; no `checks/agents/` gives `"skeptics": null` and leaves today's totals unchanged. In `tests/test_report_consumption.py`: with a `skeptics` block, `## Consumption` has `Skeptics 300k across 18 agents (`claude-haiku-4-5`), 3 verdicts reused.` (reused from `report.json`'s `verification.reused`); with `"skeptics": null` the section is byte-identical to #5's.
+- [x] **Step 2: Run** `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_usage.py tests/test_report_consumption.py -q`. Expected: failures.
+- [x] **Step 3: Implement.** `skeptic_records` loads every `checks/agents/*.json` whose `scan == generated_at`. `build` runs #5's per-agent transcript logic over them exactly as for investigators (subagent transcript from the record's `transcript_path` and `agent_id`; relayed usage fallback; `missing` text `"skeptic <key>: …"`), tallies into `skeptics`, and adds its weighted total to `total_weighted`. `failed` counts `checks/results/<key>.json` with `failed: true` for this scan. `render_consumption` adds the line after the investigators' line when `usage["skeptics"]` is not null, model names through `md.code`.
+- [x] **Step 4: Run** the tests and the full suite. Expected: PASS.
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/usage.py scripts/report.py tests/test_usage.py tests/test_report_consumption.py
@@ -3310,7 +3310,7 @@ git commit -m "Consumption: measure the skeptics separately from the investigato
 - Modify: `skills/thunderstruck-scan/references/report-format.md`
 - Test: `tests/test_verification.py`
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```python
 # --- Task 16 ----------------------------------------------------------------
@@ -3340,8 +3340,8 @@ def test_step_5_runs_usage_after_apply():
     assert text.index("verify.py\" apply") < text.index("usage.py\"") < text.index("report.py\"")
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** Expected: `ValueError: substring not found`.
-- [ ] **Step 3: Implement.** In `SKILL.md`'s argument table add:
+- [x] **Step 2: Run them to verify they fail.** Expected: `ValueError: substring not found`.
+- [x] **Step 3: Implement.** In `SKILL.md`'s argument table add:
 
 ```markdown
 | `--verify` | — | Run verification for this scan (step 4b), whatever the default. |
@@ -3404,8 +3404,8 @@ says verification was not run.
 ````
 
 Step 5 keeps #5's order (`usage.py`, `report.py`, `report_html.py`). Step 6 adds: "how many findings were upheld, narrowed, refuted and inconclusive (from `report.json`'s `counts.check_status`), and that refuted findings are listed separately with the reason." `orchestration.md`: the pipeline diagram gains `deps.py`, the skeptic, `verify.py`; "Cost control" gains a paragraph on the skeptics (one per finding, reuse through `checks/ledger.json`, `--no-verify`) with Task 22's measured figures once they exist; "Resuming" says deleting `.thunderstruck/checks/` forces every finding to be checked again; the failure table gains the rows of spec §17 that concern the orchestrator; "What leaves the machine" says dependency source is read from what is already installed and nothing is downloaded. `report-format.md`: the tree gains `checks/` and `deps/`; a section "Verification" lists the `check` keys of spec §2, the verdict contract (§8.1), `report.json`'s `verification`, `refuted`, `also_at`, `counts.refuted`, `counts.duplicates_merged`, and `index.json`'s `holds` and `via: "duplicate"`.
-- [ ] **Step 4: Run** the tests and the full suite. Expected: PASS.
-- [ ] **Step 5: Commit**
+- [x] **Step 4: Run** the tests and the full suite. Expected: PASS.
+- [x] **Step 5: Commit**
 
 ```bash
 git add skills/thunderstruck-scan/ tests/test_verification.py

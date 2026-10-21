@@ -245,3 +245,61 @@ def test_an_unrendered_template_shows_no_report_data(browser, tmp_path):
         assert p.requests == [p.url]
     finally:
         p.close()
+
+
+# --- #37 Task 13 ------------------------------------------------------------
+def _with_verification(report: dict) -> dict:
+    """A narrowed finding with a duplicate, and one refuted finding, as report.py writes them."""
+    f = report["findings"][0]
+    code_ref = next(ev["ref"] for ev in f["evidence"] if ev["type"] == "code")
+    f["check"] = {"status": "narrowed", "by": "skeptic", "reason": "only part holds",
+                  "holds": "the retry part holds", "model": "claude-haiku-4-5",
+                  "dependency_versions": {"pypi:x": "1"}, "reused_from": None, "duplicate_of": None,
+                  "refuted_claims": [{"field": "amplifier", "claim": "loops forever",
+                                      "fact": "it stops after three", "evidence": [0, 1]}],
+                  "evidence": [{"type": "code", "ref": code_ref, "note": "n", "url": None},
+                               {"type": "dependency", "ref": "pypi:x@1:x/y.py:1", "note": "n",
+                                "url": None}]}
+    f["also_at"] = [{"key": "bbbbbbbbbbbb", "hotspot_id": "H02",
+                     "location": {"file": "src/other.ts", "lines": "2"}, "url": None}]
+    refuted = copy.deepcopy(f)
+    refuted.pop("id")
+    refuted.update(key="cccccccccccc", failure_mode="the refuted failure", also_at=[])
+    refuted["check"] = {"status": "refuted", "by": "skeptic", "reason": "the timeout is set elsewhere",
+                        "holds": None, "model": "claude-haiku-4-5", "reused_from": None,
+                        "duplicate_of": None,
+                        "refuted_claims": [{"field": "failure_mode", "claim": "has no timeout",
+                                            "fact": "withDefaults sets one", "evidence": [0]}],
+                        "evidence": [{"type": "code", "ref": code_ref, "note": "n", "url": None}]}
+    report["refuted"] = [refuted]
+    report["verification"] = {"ran": True, "model": "claude-haiku-4-5", "checked": 2, "reused": 0,
+                              "dependencies": [], "warnings": []}
+    return report
+
+
+def test_verification_in_the_overview_and_the_dossier(page, scanned_copy, plugin_root):
+    report = _with_verification(_report(scanned_copy, plugin_root))
+    p = page(report)
+    overview = p.page.text_content("#doc")
+    assert "Verification: ran on 2 findings, 2 checked by claude-haiku-4-5 and 0 reused" in overview
+    p.page.keyboard.press("j")
+    body = p.page.text_content("#doc")
+    assert "What still holds: the retry part holds" in body
+    assert "Amplifier: “loops forever”. it stops after three" in body
+    assert any("part refuted, see Check" in t for t in p.text(".row .part"))
+    assert "pypi:x@1:x/y.py:1" in body
+    assert not any("pypi:x@1" in (a or "") for a in p.text("#doc a"))
+    assert "Also reported at" in body and "src/other.ts:2" in body
+    assert p.errors == [] and p.requests == [p.url]
+
+
+def test_refuted_findings_are_a_group_at_the_end_of_the_rail(page, scanned_copy, plugin_root):
+    report = _with_verification(_report(scanned_copy, plugin_root))
+    p = page(report)
+    groups = p.text("#list .group")
+    assert groups[-1].startswith("Refuted by verification")
+    p.page.get_by_text("the refuted failure").click()
+    assert p.text("h1") == ["the refuted failure"]
+    body = p.page.text_content("#doc")
+    assert "withDefaults sets one" in body and "the timeout is set elsewhere" in body
+    assert p.errors == [] and p.requests == [p.url]

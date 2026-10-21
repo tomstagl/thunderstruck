@@ -87,6 +87,10 @@ h1{margin:0;font-family:var(--serif);font-size:26px;line-height:1.35;font-weight
 .ev-item .what{display:flex;flex-direction:column;min-width:0;overflow-wrap:anywhere}
 .ev-item .what .mono a{text-decoration:none}
 .ev-item .note{font-size:12px;color:var(--stone-1)}
+.row .part{display:block;font-size:12px;color:var(--stone-1);margin-top:4px}
+.ck p{margin:0 0 8px}
+.ck p:last-child{margin-bottom:0}
+.verif{font-size:14px;color:var(--ink-3)}
 .verify{display:flex;flex-direction:column;gap:10px;padding:18px 20px;background:var(--paper-0);border:1px solid var(--line-2);border-radius:3px}
 .verify p{margin:0;font-size:14px;line-height:1.6;text-wrap:pretty;overflow-wrap:anywhere}
 .cmd{display:flex;gap:10px;align-items:center}
@@ -150,6 +154,7 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
   var KIND = { code: "Code", commit: "Commit", detector: "Detector", catalog: "Catalog" };
   var CHECK_SENTENCES = {"unchecked": "No one has tried to refute this claim", "upheld": "A check tried to refute this claim and it held", "narrowed": "A check found that only part of this claim holds", "inconclusive": "A check could not settle this claim", "refuted": "A check refuted this claim"};
   var GATE_MARKERS = {"non_default_setting": "needs a non-default setting"};
+  var FIELD_LABELS = {"failure_mode": "Failure mode", "trigger_condition": "Trigger", "amplifier": "Amplifier", "sustaining_effect": "Sustaining effect", "blast_radius": "Blast radius", "how_to_verify": "Verify", "prediction": "Prediction", "preconditions": "Preconditions"};
 
   function h(tag, attrs, kids) {
     var el = document.createElement(tag);
@@ -191,6 +196,11 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
 
   function start(R) {
     var findings = (R.findings || []).slice();
+    var refuted = (R.refuted || []).map(function (f, i) {
+      var g = {}; for (var k in f) g[k] = f[k];
+      g.id = "refuted-" + (i + 1); g.refuted = true;   // refuted findings carry no FR- id (#37 §11.2)
+      return g;
+    });
     var hotspots = {};
     (R.hotspots || []).forEach(function (hs) { hotspots[hs.id] = hs; });
     var coverage = R.pattern_coverage || {};
@@ -211,8 +221,10 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
     function visible() {
       return findings.filter(function (f) { return state.filter === "all" || f.confidence === state.filter; });
     }
-    function byId(id) { return findings.filter(function (f) { return f.id === id; })[0]; }
-    function stepIds() { return [OVERVIEW].concat(visible().map(function (f) { return f.id; })); }
+    function byId(id) { return findings.concat(refuted).filter(function (f) { return f.id === id; })[0]; }
+    function stepIds() {
+      return [OVERVIEW].concat(visible().map(function (f) { return f.id; }), refuted.map(function (f) { return f.id; }));
+    }
 
     var fromHash = decodeURIComponent(location.hash.slice(1));
     state.sel = byId(fromHash) ? fromHash : OVERVIEW;
@@ -324,6 +336,24 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
           if (on && focus) { btn.focus({ preventScroll: true }); el.scrollTop = Math.max(0, btn.offsetTop - el.clientHeight / 2); }
         });
       });
+      refutedGroup(el, focus);
+    }
+    function refutedGroup(el, focus) {
+      if (!refuted.length) return;
+      el.appendChild(h("div", { class: "group" }, [h("span", { text: "Refuted by verification" })]));
+      refuted.forEach(function (f) {
+        var on = f.id === state.sel;
+        var btn = h("button", { type: "button", class: "item", "aria-current": String(on),
+          onclick: function () { select(f.id); } }, [
+          h("div", { class: "item-top" }, [
+            h("span", { class: "mono", text: "refuted" }),
+            h("span", { class: "pat", text: (f.location || {}).file || "" })
+          ]),
+          h("span", { class: "item-text", text: f.failure_mode || "" })
+        ]);
+        el.appendChild(btn);
+        if (on && focus) { btn.focus({ preventScroll: true }); el.scrollTop = Math.max(0, btn.offsetTop - el.clientHeight / 2); }
+      });
     }
 
     /* ---------- dossier ---------- */
@@ -362,6 +392,62 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
       s += ".";
       if (ck.reason) s += " " + ck.reason;
       return s;
+    }
+    function checkEvidence(ck, idx) {
+      var evs = ck.evidence || [], out = [];
+      (Array.isArray(idx) ? idx : []).forEach(function (i) {
+        var ev = evs[i]; if (!ev) return;
+        if (out.length) out.push("; ");
+        out.push(link(String(ev.ref || ""), ev.type === "dependency" ? null : ev.url, "mono"));
+      });
+      return out;
+    }
+    function checkRows(f) {
+      var ck = f.check || {}, kids = [h("p", { text: checkText(f) })];
+      if ((ck.status === "narrowed" || ck.status === "upheld") && ck.holds)
+        kids.push(h("p", { text: "What still holds: " + ck.holds }));
+      var claims = ck.refuted_claims || [];
+      if (claims.length) {
+        kids.push(h("p", { text: ck.status === "narrowed" ? "Refuted in part:" : "Refuted:" }));
+        kids.push(h("div", { class: "ev" }, claims.map(function (rc) {
+          var line = [(FIELD_LABELS[rc.field] || String(rc.field || "")) + ": “" + (rc.claim || "") + "”. " + (rc.fact || "")];
+          var refs = checkEvidence(ck, rc.evidence);
+          if (refs.length) line = line.concat([" Evidence: "], refs);
+          var st = rc.setting;
+          if (st && typeof st === "object") line = line.concat([". Needs " + st.setting + " set to " + st.value +
+            "; default " + st["default"] + ", registered at ", link(String(st.default_ref || ""), st.default_url, "mono"), "."]);
+          return h("div", null, line);
+        })));
+      }
+      if (ck.reused_from && typeof ck.reused_from === "object") {
+        kids.push(h("p", { class: "small", text: (ck.status === "refuted" ? "Refuted" : "Verdict from") +
+          " in an earlier scan of " + String(ck.reused_from.scan || "").slice(0, 10) + " at " +
+          String(ck.reused_from.head || "").slice(0, 7) + "; the claim and its cited files are unchanged." }));
+      } else if (ck.by === "skeptic" && ck.model) {
+        var read = Object.keys(ck.dependency_versions || {}).map(function (k) { return k + " " + ck.dependency_versions[k]; });
+        kids.push(h("p", { class: "small", text: "Checked by " + ck.model +
+          (read.length ? " · dependency source read: " + read.join(", ") : "") }));
+      }
+      var rows = [row("Check", h("div", { class: "body ck" }, kids))];
+      if ((f.also_at || []).length) {
+        rows.push(row("Also reported at", h("div", { class: "ev" }, f.also_at.map(function (at) {
+          var l = at.location || {};
+          return h("div", null, [link((l.file || "?") + (l.lines ? ":" + l.lines : ""), at.url, "mono"),
+            " (from hotspot " + (at.hotspot_id || "—") + "): the same defect."]);
+        }))));
+      }
+      return rows;
+    }
+    function partRefuted(f) {
+      var out = {};
+      ((f.check || {}).refuted_claims || []).forEach(function (rc) { out[rc.field] = true; });
+      return out;
+    }
+    function fieldRow(label, text, part, opts) {
+      if (!part) return row(label, text, opts);
+      opts = opts || {};
+      return row(label, h("div", { class: "body" + (opts.cls ? " " + opts.cls : "") }, [
+        text, h("span", { class: "part", text: "part refuted, see Check" })]), opts);
     }
     function preconditionList(f) {
       var ps = f.preconditions || [];
@@ -402,7 +488,7 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
       var locText = (loc.file || "?") + (loc.lines ? ":" + loc.lines : "");
 
       el.appendChild(h("div", { class: "meta" }, [
-        h("span", { class: "mono", style: "font-size:13px;font-weight:600", text: f.id }),
+        h("span", { class: "mono", style: "font-size:13px;font-weight:600", text: f.refuted ? "Refuted by verification" : f.id }),
         h("span", { class: "muted", style: "font-size:13px", text:
           "hotspot " + (f.hotspot_id || "—") + (f.hotspot_score != null ? " · score " + f.hotspot_score : "") }),
         h("span", { class: "spacer" })
@@ -422,19 +508,21 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
           (f.shares_code_with.length === 1 ? "both." : "all of them.") }));
       }
 
+      var part = partRefuted(f);
       var rows = h("div", { class: "rows" });
-      rows.appendChild(row("Trigger", f.trigger_condition || "—"));
-      rows.appendChild(row("Amplifier", f.amplifier || "Not stated.", { cls: f.amplifier ? "" : "quiet" }));
-      rows.appendChild(row("Keeps it failing", f.sustaining_effect || "Not stated.",
+      rows.appendChild(fieldRow("Trigger", f.trigger_condition || "—", part.trigger_condition));
+      rows.appendChild(fieldRow("Amplifier", f.amplifier || "Not stated.", part.amplifier,
+        { cls: f.amplifier ? "" : "quiet" }));
+      rows.appendChild(fieldRow("Keeps it failing", f.sustaining_effect || "Not stated.", part.sustaining_effect,
         { amber: true, cls: f.sustaining_effect ? "" : "quiet" }));
-      rows.appendChild(row("Blast radius", f.blast_radius || "—"));
+      rows.appendChild(fieldRow("Blast radius", f.blast_radius || "—", part.blast_radius));
       if ((f.catalog_evidence || []).length) {
         rows.appendChild(row("Dependents", f.catalog_evidence.map(function (d) {
           return d.neighbour + " (" + d.direction + ")";
         }).join(", ")));
       }
       if ((f.evidence || []).length) rows.appendChild(row("Evidence", evidenceList(f.evidence)));
-      rows.appendChild(row("Check", checkText(f)));
+      checkRows(f).forEach(function (r) { rows.appendChild(r); });
       rows.appendChild(row("Preconditions", preconditionList(f)));
       rows.appendChild(row("History", historyList(f)));
       rows.appendChild(row("Why " + conf, f.confidence_rationale || "—", { cls: "small" }));
@@ -462,6 +550,19 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
       if (inc === n) return "No hotspot could be analysed. This report says nothing about the code.";
       if (inc) return "No findings, but " + inc + " of " + n + " hotspots could not be analysed. See Incomplete.";
       return "No findings: all " + n + " investigated hotspots came back clean.";
+    }
+    function verificationLine(R) {
+      var v = R.verification || {};
+      if (!v.ran) return "Verification: not run for this scan; every finding is unchecked.";
+      var counts = {};
+      findings.concat(refuted).forEach(function (f) {
+        var st = (f.check || {}).status || "unchecked"; counts[st] = (counts[st] || 0) + 1;
+      });
+      return "Verification: ran on " + (findings.length + refuted.length) + " findings, " + (v.checked || 0) +
+        " checked by " + v.model + " and " + (v.reused || 0) + " reused — " +
+        ["upheld", "narrowed", "refuted", "inconclusive", "unchecked"].map(function (s) {
+          return (counts[s] || 0) + " " + s + (s === "refuted" ? " (listed separately)" : "");
+        }).join(" · ");
     }
     function section(title, kids) {
       return h("section", { class: "sec" }, [h("h2", { text: title })].concat(kids));
@@ -503,6 +604,7 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
           (R.files_affected != null ? " across " + R.files_affected + " file(s)" : "") +
           (breakdown ? " — " + breakdown : "") })
       ]));
+      if (R.verification) el.appendChild(h("span", { class: "verif", text: verificationLine(R) }));
       var status = statusLine();
       if (status) el.appendChild(h("div", { class: "status", text: status }));
       el.appendChild(h("div", { class: "hypo", text: "Findings are falsifiable hypotheses. Every citation in them " +

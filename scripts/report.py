@@ -30,6 +30,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _common as c  # noqa: E402
+import deps  # noqa: E402
 import links  # noqa: E402
 import mdtext as md  # noqa: E402
 from validate import CODE_REF, DETECTOR_REF, _count_lines  # noqa: E402
@@ -50,11 +51,63 @@ LEADS_FOOTNOTE = ("No lead means no line matched a detector's rule. It does not 
                   "pattern is present: a detector sees only the shapes its rule describes.")
 
 
+def verification_run(out: Path, hotspots: dict) -> dict | None:
+    """checks/run.json when it belongs to this scan: then verification ran (#37 §11.1)."""
+    run = c.load_json(out / c.CHECKS_DIRNAME / "run.json", None)
+    return run if isinstance(run, dict) and run.get("generated_at") == hotspots.get("generated_at") else None
+
+
+def duplicate_groups(findings: list[dict]) -> dict[str, list[dict]]:
+    """Survivor key -> the findings it absorbs. Edges are accepted duplicate_of
+    links between reported findings; a group's survivor is first by order_key."""
+    by_key = {f["key"]: f for f in findings if f.get("key")}
+    parent = {k: k for k in by_key}
+
+    def find(k: str) -> str:
+        while parent[k] != k:
+            parent[k] = parent[parent[k]]
+            k = parent[k]
+        return k
+
+    for f in findings:
+        target = (f.get("check") or {}).get("duplicate_of")
+        if f.get("key") in by_key and target in by_key:
+            parent[find(f["key"])] = find(target)
+    members: dict[str, list[dict]] = {}
+    for k, f in by_key.items():
+        members.setdefault(find(k), []).append(f)
+    groups: dict[str, list[dict]] = {}
+    for group in members.values():
+        if len(group) > 1:
+            group.sort(key=order_key)
+            groups[group[0]["key"]] = group[1:]
+    return groups
+
+
+def verification_block(run: dict | None, index: dict | None) -> tuple[dict, list[str]]:
+    packages = [{k: p.get(k) for k in ("id", "version", "basis", "status", "reason")}
+                for p in (index or {}).get("packages", [])] if run else []
+    warnings: list[str] = []
+    if run:
+        warnings += list((index or {}).get("warnings") or []) + list(run.get("warnings") or [])
+        for p in packages:
+            if p["status"] != "available":
+                declared = next((q.get("declared") for q in index["packages"] if q["id"] == p["id"]), "")
+                warnings.append(f"Dependency source not available for {p['id']}"
+                                + (f" (declared {declared})" if declared else "")
+                                + f": {p['reason']}. Verification continued without it.")
+    block = {"ran": run is not None, "model": (run or {}).get("model"),
+             "checked": (run or {}).get("checked", 0), "reused": (run or {}).get("reused", 0),
+             "dependencies": packages, "warnings": warnings}
+    return block, warnings
+
+
 def collect(repo: Path) -> dict[str, Any]:
     out = c.out_dir(repo)
     hotspots = c.load_json(out / "hotspots.json")
     if not hotspots:
         raise c.ThunderstruckError("no hotspots.json — run signals.py first.")
+    run = verification_run(out, hotspots)
     validation = c.load_json(out / "validation.json", {}) or {}
     by_hotspot = {r["hotspot_id"]: r for r in validation.get("results", [])}
 
@@ -98,6 +151,10 @@ def collect(repo: Path) -> dict[str, Any]:
             f = copy.deepcopy(f)  # urls are added below; the finding files stay untouched
             f["hotspot_id"] = hid
             f["hotspot_score"] = scores.get(hid)
+            if run is None:
+                # verification did not run for this scan: an earlier scan's
+                # verdicts never reach this report (#37 §11.1, AC-1)
+                f["check"] = {"status": "unchecked", "by": None, "reason": None}
             status = c.check_status(f)
             stored = f.get("check") if isinstance(f.get("check"), dict) else {}
             f["_check_fallback"] = stored.get("status") != status
@@ -107,11 +164,26 @@ def collect(repo: Path) -> dict[str, Any]:
             f["gate"] = c.finding_gate(f)
             findings.append(f)
 
+    refuted = [f for f in findings if f["check"]["status"] == "refuted"]
+    findings = [f for f in findings if f["check"]["status"] != "refuted"]
+    groups = duplicate_groups(findings)
+    absorbed = {g["key"] for members in groups.values() for g in members}
+    for f in findings:
+        f["also_at"] = [{"key": g["key"], "hotspot_id": g["hotspot_id"],
+                         "location": g.get("location") or {}, "url": None,
+                         "content_hash": c.sha256_file(repo / c.ref_path(g["location"]["file"]))
+                         if (g.get("location") or {}).get("file")
+                         and not c.path_problem(c.ref_path(g["location"]["file"])) else None}
+                        for g in groups.get(f.get("key"), [])]
+    findings = [f for f in findings if f.get("key") not in absorbed]
+    refuted.sort(key=order_key)
     findings.sort(key=order_key)
     for n, f in enumerate(findings, 1):
         f["id"] = f"FR-{n:03d}"
     check_warnings = [f"{f['id']}: check status missing or unrecognised in its findings file; "
                       f"reported as unchecked" for f in findings if f.pop("_check_fallback")]
+    for f in refuted:
+        f.pop("_check_fallback")
     _attach_commit_subjects(repo, findings)
     shared = shared_code(findings)
     for f in findings:
@@ -121,11 +193,14 @@ def collect(repo: Path) -> dict[str, Any]:
         context_doc = {}
     raw_warnings = context_doc.get("warnings")
     link_meta, link_warnings, hotspot_links = link_refs(
-        repo, hotspots["repo"]["head"], findings, hotspots["hotspots"] + dormant,
+        repo, hotspots["repo"]["head"], findings + refuted, hotspots["hotspots"] + dormant,
         clean + failed)
     failed_ids = {e["hotspot_id"] for e in failed}
     usage, usage_warnings = _usage(out, hotspots["generated_at"])
-    return {"hotspots": hotspots, "findings": findings,
+    block, dependency_warnings = verification_block(run, deps.load_index(repo))
+    return {"refuted": refuted, "verification": block,
+            "dependency_warnings": dependency_warnings, "duplicates_merged": len(absorbed),
+            "hotspots": hotspots, "findings": findings,
             "failed": failed, "clean": clean, "validation": validation,
             # what an investigator actually read: briefed, and not incomplete
             "read": [h for h in investigated if h["id"] not in failed_ids],
@@ -268,6 +343,22 @@ def link_refs(repo: Path, head: str, findings: list[dict], hotspots: list[dict] 
                 for key in ("default_ref", "doc_ref"):
                     if (m := CODE_REF.match(str(p.get(key) or "").strip())):
                         paths.add(m["path"])
+            check = f.get("check") if isinstance(f.get("check"), dict) else {}
+            for ev in _check_evidence(check):
+                ref, etype = str(ev.get("ref") or "").strip(), ev.get("type")
+                if deps.DEP_REF.match(ref):
+                    continue  # a dependency ref is never linked (#37 Decision 7)
+                if etype == "code" and (m := CODE_REF.match(ref)):
+                    paths.add(m["path"])
+                elif etype == "commit" and ref:
+                    commits.add(ref.split()[0])
+            for s in _check_settings(check):
+                if (m := CODE_REF.match(str(s.get("default_ref") or "").strip())) \
+                        and not deps.DEP_REF.match(str(s.get("default_ref")).strip()):
+                    paths.add(m["path"])
+            for at in f.get("also_at") or []:
+                if (at.get("location") or {}).get("file"):
+                    paths.add(str(at["location"]["file"]))
         result = links.link_context(repo, profile, head, paths, commits)
         _set_urls(findings, result, repo)
         hotspot_links = _set_file_urls(hotspots, listed, result.ctx)
@@ -309,6 +400,15 @@ def _preconditions(f: dict) -> list[dict]:
     return [p for p in (f.get("preconditions") or []) if isinstance(p, dict)]
 
 
+def _check_evidence(check: dict) -> list[dict]:
+    return [ev for ev in (check.get("evidence") or []) if isinstance(ev, dict)]
+
+
+def _check_settings(check: dict) -> list[dict]:
+    return [rc["setting"] for rc in (check.get("refuted_claims") or [])
+            if isinstance(rc, dict) and isinstance(rc.get("setting"), dict)]
+
+
 def _history(f: dict) -> list[dict]:
     return [h for h in (f.get("history") or []) if isinstance(h, dict)]
 
@@ -335,9 +435,19 @@ def _set_urls(findings: list[dict], result: "links.LinkResult | None", repo: Pat
         for h in _history(f):
             full = result.commits.get(str(h.get("sha"))) if (ctx and result) else None
             h["url"] = ctx.commit(full) if full else None
+        check = f.get("check") if isinstance(f.get("check"), dict) else {}
+        for ev in _check_evidence(check):
+            ev["url"] = (_evidence_url(ctx, result, ev)
+                         if ctx and ev.get("type") in ("code", "commit") else None)
+        for s in _check_settings(check):
+            s["default_url"] = _ref_url(ctx, s.get("default_ref"))
+        for at in f.get("also_at") or []:
+            at["url"] = _location_url(ctx, at["location"], repo) if ctx else None
 
 
 def _ref_url(ctx: "links.LinkContext | None", ref) -> str | None:
+    if deps.DEP_REF.match(str(ref or "").strip()):
+        return None  # a dependency ref is never linked (#37 Decision 7)
     m = CODE_REF.match(str(ref or "").strip())
     if not ctx or not m:
         return None
@@ -357,6 +467,8 @@ def _location_url(ctx: "links.LinkContext", loc: dict, repo: Path) -> str | None
 
 def _evidence_url(ctx: "links.LinkContext", result: "links.LinkResult", ev: dict) -> str | None:
     ref, etype = str(ev.get("ref") or "").strip(), ev.get("type")
+    if deps.DEP_REF.match(ref):
+        return None  # a dependency ref is never linked (#37 Decision 7)
     if etype == "code" and (m := CODE_REF.match(ref)):
         start, end = int(m["start"]), int(m["end"] or m["start"])
         # validate.py rejects a reversed range; this guards a tampered file
@@ -458,9 +570,126 @@ def render_check(f: dict) -> list[str]:
         line += (f", so it is reported at {md.text(f.get('confidence') or '?')} confidence "
                  f"(claimed {claimed})")
     line += "."
-    if f["check"].get("reason"):
-        line += f" {md.text(f['check']['reason'])}"
-    return [line, ""]
+    check = f["check"]
+    if check.get("reason"):
+        line += f" {md.text(check['reason'])}"
+    L = [line, ""]
+    if status in ("narrowed", "upheld") and check.get("holds"):
+        L += [f"What still holds: {md.text(check['holds'])}", ""]
+    if (claims := _claim_lines(check)):
+        L += ["Refuted in part:" if status == "narrowed" else "Refuted:", "", *claims, ""]
+    if (provenance := _provenance(check)):
+        L += [*provenance, ""]
+    return L
+
+
+FIELD_LABELS = {"failure_mode": "Failure mode", "trigger_condition": "Trigger",
+                "amplifier": "Amplifier", "sustaining_effect": "Sustaining effect",
+                "blast_radius": "Blast radius", "how_to_verify": "Verify",
+                "prediction": "Prediction", "preconditions": "Preconditions"}
+PART_REFUTED = " *(part refuted, see Check)*"
+
+
+def render_verification_line(data: dict) -> str:
+    """Whether verification ran for this scan, and what it settled (#37 §11.2)."""
+    v = data["verification"]
+    if not v["ran"]:
+        line = "Verification: not run for this scan; every finding is unchecked."
+        if not c.VERIFY_BY_DEFAULT:
+            line += (" It is off by default; `--verify` runs it"
+                     + (f", measured at {md.text(c.VERIFY_MEASURED_COST)}." if c.VERIFY_MEASURED_COST
+                        else "."))
+        return line
+    counts: dict[str, int] = {}
+    for f in data["findings"] + data["refuted"]:
+        counts[f["check"]["status"]] = counts.get(f["check"]["status"], 0) + 1
+    parts = [f"{counts.get(s, 0)} {s}" + (" (listed separately)" if s == "refuted" else "")
+             for s in ("upheld", "narrowed", "refuted", "inconclusive", "unchecked")]
+    total = len(data["findings"]) + len(data["refuted"])
+    return (f"Verification: ran on {total} findings, {v['checked']} checked by {md.code(v['model'])}"
+            f" and {v['reused']} reused — " + " · ".join(parts))
+
+
+def _refuted_claims(check: dict) -> list[dict]:
+    return [rc for rc in (check.get("refuted_claims") or []) if isinstance(rc, dict)]
+
+
+def _part_refuted_fields(f: dict) -> set[str]:
+    return {str(rc.get("field")) for rc in _refuted_claims(f.get("check") or {})}
+
+
+def _evidence_refs(check: dict, idx: list) -> str:
+    items = _check_evidence(check)
+    out = []
+    for i in idx if isinstance(idx, list) else []:
+        if isinstance(i, int) and 0 <= i < len(items):
+            ev = items[i]
+            out.append(_linked(str(ev.get("ref")), ev.get("url")))
+    return "; ".join(out)
+
+
+def _claim_lines(check: dict) -> list[str]:
+    L = []
+    for rc in _refuted_claims(check):
+        label = FIELD_LABELS.get(str(rc.get("field")), str(rc.get("field")))
+        line = f"- *{md.text(label)}*: “{md.text(rc.get('claim') or '')}”. {md.text(rc.get('fact') or '')}"
+        if (refs := _evidence_refs(check, rc.get("evidence"))):
+            line += f" Evidence: {refs}"
+        s = rc.get("setting")
+        if isinstance(s, dict):
+            where = _linked(str(s.get("default_ref")), s.get("default_url"))
+            line += (f". Needs {md.code(s.get('setting'))} set to {md.code(s.get('value'))}; default "
+                     f"{md.code(s.get('default'))}, registered at {where}.")
+        L.append(line)
+    return L
+
+
+def _provenance(check: dict) -> list[str]:
+    if isinstance(check.get("reused_from"), dict):
+        r = check["reused_from"]
+        verb = "Refuted" if check["status"] == "refuted" else "Verdict from"
+        return [f"{verb} in an earlier scan of {md.text(str(r.get('scan'))[:10])} at "
+                f"{md.code(str(r.get('head'))[:7])}; the claim and its cited files are unchanged."]
+    if check.get("by") == "skeptic" and check.get("model"):
+        read = ", ".join(md.code(f"{k} {v}") for k, v in (check.get("dependency_versions") or {}).items())
+        return [f"Checked by {md.code(check['model'])}" + (f" · dependency source read: {read}" if read else "")]
+    return []
+
+
+def _also_at_lines(f: dict) -> list[str]:
+    L = []
+    for at in f.get("also_at") or []:
+        loc = at.get("location") or {}
+        where = f"{loc.get('file', '?')}" + (f":{loc['lines']}" if loc.get("lines") else "")
+        L.append(f"Also reported at {_linked(where, at.get('url'))} (from hotspot "
+                 f"{md.text(at.get('hotspot_id'))}): the same defect.")
+    return L + [""] if L else []
+
+
+def render_refuted(data: dict) -> list[str]:
+    """Findings a check refuted, apart from the findings (#37 §11.2, AC-4)."""
+    if not data["refuted"]:
+        return []
+    L = ["## Refuted by verification", "",
+         "Findings a check refuted. They are not in the findings above and the edit guardrail "
+         "does not warn about them.", ""]
+    for f in data["refuted"]:
+        loc = f.get("location") or {}
+        where = f"{loc.get('file', '?')}" + (f":{loc['lines']}" if loc.get("lines") else "")
+        head = [_linked(where, loc.get("url"))]
+        if loc.get("symbol"):
+            head.append(md.code(loc["symbol"]))
+        head += [f"hotspot {f['hotspot_id']}", f"key {md.code(f.get('key', '—'))}"]
+        check = f["check"]
+        L += [f"### {md.text(f.get('failure_mode', '(no failure mode)'), heading=True)}", "",
+              " · ".join(head), ""]
+        if check.get("reason"):
+            L += [md.text(check["reason"]), ""]
+        if (claims := _claim_lines(check)):
+            L += [*claims, ""]
+        if (provenance := _provenance(check)):
+            L += [*provenance, ""]
+    return L
 
 
 def _precondition_line(p: dict) -> str:
@@ -598,7 +827,8 @@ def run_warnings(data: dict) -> list[str]:
             + list(data.get("context_warnings") or [])
             + list(data.get("link_warnings") or [])
             + list(data.get("usage_warnings") or [])
-            + list(data.get("check_warnings") or []))
+            + list(data.get("check_warnings") or [])
+            + list(data.get("dependency_warnings") or []))
 
 
 def _k(n: int) -> str:
@@ -615,7 +845,7 @@ def _part(part: dict) -> tuple[int, str]:
     return weighted, ", ".join(md.code(m) for m in by_model)
 
 
-def render_consumption(usage: dict | None) -> list[str]:
+def render_consumption(usage: dict | None, reused: int = 0) -> list[str]:
     """## Consumption: what the scan consumed, or why it was not measured (#5)."""
     if not usage:
         return []
@@ -641,6 +871,10 @@ def render_consumption(usage: dict | None) -> list[str]:
     if inv.get("fallback_saves"):
         lines.append(f"{inv['fallback_saves']} result(s) saved by the orchestrator because "
                      f"the hook did not deliver them.")
+    if isinstance(sk := usage.get("skeptics"), dict):
+        s_weighted, s_models = _part(sk)
+        lines.append(f"Skeptics {_k(s_weighted)} across {_plural(sk.get('agents') or 0, 'agent')} "
+                     f"({s_models or 'none measured'}), {_plural(reused, 'verdict')} reused.")
     if partial:
         covers = (["the orchestrator"] if orch.get("by_model") else []) + \
             [f"investigators for {_plural(len(inv.get('by_hotspot') or {}), 'hotspot')}"]
@@ -713,7 +947,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
     check_line = ("Check status: " + " · ".join(f"{n} {s}" for s, n in by_status if n)
                   + (f" · {gated} {'finding needs' if gated == 1 else 'findings need'} a "
                      f"non-default setting and {'is' if gated == 1 else 'are'} listed last"
-                     if gated else "")) if findings else None
+                     if gated else "") + "  ") if findings else None
 
     L: list[str] = [
         f"# thunderstruck — {md.text(repo_name, heading=True)}",
@@ -726,6 +960,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
         f"**{len(findings)} finding(s)** across {files_affected} file(s)"
         + (f" — {breakdown}" if breakdown else "") + "  ",
         *([check_line] if check_line else []),
+        render_verification_line(data),
         "",
         "> Findings are **falsifiable hypotheses**. Every citation in them was resolved "
         "mechanically: each cited file:line, commit, detector hit and catalog edge exists. "
@@ -746,7 +981,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
             L += [f"  - {md.code(r['detector'])} on {md.code(r['path'])}: "
                   f"{r['hits']} hit(s) — {md.text(r['reason'])}" for r in suppressed]
         L.append("")
-    L += render_consumption(data.get("usage"))
+    L += render_consumption(data.get("usage"), data["verification"]["reused"])
     L += render_not_scanned(hs.get("coverage_gaps"))
     L += render_service_context(data.get("context"), now or datetime.now(timezone.utc))
 
@@ -772,11 +1007,15 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
             symbol = f" · {md.code(loc['symbol'])}" if loc.get("symbol") else ""
             lines = f":{loc['lines']}" if loc.get("lines") else ""
             where = _linked(f"{loc.get('file', '?')}{lines}", loc.get("url"))
+            part = _part_refuted_fields(f)
+
+            def mark(key: str) -> str:
+                return PART_REFUTED if key in part else ""
             rows = ["| | |", "|---|---|",
-                    f"| Trigger | {md.text(f.get('trigger_condition', '—'), cell=True)} |",
-                    f"| Amplifier | {_not_stated(f.get('amplifier'))} |",
-                    f"| Sustaining effect | {_not_stated(f.get('sustaining_effect'))} |",
-                    f"| Blast radius | {md.text(f.get('blast_radius', '—'), cell=True)} |"]
+                    f"| Trigger | {md.text(f.get('trigger_condition', '—'), cell=True)}{mark('trigger_condition')} |",
+                    f"| Amplifier | {_not_stated(f.get('amplifier'))}{mark('amplifier')} |",
+                    f"| Sustaining effect | {_not_stated(f.get('sustaining_effect'))}{mark('sustaining_effect')} |",
+                    f"| Blast radius | {md.text(f.get('blast_radius', '—'), cell=True)}{mark('blast_radius')} |"]
             if f.get("catalog_evidence"):
                 rows.append(f"| Dependents / dependencies | {_deps(f['catalog_evidence'])} |")
             rows.append(f"| Missing patterns | {', '.join(md.code(p, cell=True) for p in f.get('missing_patterns') or []) or '—'} |")
@@ -787,6 +1026,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
                   "",
                   badge + f"{where}{symbol} · hotspot {f['hotspot_id']} (score {f.get('hotspot_score')})",
                   "",
+                  *_also_at_lines(f),
                   *_shared_line(f),
                   *rows,
                   "",
@@ -804,6 +1044,8 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
         L += ["## Findings", "",
               "None. Every investigated hotspot came back clean — see below for "
               "what each one checked.", ""]
+
+    L += render_refuted(data)
 
     if data["clean"]:
         L += ["## Hotspots investigated with no finding", ""]
@@ -871,8 +1113,11 @@ def render_json(data: dict) -> dict:
             "findings": len(data["findings"]),
             "clean_hotspots": len(data["clean"]),
             "failed_hotspots": len(data["failed"]),
-            "check_status": {s: sum(1 for f in data["findings"] if f["check"]["status"] == s)
+            "check_status": {s: sum(1 for f in data["findings"] + data["refuted"]
+                                    if f["check"]["status"] == s)
                              for s in c.CHECK_STATUSES},
+            "refuted": len(data["refuted"]),
+            "duplicates_merged": data["duplicates_merged"],
             "gate": {g: sum(1 for f in data["findings"] if f["gate"] == g) for g in c.GATES},
         },
         "warnings": list(hs.get("warnings") or []) + list(data.get("link_warnings") or []),
@@ -897,7 +1142,9 @@ def render_json(data: dict) -> dict:
                     for d in hs.get("dormant") or []],
         "lead_precision": lead_precision(data),
         "consumption": data.get("usage") or None,
+        "verification": data["verification"],
         "findings": data["findings"],
+        "refuted": [{k: v for k, v in f.items() if k != "id"} for f in data["refuted"]],
         "clean": [{**e, "cited_by": cited_by.get(e["file"], [])} for e in data["clean"]],
         "incomplete": data["failed"],
         "hotspots": [{"id": h["id"], "file": h["file"],
@@ -933,6 +1180,8 @@ def render_index(data: dict) -> dict:
             "history": [{k: h.get(k) for k in ("sha", "class", "wrote_cited_line")}
                         for h in _history(f)],
         }
+        if f["check"]["status"] == "narrowed" and f["check"].get("holds"):
+            item["holds"] = f["check"]["holds"]
         if f.get("sustaining_effect"):
             item["sustaining_effect"] = f["sustaining_effect"]
         if f.get("catalog_evidence"):
@@ -948,6 +1197,20 @@ def render_index(data: dict) -> dict:
     for cited, item, anchor in secondary:
         entry = files.setdefault(cited, {"content_hash": hashes.get(cited), "findings": []})
         entry["findings"].append({**item, "via": "evidence", "anchor": anchor})
+    # A finding that absorbed duplicates is also filed under each absorbed
+    # finding's file (#37 §11.4). Refuted findings never reach this index.
+    for f in data["findings"]:
+        item = next((it for e in files.values() for it in e["findings"]
+                     if it["key"] == f.get("key") and "via" not in it), None)
+        if item is None:
+            continue
+        for at in f.get("also_at") or []:
+            path = (at.get("location") or {}).get("file")
+            if path:
+                entry = files.setdefault(path, {"content_hash": at.get("content_hash"),
+                                                "findings": []})
+                entry["findings"].append({**item, "via": "duplicate",
+                                          "anchor": f["location"]["file"]})
     return {"schema": "thunderstruck.index/v1",
             "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "head": data["hotspots"]["repo"]["head"],

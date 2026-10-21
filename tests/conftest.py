@@ -118,3 +118,22 @@ def linked_copy(scanned_copy: Path) -> Path:
     from build_fixture import add_remote
     add_remote(scanned_copy, FIXTURE_REMOTE)
     return scanned_copy
+
+
+@pytest.fixture(scope="session")
+def validated_template(tmp_path_factory) -> tuple[Path, dict]:
+    """The sample's fixture: canned findings saved and validated (#37)."""
+    import gen_sample_report
+    return gen_sample_report.build_validated(tmp_path_factory.mktemp("validated") / "fixture")
+
+
+@pytest.fixture
+def validated_repo(validated_template, tmp_path: Path) -> Path:
+    dest = tmp_path / "validated"
+    shutil.copytree(validated_template[0], dest, symlinks=True)
+    return dest
+
+
+@pytest.fixture
+def validated_env(validated_template) -> dict:
+    return dict(validated_template[1])

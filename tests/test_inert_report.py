@@ -9,6 +9,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 import report
 from test_mdtext import RENDERERS, render
 from test_pipeline import _hotspots, _valid_finding, _validate, _write_finding
@@ -74,6 +76,7 @@ def test_hostile_model_text_stays_inert(linked_copy, plugin_root):
     saved = json.loads(saved_path.read_text())
     saved["findings"][0]["check"]["reason"] = f"reason: {HOSTILE}"
     saved_path.write_text(json.dumps(saved))
+    _verification_ran(linked_copy)
     subprocess.run([sys.executable, str(plugin_root / "scripts" / "report.py"),
                     "--repo", str(linked_copy)], check=True, capture_output=True)
     markdown = (linked_copy / ".thunderstruck" / "report.md").read_text()
@@ -82,6 +85,42 @@ def test_hostile_model_text_stays_inert(linked_copy, plugin_root):
     assert html.tags.count("h3") == 1, "a field must not add a heading"
     finding_table_rows = markdown.split("### FR-001", 1)[1].split("**Evidence**", 1)[0]
     assert render(finding_table_rows).tags.count("tr") == 6, "one row per field, none added"
+    assert "fake heading" in "".join(html.text) and "fake item" in "".join(html.text)
+
+
+def _verification_ran(repo: Path) -> None:
+    """#37 §11.1: a stored check is reported only when checks/run.json is this scan's."""
+    out = repo / ".thunderstruck"
+    (out / "checks").mkdir(exist_ok=True)
+    stamp = json.loads((out / "hotspots.json").read_text())["generated_at"]
+    (out / "checks" / "run.json").write_text(json.dumps({"generated_at": stamp, "model": "claude-haiku-4-5"}))
+
+
+@pytest.mark.parametrize("status", ["narrowed", "refuted"])
+def test_hostile_verdict_text_stays_inert(linked_copy, plugin_root, status):
+    """#37: every value a skeptic writes reaches report.md as inert text."""
+    hid, doc = _valid_finding(linked_copy, _hotspots(linked_copy))
+    _write_finding(linked_copy, hid, doc)
+    assert _validate(linked_copy, plugin_root).returncode == 0
+    saved_path = linked_copy / ".thunderstruck" / "findings" / f"{hid}.json"
+    saved = json.loads(saved_path.read_text())
+    code_ref = next(ev["ref"] for ev in saved["findings"][0]["evidence"] if ev["type"] == "code")
+    saved["findings"][0]["check"] = {
+        "status": status, "by": "skeptic", "reason": f"reason: {HOSTILE}", "holds": f"holds: {HOSTILE}",
+        "model": "claude-haiku-4-5", "duplicate_of": None,
+        "refuted_claims": [{"field": "amplifier", "claim": f"claim: {HOSTILE}", "fact": f"fact: {HOSTILE}",
+                            "evidence": [0]}],
+        "evidence": [{"type": "code", "ref": code_ref, "note": f"note: {HOSTILE}"}]}
+    saved_path.write_text(json.dumps(saved))
+    _verification_ran(linked_copy)
+    subprocess.run([sys.executable, str(plugin_root / "scripts" / "report.py"),
+                    "--repo", str(linked_copy)], check=True, capture_output=True)
+    markdown = (linked_copy / ".thunderstruck" / "report.md").read_text()
+    assert "claim: " in markdown and "fact: " in markdown
+    assert ("holds: " in markdown) == (status == "narrowed")
+    _assert_inert(markdown)
+    html = render(markdown)
+    assert html.tags.count("h3") == 1, "a verdict field must not add a heading"
     assert "fake heading" in "".join(html.text) and "fake item" in "".join(html.text)
 
 

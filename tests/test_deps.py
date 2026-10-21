@@ -1,0 +1,384 @@
+"""#37: dependency source at declared or locked versions (spec §4)."""
+
+from __future__ import annotations
+
+import json
+import os
+import socket
+import subprocess
+import zipfile
+from pathlib import Path
+
+import pytest
+
+import deps
+
+
+def _repo(tmp_path: Path) -> Path:
+    repo = tmp_path / "repo"
+    (repo / ".thunderstruck").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    return repo
+
+
+def _index(*packages: dict) -> dict:
+    return {"schema": deps.DEPS_SCHEMA, "packages": list(packages), "warnings": []}
+
+
+def _pkg(**over) -> dict:
+    p = {"id": "pypi:kombu", "ecosystem": "pypi", "name": "kombu", "declared": ">=5.6",
+         "declared_in": ["requirements/default.txt"], "version": "5.7.0a1", "basis": "declared_range",
+         "status": "available", "reason": None, "source": None, "snapshot": None}
+    p.update(over)
+    return p
+
+
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """deps.py opens no socket (spec §15)."""
+    def refuse(*a, **k):
+        raise AssertionError("deps.py must not open a socket")
+    monkeypatch.setattr(socket, "socket", refuse)
+
+
+def test_deps_imports_only_stdlib_and_common_at_module_level():
+    """validate.py imports deps on every scan, --no-verify included: packaging
+    and yaml are imported inside the discoverers that use them, never at the top."""
+    import ast
+    import sys as _sys
+    tree = ast.parse(Path(deps.__file__).read_text())
+    top = set()
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            top |= {a.name.split(".")[0] for a in node.names}
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            top.add(node.module.split(".")[0])
+    assert top <= set(_sys.stdlib_module_names) | {"_common", "__future__"}, top
+
+
+def test_deps_runs_no_process():
+    """deps.py runs no package manager or anything else: it never imports a process or network module."""
+    import ast
+    tree = ast.parse(Path(deps.__file__).read_text())
+    names = {a.name for n in ast.walk(tree) if isinstance(n, (ast.Import, ast.ImportFrom))
+             for a in n.names} | {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
+    assert not names & {"subprocess", "socket", "urllib", "urllib.request", "http", "http.client"}
+
+
+# --- Task 2 -----------------------------------------------------------------
+def _snapshotted(tmp_path: Path) -> tuple[Path, dict]:
+    repo = _repo(tmp_path)
+    src = tmp_path / "site" / "kombu"
+    (src / "utils").mkdir(parents=True)
+    (src / "utils" / "functional.py").write_text("".join(f"line {i}\n" for i in range(1, 401)))
+    files = [("kombu/utils/functional.py", src / "utils" / "functional.py")]
+    dest = deps.snapshot_dir(repo, "pypi", "kombu", "5.7.0a1")
+    assert deps.copy_tree(files, dest, deps.LIMITS) is None
+    index = _index(_pkg(snapshot=deps.snapshot_rel("pypi", "kombu", "5.7.0a1")))
+    return repo, index
+
+
+def test_a_dependency_ref_resolves(tmp_path):
+    repo, index = _snapshotted(tmp_path)
+    got, err = deps.resolve_dependency_ref(repo, index, "pypi:kombu@5.7.0a1:kombu/utils/functional.py:318-332")
+    assert err is None
+    assert got == {"id": "pypi:kombu", "version": "5.7.0a1", "path": "kombu/utils/functional.py",
+                   "start": 318, "end": 332}
+
+
+@pytest.mark.parametrize("ref, needle", [
+    ("pypi:kombu@5.6.0:kombu/utils/functional.py:1", "read at 5.7.0a1, not 5.6.0"),
+    ("pypi:redis@8.1.0:redis/client.py:1", "not an available dependency"),
+    ("pypi:kombu@5.7.0a1:kombu/../../etc/passwd:1", "'..'"),
+    ("pypi:kombu@5.7.0a1:/etc/passwd:1", "absolute"),
+    ("pypi:kombu@5.7.0a1:kombu/utils/functional.py:399-401", "has 400 lines"),
+    ("pypi:kombu@5.7.0a1:kombu/utils:1", "no such file"),
+    ("pypi:kombu@5.7.0a1:kombu/utils/functional.py", "is not ecosystem:name@version:path:line"),
+    ("cargo:serde@1.0.0:src/lib.rs:1", "is not ecosystem:name@version:path:line"),
+])
+def test_a_dependency_ref_that_does_not_resolve_says_why(tmp_path, ref, needle):
+    repo, index = _snapshotted(tmp_path)
+    got, err = deps.resolve_dependency_ref(repo, index, ref)
+    assert got is None and needle in err
+
+
+def test_no_index_means_no_dependency_ref_resolves(tmp_path):
+    repo, _ = _snapshotted(tmp_path)
+    got, err = deps.resolve_dependency_ref(repo, None, "pypi:kombu@5.7.0a1:kombu/utils/functional.py:1")
+    assert got is None and "no dependency source was read in this scan" in err
+
+
+def test_scoped_npm_and_maven_names_parse():
+    m = deps.DEP_REF.match("npm:@aws-sdk/client-s3@3.500.0:dist-cjs/index.js:10")
+    assert (m["eco"], m["name"], m["version"], m["path"]) == ("npm", "@aws-sdk/client-s3", "3.500.0", "dist-cjs/index.js")
+    m = deps.DEP_REF.match("maven:org.apache.httpcomponents/httpclient@4.5.14:org/apache/A.java:1-2")
+    assert m["name"] == "org.apache.httpcomponents/httpclient" and m["end"] == "2"
+
+
+def test_copy_tree_refuses_symlinks_and_escapes(tmp_path):
+    target = tmp_path / "secret"
+    target.write_text("x")
+    link = tmp_path / "link.py"
+    link.symlink_to(target)
+    assert "symlink" in deps.copy_tree([("pkg/link.py", link)], tmp_path / "d1", deps.LIMITS)
+    ok = tmp_path / "ok.py"
+    ok.write_text("x")
+    assert "'..'" in deps.copy_tree([("../ok.py", ok)], tmp_path / "d2", deps.LIMITS)
+    assert not (tmp_path / "d1").exists() and not (tmp_path / "d2").exists()
+
+
+def test_copy_tree_refuses_a_package_over_its_limit(tmp_path):
+    f = tmp_path / "big.py"
+    f.write_text("x" * 2000)
+    limits = deps.Limits(per_package_bytes=1000, per_package_files=10, total_bytes=10_000)
+    assert "too large to snapshot" in deps.copy_tree([("big.py", f)], tmp_path / "d", limits)
+    assert not (tmp_path / "d").exists()  # never truncated
+
+
+def test_copy_jar_extracts_sources_and_refuses_traversal(tmp_path):
+    jar = tmp_path / "a-1.0-sources.jar"
+    with zipfile.ZipFile(jar, "w") as z:
+        z.writestr("org/a/A.java", "class A {}\n")
+        z.writestr("META-INF/MANIFEST.MF", "x")
+    assert deps.copy_jar(jar, tmp_path / "out", (".java", ".kt"), deps.LIMITS) is None
+    assert (tmp_path / "out" / "org" / "a" / "A.java").is_file()
+    assert not (tmp_path / "out" / "META-INF").exists()
+    bad = tmp_path / "bad.jar"
+    with zipfile.ZipFile(bad, "w") as z:
+        z.writestr("../evil.java", "x")
+    assert "'..'" in deps.copy_jar(bad, tmp_path / "out2", (".java",), deps.LIMITS)
+
+
+def test_snapshot_marks_unavailable_and_reuses(tmp_path):
+    repo = _repo(tmp_path)
+    src = tmp_path / "site"
+    (src / "kombu").mkdir(parents=True)
+    (src / "kombu" / "__init__.py").write_text("x = 1\n")
+    index = _index(_pkg(source=str(src), files=["kombu/__init__.py"]))
+    out = deps.snapshot(repo, index)
+    p = out["packages"][0]
+    assert p["status"] == "available" and p["snapshot"] == ".thunderstruck/deps/pypi/kombu@5.7.0a1"
+    marker = json.loads((repo / p["snapshot"] / ".snapshot.json").read_text())
+    assert marker == {"id": "pypi:kombu", "version": "5.7.0a1", "files": 1}
+    (src / "kombu" / "__init__.py").unlink()  # the source is gone, the snapshot is reused
+    assert deps.snapshot(repo, _index(_pkg(source=str(src), files=["kombu/__init__.py"])))["packages"][0]["status"] == "available"
+
+
+def test_unsafe_names_never_become_directories(tmp_path):
+    repo = _repo(tmp_path)
+    out = deps.snapshot(repo, _index(_pkg(id="pypi:../x", name="../x", source=str(tmp_path), files=[])))
+    assert out["packages"][0]["status"] == "unavailable"
+    assert "unsafe" in out["packages"][0]["reason"]
+    assert not (repo / ".thunderstruck" / "x").exists()
+# --- Task 3 -----------------------------------------------------------------
+def _install(site: Path, name: str, version: str, files: dict[str, str], editable: bool = False) -> None:
+    dist = site / f"{name.replace('-', '_')}-{version}.dist-info"
+    dist.mkdir(parents=True)
+    (dist / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n")
+    record = []
+    for rel, body in files.items():
+        (site / rel).parent.mkdir(parents=True, exist_ok=True)
+        (site / rel).write_text(body)
+        record.append(f"{rel},,")
+    record += [f"{dist.name}/METADATA,,", f"../../bin/{name},,"]
+    (dist / "RECORD").write_text("\n".join(record) + "\n")
+    if editable:
+        (dist / "direct_url.json").write_text(json.dumps({"url": "file:///x", "dir_info": {"editable": True}}))
+
+
+def _venv(repo: Path) -> Path:
+    site = repo / ".venv" / "lib" / "python3.12" / "site-packages"
+    site.mkdir(parents=True)
+    return site
+
+
+def test_requirements_range_satisfied_by_the_installed_copy(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "requirements").mkdir()
+    (repo / "requirements" / "default.txt").write_text("kombu>=5.6,<6.0\n-r extras.txt\n")
+    (repo / "requirements" / "extras.txt").write_text("SQLAlchemy>=2.0  # comment\n")
+    site = _venv(repo)
+    _install(site, "kombu", "5.7.0a1", {"kombu/__init__.py": "x\n"})
+    _install(site, "SQLAlchemy", "2.1.3", {"sqlalchemy/__init__.py": "x\n"})
+    pkgs, warnings = deps.discover_pypi(repo, {})
+    by_id = {p["id"]: p for p in pkgs}
+    assert by_id["pypi:sqlalchemy"]["basis"] == "declared_range"
+    assert by_id["pypi:sqlalchemy"]["files"] == ["sqlalchemy/__init__.py"]
+    # 5.7.0a1 is a pre-release: PEP 440 excludes it from ">=5.6,<6.0" unless pre-releases are allowed
+    assert by_id["pypi:kombu"]["status"] == "available"
+    assert by_id["pypi:kombu"]["declared_in"] == ["requirements/default.txt"]
+
+
+def test_installed_below_the_declared_minimum_is_unavailable(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "requirements.txt").write_text("kombu>=5.6\n")
+    _install(_venv(repo), "kombu", "5.5.0", {"kombu/__init__.py": "x\n"})
+    [p], _ = deps.discover_pypi(repo, {})
+    assert p["status"] == "unavailable"
+    assert p["reason"] == 'installed 5.5.0 does not satisfy the declared ">=5.6"'
+
+
+def test_a_lock_decides_the_version(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "pyproject.toml").write_text('[project]\nname="x"\ndependencies=["redis>=8"]\n'
+                                         '[project.optional-dependencies]\nsql=["sqlalchemy"]\n')
+    (repo / "uv.lock").write_text('version = 1\n[[package]]\nname = "redis"\nversion = "8.1.0"\n'
+                                  '[[package]]\nname = "sqlalchemy"\nversion = "2.1.3"\n')
+    site = _venv(repo)
+    _install(site, "redis", "8.1.0", {"redis/client.py": "x\n"})
+    _install(site, "SQLAlchemy", "2.0.0", {"sqlalchemy/__init__.py": "x\n"})
+    by_id = {p["id"]: p for p in deps.discover_pypi(repo, {})[0]}
+    assert (by_id["pypi:redis"]["basis"], by_id["pypi:redis"]["status"]) == ("locked", "available")
+    assert by_id["pypi:sqlalchemy"]["reason"] == "installed 2.0.0, the lock says 2.1.3"
+
+
+def test_pinned_editable_and_missing(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "requirements.txt").write_text("billiard==4.3.0\nvine==5.1.0\nclick>=8\n")
+    site = _venv(repo)
+    _install(site, "billiard", "4.3.0", {"billiard/pool.py": "x\n"})
+    _install(site, "vine", "5.1.0", {"vine/__init__.py": "x\n"}, editable=True)
+    by_id = {p["id"]: p for p in deps.discover_pypi(repo, {})[0]}
+    assert by_id["pypi:billiard"]["basis"] == "pinned"
+    assert by_id["pypi:vine"]["reason"] == "editable install, not a released version"
+    assert by_id["pypi:click"]["reason"] == "no installed copy in .venv, venv or $VIRTUAL_ENV"
+
+
+def test_virtual_env_from_the_environment(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "requirements.txt").write_text("redis==8.1.0\n")
+    venv = tmp_path / "elsewhere"
+    site = venv / "lib" / "python3.12" / "site-packages"
+    site.mkdir(parents=True)
+    _install(site, "redis", "8.1.0", {"redis/client.py": "x\n"})
+    [p], _ = deps.discover_pypi(repo, {"VIRTUAL_ENV": str(venv)})
+    assert p["status"] == "available" and p["source"] == str(site)
+
+
+def test_no_python_manifest_is_no_package_and_no_warning(tmp_path):
+    assert deps.discover_pypi(_repo(tmp_path), {}) == ([], [])
+
+
+def test_pep503():
+    assert deps.pep503("SQLAlchemy") == "sqlalchemy" and deps.pep503("zope.Interface__x") == "zope-interface-x"
+# --- Task 4 -----------------------------------------------------------------
+@pytest.mark.parametrize("version, rng, ok", [
+    ("1.2.3", "1.2.3", True), ("1.2.4", "1.2.3", False),
+    ("1.9.0", "^1.2.3", True), ("2.0.0", "^1.2.3", False), ("0.2.9", "^0.2.3", True), ("0.3.0", "^0.2.3", False),
+    ("1.2.9", "~1.2.3", True), ("1.3.0", "~1.2.3", False),
+    ("1.4.0", "1.x", True), ("2.0.0", "1.x", False), ("9.9.9", "*", True),
+    ("1.5.0", ">=1.2.0 <2.0.0", True), ("2.0.0", ">=1.2.0 <2.0.0", False),
+    ("3.1.0", "^1.0.0 || ^3.0.0", True),
+    ("1.0.0", "workspace:*", None), ("1.0.0", "git+https://x/y.git", None), ("1.0.0", "1.0.0 - 2.0.0", None),
+])
+def test_npm_range_subset(version, rng, ok):
+    assert deps.npm_satisfies(version, rng) is ok
+
+
+def _node_pkg(repo: Path, name: str, version: str, files: dict[str, str]) -> None:
+    d = repo / "node_modules" / name
+    d.mkdir(parents=True)
+    (d / "package.json").write_text(json.dumps({"name": name, "version": version}))
+    for rel, body in files.items():
+        (d / rel).parent.mkdir(parents=True, exist_ok=True)
+        (d / rel).write_text(body)
+
+
+def test_npm_lock_and_install(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "package.json").write_text(json.dumps({
+        "dependencies": {"@aws-sdk/client-s3": "^3.400.0", "axios": "^1.6.0"},
+        "devDependencies": {"left-pad": "1.3.0"}}))
+    (repo / "package-lock.json").write_text(json.dumps({"lockfileVersion": 3, "packages": {
+        "": {}, "node_modules/@aws-sdk/client-s3": {"version": "3.500.0"},
+        "node_modules/axios": {"version": "1.7.2"}}}))
+    _node_pkg(repo, "@aws-sdk/client-s3", "3.500.0", {"dist-cjs/index.js": "x\n", "README.md": "x",
+                                                       "node_modules/inner/index.js": "x"})
+    _node_pkg(repo, "axios", "1.6.0", {"index.js": "x\n"})
+    by_id = {p["id"]: p for p in deps.discover_npm(repo)[0]}
+    s3 = by_id["npm:@aws-sdk/client-s3"]
+    assert (s3["basis"], s3["status"], s3["files"]) == ("locked", "available", ["dist-cjs/index.js"])
+    assert by_id["npm:axios"]["reason"] == "installed 1.6.0, the lock says 1.7.2"
+    assert by_id["npm:left-pad"]["reason"] == "no installed copy in node_modules"
+
+
+def test_pnpm_lock_strips_peer_suffixes(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "package.json").write_text(json.dumps({"dependencies": {"react-dom": "^18.0.0"}}))
+    (repo / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n"
+                                         "      react-dom:\n        specifier: ^18.0.0\n        version: 18.3.1(react@18.3.1)\n")
+    _node_pkg(repo, "react-dom", "18.3.1", {"index.js": "x\n"})
+    [p], _ = deps.discover_npm(repo)
+    assert (p["basis"], p["version"], p["status"]) == ("locked", "18.3.1", "available")
+
+
+def test_npm_range_that_cannot_be_checked(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "package.json").write_text(json.dumps({"dependencies": {"lib": "workspace:*"}}))
+    _node_pkg(repo, "lib", "1.0.0", {"index.js": "x\n"})
+    [p], _ = deps.discover_npm(repo)
+    assert p["reason"] == 'declared range "workspace:*" could not be checked'
+# --- Task 5 -----------------------------------------------------------------
+def _sources_jar(home: Path, group: str, artifact: str, version: str) -> Path:
+    d = home / ".m2" / "repository" / Path(*group.split(".")) / artifact / version
+    d.mkdir(parents=True)
+    jar = d / f"{artifact}-{version}-sources.jar"
+    with zipfile.ZipFile(jar, "w") as z:
+        z.writestr("org/x/A.java", "class A {}\n")
+    return jar
+
+
+def test_pom_literal_and_property_versions(tmp_path):
+    repo, home = _repo(tmp_path), tmp_path / "home"
+    (repo / "pom.xml").write_text(
+        '<project xmlns="http://maven.apache.org/POM/4.0.0"><properties><redisson.version>3.27.0</redisson.version></properties>'
+        "<dependencies>"
+        "<dependency><groupId>org.redisson</groupId><artifactId>redisson</artifactId><version>${redisson.version}</version></dependency>"
+        "<dependency><groupId>com.x</groupId><artifactId>y</artifactId><version>1.0</version></dependency>"
+        "<dependency><groupId>com.x</groupId><artifactId>managed</artifactId></dependency>"
+        "</dependencies></project>")
+    _sources_jar(home, "org.redisson", "redisson", "3.27.0")
+    by_id = {p["id"]: p for p in deps.discover_maven(repo, home)[0]}
+    assert by_id["maven:org.redisson/redisson"]["status"] == "available"
+    assert by_id["maven:org.redisson/redisson"]["basis"] == "pinned"
+    assert by_id["maven:com.x/y"]["reason"] == "no sources jar in the local Maven or Gradle cache"
+    assert by_id["maven:com.x/managed"]["reason"] == "no version declared in this pom.xml"
+
+
+def test_gradle_lockfile_and_catalog(tmp_path):
+    repo, home = _repo(tmp_path), tmp_path / "home"
+    (repo / "build.gradle.kts").write_text('dependencies { implementation("io.x:client:2.0.0") }\n')
+    (repo / "gradle").mkdir()
+    (repo / "gradle" / "libs.versions.toml").write_text(
+        '[versions]\nok = "4.12.0"\n[libraries]\nokhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "ok" }\n')
+    (repo / "gradle.lockfile").write_text("io.x:client:2.0.1=runtimeClasspath\n")
+    _sources_jar(home, "com.squareup.okhttp3", "okhttp", "4.12.0")
+    by_id = {p["id"]: p for p in deps.discover_maven(repo, home)[0]}
+    assert by_id["maven:com.squareup.okhttp3/okhttp"]["status"] == "available"
+    client = by_id["maven:io.x/client"]
+    assert (client["basis"], client["version"]) == ("locked", "2.0.1")
+
+
+def test_discover_is_sorted_deterministic_and_warns_without_manifests(tmp_path):
+    repo = _repo(tmp_path)
+    empty = deps.discover(repo, env={}, home=tmp_path / "home")
+    assert empty["packages"] == [] and empty["warnings"] == [
+        "No dependency manifest was found (pyproject.toml, requirements*.txt, package.json, "
+        "pom.xml, build.gradle); verification reads the repository only."]
+    (repo / "requirements.txt").write_text("b==1\na==1\n")
+    first = deps.discover(repo, env={}, home=tmp_path / "home")
+    assert [p["id"] for p in first["packages"]] == ["pypi:a", "pypi:b"]
+    assert first == deps.discover(repo, env={}, home=tmp_path / "home")
+
+
+def test_the_cli_writes_only_under_deps(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "requirements.txt").write_text("redis==8.1.0\n")
+    site = _venv(repo)
+    _install(site, "redis", "8.1.0", {"redis/client.py": "x\n"})
+    before = {p for p in repo.rglob("*")}
+    assert deps.main(["--repo", str(repo)]) == 0
+    new = {p for p in repo.rglob("*")} - before
+    assert new and all(".thunderstruck/deps" in p.as_posix() for p in new)
+    index = deps.load_index(repo)
+    assert index["packages"][0]["snapshot"] == ".thunderstruck/deps/pypi/redis@8.1.0"

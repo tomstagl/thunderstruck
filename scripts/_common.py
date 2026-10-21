@@ -572,12 +572,42 @@ def effective_confidence(claimed, status: str) -> str:
     return CONFIDENCE_LEVELS[min(level, ceiling)]
 
 
+# Verification (spec 2026-10-03-finding-verification-design.md). A verdict is a
+# check status other than unchecked; nothing here adds a status (#56 §7.1).
+VERDICTS = ("upheld", "narrowed", "refuted", "inconclusive")
+REFUTABLE_FIELDS = ("failure_mode", "trigger_condition", "amplifier", "sustaining_effect",
+                    "blast_radius", "how_to_verify", "prediction", "preconditions")
+# How a skeptic names the implicit claim that a finding happens on defaults.
+MISSING_GATE_PHRASE = "on default settings"
+CHECKS_DIRNAME = "checks"
+DEPS_DIRNAME = "deps"
+# Set by measurement only (spec §12.3, #37 AC-15/AC-16): on by default when a
+# skeptic model meets AC-12 and the cost ceiling, otherwise opt-in (--verify).
+VERIFY_BY_DEFAULT = True  # provisional until the maintainer's Task 22
+VERIFY_MEASURED_COST: str | None = None  # one line, with its calibration source
+
+
+def skeptic_settings(finding: dict) -> list[dict]:
+    """Settings a check found the failure needs, from a narrowed verdict's
+    `preconditions` claims (spec §14)."""
+    check = finding.get("check") if isinstance(finding, dict) else None
+    if not isinstance(check, dict) or check.get("status") != "narrowed":
+        return []
+    claims = check.get("refuted_claims")
+    return [rc["setting"] for rc in (claims if isinstance(claims, list) else [])
+            if isinstance(rc, dict) and rc.get("field") == "preconditions"
+            and isinstance(rc.get("setting"), dict)]
+
+
 def finding_gate(finding: dict) -> str:
-    """non_default_setting when any precondition needs a setting changed.
-    The one gate rule: #37 extends it to read the check, #57 adds a gate (spec §7)."""
+    """non_default_setting when any precondition needs a setting changed, or a
+    check narrowed the finding to one (#37 §14).
+    The one gate rule: #57 adds a gate (spec §7)."""
     pre = finding.get("preconditions") if isinstance(finding, dict) else None
     items = pre if isinstance(pre, list) else []
     if any(isinstance(p, dict) and p.get("needs") == "changed" for p in items):
+        return "non_default_setting"
+    if skeptic_settings(finding):
         return "non_default_setting"
     return "none"
 

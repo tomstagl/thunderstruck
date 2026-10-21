@@ -9,11 +9,16 @@ bundle.py    →  bundles/*.md           deterministic: one briefing per hotspot
 investigator →  (final message)        the only LLM step
 capture_finding.py → findings/*.json    SubagentStop hook: saves each result, records agents/*.json
 validate.py  →  validation.json        deterministic: schema + evidence resolution
+verify.py prepare → checks/plan.json, checks/briefs/  deterministic: which findings to check, what reuses
+  deps.py    →  deps/index.json, deps/<ecosystem>/   deterministic: installed dependency source, copied
+skeptic      →  (final message)        the second LLM step: tries to refute one finding
+capture_finding.py → checks/results/   SubagentStop hook: saves each verdict, records checks/agents/
+verify.py apply → findings/*.json check, checks/ledger.json, checks/run.json
 usage.py     →  usage.json             deterministic: what the scan consumed, from transcripts
 report.py    →  report.md/.json/index.json
 ```
 
-Everything except the investigator is reproducible. Rerunning the scripts on
+Everything except the investigator and the skeptic is reproducible. Rerunning the scripts on
 an unchanged repository produces byte-identical output, which is what makes
 the cache in step 3 safe.
 
@@ -51,6 +56,13 @@ What keeps it down:
 - The orchestrator reads no bundles or findings, never polls, and the scripts
   print summaries only (`--verbose` restores the detail).
 
+Verification (step 4b) adds one skeptic per finding, at most four at a time,
+with no repair round and no re-spawn. A verdict is reused through
+`checks/ledger.json` when the finding's claim and every file it or its verdict
+cites are unchanged, so an unchanged finding costs no skeptic on the next
+scan. `--no-verify` skips the pass for one scan. Its measured cost per scan is
+recorded here once the maintainer has measured it (#37, Task 22).
+
 `bundle.py` ends with an estimate for the investigators, and every report has
 a **Consumption** section with what the scan actually used.
 
@@ -68,7 +80,8 @@ marks every bundle whose content hash matches an existing finding as
 stopped, because the hook saves each finding the moment its investigator
 finishes rather than at the end.
 
-To force a full re-investigation, delete `.thunderstruck/findings/`.
+To force a full re-investigation, delete `.thunderstruck/findings/`. To
+force every finding to be checked again, delete `.thunderstruck/checks/`.
 
 ## When things fail
 
@@ -84,11 +97,16 @@ To force a full re-investigation, delete `.thunderstruck/findings/`.
 | An investigator returns prose, not JSON | `save_finding.py` strips a markdown fence automatically. If it still fails, record `--failed`. |
 | Hook did not save a result | `save_finding.py --check` says `missing`; save it with `--fallback`; the report counts it. |
 | Validation fails | Exactly one repair round for that hotspot, then `--failed`. |
+| A skeptic fails, stops or returns prose | Its finding is reported `unchecked` with the reason. Never re-spawn it. |
+| The hook did not save a verdict | `verify.py check` says `missing`; save it with `verify.py save --fallback`; the report counts it. |
+| Every skeptic fails | Still run `verify.py apply`: the report says verification ran, and every finding is `unchecked` with its reason. |
+| `verify.py apply` fails | Continue to step 5. The report says verification was not run; step 6 says why. |
+| No installed copy of a declared dependency | `deps/index.json` and the run warnings say so; the skeptics read the repository alone. |
 | Everything fails | Still run `report.py`. A report that says "6 hotspots, 0 analysed" is information. |
 
 ## Bounded concurrency
 
-Four investigators at a time, maximum. The reason is not politeness: a tool
+Four subagents at a time, maximum, investigators and skeptics alike. The reason is not politeness: a tool
 whose own failure mode is "spawn N concurrent workers against a shared quota"
 has no standing to report S05 or S06 in anyone else's code.
 
@@ -105,6 +123,12 @@ context command, `context.py` runs it, and that command may call your service
 catalog. thunderstruck passes it the entity ref (and, when neighbour
 attributes are configured, each neighbour's ref), and it runs with the user's
 environment.
+
+Dependency source for the skeptics is read from what is already installed
+for the project's declared dependencies (its virtual environment,
+`node_modules`, or the local Maven or Gradle cache) and copied into
+`.thunderstruck/deps/`. Nothing is downloaded, and nothing from a package is
+run: no package manager, install script or build.
 
 `usage.py` reads Claude Code's own transcripts on this machine and writes
 counts only: token counts by type and model, ids and timestamps, never any

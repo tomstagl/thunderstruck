@@ -269,3 +269,71 @@ def test_relayed_usage_beside_readable_transcripts_is_an_extra_agent(scan):
     assert hs["agents"] == 2 and hs["weighted"] == 300 + 40
     assert doc["source"] == "partial"
     assert any(m.startswith("H01:") and "relayed" in m for m in doc["missing"])
+
+
+# --- #37 Task 15: skeptics --------------------------------------------------
+HAIKU = "claude-haiku-4-5"
+
+
+def _skeptic(scan, key: str, agents: list, scan_stamp: str = GENERATED_AT, **extra) -> None:
+    d = scan["out"] / "checks" / "agents"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{key}.json").write_text(json.dumps({"key": key, "scan": scan_stamp, "agents": agents, **extra}))
+
+
+def _skeptic_transcripts(scan) -> None:
+    _jsonl(scan["subagents"] / "agent-k1.jsonl", [
+        _assistant("k1", "2026-10-03T09:10:00Z", {"input_tokens": 200, "output_tokens": 20}, HAIKU)])
+    _jsonl(scan["subagents"] / "agent-k2.jsonl", [
+        _assistant("k2", "2026-10-03T09:11:00Z", {"input_tokens": 100}, HAIKU)])
+    for key, aid in (("aaaaaaaaaaaa", "k1"), ("bbbbbbbbbbbb", "k2")):
+        _skeptic(scan, key, [{"agent_id": aid, "session_id": "sess-1",
+                              "transcript_path": str(scan["session"]), "kind": "first"}])
+
+
+def test_skeptics_are_measured_separately(scan):
+    _skeptic_transcripts(scan)
+    _skeptic(scan, "cccccccccccc", [{"agent_id": "k1", "transcript_path": str(scan["session"]),
+                                     "kind": "first"}], scan_stamp="2026-10-01T00:00:00+00:00")
+    doc = _build(scan)
+    sk = doc["skeptics"]
+    assert sk["agents"] == 2 and (sk["respawns"], sk["fallback_saves"], sk["failed"]) == (0, 0, 0)
+    assert set(sk["by_finding"]) == {"aaaaaaaaaaaa", "bbbbbbbbbbbb"}
+    assert sk["by_finding"]["aaaaaaaaaaaa"] == {"agents": 1, "calls": 1, "weighted": 100 + 50}
+    assert sk["by_model"][HAIKU]["weighted"] == 150 + 50
+    assert doc["total_weighted"] == 160 + 300 + 75 + 200
+    assert doc["source"] == "transcripts"
+
+
+def test_a_skeptic_respawn_is_counted(scan):
+    _skeptic_transcripts(scan)
+    _skeptic(scan, "aaaaaaaaaaaa", [
+        {"agent_id": "k1", "transcript_path": str(scan["session"]), "kind": "first"},
+        {"agent_id": "k2", "transcript_path": str(scan["session"]), "kind": "respawn"}])
+    assert _build(scan)["skeptics"]["respawns"] == 1
+
+
+def test_a_skeptic_fallback_save_is_weighted_by_its_alias(scan):
+    _skeptic(scan, "dddddddddddd", [{"kind": "fallback"}], fallback=True,
+             relayed_usage={"input_tokens": 1000, "model": "haiku"})
+    doc = _build(scan)
+    sk = doc["skeptics"]
+    assert sk["fallback_saves"] == 1 and sk["by_model"][HAIKU]["weighted"] == 500
+    assert doc["source"] == "partial"
+    assert any("skeptic dddddddddddd" in m for m in doc["missing"])
+
+
+def test_a_failed_skeptic_is_counted(scan):
+    _skeptic_transcripts(scan)
+    results = scan["out"] / "checks" / "results"
+    results.mkdir(parents=True)
+    (results / "aaaaaaaaaaaa.json").write_text(json.dumps(
+        {"key": "aaaaaaaaaaaa", "failed": True, "reason": "timed out", "scan": GENERATED_AT}))
+    (results / "bbbbbbbbbbbb.json").write_text(json.dumps(
+        {"key": "bbbbbbbbbbbb", "failed": True, "reason": "old", "scan": "2026-10-01T00:00:00+00:00"}))
+    assert _build(scan)["skeptics"]["failed"] == 1
+
+
+def test_no_skeptic_records_leaves_the_totals_unchanged(scan):
+    doc = _build(scan)
+    assert doc["skeptics"] is None and doc["total_weighted"] == 160 + 300 + 75

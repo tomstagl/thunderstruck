@@ -191,3 +191,28 @@ def annotate_record(out: Path, entry: dict, fields: dict) -> None:
     path, rec = _record(out, entry)
     rec.update(fields)
     write_json_atomic(path, rec)
+
+
+def find_plan_entry(plan: dict, key) -> dict | None:
+    if not isinstance(key, str):
+        return None
+    return next((e for e in plan.get("findings", []) if isinstance(e, dict)
+                 and e.get("action") == "check" and e.get("key") == key), None)
+
+
+def stamp_verdict(doc: dict, plan: dict, entry: dict) -> dict:
+    doc["brief_hash"] = entry["brief_hash"]
+    doc["scan"] = plan["generated_at"]
+    return doc
+
+
+def record_skeptic(out: Path, plan: dict, entry: dict, agent: dict) -> None:
+    path = out / "checks" / "agents" / f"{entry['key']}.json"
+    try:
+        doc = json.loads(path.read_text("utf-8"))
+    except (OSError, ValueError):
+        doc = None
+    if not isinstance(doc, dict) or doc.get("scan") != plan["generated_at"]:
+        doc = {"key": entry["key"], "scan": plan["generated_at"], "agents": []}
+    doc["agents"].append(agent)
+    write_json_atomic(path, doc)
