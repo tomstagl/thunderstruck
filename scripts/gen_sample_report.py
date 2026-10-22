@@ -433,6 +433,9 @@ def verify_canned(repo: Path, env: dict) -> None:
                                  "canned findings changed")
             verdict = {"key": entry["key"], "holds": None, "refuted_claims": [], "evidence": [],
                        "dependencies_read": [], "duplicate_of": None, **spec}
+            for rel, anchor, _ in spec.get("evidence", []):
+                if anchor not in repo.joinpath(rel).read_text(encoding="utf-8"):
+                    raise SystemExit(f"canned verdict anchor {anchor!r} is not in {rel}")
             verdict["evidence"] = [{"type": "code", "ref": f"{rel}:{_line_of(repo, rel, anchor)}",
                                     "note": note} for rel, anchor, note in spec.get("evidence", [])]
             path = Path(tmp) / f"{entry['key']}.json"
@@ -538,7 +541,11 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     if args.keep:
-        repo, env = build_validated(Path(args.keep).resolve())
+        keep = Path(args.keep).resolve()
+        if keep.exists() and any(keep.iterdir()):
+            # build_fixture replaces its destination; never a directory with content
+            ap.error(f"--keep {args.keep}: the directory exists and is not empty")
+        repo, env = build_validated(keep)
         _prepare(repo, env)
         print(repo)
         return 0

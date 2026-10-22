@@ -431,6 +431,7 @@ def build(dest: Path, base_date: datetime | None = None) -> Path:
                         "GIT_COMMITTER_NAME": "Fixture Author",
                         "GIT_COMMITTER_EMAIL": "fixture@example.com"})
 
+    tracked: set[str] = set()
     for n, (subject, paths) in enumerate(HISTORY):
         when = (start + timedelta(days=n * 12)).isoformat()
         env = {**base_env,
@@ -450,11 +451,12 @@ def build(dest: Path, base_date: datetime | None = None) -> Path:
                 continue
             # Once a file is tracked, a commit that only re-adds it is empty.
             # Append a marker so every later commit has real numstat churn.
-            if n >= 7:
+            if rel in tracked:
                 mark = "#" if path.suffix in (".yaml", ".yml") else "//"
                 with path.open("a", encoding="utf-8") as fh:
                     fh.write(f"\n{mark} revision {n}\n")
             run(dest, "add", rel)
+            tracked.add(rel)
         subprocess.run(["git", "-C", str(dest), "commit", "-q", "-m", subject],
                        check=True, capture_output=True, text=True, env=env)
     return dest
