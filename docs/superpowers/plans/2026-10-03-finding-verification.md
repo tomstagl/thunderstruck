@@ -3584,7 +3584,7 @@ git commit -m "Fixture and sample: a planted wrong finding, steering text and ca
 - Consumes: `checks/verdicts.json`, `checks/plan.json` (Task 10); `c.finding_gate`; #55's `benchmark.RUN_SCHEMA`, `benchmark.load_run` (if present) or the schema string.
 - Produces: `verify.export_run(repo: Path) -> dict`; `verify.run_verdict(finding: dict, check: dict) -> str | None`; CLI `verify.py export-run --out FILE`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```python
 # --- Task 18 ----------------------------------------------------------------
@@ -3621,8 +3621,8 @@ def test_export_run(validated_repo, validated_env, tmp_path):
     assert run["findings"][unchecked] == {"duplicate_of": None}
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** Expected: `AttributeError: ... run_verdict`.
-- [ ] **Step 3: Implement.**
+- [x] **Step 2: Run them to verify they fail.** Expected: `AttributeError: ... run_verdict`.
+- [x] **Step 3: Implement.**
 
 ```python
 def run_verdict(finding: dict, check: dict) -> str | None:
@@ -3658,8 +3658,8 @@ def export_run(repo: Path) -> dict:
 ```
 
 Register `export-run` with `--out` (required); write with `c.write_json`.
-- [ ] **Step 4: Run** the tests and the full suite. Expected: PASS.
-- [ ] **Step 5: Commit**
+- [x] **Step 4: Run** the tests and the full suite. Expected: PASS.
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/verify.py tests/test_verification.py

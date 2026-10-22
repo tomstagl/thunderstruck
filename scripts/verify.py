@@ -543,6 +543,43 @@ def _cmd_apply(args) -> int:
     return 0
 
 
+def run_verdict(finding: dict, check: dict) -> str | None:
+    """#55's run vocabulary (spec §13). inconclusive and unchecked carry none."""
+    status = check.get("status")
+    gated = c.finding_gate({**finding, "check": check}) == "non_default_setting"
+    if status == "upheld":
+        return "upheld_but_gated" if gated else "upheld"
+    if status == "narrowed":
+        claims = [rc for rc in check.get("refuted_claims") or [] if isinstance(rc, dict)]
+        only_gate = claims and all(rc.get("field") == "preconditions" and rc.get("setting") for rc in claims)
+        return "upheld_but_gated" if only_gate else "narrowed"
+    return "refuted" if status == "refuted" else None
+
+
+def export_run(repo: Path) -> dict:
+    plan = _plan(repo)
+    checks = (c.load_json(checks_dir(repo) / "verdicts.json", {}) or {}).get("checks") or {}
+    frozen = Path(plan["frozen"]) if plan.get("frozen") else None
+    items = {i["finding"]["key"]: i["finding"] for i in (load_frozen(frozen) if frozen else load_findings(repo))}
+    findings: dict[str, dict] = {}
+    for key, check in sorted(checks.items()):
+        record: dict = {}
+        verdict = run_verdict(items.get(key, {}), check)
+        if verdict:
+            record["verdict"] = verdict
+        record["duplicate_of"] = check.get("duplicate_of")
+        findings[key] = record
+    return {"schema": "thunderstruck.benchmark-run/v1", "commit": plan["head"],
+            "produced_by": {"stage": "skeptic", "model": c.MODEL_ALIASES.get(plan["model"], plan["model"]),
+                            "source": "verify.py export-run over checks/verdicts.json"},
+            "findings": findings}
+
+
+def _cmd_export_run(args) -> int:
+    c.write_json(Path(args.out), export_run(c.find_repo_root(args.repo)))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="verify.py", description="verification of findings (#37)")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -568,6 +605,10 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("apply")
     p.add_argument("--repo", default=None)
     p.set_defaults(fn=_cmd_apply)
+    p = sub.add_parser("export-run")
+    p.add_argument("--repo", default=None)
+    p.add_argument("--out", required=True)
+    p.set_defaults(fn=_cmd_export_run)
     args = ap.parse_args(argv)
     try:
         return args.fn(args)

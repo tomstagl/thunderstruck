@@ -614,3 +614,37 @@ def test_the_sample_shows_every_verdict():
     assert "## Refuted by verification" in md and "src/client/labels.ts" in md[md.index("## Refuted"):]
     assert "*(part refuted, see Check)*" in md and "What still holds:" in md
     assert "· inconclusive ·" in md and "· upheld ·" in md
+
+
+# --- Task 18 ----------------------------------------------------------------
+GATED = [{"setting": "S", "default": "d", "default_ref": "a:1", "needs": "changed", "value": "v",
+          "documented": "no", "doc_ref": None}]
+SKEPTIC_GATE = {"field": "preconditions", "claim": "on default settings", "fact": "f", "evidence": [0],
+                "setting": {"setting": "S", "default": "d", "default_ref": "a:1", "value": "v"}}
+
+
+@pytest.mark.parametrize("pre, check, expected", [
+    ([], {"status": "upheld"}, "upheld"),
+    (GATED, {"status": "upheld"}, "upheld_but_gated"),
+    ([], {"status": "narrowed", "refuted_claims": [SKEPTIC_GATE]}, "upheld_but_gated"),
+    ([], {"status": "narrowed", "refuted_claims": [SKEPTIC_GATE, {"field": "amplifier"}]}, "narrowed"),
+    ([], {"status": "narrowed", "refuted_claims": [{"field": "amplifier"}]}, "narrowed"),
+    ([], {"status": "refuted"}, "refuted"),
+    ([], {"status": "inconclusive"}, None),
+    ([], {"status": "unchecked"}, None),
+])
+def test_run_verdict_mapping(pre, check, expected):
+    assert verify.run_verdict({"preconditions": pre, "check": check}, check) == expected
+
+
+def test_export_run(validated_repo, validated_env, tmp_path):
+    plan = _verified(validated_repo, validated_env, tmp_path, {"releases.ts": _refute_releases(validated_repo)})
+    out = tmp_path / "run.json"
+    assert _verify(validated_repo, validated_env, "export-run", "--out", str(out)).returncode == 0
+    run = json.loads(out.read_text())
+    assert run["schema"] == "thunderstruck.benchmark-run/v1" and run["commit"] == plan["head"]
+    assert run["produced_by"]["stage"] == "skeptic" and run["produced_by"]["model"] == "claude-sonnet-5-5"
+    rel = _entry(plan, "releases.ts")["key"]
+    assert run["findings"][rel] == {"verdict": "refuted", "duplicate_of": None}
+    unchecked = next(k for k, v in run["findings"].items() if k != rel)
+    assert run["findings"][unchecked] == {"duplicate_of": None}
