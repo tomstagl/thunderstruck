@@ -4,6 +4,23 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.13.0
+
+Findings are refuted before they reach the report (#37).
+
+### Added
+
+- **Verification.** After validation, one read-only `thunderstruck-skeptic` subagent per finding tries to refute it. Its verdict is resolved mechanically and settled into the check status: `upheld`, `narrowed` (with what still holds), `refuted`, `inconclusive` or `unchecked`. On by default provisionally; whether it stays on by default, and with which model, is set from measurement before release.
+- **`--verify`, `--no-verify`, `--verify-model haiku|sonnet|opus`** on `/thunderstruck-scan`.
+- **Dependency source at declared versions.** The skeptic may read the source of the project's declared dependencies (PyPI, npm, Maven and Gradle), at the locked, pinned or installed-in-range version, copied from what is installed locally into `.thunderstruck/deps/`. Nothing is downloaded or executed. A verdict may cite it with a `dependency` ref.
+- **Refuted by verification**: a section of `report.md` and the HTML report listing each refuted finding with the reason and evidence, out of *Findings*.
+- **Duplicates merged.** A finding a skeptic shows to describe the same defect as another is folded into it; the survivor lists the other location.
+- **Settled verdicts are reused** when the finding, the files it and its verdict cite, and the dependency versions are unchanged.
+- **The skeptics in Consumption**, measured separately from the investigators.
+- **`report.json`** gains `verification`, `refuted` and `also_at`; **`index.json`** gains `holds` and `via: "duplicate"`.
+- **`verify.py export-run`** writes verdicts as a benchmark run, so `benchmark.py` can score them.
+- The fixture carries a planted wrong finding and steering text aimed at verification; the sample report shows every verdict.
+
 ## 0.12.0
 
 Detector and boundary leads that hold up on library code (#58).
