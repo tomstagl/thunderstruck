@@ -3673,9 +3673,9 @@ git commit -m "Verification: export verdicts as a benchmark run (#37)"
 **Files:**
 - Modify: `README.md` (*How it works*, *Findings are falsifiable, and checked*, *Privacy*, *Repository content is data*), `CLAUDE.md`, `skills/thunderstruck-scan/SKILL.md` (if Task 16 left wording to the release), `CHANGELOG.md`, `pyproject.toml`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`
 
-- [ ] **Step 1:** `README.md`: the pipeline gains the verification step; *Findings are falsifiable, and checked* explains upheld, narrowed, refuted, inconclusive and unchecked, the *Refuted by verification* section, reuse, and `--verify`/`--no-verify`/`--verify-model`, with the default and its measured cost as Task 22 leaves them (`VERIFY_BY_DEFAULT`, `VERIFY_MEASURED_COST`; Task 22 updates this paragraph); *Privacy* says dependency source is read from what is installed locally and copied into `.thunderstruck/deps/`, never downloaded; *Repository content is data* names the skeptic and AC-11's rule. `CLAUDE.md`: the architecture block gains `verify.py`, `deps.py` and the skeptic; "Things that will bite you" gains: *verdicts are resolved like findings* (`verify.settle` is the one place a status is decided; `dependency` refs only into `.thunderstruck/deps/`), *`run.json` decides whether verification ran* (never read a status from a findings file without it), *briefs are deterministic and withhold the claimed confidence and its rationale*; "The plugin must not exhibit the patterns it hunts" names the skeptics in the cap of four and "no repair round for skeptics"; the test command already carries `--with packaging` (Task 3).
-- [ ] **Step 2:** Bump the minor version from what `main` carries when this branch is cut (e.g. `0.11.0` → `0.12.0`) in `pyproject.toml`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and a new top `CHANGELOG.md` heading listing: verification (on or off by default as Task 22 settles; Task 22 edits this line); the skeptic agent; `--verify`, `--no-verify`, `--verify-model`; dependency source at declared versions; the *Refuted by verification* section; duplicates merged; the skeptics in Consumption; `report.json` `verification`, `refuted`, `also_at`; `index.json` `holds`, `via: "duplicate"`.
-- [ ] **Step 3:** Run everything AC-14 names:
+- [x] **Step 1:** `README.md`: the pipeline gains the verification step; *Findings are falsifiable, and checked* explains upheld, narrowed, refuted, inconclusive and unchecked, the *Refuted by verification* section, reuse, and `--verify`/`--no-verify`/`--verify-model`, with the default and its measured cost as Task 22 leaves them (`VERIFY_BY_DEFAULT`, `VERIFY_MEASURED_COST`; Task 22 updates this paragraph); *Privacy* says dependency source is read from what is installed locally and copied into `.thunderstruck/deps/`, never downloaded; *Repository content is data* names the skeptic and AC-11's rule. `CLAUDE.md`: the architecture block gains `verify.py`, `deps.py` and the skeptic; "Things that will bite you" gains: *verdicts are resolved like findings* (`verify.settle` is the one place a status is decided; `dependency` refs only into `.thunderstruck/deps/`), *`run.json` decides whether verification ran* (never read a status from a findings file without it), *briefs are deterministic and withhold the claimed confidence and its rationale*; "The plugin must not exhibit the patterns it hunts" names the skeptics in the cap of four and "no repair round for skeptics"; the test command already carries `--with packaging` (Task 3).
+- [x] **Step 2:** Bump the minor version from what `main` carries when this branch is cut (e.g. `0.11.0` → `0.12.0`) in `pyproject.toml`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and a new top `CHANGELOG.md` heading listing: verification (on or off by default as Task 22 settles; Task 22 edits this line); the skeptic agent; `--verify`, `--no-verify`, `--verify-model`; dependency source at declared versions; the *Refuted by verification* section; duplicates merged; the skeptics in Consumption; `report.json` `verification`, `refuted`, `also_at`; `index.json` `holds`, `via: "duplicate"`.
+- [x] **Step 3:** Run everything AC-14 names:
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/ -q; echo "exit=$?"
@@ -3686,14 +3686,14 @@ claude plugin marketplace add "$PWD" && claude plugin install thunderstruck@thun
 ```
 
 Expected: `exit=0`; both checks exit 0; validate passes; `plugin list` says `enabled`.
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add README.md CLAUDE.md skills/ CHANGELOG.md pyproject.toml .claude-plugin/
 git commit -m "Docs and release: verification of findings (#37)"
 ```
 
-- [ ] **Step 5: Stop: ready for maintainer measurement.** Push the branch and open the PR as a **draft** whose description starts with "Do not merge before Tasks 20–22 (maintainer measurement, spec §12.3)" and lists the three tasks. Comment on #37: "Ready for maintainer measurement: Tasks 20–22 of the plan", with the PR link. Do not mark the PR ready and do not close #37. Tick Tasks 0–19 in the ticket's checklist as usual; Tasks 20–22 stay open until the maintainer commits them on this branch.
+- [x] **Step 5: Stop: ready for maintainer measurement.** Push the branch and open the PR as a **draft** whose description starts with "Do not merge before Tasks 20–22 (maintainer measurement, spec §12.3)" and lists the three tasks. Comment on #37: "Ready for maintainer measurement: Tasks 20–22 of the plan", with the PR link. Do not mark the PR ready and do not close #37. Tick Tasks 0–19 in the ticket's checklist as usual; Tasks 20–22 stay open until the maintainer commits them on this branch.
 
 ### Task 20: The verification log on the fixture (maintainer, with the plugin installed)
 
