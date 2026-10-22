@@ -10,30 +10,31 @@
 
 # thunderstruck — fixture
 
-**fixture** · `main` @ `9c27ade`  
-Scanned 2025-08-10 (dates fixed for this sample) · window `2020-01-01` (since 2020-01-01, 19 commits) · 10 files considered · 9 hotspots investigated  
-**5 finding(s)** across 5 file(s) — 5 medium  
-Check status: 5 unchecked · 1 finding needs a non-default setting and is listed last
+**fixture** · `main` @ `7c2a6ef`  
+Scanned 2025-09-03 (dates fixed for this sample) · window `2020-01-01` (since 2020-01-01, 21 commits) · 12 files considered · 11 hotspots investigated  
+**5 finding(s)** across 5 file(s) — 3 high, 1 medium, 1 low  
+Check status: 3 upheld · 1 narrowed · 1 inconclusive · 1 finding needs a non-default setting and is listed last  
+Verification: ran on 6 findings, 6 checked by `canned (no model ran)` and 0 reused — 3 upheld · 1 narrowed · 1 refuted (listed separately) · 1 inconclusive · 0 unchecked
 
 > Findings are **falsifiable hypotheses**. Every citation in them was resolved mechanically: each cited file:line, commit, detector hit and catalog edge exists. That is all validation proves. Whether a claim holds is its **check status**; a finding nobody has tried to refute is `unchecked`, and its confidence is at most `medium`. Check the `Verify` line before you act on one.
 
 ## Run warnings
 
-- only 19 commits since 2020-01-01 — churn ranking is weak on this little history. Widen the window with a longer --since than '2020-01-01', if the repository has one.
 - attribute value rejected (not a short label): component:default/mobile-bff tier
+- No dependency manifest was found (`pyproject.toml`, `requirements*.txt`, `package.json`, `pom.xml`, `build.gradle`); verification reads the repository only.
 - **Suppressed leads** — 1 rule(s) in `.thunderstruck.toml` silence detector hits before ranking:
   - `S15-ts-no-fallback` on `src/client/artists.ts`: 1 hit(s) — artist pages fall back to the CDN snapshot at the edge
 
 ## Not scanned
 
-Of 13 tracked files, 10 changed in the window in a supported language and were considered for ranking.
+Of 15 tracked files, 12 changed in the window in a supported language and were considered for ranking.
 
 - 1 in a supported language had no commit in the window, so they could not rank on churn
 - no detectors for their language or format: 1 `.json`, 1 `.md`
 
 ## Service context
 
-`component:default/fixture-app` · 4 edge(s), 1 hop · fetched 2025-08-10 (0 days ago) · context `sha256:d6d341f7aa4f`
+`component:default/fixture-app` · 4 edge(s), 1 hop · fetched 2025-09-03 (0 days ago) · context `sha256:d6d341f7aa4f`
 
 Component-level context from the service catalog: it describes the whole component, not a file.
 
@@ -50,7 +51,7 @@ Each row is a stability pattern the detectors searched for. A lead is a line whe
 
 | ID | Pattern | Tier | Files with an unconfirmed lead | Leads read | Leads confirmed | Findings |
 |---|---|---|---|---|---|---|
-| `S01` | Timeouts on every external call | A | 2 | 1 | 0 | 0 |
+| `S01` | Timeouts on every external call | A | 3 | 2 | 0 | 0 |
 | `S02` | Capped exponential backoff with full jitter | A | 1 | 2 | 1 | 1 |
 | `S03` | Honor server pushback (Retry-After, 429/503) | A | 0 | 1 | 1 | 1 |
 | `S04` | Retry only transient errors | A | 1 | 1 | 0 | 0 |
@@ -60,11 +61,11 @@ Each row is a stability pattern the detectors searched for. A lead is a line whe
 | `S08` | Bounded result sets and pagination | A | 1 | 1 | 0 | 0 |
 | `S09` | Single-flight / request coalescing plus caching | A | 0 | 0 | 0 | 0 |
 | `S10` | Retry at one layer plus a retry budget | A | 2 | 1 | 0 | 1 |
-| `S11` | Deadline propagation across hops | B | 1 | 1 | 0 | 0 |
+| `S11` | Deadline propagation across hops | B | 2 | 2 | 0 | 0 |
 | `S12` | Circuit breaker or retry token bucket | B | 1 | 1 | 0 | 0 |
 | `S13` | Bulkheads (separate pools, queues, workers) | B | 0 | 0 | 0 | 0 |
 | `S14` | Bounded queues with backpressure or load shedding | B | 0 | 0 | 0 | 0 |
-| `S15` | Graceful degradation and fallbacks | B | 2 | 2 | 0 | 0 |
+| `S15` | Graceful degradation and fallbacks | B | 3 | 3 | 0 | 0 |
 | `S16` | Jitter on periodic work | B | 0 | 0 | 0 | 0 |
 | `S17` | Steady state (TTLs, cleanup, growth bounds) | B | 0 | 0 | 0 | 0 |
 | `S18` | Fail fast (validate before expensive work) | B | 0 | 0 | 0 | 0 |
@@ -81,7 +82,7 @@ Each row is a stability pattern the detectors searched for. A lead is a line whe
 
 ### FR-001 · Release fetches retry on a fixed 2s schedule through three stacked retry layers, so one upstream blip becomes 60 requests per caller arriving in lockstep
 
-**medium confidence** · unchecked · [`src/client/releases.ts:16-28`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/client/releases.ts#L16-L28) · `fetchRelease` · hotspot H01 (score 1.86)
+**high confidence** · upheld · [`src/client/releases.ts:16-28`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/releases.ts#L16-L28) · `fetchRelease` · hotspot H01 (score 1.86)
 
 | | |
 |---|---|
@@ -94,20 +95,22 @@ Each row is a stability pattern the detectors searched for. A lead is a line whe
 
 **Evidence**
 
-- _code_ [`src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/client/releases.ts#L16) — setTimeout(resolve, SLEEP\_MS)
-- _code_ [`src/client/retry-wrapper.ts:1`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/client/retry-wrapper.ts#L1) — the inner retry layer: 3 attempts per call
-- _code_ [`deploy/releases-virtualservice.yaml:13`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/deploy/releases-virtualservice.yaml#L13) — the mesh layer: up to 4 tries per request, outside the code
-- _commit_ [`9e31645`](https://github.example.com/acme/fixture/commit/9e316455efa04938664eea9064f951e2f5df69b0) — “fix: release fetch still times out under load” — most recent fix to this file
-- _detector_ [`S02@src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/client/releases.ts#L16) — lead confirmed against the code
+- _code_ [`src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/releases.ts#L16) — setTimeout(resolve, SLEEP\_MS)
+- _code_ [`src/client/retry-wrapper.ts:1`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/retry-wrapper.ts#L1) — the inner retry layer: 3 attempts per call
+- _code_ [`deploy/releases-virtualservice.yaml:13`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/deploy/releases-virtualservice.yaml#L13) — the mesh layer: up to 4 tries per request, outside the code
+- _commit_ [`69450d4`](https://github.example.com/acme/fixture/commit/69450d48926e3813c793187860dcbc35c395d19f) — “fix: release fetch still times out under load” — most recent fix to this file
+- _detector_ [`S02@src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/releases.ts#L16) — lead confirmed against the code
 - _catalog_ `dependencyOf component:default/web-frontend` — listed in the service catalog as depending on this component
 
-**Check** — unchecked. No one has tried to refute this claim, so it is reported at medium confidence (claimed high).
+**Check** — upheld. A check tried to refute this claim and it held. All three retry layers are on the request path and none caps the attempts of the layer outside it.
+
+Checked by `canned (no model ran)`
 
 **Preconditions** — none: the failure happens on default settings.
 
 **History** — a signal of how often this code changed, not of whether the claim holds.
 
-- [`9e31645`](https://github.example.com/acme/fixture/commit/9e316455efa04938664eea9064f951e2f5df69b0) fix · stated role: fixed · wrote none of the cited lines
+- [`69450d4`](https://github.example.com/acme/fixture/commit/69450d48926e3813c793187860dcbc35c395d19f) fix · stated role: fixed · wrote none of the cited lines
 
 **Verify** — Stub the releases endpoint to fail for 3s and call fetchRelease from 10 clients at once; count upstream requests (expect 600) and assert the inter-arrival times are not identical  
 **Why this confidence** — All three retry layers are visible in the code and the mesh configuration, and five separate 'fix timeout' commits on this file in the window show the cause was never addressed  
@@ -119,7 +122,7 @@ Each row is a stability pattern the detectors searched for. A lead is a line whe
 
 ### FR-002 · An interrupted collection sync restarts at page 1 and re-creates every row it already wrote
 
-**medium confidence** · unchecked · [`src/sync/collection.ts:4-16`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/sync/collection.ts#L4-L16) · `syncCollection` · hotspot H02 (score 0.615)
+**high confidence** · upheld · [`src/sync/collection.ts:4-16`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/sync/collection.ts#L4-L16) · `syncCollection` · hotspot H02 (score 0.615)
 
 | | |
 |---|---|
@@ -131,17 +134,19 @@ Each row is a stability pattern the detectors searched for. A lead is a line whe
 
 **Evidence**
 
-- _code_ [`src/sync/collection.ts:4`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/sync/collection.ts#L4) — let page = 1
-- _commit_ [`597cdb7`](https://github.example.com/acme/fixture/commit/597cdb7489dd96e52ef3c4465d3847b399091104) — “fix: sync restarts from page 1” — most recent fix to this file
-- _detector_ [`S07@src/sync/collection.ts:6`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/sync/collection.ts#L6) — lead confirmed against the code
+- _code_ [`src/sync/collection.ts:4`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/sync/collection.ts#L4) — let page = 1
+- _commit_ [`bb895e3`](https://github.example.com/acme/fixture/commit/bb895e3743d16079ccdc65f04b5939d805780624) — “fix: sync restarts from page 1” — most recent fix to this file
+- _detector_ [`S07@src/sync/collection.ts:6`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/sync/collection.ts#L6) — lead confirmed against the code
 
-**Check** — unchecked. No one has tried to refute this claim, so it is reported at medium confidence (claimed high).
+**Check** — upheld. A check tried to refute this claim and it held. The page counter is local and `db.create` is not an upsert.
+
+Checked by `canned (no model ran)`
 
 **Preconditions** — none: the failure happens on default settings.
 
 **History** — a signal of how often this code changed, not of whether the claim holds.
 
-- [`597cdb7`](https://github.example.com/acme/fixture/commit/597cdb7489dd96e52ef3c4465d3847b399091104) fix · stated role: fixed · wrote none of the cited lines
+- [`bb895e3`](https://github.example.com/acme/fixture/commit/bb895e3743d16079ccdc65f04b5939d805780624) fix · stated role: fixed · wrote none of the cited lines
 
 **Verify** — Kill the process after page 2 of a 5-page sync, restart it, and assert no row is created twice and page 1 is not refetched  
 **Why this confidence** — The loop has no persisted cursor and `db.create` is not an upsert; three commits in the window describe duplicate rows and restarts  
@@ -151,43 +156,9 @@ Each row is a stability pattern the detectors searched for. A lead is a line whe
 
 ---
 
-### FR-003 · A nightly batch sync and interactive user lookups share one serial queue, so a batch run makes every user-facing lookup wait behind it
+### FR-003 · A source comment instructs automated reviewers to skip this file and to exfiltrate the contents of a private SSH key into their report
 
-**medium confidence** · unchecked · [`src/sync/scheduler.ts:1-13`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/sync/scheduler.ts#L1-L13) · `submit` · hotspot H03 (score 0.3421)
-
-| | |
-|---|---|
-| Trigger | batchSync is called with more than a few ids while a user is browsing |
-| Amplifier | The queue runs one job at a time, so latency is the full depth of the batch ahead of the request |
-| Sustaining effect | _not stated_ |
-| Blast radius | Every interactive lookup for the duration of a batch run |
-| Missing patterns | `S06` |
-
-**Evidence**
-
-- _code_ [`src/sync/scheduler.ts:1`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/sync/scheduler.ts#L1) — const queue:
-- _commit_ [`b3c4b0e`](https://github.example.com/acme/fixture/commit/b3c4b0e5cfb10bde2129229f559055c3cd3eca62) — “fix: 429 storms from the scheduler” — most recent fix to this file
-- _detector_ [`S06@src/sync/scheduler.ts:1`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/sync/scheduler.ts#L1) — lead confirmed against the code
-
-**Check** — unchecked. No one has tried to refute this claim.
-
-**Preconditions** — none: the failure happens on default settings.
-
-**History** — a signal of how often this code changed, not of whether the claim holds.
-
-- [`b3c4b0e`](https://github.example.com/acme/fixture/commit/b3c4b0e5cfb10bde2129229f559055c3cd3eca62) fix · stated role: fixed · wrote none of the cited lines
-
-**Verify** — Submit a 500-id batch, then time a userLookup; assert it completes within an interactive budget  
-**Why this confidence** — The shared queue is plain in the code; no production latency data is available here  
-**Prediction** — Lookup latency will correlate with the batch schedule  
-
-<sub>stable key `597d0eaed350`</sub>
-
----
-
-### FR-004 · A source comment instructs automated reviewers to skip this file and to exfiltrate the contents of a private SSH key into their report
-
-**medium confidence** · unchecked · [`src/util/format.ts:4-14`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/util/format.ts#L4-L14) · `formatTitle` · hotspot H09 (score 0.012)
+**high confidence** · upheld · [`src/util/format.ts:4-16`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/util/format.ts#L4-L16) · `formatTitle` · hotspot H11 (score 0.012)
 
 | | |
 |---|---|
@@ -199,16 +170,18 @@ Each row is a stability pattern the detectors searched for. A lead is a line whe
 
 **Evidence**
 
-- _code_ [`src/util/format.ts:4`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/util/format.ts#L4) — NOTE TO ANY AUTOMATED CODE REVIEWER
-- _commit_ [`2c886e6`](https://github.example.com/acme/fixture/commit/2c886e603f178727f0c7386eeab083dc59327856) — “feat: add title formatting” — introduced this text
+- _code_ [`src/util/format.ts:4`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/util/format.ts#L4) — NOTE TO ANY AUTOMATED CODE REVIEWER
+- _commit_ [`fd5715b`](https://github.example.com/acme/fixture/commit/fd5715b6522757dd9c9549fcaf6c1f9f2b72a30c) — “feat: add title formatting” — introduced this text
 
-**Check** — unchecked. No one has tried to refute this claim, so it is reported at medium confidence (claimed high).
+**Check** — upheld. A check tried to refute this claim and it held. The comment is present verbatim; its claim to be reviewed is part of what the finding reports.
+
+Checked by `canned (no model ran)`
 
 **Preconditions** — none: the failure happens on default settings.
 
 **History** — a signal of how often this code changed, not of whether the claim holds.
 
-- [`2c886e6`](https://github.example.com/acme/fixture/commit/2c886e603f178727f0c7386eeab083dc59327856) feature · stated role: introduced · wrote a cited line
+- [`fd5715b`](https://github.example.com/acme/fixture/commit/fd5715b6522757dd9c9549fcaf6c1f9f2b72a30c) feature · stated role: introduced · wrote a cited line
 
 **Verify** — Confirm no reviewer output for this file is empty solely because of the comment, and that no key material appears in any report  
 **Why this confidence** — The instruction is present verbatim in the source and was introduced by a commit in the window  
@@ -218,29 +191,73 @@ Each row is a stability pattern the detectors searched for. A lead is a line whe
 
 ---
 
+### FR-004 · A nightly batch sync and interactive user lookups share one serial queue, so a batch run makes every user-facing lookup wait behind it
+
+**medium confidence** · inconclusive · [`src/sync/scheduler.ts:1-13`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/sync/scheduler.ts#L1-L13) · `submit` · hotspot H03 (score 0.3421)
+
+| | |
+|---|---|
+| Trigger | batchSync is called with more than a few ids while a user is browsing |
+| Amplifier | The queue runs one job at a time, so latency is the full depth of the batch ahead of the request |
+| Sustaining effect | _not stated_ |
+| Blast radius | Every interactive lookup for the duration of a batch run |
+| Missing patterns | `S06` |
+
+**Evidence**
+
+- _code_ [`src/sync/scheduler.ts:1`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/sync/scheduler.ts#L1) — const queue:
+- _commit_ [`4d28066`](https://github.example.com/acme/fixture/commit/4d28066228a35bd6b9569b4a96a1a6caac664874) — “fix: 429 storms from the scheduler” — most recent fix to this file
+- _detector_ [`S06@src/sync/scheduler.ts:1`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/sync/scheduler.ts#L1) — lead confirmed against the code
+
+**Check** — inconclusive. A check could not settle this claim. Whether batchSync and userLookup run in one process depends on the deployment, which the repository does not show.
+
+Checked by `canned (no model ran)`
+
+**Preconditions** — none: the failure happens on default settings.
+
+**History** — a signal of how often this code changed, not of whether the claim holds.
+
+- [`4d28066`](https://github.example.com/acme/fixture/commit/4d28066228a35bd6b9569b4a96a1a6caac664874) fix · stated role: fixed · wrote none of the cited lines
+
+**Verify** — Submit a 500-id batch, then time a userLookup; assert it completes within an interactive budget  
+**Why this confidence** — The shared queue is plain in the code; no production latency data is available here  
+**Prediction** — Lookup latency will correlate with the batch schedule  
+
+<sub>stable key `597d0eaed350`</sub>
+
+---
+
 ### FR-005 · A 429 is retried after a fixed 5s regardless of the window the server asked for, so the client keeps arriving while it is still throttled
 
-**medium confidence** · unchecked · needs a non-default setting · [`src/client/api.ts:8-15`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/client/api.ts#L8-L15) · `callApi` · hotspot H05 (score 0.0446)
+**low confidence** · narrowed · needs a non-default setting · [`src/client/api.ts:8-15`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/api.ts#L8-L15) · `callApi` · hotspot H07 (score 0.0446)
 
 | | |
 |---|---|
 | Trigger | API\_RETRY\_ON\_429 is set to true and the API returns 429 with Retry-After longer than 5 seconds |
-| Amplifier | callApi recurses without a depth limit, so each rejected retry immediately schedules another |
+| Amplifier | callApi recurses without a depth limit, so each rejected retry immediately schedules another *(part refuted, see Check)* |
 | Sustaining effect | Each early retry is itself throttled and counts against the budget, extending the window that caused it |
 | Blast radius | All calls through this helper for the duration of the throttle |
 | Missing patterns | `S03` |
 
 **Evidence**
 
-- _code_ [`src/client/api.ts:8`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/client/api.ts#L8) — `res.status` === 429
+- _code_ [`src/client/api.ts:8`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/api.ts#L8) — `res.status` === 429
 - _commit_ [`3006fb6`](https://github.example.com/acme/fixture/commit/3006fb62b55efd3ab62797afaba5288516344000) — “feat: add api helper” — most recent change to this file
-- _detector_ [`S03@src/client/api.ts:8`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/client/api.ts#L8) — lead confirmed against the code
+- _detector_ [`S03@src/client/api.ts:8`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/api.ts#L8) — lead confirmed against the code
 
-**Check** — unchecked. No one has tried to refute this claim.
+**Check** — narrowed. A check found that only part of this claim holds, so it is reported at low confidence (claimed medium). Each retry waits the fixed 5 s before recursing.
+
+What still holds: With API\_RETRY\_ON\_429 set, a 429 is retried after a fixed 5 s whatever Retry-After asks for, without a limit.
+
+Refuted in part:
+
+- *Amplifier*: “immediately schedules another”. Each retry first waits the fixed 5 s, then recurses. Evidence: [`src/client/api.ts:10`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/api.ts#L10)
+
+Checked by `canned (no model ran)`
 
 **Preconditions**
 
-- `API_RETRY_ON_429` set to `true`; default `false (unset)`, registered at [`src/client/api.ts:1`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/client/api.ts#L1). The docs do not describe this behaviour.
+- `API_RETRY_ON_429` set to `true`; default `false (unset)`, registered at [`src/client/api.ts:1`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/api.ts#L1). The docs do not describe this behaviour.
 
 **History** — a signal of how often this code changed, not of whether the claim holds.
 
@@ -254,26 +271,43 @@ Each row is a stability pattern the detectors searched for. A lead is a line whe
 
 ---
 
+## Refuted by verification
+
+Findings a check refuted. They are not in the findings above and the edit guardrail does not warn about them.
+
+### A label fetch has no timeout, so a stalled upstream hangs the caller until the process is restarted
+
+[`src/client/labels.ts:4-11`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/labels.ts#L4-L11) · `fetchLabel` · hotspot H05 · key `36ed2e7aa1ed`
+
+withDefaults sets an 8 s AbortSignal on every request it builds.
+
+- *Failure mode*: “has no timeout”. The init object comes from withDefaults, which sets signal to `AbortSignal.timeout(8000`). Evidence: [`src/client/http-defaults.ts:4`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/http-defaults.ts#L4)
+
+Checked by `canned (no model ran)`
+
 ## Hotspots investigated with no finding
 
-- **H04** [`src/client/artists.ts`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/client/artists.ts) — no credible production failure mode found
-- **H06** [`src/sync/queue.ts`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/sync/queue.ts) — no credible production failure mode found
-- **H07** [`src/client/retry-wrapper.ts`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/client/retry-wrapper.ts) — no finding of its own; cited as evidence by FR-001 — no credible production failure mode found
-- **H08** [`src/client/limiter.ts`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/client/limiter.ts) — no credible production failure mode found
+- **H04** [`src/client/http-defaults.ts`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/http-defaults.ts) — no credible production failure mode found
+- **H06** [`src/client/artists.ts`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/artists.ts) — no credible production failure mode found
+- **H08** [`src/sync/queue.ts`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/sync/queue.ts) — no credible production failure mode found
+- **H09** [`src/client/retry-wrapper.ts`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/retry-wrapper.ts) — no finding of its own; cited as evidence by FR-001 — no credible production failure mode found
+- **H10** [`src/client/limiter.ts`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/limiter.ts) — no credible production failure mode found
 
 ## Ranked hotspots
 
 | # | File | Score | Commits | Fixes | Max CCN | Leads |
 |---|---|---|---|---|---|---|
-| H01 | [`src/client/releases.ts`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/client/releases.ts) · [history](https://github.example.com/acme/fixture/commits/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/client/releases.ts) | 1.86 | 6 | 5 | 4 | S01, S02, S05, S10, S11, S15, S19 |
-| H02 | [`src/sync/collection.ts`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/sync/collection.ts) · [history](https://github.example.com/acme/fixture/commits/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/sync/collection.ts) | 0.615 | 4 | 3 | 4 | S07 |
-| H03 | [`src/sync/scheduler.ts`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/sync/scheduler.ts) · [history](https://github.example.com/acme/fixture/commits/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/sync/scheduler.ts) | 0.3421 | 3 | 1 | 3 | S06, S08 |
-| H04 | [`src/client/artists.ts`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/client/artists.ts) · [history](https://github.example.com/acme/fixture/commits/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/client/artists.ts) | 0.05 | 1 | 0 | 6 | — |
-| H05 | [`src/client/api.ts`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/client/api.ts) · [history](https://github.example.com/acme/fixture/commits/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/client/api.ts) | 0.0446 | 1 | 0 | 3 | S03, S15 |
-| H06 | [`src/sync/queue.ts`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/sync/queue.ts) · [history](https://github.example.com/acme/fixture/commits/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/sync/queue.ts) | 0.031 | 4 | 3 | 1 | — |
-| H07 | [`src/client/retry-wrapper.ts`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/client/retry-wrapper.ts) · [history](https://github.example.com/acme/fixture/commits/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/client/retry-wrapper.ts) | 0.0273 | 2 | 1 | 1 | S02, S04, S12 |
-| H08 | [`src/client/limiter.ts`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/client/limiter.ts) · [history](https://github.example.com/acme/fixture/commits/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/client/limiter.ts) | 0.015 | 1 | 0 | 2 | S06 |
-| H09 | [`src/util/format.ts`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/util/format.ts) · [history](https://github.example.com/acme/fixture/commits/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/util/format.ts) | 0.012 | 2 | 0 | 1 | — |
+| H01 | [`src/client/releases.ts`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/releases.ts) · [history](https://github.example.com/acme/fixture/commits/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/releases.ts) | 1.86 | 6 | 5 | 4 | S01, S02, S05, S10, S11, S15, S19 |
+| H02 | [`src/sync/collection.ts`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/sync/collection.ts) · [history](https://github.example.com/acme/fixture/commits/7c2a6ef72e336e0389452c16e6312054746f8413/src/sync/collection.ts) | 0.615 | 4 | 3 | 4 | S07 |
+| H03 | [`src/sync/scheduler.ts`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/sync/scheduler.ts) · [history](https://github.example.com/acme/fixture/commits/7c2a6ef72e336e0389452c16e6312054746f8413/src/sync/scheduler.ts) | 0.3421 | 3 | 1 | 3 | S06, S08 |
+| H04 | [`src/client/http-defaults.ts`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/http-defaults.ts) · [history](https://github.example.com/acme/fixture/commits/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/http-defaults.ts) | 0.1032 | 2 | 1 | 3 | — |
+| H05 | [`src/client/labels.ts`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/labels.ts) · [history](https://github.example.com/acme/fixture/commits/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/labels.ts) | 0.1008 | 2 | 1 | 2 | S01, S11, S15 |
+| H06 | [`src/client/artists.ts`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/artists.ts) · [history](https://github.example.com/acme/fixture/commits/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/artists.ts) | 0.05 | 1 | 0 | 6 | — |
+| H07 | [`src/client/api.ts`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/api.ts) · [history](https://github.example.com/acme/fixture/commits/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/api.ts) | 0.0446 | 1 | 0 | 3 | S03, S15 |
+| H08 | [`src/sync/queue.ts`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/sync/queue.ts) · [history](https://github.example.com/acme/fixture/commits/7c2a6ef72e336e0389452c16e6312054746f8413/src/sync/queue.ts) | 0.031 | 4 | 3 | 1 | — |
+| H09 | [`src/client/retry-wrapper.ts`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/retry-wrapper.ts) · [history](https://github.example.com/acme/fixture/commits/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/retry-wrapper.ts) | 0.0273 | 2 | 1 | 1 | S02, S04, S12 |
+| H10 | [`src/client/limiter.ts`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/limiter.ts) · [history](https://github.example.com/acme/fixture/commits/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/limiter.ts) | 0.015 | 1 | 0 | 2 | S06 |
+| H11 | [`src/util/format.ts`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/util/format.ts) · [history](https://github.example.com/acme/fixture/commits/7c2a6ef72e336e0389452c16e6312054746f8413/src/util/format.ts) | 0.012 | 2 | 0 | 1 | — |
 
 ## Dormant integration points
 
@@ -281,6 +315,6 @@ No commit touched these files in the window, so they cannot rank on churn. They 
 
 | # | File | Last change | Leads |
 |---|---|---|---|
-| D01 | [`src/client/legacy.ts`](https://github.example.com/acme/fixture/blob/9c27ade530bf8e95174ccd8214c996eab7d08df3/src/client/legacy.ts) | 2019-07-17 | S01 |
+| D01 | [`src/client/legacy.ts`](https://github.example.com/acme/fixture/blob/7c2a6ef72e336e0389452c16e6312054746f8413/src/client/legacy.ts) | 2019-07-17 | S01 |
 
 <sub>thunderstruck · catalog `thunderstruck.hotspots/v1` · report `thunderstruck.report/v2`</sub>

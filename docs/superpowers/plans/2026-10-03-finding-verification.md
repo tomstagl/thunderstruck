@@ -3428,7 +3428,7 @@ git commit -m "Scan skill: verification as step 4b, --verify and --no-verify (#3
 **Interfaces:**
 - Produces: `gen_sample_report.CANNED_VERDICTS: dict[str, dict]` (file fragment → verdict without `key`); `gen_sample_report.main` accepts `--keep DIR` (writes the validated fixture there, with `checks/plan.json` prepared and no verdicts saved, then exits without writing the samples).
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```python
 # --- Task 17 ----------------------------------------------------------------
@@ -3464,8 +3464,8 @@ def test_the_sample_shows_every_verdict():
 
 (`report.md` takes its dates from `hotspots.json`, so it compares byte for byte. `report.json` and `index.json` carry a wall-clock `generated_at`: `report.json` is compared without that one key, and `index.json` is left out.)
 
-- [ ] **Step 2: Run them to verify they fail.** Expected: `StopIteration` (no labels.ts hotspot), assertion errors.
-- [ ] **Step 3: Implement.** In `tests/fixtures/build_fixture.py`:
+- [x] **Step 2: Run them to verify they fail.** Expected: `StopIteration` (no labels.ts hotspot), assertion errors.
+- [x] **Step 3: Implement.** In `tests/fixtures/build_fixture.py`:
 
 ```python
 # A wrong-on-purpose finding for verification (#37 AC-13): the fetch looks
@@ -3560,12 +3560,12 @@ uv run scripts/gen_sample_report.py
 uv run scripts/gen_sample_report.py --check
 ```
 
-- [ ] **Step 4: Run** the tests, `tests/test_pipeline.py` (adjust any assertion that counts fixture files or hotspots to include the two new files, and nothing else), `tests/test_sample_report.py`, and the full suite. Read the regenerated `examples/sample-report.md` top to bottom once. Expected: PASS, `exit=0`.
+- [x] **Step 4: Run** the tests, `tests/test_pipeline.py` (adjust any assertion that counts fixture files or hotspots to include the two new files, and nothing else), `tests/test_sample_report.py`, and the full suite. Read the regenerated `examples/sample-report.md` top to bottom once. Expected: PASS, `exit=0`.
 
   Two #56 tests in `tests/test_docs_in_sync.py` read the sample as it was before verification, when every finding was `unchecked`. The canned verdicts settle every reported finding, so update them, and make no other edit to that file. What they check (every location and evidence ref is linked; the sample shows check status, the claimed confidence, the gated finding last, preconditions and history) is unchanged:
   - `test_sample_report_links_its_refs`: the location-line pattern accepts any reported status, `r"\*\* · (?:unchecked|upheld|narrowed|inconclusive) (?:· needs a non-default setting )?· " + link`, in place of `· unchecked`.
   - `test_sample_report_shows_check_status_preconditions_and_history`: `"· unchecked ·" in sample and "(claimed high)" in sample` becomes `"· upheld ·" in sample and "· narrowed ·" in sample and "(claimed medium)" in sample` (every high claim is now upheld and keeps `high`; the narrowed finding is the one whose confidence a check lowered); the rest of the test stays as it is.
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tests/fixtures/build_fixture.py scripts/gen_sample_report.py examples/ tests/
