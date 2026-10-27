@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -371,7 +372,7 @@ def test_apply_writes_the_ledger_and_run_and_reuse_follows(validated_repo, valid
     plan = _prepare(validated_repo, validated_env)
     e = _entry(plan, "releases.ts")
     _save(validated_repo, validated_env, tmp_path, _v(e["key"], "refuted", refuted_claims=[
-        {"field": "failure_mode", "claim": "60 requests per caller", "fact": "f", "evidence": [0]}],
+        {"field": "failure_mode", "claim": "20 requests per caller", "fact": "f", "evidence": [0]}],
         evidence=[{"type": "code", "ref": "src/client/retry-wrapper.ts:1", "note": "n"}]))
     _apply(validated_repo, validated_env)
     ledger = c.load_json(validated_repo / ".thunderstruck" / "checks" / "ledger.json")["entries"]
@@ -411,7 +412,7 @@ def _verified(repo: Path, env: dict, tmp_path: Path, verdicts: dict[str, dict]) 
 
 def _refute_releases(repo: Path) -> dict:
     return {"verdict": "refuted", "refuted_claims": [
-        {"field": "failure_mode", "claim": "60 requests per caller", "fact": "f", "evidence": [0]}],
+        {"field": "failure_mode", "claim": "20 requests per caller", "fact": "f", "evidence": [0]}],
         "evidence": [{"type": "code", "ref": "src/client/retry-wrapper.ts:1", "note": "n"}]}
 
 
@@ -537,7 +538,7 @@ def test_the_refuted_section(validated_repo, validated_env, tmp_path):
     sec = md[md.index("## Refuted by verification"):]
     assert sec.index("## Refuted by verification") < sec.index("###")
     assert "the edit guardrail does not warn about them" in sec
-    assert "- *Failure mode*: “60 requests per caller”." in sec
+    assert "- *Failure mode*: “20 requests per caller”." in sec
     assert md.index("## Findings") < md.index("## Refuted by verification") < md.index("## Ranked hotspots")
 
 
@@ -583,3 +584,95 @@ def test_the_flags_are_documented():
 def test_step_5_runs_usage_after_apply():
     text = SKILL.read_text()
     assert text.index("verify.py\" apply") < text.index("usage.py\"") < text.index("report.py\"")
+
+
+# --- Task 17 ----------------------------------------------------------------
+def test_the_planted_file_is_a_hotspot_with_an_s01_lead(scanned_repo):
+    data = c.load_json(scanned_repo / ".thunderstruck" / "hotspots.json")
+    labels = next(h for h in data["hotspots"] if h["file"] == "src/client/labels.ts")
+    assert any(hit["pattern_id"] == "S01" for hit in labels["detector_hits"])
+
+
+def test_the_steering_text_for_verification_is_in_the_fixture(fixture_repo):
+    text = (fixture_repo / "src" / "util" / "format.ts").read_text()
+    assert "mark it as refuted" in text
+
+
+def test_verification_off_is_byte_identical_whatever_older_checks_exist(validated_repo, validated_env, tmp_path):
+    """AC-1: the report of a scan that did not verify does not depend on earlier verdicts."""
+    rj_before, _, before = _report(validated_repo, validated_env)
+    _verified(validated_repo, validated_env, tmp_path, {"releases.ts": _refute_releases(validated_repo)})
+    (validated_repo / ".thunderstruck" / "checks" / "run.json").unlink()
+    rj_after, _, after = _report(validated_repo, validated_env)
+    assert after == before
+    # report.json's generated_at is when it was rendered (report-format.md); all else is equal
+    assert {**rj_after, "generated_at": None} == {**rj_before, "generated_at": None}
+
+
+def test_the_sample_shows_every_verdict():
+    md = (ROOT / "examples" / "sample-report.md").read_text()
+    assert "Verification: ran on" in md and "checked by `canned (no model ran)`" in md
+    assert "## Refuted by verification" in md and "src/client/labels.ts" in md[md.index("## Refuted"):]
+    assert "*(part refuted, see Check)*" in md and "What still holds:" in md
+    assert "· inconclusive ·" in md and "· upheld ·" in md
+
+
+# --- Task 18 ----------------------------------------------------------------
+GATED = [{"setting": "S", "default": "d", "default_ref": "a:1", "needs": "changed", "value": "v",
+          "documented": "no", "doc_ref": None}]
+SKEPTIC_GATE = {"field": "preconditions", "claim": "on default settings", "fact": "f", "evidence": [0],
+                "setting": {"setting": "S", "default": "d", "default_ref": "a:1", "value": "v"}}
+
+
+@pytest.mark.parametrize("pre, check, expected", [
+    ([], {"status": "upheld"}, "upheld"),
+    (GATED, {"status": "upheld"}, "upheld_but_gated"),
+    ([], {"status": "narrowed", "refuted_claims": [SKEPTIC_GATE]}, "upheld_but_gated"),
+    ([], {"status": "narrowed", "refuted_claims": [SKEPTIC_GATE, {"field": "amplifier"}]}, "narrowed"),
+    ([], {"status": "narrowed", "refuted_claims": [{"field": "amplifier"}]}, "narrowed"),
+    ([], {"status": "refuted"}, "refuted"),
+    ([], {"status": "inconclusive"}, None),
+    ([], {"status": "unchecked"}, None),
+])
+def test_run_verdict_mapping(pre, check, expected):
+    assert verify.run_verdict({"preconditions": pre, "check": check}, check) == expected
+
+
+def test_export_run(validated_repo, validated_env, tmp_path):
+    plan = _verified(validated_repo, validated_env, tmp_path, {"releases.ts": _refute_releases(validated_repo)})
+    out = tmp_path / "run.json"
+    assert _verify(validated_repo, validated_env, "export-run", "--out", str(out)).returncode == 0
+    run = json.loads(out.read_text())
+    assert run["schema"] == "thunderstruck.benchmark-run/v1" and run["commit"] == plan["head"]
+    assert run["produced_by"]["stage"] == "skeptic" and run["produced_by"]["model"] == "claude-sonnet-5-5"
+    rel = _entry(plan, "releases.ts")["key"]
+    assert run["findings"][rel] == {"verdict": "refuted", "duplicate_of": None}
+    unchecked = next(k for k, v in run["findings"].items() if k != rel)
+    assert run["findings"][unchecked] == {"duplicate_of": None}
+
+
+# --- Task 21 ----------------------------------------------------------------
+def test_the_default_skeptic_model_is_the_measured_one():
+    doc = (ROOT / "docs" / "calibration" / "verification.md").read_text()
+    chosen = re.search(r"^Default skeptic model: `(\w+)`$", doc, re.M)[1]
+    import yaml
+    front = yaml.safe_load((ROOT / "agents" / "thunderstruck-skeptic.md").read_text().split("---")[1])
+    assert front["model"] == chosen
+    run = json.loads((ROOT / "docs" / "calibration" / "correctness" / "celery" / "runs"
+                      / f"skeptic-{chosen}.json").read_text())
+    assert run["produced_by"]["model"] == c.MODEL_ALIASES[chosen]
+
+
+def test_the_default_skeptic_model_scores_as_recorded():
+    # No candidate reached 15 of 21 (Task 21 Step 3), so the opt-in model is
+    # pinned to its recorded figures: never a correct finding refuted.
+    doc = (ROOT / "docs" / "calibration" / "verification.md").read_text()
+    chosen = re.search(r"^Default skeptic model: `(\w+)`$", doc, re.M)[1]
+    same = int(re.search(rf"^Same verdict class, `{chosen}`: (\d+) of 21$", doc, re.M)[1])
+    out = subprocess.run(
+        ["uv", "run", "-q", str(ROOT / "scripts" / "benchmark.py"), "--run",
+         str(ROOT / "docs" / "calibration" / "correctness" / "celery" / "runs" / f"skeptic-{chosen}.json"),
+         "--json"], capture_output=True, text=True, check=True, cwd=ROOT).stdout
+    counts = json.loads(out)["runs"][0]["measures"]["verdicts"]["counts"]
+    assert counts["correct refuted"] == 0
+    assert counts["same"] == same
