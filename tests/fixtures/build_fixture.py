@@ -256,6 +256,7 @@ spec:
       retries:
         attempts: 3
         perTryTimeout: 2s
+        retryOn: 5xx
 """
 
 # Old, untouched, and on every call path: an integration point with no

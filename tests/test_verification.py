@@ -371,7 +371,7 @@ def test_apply_writes_the_ledger_and_run_and_reuse_follows(validated_repo, valid
     plan = _prepare(validated_repo, validated_env)
     e = _entry(plan, "releases.ts")
     _save(validated_repo, validated_env, tmp_path, _v(e["key"], "refuted", refuted_claims=[
-        {"field": "failure_mode", "claim": "60 requests per caller", "fact": "f", "evidence": [0]}],
+        {"field": "failure_mode", "claim": "20 requests per caller", "fact": "f", "evidence": [0]}],
         evidence=[{"type": "code", "ref": "src/client/retry-wrapper.ts:1", "note": "n"}]))
     _apply(validated_repo, validated_env)
     ledger = c.load_json(validated_repo / ".thunderstruck" / "checks" / "ledger.json")["entries"]
@@ -411,7 +411,7 @@ def _verified(repo: Path, env: dict, tmp_path: Path, verdicts: dict[str, dict]) 
 
 def _refute_releases(repo: Path) -> dict:
     return {"verdict": "refuted", "refuted_claims": [
-        {"field": "failure_mode", "claim": "60 requests per caller", "fact": "f", "evidence": [0]}],
+        {"field": "failure_mode", "claim": "20 requests per caller", "fact": "f", "evidence": [0]}],
         "evidence": [{"type": "code", "ref": "src/client/retry-wrapper.ts:1", "note": "n"}]}
 
 
@@ -537,7 +537,7 @@ def test_the_refuted_section(validated_repo, validated_env, tmp_path):
     sec = md[md.index("## Refuted by verification"):]
     assert sec.index("## Refuted by verification") < sec.index("###")
     assert "the edit guardrail does not warn about them" in sec
-    assert "- *Failure mode*: “60 requests per caller”." in sec
+    assert "- *Failure mode*: “20 requests per caller”." in sec
     assert md.index("## Findings") < md.index("## Refuted by verification") < md.index("## Ranked hotspots")
 
 

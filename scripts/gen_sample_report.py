@@ -88,15 +88,15 @@ CANNED: dict[str, list[dict]] = {
         "symbol": "fetchRelease",
         "anchor": "setTimeout(resolve, SLEEP_MS)",
         "missing_patterns": ["S02", "S10"],
-        "failure_mode": "Release fetches retry on a fixed 2s schedule through three "
-                        "stacked retry layers, so one upstream blip becomes 60 "
+        "failure_mode": "Release fetches retry on a fixed 2s schedule through two "
+                        "stacked retry layers, so one upstream blip becomes 20 "
                         "requests per caller arriving in lockstep",
         "trigger_condition": "The releases API returns 5xx or times out for more "
                              "than two seconds while several callers are active",
-        "amplifier": "withRetry retries 3 times inside a loop that retries 5 "
-                     "times, and the mesh route retries each request up to 3 "
-                     "more times; attempts multiply to 5 x 3 x 4 = 60 rather "
-                     "than adding",
+        "amplifier": "The loop retries 5 times and the mesh route retries each "
+                     "5xx up to 3 more times; attempts multiply to 5 x 4 = 20 "
+                     "rather than adding. withRetry adds 3 attempts only when "
+                     "fetch throws, so a 5xx passes straight through it",
         "sustaining_effect": "Every client waits exactly SLEEP_MS and returns "
                              "together, so the upstream is re-saturated the "
                              "moment it starts recovering — the herd re-forms "
@@ -108,17 +108,17 @@ CANNED: dict[str, list[dict]] = {
         # the inner retry layer lives in another file; citing it files FR-001
         # under that file too (#19 AC-4)
         "also_cite": [("src/client/retry-wrapper.ts", "export async function withRetry",
-                       "the inner retry layer: 3 attempts per call"),
+                       "the inner retry layer: 3 attempts, only when fetch throws"),
                       ("deploy/releases-virtualservice.yaml", "attempts: 3",
                        "the mesh layer: up to 4 tries per request, outside the code")],
         "confidence": "high",
-        "confidence_rationale": "All three retry layers are visible in the code and "
-                                "the mesh configuration, and five separate 'fix "
+        "confidence_rationale": "Both retry layers on the 5xx path are visible in the "
+                                "code and the mesh configuration, and five separate 'fix "
                                 "timeout' commits on this file in the window show "
                                 "the cause was never addressed",
-        "how_to_verify": "Stub the releases endpoint to fail for 3s and call "
+        "how_to_verify": "Stub the releases endpoint to return 503 for 15s and call "
                          "fetchRelease from 10 clients at once; count upstream "
-                         "requests (expect 600) and assert the inter-arrival "
+                         "requests (expect 200) and assert the inter-arrival "
                          "times are not identical",
         "prediction": "The next incident on this path is a retry storm after a "
                       "brief upstream degradation, not a slow dependency",
@@ -237,8 +237,8 @@ CANNED: dict[str, list[dict]] = {
 # resolved to file:line at generation time.
 CANNED_VERDICTS: dict[str, dict] = {
     "client/releases.ts": {"verdict": "upheld",
-                           "reason": "All three retry layers are on the request path and none "
-                                     "caps the attempts of the layer outside it."},
+                           "reason": "The loop and the mesh retries are both on the 5xx path and "
+                                     "neither caps the attempts of the other."},
     "client/api.ts": {"verdict": "narrowed",
                       "reason": "Each retry waits the fixed 5 s before recursing.",
                       "holds": "With API_RETRY_ON_429 set, a 429 is retried after a fixed 5 s "
