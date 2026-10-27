@@ -585,7 +585,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("prepare")
     p.add_argument("--repo", default=None)
-    p.add_argument("--model", default="sonnet", choices=sorted(c.MODEL_ALIASES))
+    p.add_argument("--model", default="haiku", choices=sorted(c.MODEL_ALIASES))
     p.add_argument("--frozen", default=None)
     p.set_defaults(fn=_cmd_prepare)
     p = sub.add_parser("check")

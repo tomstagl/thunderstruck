@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -648,3 +649,30 @@ def test_export_run(validated_repo, validated_env, tmp_path):
     assert run["findings"][rel] == {"verdict": "refuted", "duplicate_of": None}
     unchecked = next(k for k, v in run["findings"].items() if k != rel)
     assert run["findings"][unchecked] == {"duplicate_of": None}
+
+
+# --- Task 21 ----------------------------------------------------------------
+def test_the_default_skeptic_model_is_the_measured_one():
+    doc = (ROOT / "docs" / "calibration" / "verification.md").read_text()
+    chosen = re.search(r"^Default skeptic model: `(\w+)`$", doc, re.M)[1]
+    import yaml
+    front = yaml.safe_load((ROOT / "agents" / "thunderstruck-skeptic.md").read_text().split("---")[1])
+    assert front["model"] == chosen
+    run = json.loads((ROOT / "docs" / "calibration" / "correctness" / "celery" / "runs"
+                      / f"skeptic-{chosen}.json").read_text())
+    assert run["produced_by"]["model"] == c.MODEL_ALIASES[chosen]
+
+
+def test_the_default_skeptic_model_scores_as_recorded():
+    # No candidate reached 15 of 21 (Task 21 Step 3), so the opt-in model is
+    # pinned to its recorded figures: never a correct finding refuted.
+    doc = (ROOT / "docs" / "calibration" / "verification.md").read_text()
+    chosen = re.search(r"^Default skeptic model: `(\w+)`$", doc, re.M)[1]
+    same = int(re.search(rf"^Same verdict class, `{chosen}`: (\d+) of 21$", doc, re.M)[1])
+    out = subprocess.run(
+        ["uv", "run", "-q", str(ROOT / "scripts" / "benchmark.py"), "--run",
+         str(ROOT / "docs" / "calibration" / "correctness" / "celery" / "runs" / f"skeptic-{chosen}.json"),
+         "--json"], capture_output=True, text=True, check=True, cwd=ROOT).stdout
+    counts = json.loads(out)["runs"][0]["measures"]["verdicts"]["counts"]
+    assert counts["correct refuted"] == 0
+    assert counts["same"] == same

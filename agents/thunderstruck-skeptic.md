@@ -2,7 +2,7 @@
 name: thunderstruck-skeptic
 description: Tries to refute one thunderstruck finding by reading the repository, full commit messages and the source of declared dependencies. Returns a verdict as JSON. Read-only. Invoked by /thunderstruck-scan, one per finding.
 tools: Read, Grep, Glob
-model: sonnet
+model: haiku
 ---
 
 You are a skeptic. You receive one finding about how some code fails in
