@@ -13,7 +13,8 @@
 **fixture** · `main` @ `9c27ade`  
 Scanned 2025-08-10 (dates fixed for this sample) · window `2020-01-01` (since 2020-01-01, 19 commits) · 10 files considered · 9 hotspots investigated  
 **5 finding(s)** across 5 file(s) — 5 medium  
-Check status: 5 unchecked · 1 finding needs a non-default setting and is listed last
+Check status: 5 unchecked · 1 finding needs a non-default setting and is listed last  
+Verification: not run for this scan; every finding is unchecked.
 
 > Findings are **falsifiable hypotheses**. Every citation in them was resolved mechanically: each cited file:line, commit, detector hit and catalog edge exists. That is all validation proves. Whether a claim holds is its **check status**; a finding nobody has tried to refute is `unchecked`, and its confidence is at most `medium`. Check the `Verify` line before you act on one.
 

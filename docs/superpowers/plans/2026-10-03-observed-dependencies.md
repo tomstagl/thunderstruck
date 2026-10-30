@@ -88,9 +88,11 @@ This task needs hand-written ground truth and a person to review the sample. The
 - [ ] Run it per service. Record counts only: linkage (documented outbound edges linked to at least one file, per service); every mapped edge with no observation and the reason it was missed; distinct values per resolution; dropped values per kind; own hosts excluded; env reads used in a call in a different file (the cross-file gap, counted by searching each mapped env var across the service).
 - [ ] Review the unmatched values of the four services, pooled: 30, every k-th of the sorted list, or all if there are fewer. Mark each "real dependency" or "noise".
 - [ ] Derive the measured forms: a form is measured when at least one observation that the review or the ground truth marks real was made through it (for a response form: the observation's file passed the gate through it), and that form's values were in the noise review. Every other candidate is unmeasured.
-- [ ] Add a `## Run 2: OpenTelemetry demo` section to `docs/calibration/observed-dependencies.md` with the repository and commit, the ground-truth sources and hashes, `seen.txt`, the counts, the review, and a `## Measured forms` table, one row per measured form: `| Id | Language | Real dependencies observed through it |`. End the doc with exactly one of:
+- [ ] Add a `## Re-run on the OpenTelemetry demo` section to `docs/calibration/observed-dependencies.md` with the repository and commit, the ground-truth sources and hashes, `seen.txt`, the counts, the review, and a `## Measured forms` table, one row per measured form: `| Id | Language | Real dependencies observed through it |`. End the doc with exactly one of:
   - `Verdict: go` — at most one in five reviewed values is noise (6 of 30), and every missed mapped edge is missed for a reason §2 documents as a known gap;
   - `Verdict: no-go — <what to narrow>` — then change the spec (§2) before this plan continues.
+
+**Done (2026-10-23):** the doc records the OpenTelemetry re-run and a second one on `GoogleCloudPlatform/bank-of-anthos` (no host and nothing to review on the first), ending `Verdict: go`. Measured: `ts.read.destructure`, `ts.connect.grpc-client`, `ts.request.fetchlike`, `config.env.placeholder` (yaml) and `config.env.k8s-name`. No response form, no `ts.read.dot`, no Python or Java form, no `config.host.key`, no `mesh.service-entry`. Tasks 1–10 below are written for that set.
 
 ### Task 1: Rules catalog, host and secret extraction (AC-8, AC-9)
 
@@ -111,8 +113,8 @@ This task needs hand-written ground truth and a person to review the sample. The
   - `generic_first_labels: [api, www, app, cdn, static]` (used by Task 4).
   - `secret_calls`, `exclude_hosts` (`exact`, `suffix`, `prefix: [docs.]`, `ipv4_loopback: true`) unchanged from the spec's §2.3–§2.4 lists.
 - [ ] Write `tests/observed/test_measured_forms.py`: `test_only_measured_forms_ship` parses the `## Measured forms` table of `docs/calibration/observed-dependencies.md` and asserts every form id in `observed.yaml` is in it; `test_every_form_has_a_positive_sample` asserts each id appears in at least one sample's `.expected` provenance (see the next step).
-- [ ] Add the host and secret samples. Layout: `tests/observed/samples/<kind>/<language>/{positive,negative}_<topic>.<ext>`. Every positive has a sibling `<file>.expected` with one `<kind>:<value>:<line>` per line, sorted, and a first comment line `# forms: <id>, <id>` naming the forms it exercises. A negative yields no observation of its directory's kind. Only samples for shipped forms exist. At minimum (§11, Review Focus 1–2):
-  - `host` positives: `fetchWithRetry("https://ledger.internal/v1/x")` then `.json()`; `const apiBase = "https://ledger.internal"` with a `fetch(` and `.ok` in the file; `new URL("https://ledger.internal")`; the userinfo URLs `postgres://app:hunter2@db.internal/app` and `postgres://u:p@ss/w@db.internal/x` in a requesting file, each expecting only `db.internal`; the same URL commented out on the line above the call, expecting only the call's line; `yaml/positive_key.yaml` (`payments.base-url: https://payments-api.internal/v1`) if `config.host.key` shipped; `yaml/positive_service_entry.yaml` if `mesh.service-entry` shipped.
+- [ ] Add the host and secret samples. **No host form shipped** (Task 0): no response form, no `config.host.key`, no `mesh.service-entry`. So there are no host positives and `observed.yaml` lists no host forms; the host machinery below (gate, URL, normalisation, exclusions, own hosts) is still built, so a measured form later is a data change. The host negatives run as negatives, and the own-host and secret-safety tests that need a host pass `observe_text` a rules dict with a test-only request and response form added in the test, never in `observed.yaml`. Layout: `tests/observed/samples/<kind>/<language>/{positive,negative}_<topic>.<ext>`. Every positive has a sibling `<file>.expected` with one `<kind>:<value>:<line>` per line, sorted, and a first comment line `# forms: <id>, <id>` naming the forms it exercises. A negative yields no observation of its directory's kind. Only samples for shipped forms exist. At minimum (§11, Review Focus 1–2):
+  - `host` positives, once a host form ships (none now): `fetchWithRetry("https://ledger.internal/v1/x")` then `.json()`; `const apiBase = "https://ledger.internal"` with a `fetch(` and `.ok` in the file; `new URL("https://ledger.internal")`; the userinfo URLs `postgres://app:hunter2@db.internal/app` and `postgres://u:p@ss/w@db.internal/x` in a requesting file, each expecting only `db.internal`; the same URL commented out on the line above the call, expecting only the call's line; `yaml/positive_key.yaml` (`payments.base-url: https://payments-api.internal/v1`) if `config.host.key` shipped; `yaml/positive_service_entry.yaml` if `mesh.service-entry` shipped.
   - `host` negatives: a press/footer link table (`https://news-site.internal/review/1`) in a file with no request form; the same table in a requesting file but as bare hosts with no path or API name; a URL in a file that requests but reads no response; a `VirtualService` and a `DestinationRule`; an own host and its subdomain (`own_hosts=["fixture-app.internal"]`, passed by the test); `localhost`, `127.0.0.2`, `example.com`, `svc.test`, `json-schema.org`, `docs.python.org`, `${HOST}`, `{{ .Values.host }}`; a commented-out URL alone.
   - `secret`: as specified before the amendment: `yaml/positive_externalsecret.yaml` (`data[].remoteRef.key`, `dataFrom[].extract.key`), `yaml/positive_vault_annotation.yaml`, `yaml/positive_csi.yaml`, one code positive per language; negatives a 40-character `[A-Za-z0-9]` literal passed to `getSecretValue` and a secret call in a comment.
 - [ ] Write `tests/observed/test_observed_samples.py`: discover samples from the tree; each positive's projection to `kind:value:line` equals `.expected`; each negative yields nothing of its kind; `test_every_kind_has_both_samples` for every `(kind, language)` that has at least one shipped form (aliases excluded as before); a secret-safety test that `hunter2`, `p@ss`, the 40-character literal and any URL path appear in no serialised `observe_text` output; an own-host test that the excluded host is counted in `excluded_own_host` and never returned.
@@ -136,13 +138,12 @@ This task needs hand-written ground truth and a person to review the sample. The
 - Produces: `observe_text` also returns `env` observations; `call_spans(blanked: str, rules: dict, lang: str) -> list[tuple[int, int]]` (start and end offsets of each request or connect call's argument list).
 
 - [ ] Write failing tests in `test_env_use.py` and env samples (each `.expected` names its forms):
-  - direct: ``fetch(`${process.env.AUTH_SERVER}/verify`)`` → `env:AUTH_SERVER` on that line; `mongoose.connect(process.env.DB_CONNECT)` → `env:DB_CONNECT` (if `ts.connect.mongoose` shipped);
-  - one variable: `const base = process.env.AUTH_SERVER;` then on line 9 `fetch(base + "/verify")` → `env:AUTH_SERVER` at line 9, not at the read's line; a variable used in three calls → three observations;
-  - destructuring: `const { CART_ADDR = '' } = process.env;` then `new CartServiceClient(CART_ADDR, ChannelCredentials.createInsecure())` → `env:CART_ADDR` at the client line; `const { SHIPPING_ADDR: ship } = process.env;` then ``fetch(`${ship}/get-quote`)`` → `env:SHIPPING_ADDR`;
-  - Python `addr = os.environ.get("PRODUCT_CATALOG_ADDR", "")` then `grpc.insecure_channel(addr)`, and Java `String t = System.getenv("X_ADDR");` then `ManagedChannelBuilder.forTarget(t)`, only for shipped forms;
-  - config by name: a container `env[].name: LEDGER_ADDR` and `${PRODUCT_CATALOG_ADDR:localhost:3550}` observed; `${LEDGER_ADDRESS}` and `${LOG_LEVEL}` not; `@Value("${payments.base-url}")` → `env:PAYMENTS_BASE_URL`;
-  - not observed (the §2.2 gaps, pinned): `process.env.LOG_LEVEL` read and never used in a call; `new S3Client({ endpoint: process.env.S3_URL })`; a second hop (`const b = a + "/v1"; fetch(b)`); an object field (`cfg.auth = process.env.X; fetch(cfg.auth)`); `export const X = process.env.X_URL` used by no call in the file;
-  - Review Focus 3: a 3000-character single-line call with an unbalanced `(` containing `process.env.X_URL` → no observation, no exception, no warning.
+  - The only shipped read form is `ts.read.destructure`; `process.env.NAME` and `process.env["NAME"]` are not observed (Task 0). Pin that: `fetch(process.env.AUTH_SERVER)` → nothing;
+  - one variable: `const { AUTH_SERVER } = process.env;` then on line 9 ``fetch(`${AUTH_SERVER}/verify`)`` → `env:AUTH_SERVER` at line 9, not at the read's line; a name used in three calls → three observations;
+  - destructuring: `const { CART_ADDR = '' } = process.env;` then `new CartServiceClient(CART_ADDR, ChannelCredentials.createInsecure())` → `env:CART_ADDR` at the client line; `const { SHIPPING_ADDR: ship } = process.env;` then ``fetch(`${ship}/get-quote`)`` → `env:SHIPPING_ADDR`; `new FooClient(X_ADDR)` without credentials → nothing;
+  - config by name: a container `env[].name: LEDGER_ADDR` and `${PRODUCT_CATALOG_ADDR:localhost:3550}` in YAML observed; `${LEDGER_ADDRESS}` and `${LOG_LEVEL}` not; the same placeholder in a `.properties` file and `@Value("${payments.base-url}")` → nothing (unmeasured forms);
+  - not observed (the §2.2 gaps, pinned), each with a destructured read: `LOG_LEVEL` never used in a call; `new S3Client({ endpoint: S3_URL })`; a second hop (`const b = S3_URL + "/v1"; fetch(b)`); an object field (`cfg.auth = AUTH_URL; fetch(cfg.auth)`); `export const X = X_URL` used by no call in the file;
+  - Review Focus 3: `const { X_URL } = process.env;` then a 3000-character single-line call with an unbalanced `(` containing `X_URL` → no observation, no exception, no warning.
 - [ ] Run; they fail.
 - [ ] Implement:
   - `call_spans`: for each shipped `request` or `connect` match, scan from its `(` to the balancing `)` in the blanked text, counting only parentheses outside string literals; give up after 2000 characters. `ts.connect.grpc-client` keeps a span only if it matches `ChannelCredentials|credentials\.`.
@@ -234,7 +235,7 @@ This task needs hand-written ground truth and a person to review the sample. The
 **Interfaces:**
 - Produces: `build_fixture.add_observed_dependencies(repo: Path) -> None`; `context_scanned_repo` also runs `observed.py` between `context.py` and `bundle.py`.
 
-The additions use only forms the OpenTelemetry frontend exercises (`ts.request.fetchlike`, `ts.response.ok`/`.json`, `ts.read.destructure`, `ts.connect.grpc-client`). If Task 0 did not ship one of them, replace it with a shipped form before starting and say so in the PR.
+The additions use only the shipped TypeScript forms (`ts.request.fetchlike`, `ts.read.destructure`, `ts.connect.grpc-client`). No host form shipped, so every planted dependency is an env var, and the own-host annotation is planted but nothing in the code can match it.
 
 - [ ] In `fake_catalog.py`, add to the main entity three outbound edges (`component:default/search-api`, `component:default/legacy-billing`, `resource:default/orders-db`) and one inbound edge (`component:default/reporting-job`), each with a `neighbour(...)` entry, and the annotation `"thunderstruck.io/own-hosts": "fixture-app.internal"`.
 - [ ] Add `add_observed_dependencies` to `build_fixture.py`. It appends to the three top-ranked files, writes `deploy/search-externalsecret.yaml` (an `external-secrets.io/v1beta1` `ExternalSecret` named `search` whose `spec.data[0]` is `{secretKey: token, remoteRef: {key: secret/data/search-api}}`), commits them in one commit dated one day after the last (as `add_service_context`'s neighbours do, with the fixture author), and appends the untracked profile entries. The planted lines:
@@ -242,14 +243,13 @@ The additions use only forms the OpenTelemetry frontend exercises (`ts.request.f
 | File | Appended code | Expect |
 |---|---|---|
 | `src/client/releases.ts` | `const { RELEASES_API_URL = '' } = process.env;` and a function doing ``fetch(`${RELEASES_API_URL}/v1/releases`)`` then `res.json()` | `env:RELEASES_API_URL` documented by name (`releases-api`) |
-| same | `export const PAYMENTS_API_BASE = "https://payments-api.internal";` | `host:payments-api.internal` documented by name |
-| `src/sync/collection.ts` | a function fetching `"https://fx-rates.internal/v1/latest"`, reading `res.ok` | `unmatched` |
+| `src/sync/collection.ts` | `const { FX_RATES_URL = '' } = process.env;` and a function doing ``fetch(`${FX_RATES_URL}/v1/latest`)`` | `unmatched` |
 | same | `const { LEDGER_ADDR = '' } = process.env;` and `new LedgerServiceClient(LEDGER_ADDR, ChannelCredentials.createInsecure())` | `mapped_undocumented`, `component:default/ledger`, `via: "map"` |
-| `src/sync/scheduler.ts` | fetches of `"https://reporting-job.internal/hooks/sync-done"`, `"https://collector.analytics-vendor.internal/events"` and `"https://fixture-app.internal/api/ping"`, reading `res.ok` | `dependent_only`; `ignored`; excluded as own host |
+| `src/sync/scheduler.ts` | `const { REPORTING_JOB_URL = '', ANALYTICS_COLLECTOR_URL = '' } = process.env;` and fetches of ``${REPORTING_JOB_URL}/hooks/sync-done`` and ``${ANALYTICS_COLLECTOR_URL}/events`` | `dependent_only`; `ignored` |
 
-  Profile entries: a map `entity = "component:default/ledger"`, `env = ["LEDGER_ADDR"]`; a map `entity = "component:default/legacy-billing"`, `host = ["billing.internal"]`; the analytics ignore rule with its reason.
+  Profile entries: a map `entity = "component:default/ledger"`, `env = ["LEDGER_ADDR"]`; a map `entity = "component:default/legacy-billing"`, `host = ["billing.internal"]`; the ignore rule `env = "ANALYTICS_COLLECTOR_URL"` with its reason.
 - [ ] In `conftest.py`, call `add_observed_dependencies(repo)` in `context_repo_template` after `add_service_context`, and add `["observed.py"]` to `context_scanned_repo` after `["context.py"]`. `fixture_repo` and `scanned_repo` don't change.
-- [ ] Write `tests/test_observed_fixture.py` over `context_scanned_repo`, asserting the table's resolutions exactly, plus: `secret:secret/data/search-api` documented; `not_observed == ["dependsOn component:default/legacy-billing"]`; `no_mapping == ["dependsOn resource:default/orders-db"]`; `ignored` has the analytics rule with `hits == 1`; `excluded.own_host == 1`; no observation of `api.example.com` or `legacy.example.com`.
+- [ ] Write `tests/test_observed_fixture.py` over `context_scanned_repo`, asserting the table's resolutions exactly, plus: `secret:secret/data/search-api` documented; `not_observed == ["dependsOn component:default/legacy-billing"]`; `no_mapping == ["dependsOn resource:default/orders-db"]`; `ignored` has the analytics rule with `hits == 1`; `excluded.own_host == 0` and `own_hosts_known` is true; no observation of `api.example.com` or `legacy.example.com`.
 - [ ] Run; the new test fails until the fixture change is in. Then the full suite: the existing context tests pass unchanged except those that pin the context fixture's edge list or `context_hash`, which get the new edges and annotation. `releases.ts` stays H01; check `test_malformed_hotspot_id_is_rejected_not_crashed`.
 - [ ] Commit: `Plant observed dependencies in the context fixture (#6)`.
 
@@ -262,9 +262,9 @@ The additions use only forms the OpenTelemetry frontend exercises (`ts.request.f
 - Produces: `section_observed(obs_doc: dict | None, rel: str) -> str`; `bundles/index.json` gains `observed_hash` per bundle and at the top level (`null` when skipped).
 
 - [ ] Write failing tests over `context_scanned_repo`:
-  - H01 (`src/client/releases.ts`) has `## Dependencies observed in this file` directly after the Service context section, with its two refs, each in the §6 wording for its resolution;
+  - H01 (`src/client/releases.ts`) has `## Dependencies observed in this file` directly after the Service context section, with its one ref (`RELEASES_API_URL`) in the §6 wording for its resolution;
   - H02 (`src/sync/collection.ts`) shows `not in the catalog (declared as \`component:default/ledger\`)` and `matches no documented dependency`;
-  - the scheduler's analytics ref is listed as `ignored by the profile: third-party analytics; tracked outside the catalog`, and the own-host URL is not listed;
+  - the scheduler's analytics ref is listed as `ignored by the profile: third-party analytics; tracked outside the catalog`;
   - a hotspot whose file has no observation has no such section;
   - the index carries `observed_hash` per bundle, equal to `observed.json`'s;
   - 16 observations in one file render 15 lines and `… and 1 more observed in this file` (call `section_observed` directly);
@@ -289,7 +289,7 @@ The additions use only forms the OpenTelemetry frontend exercises (`ts.request.f
   - rule 1: over `scanned_copy` (skipped) → "this scan observed no dependencies, so none can be cited";
   - rule 2: drop one observation from `observed.json` after bundling and recompute its hash → every `observed` ref fails with "observations changed since bundling" (Review Focus 5);
   - rule 3: a wrong line → "no such observation; copy a ref verbatim from the bundle's 'Dependencies observed in this file' section";
-  - rule 4: a finding on H01 citing H02's `fx-rates.internal` ref without citing `src/sync/collection.ts` as code → rejected; with it → accepted;
+  - rule 4: a finding on H01 citing H02's `FX_RATES_URL` ref without citing `src/sync/collection.ts` as code → rejected; with it → accepted;
   - only `observed` evidence → rejected by the existing code-evidence rule;
   - `save_finding.py` strips an investigator-supplied `observed_evidence`.
 - [ ] Run; they fail.
@@ -308,8 +308,8 @@ The additions use only forms the OpenTelemetry frontend exercises (`ts.request.f
 
 - [ ] Write failing tests over the context fixture's report:
   - `## Catalog drift` follows `## Service context`, with the §8 intro sentence and the fixed note on what is not observed (configuration tables, more than one variable or across files, vendor SDK clients);
-  - *Observed, not in the catalog* lists `fx-rates.internal` and `LEDGER_ADDR` (with `(declared as \`component:default/ledger\`)`), each with kind, value, linked locations and count;
-  - *Documented only as a dependent* lists `reporting-job.internal`;
+  - *Observed, not in the catalog* lists `FX_RATES_URL` and `LEDGER_ADDR` (with `(declared as \`component:default/ledger\`)`), each with kind, value, linked locations and count;
+  - *Documented only as a dependent* lists `REPORTING_JOB_URL`;
   - *Documented, not observed* lists `dependsOn component:default/legacy-billing` in the §8 wording (AC-4);
   - *No mapping declared* lists `dependsOn resource:default/orders-db` in the §8 wording, naming the `[[observed.map]]` entry that would let the scan tell;
   - *Ambiguous*, from a hand-built document with two `ledger` neighbours, lists the value with both refs, and neither edge appears in the two lists above;
