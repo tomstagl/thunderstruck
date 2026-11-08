@@ -1,0 +1,110 @@
+{
+  "hotspot_id": "H07",
+  "file": "apps/webapp/app/services/runsReplicationService.server.ts",
+  "findings": [
+    {
+      "location": {
+        "file": "apps/webapp/app/services/runsReplicationService.server.ts",
+        "symbol": "#acknowledgeLatestTransaction / #flush",
+        "lines": "830-858"
+      },
+      "missing_patterns": [
+        "S07",
+        "S19"
+      ],
+      "failure_mode": "Runs silently go missing or stay stale in ClickHouse (dashboard run lists, status and metrics diverge from Postgres) after a ClickHouse outage or a process crash. The only signals are error logs and a failed-batch counter.",
+      "trigger_condition": "ClickHouse insert fails past _insertMaxRetries (outage, memory limit, un-ingestable row), or the webapp process dies while batches sit in the in-memory scheduler.",
+      "amplifier": "The LSN is acknowledged to Postgres on a 1s timer based only on the latest commit received. It does not depend on the batch having been flushed or inserted.",
+      "sustaining_effect": null,
+      "blast_radius": "The ClickHouse run replica diverges from Postgres for the affected rows. That divergence is permanent, because Postgres will not resend acknowledged WAL.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/services/runsReplicationService.server.ts:735-741",
+          "note": "latestCommitEndLsn is advanced when the transaction is only queued in memory."
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/services/runsReplicationService.server.ts:849-858",
+          "note": "The timer acknowledges latestCommitEndLsn with no check that the data was flushed."
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/services/runsReplicationService.server.ts:1010-1016",
+          "note": "An insert error after retries is only logged and recorded on the span, with no requeue."
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/services/runsReplicationService.server.ts:1624-1629",
+          "note": "A failed batch is already cleared from memory and only increments failedBatchCount."
+        },
+        {
+          "type": "commit",
+          "ref": "0445b8e",
+          "note": "[fix] The ClickHouse JSON-failure path is an earlier fix in the same flush and insert area."
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "The ack and flush decoupling is plain in the code, and repeated fixes in the insert path (eefb96c, 0445b8e) show inserts do fail. I did not trace whether the flush callback re-adds failed rows elsewhere.",
+      "how_to_verify": "Make ClickHouse reject inserts for longer than the retry budget, then check that the slot confirmed_flush_lsn passes those commits and the rows never appear in ClickHouse.",
+      "key": "19a53a5ffb77",
+      "content_hash": "sha256:f47ef37c36dabcf0fa80c298a6641e37d88b196936afcf92c140b35fce730917",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "apps/webapp/app/services/runsReplicationService.server.ts": "sha256:f47ef37c36dabcf0fa80c298a6641e37d88b196936afcf92c140b35fce730917"
+      }
+    },
+    {
+      "location": {
+        "file": "apps/webapp/app/services/runsReplicationService.server.ts",
+        "symbol": "#insertWithRetry",
+        "lines": "1047-1128"
+      },
+      "missing_patterns": [
+        "S12",
+        "S04",
+        "S14"
+      ],
+      "failure_mode": "During a ClickHouse brownout, replication lag grows and webapp memory climbs, and ClickHouse sees repeated retried inserts from every concurrent flush.",
+      "trigger_condition": "ClickHouse is slow or erroring, with sustained run write volume.",
+      "amplifier": "Every error that is not on a short string list is retried. There is no circuit breaker or retry budget, and each flush has its own retries. The jitter is only 0-100ms.",
+      "sustaining_effect": "While inserts are slow, the unbounded in-memory batch and the limiter's pending queue keep growing. Each flush then retries at full size, adding load to the already struggling ClickHouse.",
+      "blast_radius": "Run analytics and dashboard freshness degrade, and the webapp process is at risk of memory pressure.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/services/runsReplicationService.server.ts:1088-1116",
+          "note": "Any error not matching a short permanent-error string list is treated as retryable."
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/services/runsReplicationService.server.ts:1118-1128",
+          "note": "Backoff jitter is a fixed 0-100ms."
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/services/runsReplicationService.server.ts:1503-1517",
+          "note": "addToBatch has no size cap or backpressure to the replication stream."
+        },
+        {
+          "type": "detector",
+          "ref": "S12@apps/webapp/app/services/runsReplicationService.server.ts:1069",
+          "note": "Retries with no circuit breaker or token bucket."
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "Structure is visible but I did not read the configured limits or the concurrency settings. The effect depends on env values.",
+      "how_to_verify": "Inject ClickHouse latency above the insert timeout under steady write load, then watch the pending count of concurrencyLimiter, heap size and insert attempts per second.",
+      "key": "31c7136e8886",
+      "content_hash": "sha256:f47ef37c36dabcf0fa80c298a6641e37d88b196936afcf92c140b35fce730917",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "apps/webapp/app/services/runsReplicationService.server.ts": "sha256:f47ef37c36dabcf0fa80c298a6641e37d88b196936afcf92c140b35fce730917"
+      }
+    }
+  ],
+  "notes": "The detectors for Promise.all in shutdown (S08), routeCache (S09) and the flush timer jitter (S16) were rejected. The source arrays are small and bounded by the number of sources. I did not look at the S09 cache beyond the detector line.",
+  "bundle_hash": "sha256:f5afff47a876ea4938d77c3a5dd70d8677b1d21e04b20de80c11fa6513415277",
+  "schema": "thunderstruck.finding/v1",
+  "validated_with": 3
+}

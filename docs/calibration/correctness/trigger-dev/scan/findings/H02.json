@@ -1,0 +1,100 @@
+{
+  "hotspot_id": "H02",
+  "file": "apps/webapp/app/services/queryService.server.ts",
+  "findings": [
+    {
+      "location": {
+        "file": "apps/webapp/app/services/queryService.server.ts",
+        "symbol": "executeQuery",
+        "lines": "228-358"
+      },
+      "missing_patterns": [
+        "S15",
+        "S19"
+      ],
+      "failure_mode": "Users see 'exceeded your query concurrency' or 'a lot of queries at the moment' rejections although few queries are running, until leaked slots expire",
+      "trigger_condition": "getDefaultPeriod/getLimit (platform lookup) throws or times out after the concurrency slot is acquired and before the try block begins",
+      "amplifier": "Each failed call leaks a slot for the org/project key and the global key. Dashboard auto-refresh and alert evaluators re-issue queries, so more slots leak while the platform lookup stays unhealthy",
+      "sustaining_effect": null,
+      "blast_radius": "Queries for the affected project are rejected at its concurrency limit. Under a wide platform outage the global limit can fill and reject queries for all tenants, until the limiter's 5-minute expiry clears the slots",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/services/queryService.server.ts:228",
+          "note": "slot acquired before any fallible awaits"
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/services/queryService.server.ts:259-301",
+          "note": "awaited getDefaultPeriod/getLimit run outside the try/finally that releases"
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/services/queryService.server.ts:358",
+          "note": "try begins only after those awaits"
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/services/redisConcurrencyLimiter.server.ts:7",
+          "note": "stale entries auto-expire after 300s, so the leak self-heals"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "The control-flow gap is visible in the code, but I did not read getLimit to confirm it can throw. The limiter's expiry bounds the impact.",
+      "how_to_verify": "Stub getLimit to reject, call executeQuery repeatedly with a limit of 2, then check whether later calls get a key_limit rejection.",
+      "prediction": "Bursts of concurrency-limit errors on dashboards that coincide with platform/billing lookup errors",
+      "key": "37482446c863",
+      "content_hash": "sha256:b594aedf273cdfb635787cfe5c43c1f55c8c3b417b0a85bcbd37e7a58002e56e",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "apps/webapp/app/services/queryService.server.ts": "sha256:b594aedf273cdfb635787cfe5c43c1f55c8c3b417b0a85bcbd37e7a58002e56e",
+        "apps/webapp/app/services/redisConcurrencyLimiter.server.ts": "sha256:2ee1203c4c5dc045e878f201f865b9c3737c3f767d11d278024e594fd3f5b69a"
+      }
+    },
+    {
+      "location": {
+        "file": "apps/webapp/app/services/queryService.server.ts",
+        "symbol": "executeQuery",
+        "lines": "360-368"
+      },
+      "missing_patterns": [
+        "S08"
+      ],
+      "failure_mode": "Every query for a very large org runs two unbounded Postgres scans before ClickHouse is touched, so query latency and DB load grow with the project and environment count",
+      "trigger_condition": "Org with thousands of projects/environments, with dashboards or alerts issuing frequent queries",
+      "amplifier": "Auto-refreshing widgets and alert evaluators multiply the per-query Postgres scans, and the full id-to-ref maps are rebuilt in memory each time",
+      "sustaining_effect": null,
+      "blast_radius": "Query latency rises for that org and Postgres read load increases for anything sharing the database",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/services/queryService.server.ts:360",
+          "note": "project.findMany with no take, run per query"
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/services/queryService.server.ts:365",
+          "note": "runtimeEnvironment.findMany with no take, run per query"
+        },
+        {
+          "type": "detector",
+          "ref": "S08@apps/webapp/app/services/queryService.server.ts:360",
+          "note": "unbounded findMany lead confirmed in code"
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "The queries are unbounded and uncached, but real org sizes are unknown and the select is narrow.",
+      "how_to_verify": "Seed an org with 10k environments and time executeQuery; the Postgres time should grow linearly.",
+      "key": "1a8d24e57647",
+      "content_hash": "sha256:b594aedf273cdfb635787cfe5c43c1f55c8c3b417b0a85bcbd37e7a58002e56e",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "apps/webapp/app/services/queryService.server.ts": "sha256:b594aedf273cdfb635787cfe5c43c1f55c8c3b417b0a85bcbd37e7a58002e56e"
+      }
+    }
+  ],
+  "notes": "Rejected: the S07 duplicate-history lead at line 458. The create is guarded by a last-query dedupe and a duplicate row is harmless. Fix history here is only 2 [fix] commits (6e5f0f0, 9d57aff), unrelated to these paths.",
+  "bundle_hash": "sha256:33a504d96bdaa2253d238d4701dfdaf1b1cf3f1d9cddb2f346b7c9c20e7e7992",
+  "schema": "thunderstruck.finding/v1",
+  "validated_with": 3
+}

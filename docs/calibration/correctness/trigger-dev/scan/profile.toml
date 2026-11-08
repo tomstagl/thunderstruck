@@ -1,0 +1,3 @@
+[filters]
+exclude_globs = ["*.tsx"]
+exclude_dirs = ["packages"]

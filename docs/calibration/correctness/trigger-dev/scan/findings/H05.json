@@ -1,0 +1,58 @@
+{
+  "hotspot_id": "H05",
+  "file": "apps/webapp/app/routes/resources.orgs.$organizationSlug.projects.$projectParam.env.$envParam.dashboard-agent.ts",
+  "findings": [
+    {
+      "location": {
+        "file": "apps/webapp/app/routes/resources.orgs.$organizationSlug.projects.$projectParam.env.$envParam.dashboard-agent.ts",
+        "symbol": "action (intent=create)",
+        "lines": "389-552"
+      },
+      "missing_patterns": [
+        "S07",
+        "S18"
+      ],
+      "failure_mode": "Users can start more agent sessions than the org's message quota allows. A create that returns 500 can leave a live, billed agent session behind, and a client retry then starts a second one.",
+      "trigger_condition": "Concurrent create requests from one org, or a failure in recordAgentMessageSent or in the token mint after the session has already started.",
+      "amplifier": "The quota is read at the start of the request and only incremented after the LLM session has been dispatched. Nothing reserves quota in between, and the create path has no idempotency key.",
+      "sustaining_effect": null,
+      "blast_radius": "LLM spend and agent runs for one org exceed its plan. The org sees duplicate chats in its history. Each affected chat is a separate failure and nothing keeps the system degraded.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/routes/resources.orgs.$organizationSlug.projects.$projectParam.env.$envParam.dashboard-agent.ts:389-396",
+          "note": "Quota is checked up front and not reserved."
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/routes/resources.orgs.$organizationSlug.projects.$projectParam.env.$envParam.dashboard-agent.ts:525-527",
+          "note": "Usage is recorded only after the session start succeeded. If this throws, the outer catch returns an error and the chat is not deleted."
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/routes/resources.orgs.$organizationSlug.projects.$projectParam.env.$envParam.dashboard-agent.ts:530-547",
+          "note": "A token mint failure returns 500 while the agent is already running."
+        },
+        {
+          "type": "commit",
+          "ref": "480bede",
+          "note": "Plan enforcement was added here as a feature, with 'and fixes' in the subject."
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "The ordering is visible in the code, but I did not read the quota helpers, and part of the middle of the create path was trimmed from the bundle. I did not confirm whether recordAgentMessageSent is atomic or whether the client retries after a 500.",
+      "how_to_verify": "Fire N parallel create requests with quota at limit-1 and count how many sessions start. Also make the token mint throw after the start and check that a live session remains with a 500 returned.",
+      "prediction": "Quota overshoot or duplicate chats show up in an org billing or support review.",
+      "key": "8ed671234b0e",
+      "content_hash": "sha256:25c9ff0113d294fefcd41d77667b3144fd598cfc8f66d2ff3495eb8d1a644051",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "apps/webapp/app/routes/resources.orgs.$organizationSlug.projects.$projectParam.env.$envParam.dashboard-agent.ts": "sha256:25c9ff0113d294fefcd41d77667b3144fd598cfc8f66d2ff3495eb8d1a644051"
+      }
+    }
+  ],
+  "notes": "Rejected the S08 lead (Promise.all at line 266) because it is a fixed set of four queries, not concurrency scaled by input size. Rejected the S19 lead at line 403 because the empty catch is an intentional documented fallback. I did not examine the S19 lead at line 764. The cleanup in the start-failure catch logs its errors, so it is not swallowed.",
+  "bundle_hash": "sha256:ff191fb523aadd8e9fd5bf5b733127a01d81f372b9a4ff8675fb9f05db5ebcc2",
+  "schema": "thunderstruck.finding/v1",
+  "validated_with": 3
+}

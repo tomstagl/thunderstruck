@@ -47,3 +47,42 @@ def test_the_set_is_public_pinned_and_licensed():
     assert licences, "LICENSES/ is empty"
     for p in (SECOND / "LICENSES").iterdir():
         assert p.read_text().strip(), f"{p.name} is empty"
+
+
+# --- Task 2 -----------------------------------------------------------------
+# CI cannot know the labeller's $HOME or work directory; the check for those is
+# Step 5's grep. A per-user macOS temp directory never appears in upstream source.
+LOCAL_PATH = re.compile(r"/var/folders/")
+
+
+def report() -> dict:
+    return json.loads((SECOND / "scan" / "report.json").read_text())
+
+
+def test_the_scan_is_of_the_pinned_commit_with_the_recorded_scope():
+    r = report()
+    assert r["repo"]["head"] == readme_commit()
+    assert r["repo"]["root"] == "<repo>"
+    for name in ("hotspots.json", "validation.json", "catalog-brief.md", "profile.toml"):
+        assert (SECOND / "scan" / name).is_file(), name
+    hs = json.loads((SECOND / "scan" / "hotspots.json").read_text())
+    assert hs["config"]["profile"] is True
+    assert hs["repo"]["root"] == "<repo>"
+    assert hs["window"]["since"] == readme_row("Window from").strip("`")  # spec §4.2
+    assert readme_row("Scan").startswith("`/thunderstruck-scan --top ")
+    assert readme_row("Plugin")
+    assert readme_row("Investigator model")
+
+
+def test_the_scan_has_enough_valid_findings():
+    r = report()
+    assert r["counts"]["findings"] >= 15            # spec §4.2
+    assert r["counts"]["findings"] == len(r["findings"])
+    assert all(f["key"] for f in r["findings"])
+    assert {f["hotspot_id"] for f in r["findings"]} <= {h["id"] for h in r["hotspots"]}
+
+
+def test_no_local_path_is_checked_in():
+    leaks = [str(p.relative_to(SECOND)) for p in SECOND.rglob("*")
+             if p.is_file() and LOCAL_PATH.search(p.read_text(errors="ignore"))]
+    assert leaks == []

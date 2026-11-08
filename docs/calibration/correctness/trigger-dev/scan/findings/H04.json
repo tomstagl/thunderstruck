@@ -1,0 +1,90 @@
+{
+  "hotspot_id": "H04",
+  "file": "apps/supervisor/src/index.ts",
+  "findings": [
+    {
+      "location": {
+        "file": "apps/supervisor/src/index.ts",
+        "symbol": "tryWarmStart",
+        "lines": "841-911"
+      },
+      "missing_patterns": [
+        "S01",
+        "S15"
+      ],
+      "failure_mode": "Runs stop starting on a supervisor. Dequeued runs sit in the dequeued state with no runner, and the warm_start phase duration climbs without bound.",
+      "trigger_condition": "The warm-start receiver accepts the TCP connection but never answers, for example because it is overloaded, deadlocked or its pod is frozen.",
+      "amplifier": "The warm-start fetch has no AbortSignal or timeout. The dequeue handler awaits it before it can reach the cold-create path, so each stuck message holds its slot and its run.",
+      "sustaining_effect": null,
+      "blast_radius": "Every run dequeued by this supervisor instance is delayed or stalled until the hung sockets are closed or the process restarts.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "apps/supervisor/src/index.ts:873-877",
+          "note": "fetch to the warm-start URL has no signal or timeout."
+        },
+        {
+          "type": "code",
+          "ref": "apps/supervisor/src/index.ts:555",
+          "note": "The dequeue handler awaits tryWarmStart before the cold-create fallback."
+        },
+        {
+          "type": "detector",
+          "ref": "S01@apps/supervisor/src/index.ts:873",
+          "note": "Confirmed: no timeout on the external call."
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "The missing timeout is visible in the code and the call is awaited on the dequeue path. I did not read the dequeue consumer's concurrency handling, and no fix commit targets this call.",
+      "how_to_verify": "Point TRIGGER_WARM_START_URL at a server that accepts connections and never responds. Dequeue a run and check whether it ever reaches createWorkload.",
+      "prediction": "A warm-start service incident will show up as a supervisor-wide dequeue stall rather than a fall back to cold starts.",
+      "key": "764aaef4039d",
+      "content_hash": "sha256:d065d7c883accf87252db9f0eafe75142f2d592db199ed61a39bbc24f08571dd",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "apps/supervisor/src/index.ts": "sha256:d065d7c883accf87252db9f0eafe75142f2d592db199ed61a39bbc24f08571dd"
+      }
+    },
+    {
+      "location": {
+        "file": "apps/supervisor/src/index.ts",
+        "symbol": "createWorkload",
+        "lines": "809-839"
+      },
+      "missing_patterns": [
+        "S19",
+        "S07"
+      ],
+      "failure_mode": "A run that was dequeued is left with no container. The supervisor only writes an error log line and the run sits until some heartbeat or timeout elsewhere notices.",
+      "trigger_condition": "workloadManager.create fails, for example from a Kubernetes API error, an image pull failure or a Docker daemon error, during a platform or cluster blip.",
+      "amplifier": "The catch block logs and records metrics, then returns normally. Nothing re-queues the run or reports the failure to the platform.",
+      "sustaining_effect": "Runs lost this way wait on slower recovery timers, and the lost capacity piles up for as long as create keeps failing.",
+      "blast_radius": "All runs dequeued while create is failing are delayed or stuck.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "apps/supervisor/src/index.ts:824-838",
+          "note": "The catch only observes metrics and logs, and the failure is not propagated."
+        },
+        {
+          "type": "detector",
+          "ref": "S07@apps/supervisor/src/index.ts:812",
+          "note": "The create call has no resumable or replay-safe handling visible in this file."
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "I did not read the downstream recovery (snapshot heartbeat timeouts), which may bound how long a run stays stuck. The swallowing itself is visible in the code.",
+      "how_to_verify": "Make workloadManager.create throw. Check whether the run is re-queued or marked failed without waiting for a heartbeat timeout.",
+      "key": "452b7414872b",
+      "content_hash": "sha256:d065d7c883accf87252db9f0eafe75142f2d592db199ed61a39bbc24f08571dd",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "apps/supervisor/src/index.ts": "sha256:d065d7c883accf87252db9f0eafe75142f2d592db199ed61a39bbc24f08571dd"
+      }
+    }
+  ],
+  "notes": "Rejected S04 and S12, which fire on a metric help string rather than a retry construct. Rejected S05 and S06 as lacking concrete failing code in this file. The 7 fix commits in the history (for example c55c97a, f3d9d79 and f049c34) address informer and restore behaviour, not the warm-start or create paths.",
+  "bundle_hash": "sha256:149b6eb516b811465c5140161daef6d555164f0cf33b17bb1a2ba944a512b5df",
+  "schema": "thunderstruck.finding/v1",
+  "validated_with": 3
+}

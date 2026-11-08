@@ -1,0 +1,92 @@
+{
+  "hotspot_id": "H09",
+  "file": "internal-packages/run-store/src/PostgresRunStore.ts",
+  "findings": [
+    {
+      "location": {
+        "file": "internal-packages/run-store/src/PostgresRunStore.ts",
+        "symbol": "hydrateBlockingTaskRuns",
+        "lines": "344-380"
+      },
+      "missing_patterns": [
+        "S08"
+      ],
+      "failure_mode": "Reading a widely-shared waitpoint (for example a manual token or datetime waitpoint many runs wait on) on the dedicated schema becomes slow and memory-heavy, and the request times out or the process runs out of memory.",
+      "trigger_condition": "A waitpoint has thousands of TaskRunWaitpoint edges and is read through the dedicated-schema hydrator with a nested taskRun select.",
+      "amplifier": "The edge query has no take/limit, and the run hydration then loads every distinct run row for those edges, with in-memory Maps built over all of them.",
+      "sustaining_effect": null,
+      "blast_radius": "Callers that fetch the waitpoint stall or fail for that waitpoint. Other waitpoints are unaffected, but the Postgres connection and Node heap are shared.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "internal-packages/run-store/src/PostgresRunStore.ts:350-352",
+          "note": "taskRunWaitpoint.findMany with only a waitpointId filter, no take."
+        },
+        {
+          "type": "code",
+          "ref": "internal-packages/run-store/src/PostgresRunStore.ts:357-365",
+          "note": "All edge run ids are loaded into a Map with no cap."
+        },
+        {
+          "type": "detector",
+          "ref": "S08@internal-packages/run-store/src/PostgresRunStore.ts:350",
+          "note": "Detector flagged the unbounded findMany."
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "The code is unbounded, but I did not verify that real waitpoints reach very large fan-in on this path. boundedIn only chunks the IN list and does not cap the result.",
+      "how_to_verify": "Create 50k TaskRunWaitpoint rows for one waitpoint on the dedicated schema and hydrate it with a nested taskRun select. Memory and latency grow with the edge count.",
+      "key": "054ddbb8f061",
+      "content_hash": "sha256:6ac90d2be00c920f8abe35f4b37f6d58d9b3070399b9f9dfafde5220e90d5eb5",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "internal-packages/run-store/src/PostgresRunStore.ts": "sha256:6ac90d2be00c920f8abe35f4b37f6d58d9b3070399b9f9dfafde5220e90d5eb5"
+      }
+    },
+    {
+      "location": {
+        "file": "internal-packages/run-store/src/PostgresRunStore.ts",
+        "symbol": "findSnapshotCompletedWaitpointIds",
+        "lines": "2236-2250"
+      },
+      "missing_patterns": [
+        "S08"
+      ],
+      "failure_mode": "Fetching the completed waitpoints of a snapshot that completed a very large batch returns every link row in one query, and loads slowly on the run-continue path.",
+      "trigger_condition": "A snapshot has tens of thousands of completed-waitpoint links, for example a large batchTriggerAndWait.",
+      "amplifier": "The link read and the LEFT JOIN variant at 2255-2288 have no LIMIT, and the snapshot is read again on each continue or replay.",
+      "sustaining_effect": null,
+      "blast_radius": "Run continuation is slow for the affected runs only.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "internal-packages/run-store/src/PostgresRunStore.ts:2239-2243",
+          "note": "Unbounded join findMany on snapshotId."
+        },
+        {
+          "type": "code",
+          "ref": "internal-packages/run-store/src/PostgresRunStore.ts:2246-2249",
+          "note": "Legacy raw SELECT with no LIMIT."
+        },
+        {
+          "type": "detector",
+          "ref": "S08@internal-packages/run-store/src/PostgresRunStore.ts:2247",
+          "note": "Detector flagged the raw SELECT with no LIMIT."
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "The result set is inherently the set of completed waitpoints, so it may be bounded by upstream batch-size limits that I did not check.",
+      "how_to_verify": "Complete a snapshot with 50k waitpoints and time findSnapshotCompletedWaitpointIds. If upstream caps batch size, reject this.",
+      "key": "1802d412b41a",
+      "content_hash": "sha256:6ac90d2be00c920f8abe35f4b37f6d58d9b3070399b9f9dfafde5220e90d5eb5",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "internal-packages/run-store/src/PostgresRunStore.ts": "sha256:6ac90d2be00c920f8abe35f4b37f6d58d9b3070399b9f9dfafde5220e90d5eb5"
+      }
+    }
+  ],
+  "notes": "Fix history is mostly features; the two fixes (366671e, 967dedc) address pool exhaustion and debounce state, and settlePendingUnit is a no-op here. I did not report 366671e as a recurring failure. I rejected S09 (delegateCache is a per-client memo of delegate wrappers) and S17 (the Maps at 284 and 365 are local to one call). The createExecutionSnapshot write path is idempotent via createMany skipDuplicates followed by a primary-key read. I did not check that the link inserts after the create are safe on replay.",
+  "bundle_hash": "sha256:a177ad6fc344d78defeea8a397c3d1576fa030083ba14eea0cde2d52b85fc7fa",
+  "schema": "thunderstruck.finding/v1",
+  "validated_with": 3
+}

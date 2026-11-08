@@ -1,0 +1,59 @@
+{
+  "hotspot_id": "H08",
+  "file": "apps/webapp/app/presenters/v3/LogsListPresenter.server.ts",
+  "findings": [
+    {
+      "location": {
+        "file": "apps/webapp/app/presenters/v3/LogsListPresenter.server.ts",
+        "symbol": "LogsListPresenter.call",
+        "lines": "408-426"
+      },
+      "missing_patterns": [
+        "S12",
+        "S15",
+        "S11"
+      ],
+      "failure_mode": "Log searches over large or busy tenants repeatedly return empty pages with a 'timed out' progress flag, so the user watches the search crawl through slices without results. Other ClickHouse resource-limit errors surface as a hard error banner.",
+      "trigger_condition": "A search with a rare or non-word term, or a wide time range on a high-volume environment, exceeds the 8s (first slice) or 5s (later slices) max_execution_time.",
+      "amplifier": "Each timeout is turned into a retry slice (retryTimedOutLogsSearchSlice) and handed back as a cursor, so the caller re-issues the next query. Nothing in this path counts per-tenant timeouts or backs off, and the slice query is the same expensive scan that just timed out.",
+      "sustaining_effect": "Every timed-out request returns a next cursor, so a client that auto-continues keeps issuing 5-8s scans against the shared ClickHouse. There is no breaker or budget, so the load persists until the slice ladder is exhausted or the user leaves.",
+      "blast_radius": "ClickHouse capacity for the logs list queries is consumed. Other log viewers and query users on the same cluster may see slower or timed-out searches.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/presenters/v3/LogsListPresenter.server.ts:411-425",
+          "note": "Timeout is converted into a retry slice and a cursor, with no backoff or budget."
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/presenters/v3/LogsListPresenter.server.ts:393-395",
+          "note": "Only an abort signal is passed; the server-side max_execution_time is the sole bound."
+        },
+        {
+          "type": "commit",
+          "ref": "c6f0769",
+          "note": "Earlier [fix] to bound logs search memory and pagination at scale; the same cost problem is still being tuned."
+        },
+        {
+          "type": "commit",
+          "ref": "34ec7ee",
+          "note": "Latest change added adaptive time slices, which is where the timeout retry loop comes from."
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "I did not see the client or route code that decides whether to auto-continue after a timed-out slice, and the retry-slice helper is in another file I did not open. The risk rests on this presenter's logic alone.",
+      "how_to_verify": "Search a high-volume environment for a non-word term over a long period. Check whether the route or UI follows the returned cursor automatically, and count the ClickHouse queries tagged log_comment 'logs_list' per user action.",
+      "prediction": "Further perf or fix commits to this file will tune slice sizes or time limits for large tenants.",
+      "key": "62589d73c708",
+      "content_hash": "sha256:7283619c7b034ea484746d460fe5a6698714db96e729de82942ac5698716b289",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "apps/webapp/app/presenters/v3/LogsListPresenter.server.ts": "sha256:7283619c7b034ea484746d460fe5a6698714db96e729de82942ac5698716b289"
+      }
+    }
+  ],
+  "notes": "Rejected the S08 lead at line 161: the bulkActionGroup findMany has take: 20. Also rejected the unbounded result-set concern for the ClickHouse query: it uses queryLimit and a page-size cap. I opened only the trimmed region of the hotspot file (lines 345-480). The helper functions in the search-cursor file were not read.",
+  "bundle_hash": "sha256:53375eb057dd75ee0f1d59cf1436856b66ba18120fc829dc96f5cfbca4457bbe",
+  "schema": "thunderstruck.finding/v1",
+  "validated_with": 3
+}

@@ -1,0 +1,47 @@
+{
+  "hotspot_id": "H01",
+  "file": "internal-packages/run-engine/src/engine/index.ts",
+  "findings": [
+    {
+      "location": {
+        "file": "internal-packages/run-engine/src/engine/index.ts",
+        "symbol": "RunEngine.trigger",
+        "lines": "1306-1357"
+      },
+      "missing_patterns": [
+        "S07",
+        "S19"
+      ],
+      "failure_mode": "A trigger call returns an error, but the run is already persisted as PENDING with its initial QUEUED snapshot. Because it was never published to the run queue, it can sit in the dashboard as queued and never start. A client retry with no idempotency key creates a second run.",
+      "trigger_condition": "enqueueSystem.publishRun (or the DEV scheduleExpireRun) throws, for example on a Redis blip or timeout, after runStore.createRun has committed.",
+      "amplifier": "The create-run and enqueue steps are not atomic or compensated. The catch block only logs and rethrows. The 'executionSnapshotCreated' event is emitted before the enqueue succeeds, so observers see a queued snapshot for a run that was never queued.",
+      "sustaining_effect": "Callers retry the failed trigger. Each retry makes another orphan run, and the earlier orphans stay stuck until a heartbeat or stall sweep, if one exists, reclaims them.",
+      "blast_radius": "Runs triggered during a Redis impairment are left orphaned in the database. Users see runs stuck in 'Queued', and concurrency or TTL accounting for them is inconsistent.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "internal-packages/run-engine/src/engine/index.ts:1306-1357",
+          "note": "the enqueue try/catch logs and rethrows with no rollback or requeue of the already-created run"
+        },
+        {
+          "type": "code",
+          "ref": "internal-packages/run-engine/src/engine/index.ts:179",
+          "note": "the run and its snapshot are committed via runStore.createRun before any enqueue happens"
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "The ordering is visible in code, but I did not verify whether a downstream sweeper recovers runs that were created but never enqueued. No history commit specifically targets this path.",
+      "how_to_verify": "Make enqueueSystem.publishRun throw after createRun. Check whether a PENDING run with a QUEUED snapshot remains and whether anything ever enqueues it.",
+      "key": "7ba8fe9ea6e3",
+      "content_hash": "sha256:1c1b795e2cb078692306c6e5be58d81830d8a29769d5a64dd982c96e3a6e5782",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "internal-packages/run-engine/src/engine/index.ts": "sha256:1c1b795e2cb078692306c6e5be58d81830d8a29769d5a64dd982c96e3a6e5782"
+      }
+    }
+  ],
+  "notes": "S08 findMany leads at 619 and 2597 are on workerInstanceGroup, a small table, so I rejected them. S16 (setInterval jitter) and S12 (stalled-snapshot retries) were not checked in detail. The fix commits seen (c55c97a, a7575c7, dba857b) touch other paths.",
+  "bundle_hash": "sha256:c110009bae6fe85ce017f5fb407bc07a336dbb3ff0bc125456754d10551b44cc",
+  "schema": "thunderstruck.finding/v1",
+  "validated_with": 3
+}

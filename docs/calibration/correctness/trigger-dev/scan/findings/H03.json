@@ -1,0 +1,97 @@
+{
+  "hotspot_id": "H03",
+  "file": "apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts",
+  "findings": [
+    {
+      "location": {
+        "file": "apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts",
+        "symbol": "#insertLogsSearchRows",
+        "lines": "638-705"
+      },
+      "missing_patterns": [
+        "S02",
+        "S12",
+        "S07"
+      ],
+      "failure_mode": "During a ClickHouse writer outage or slowdown, logs-search rows are silently lost. Each batch gets one 500ms retry and is then dropped, so the logs search index develops gaps. The only signs are an error log and drop counters.",
+      "trigger_condition": "The logs-search ClickHouse writer is unavailable or slow for longer than about 500ms per batch, or the limiter queue fills (default concurrency 2).",
+      "amplifier": "The retry is a fixed 500ms with no jitter or growth, and there are only 2 attempts. Failed batches are not re-queued or spooled, and nothing breaks the circuit while the writer is down.",
+      "sustaining_effect": null,
+      "blast_radius": "Logs search results are incomplete for the affected window. Primary task-event ingest is not affected, because this is a dual-write path.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts:642-686",
+          "note": "2-attempt loop with a constant 500ms sleep, then the batch is dropped."
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts:600-603",
+          "note": "When the limiter is full the batch is dropped with reason limiter_full."
+        },
+        {
+          "type": "detector",
+          "ref": "S02@apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts:683",
+          "note": "Constant retry delay, no jitter."
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "The drop behaviour is visible in code, but it looks like a deliberate best-effort design with metrics. Impact depends on whether the dual-write is meant to be lossless.",
+      "how_to_verify": "Make taskEventsSearch.insert fail for 2s while flushing batches. Check that the rows never land and that the insert_failed drop counter rises.",
+      "prediction": "A ClickHouse blip produces gaps in logs search that have no matching gap in the run trace view.",
+      "key": "a7968abf39a7",
+      "content_hash": "sha256:3a9fef3d0a4c5582fbf04c005ef14ae5fe6a1206c271338d033ef89edc5343c1",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts": "sha256:3a9fef3d0a4c5582fbf04c005ef14ae5fe6a1206c271338d033ef89edc5343c1"
+      }
+    },
+    {
+      "location": {
+        "file": "apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts",
+        "symbol": "#parseAttributes",
+        "lines": "2700-2706"
+      },
+      "missing_patterns": [
+        "S15",
+        "S19"
+      ],
+      "failure_mode": "Opening a span detail returns a 500 or errors the panel when any one record for the span has malformed attributes_text. The JSON.parse is unguarded and is called inside the record loop, so one bad row fails the whole span.",
+      "trigger_condition": "A span has a stored attributes_text that is not valid JSON, for example from the invalid JSON escapes the write path has already had to work around.",
+      "amplifier": "The parse is repeated per record and has no try/catch or fallback to the partial record's properties.",
+      "sustaining_effect": null,
+      "blast_radius": "The span detail view and any API consumers of it fail for the affected span. Other spans are unaffected.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts:2681",
+          "note": "Parse call inside the record loop with no error handling."
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts:2705",
+          "note": "Bare JSON.parse."
+        },
+        {
+          "type": "commit",
+          "ref": "e82eca1",
+          "note": "Fix for invalid JSON escapes in log search batches shows malformed JSON occurs in this pipeline."
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "The unguarded parse is visible, but I have no evidence that malformed attributes_text reaches ClickHouse on this table. The cited fixes concern a different path.",
+      "how_to_verify": "Feed #mergeRecordsIntoSpanDetail a record with attributes_text set to '{\"a\":\"\\\\x\"}'. It throws instead of returning the span.",
+      "prediction": null,
+      "key": "bd098490aa80",
+      "content_hash": "sha256:3a9fef3d0a4c5582fbf04c005ef14ae5fe6a1206c271338d033ef89edc5343c1",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts": "sha256:3a9fef3d0a4c5582fbf04c005ef14ae5fe6a1206c271338d033ef89edc5343c1"
+      }
+    }
+  ],
+  "notes": "Rejected the S09 cache lead because the metadata cache is per-query and local. Rejected S06 because the mapping limiter is a bounded drop-on-full design. Trace chunk reads are bounded by limit+1 and maximumKeyRows. I did not examine the OTLP flush schedulers or the tracePubSub publish path.",
+  "bundle_hash": "sha256:840a6f423a72088aec330f3d5fbdfe690c817a45d26370ded40942de0fac576b",
+  "schema": "thunderstruck.finding/v1",
+  "validated_with": 3
+}

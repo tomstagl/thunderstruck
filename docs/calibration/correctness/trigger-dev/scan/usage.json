@@ -1,0 +1,85 @@
+{
+  "schema": "thunderstruck.usage/v1",
+  "source": "partial",
+  "window": {
+    "from": "2026-11-08T16:38:03+00:00",
+    "to": "2026-11-08T16:41:03+00:00"
+  },
+  "orchestrator": {
+    "calls": 0,
+    "by_model": {}
+  },
+  "investigators": {
+    "agents": 10,
+    "respawns": 0,
+    "repairs": 0,
+    "fallback_saves": 10,
+    "calls": 10,
+    "by_model": {
+      "claude-sonnet-5-5": {
+        "input": 420524,
+        "cache_write_5m": 0,
+        "cache_write_1h": 0,
+        "cache_read": 0,
+        "output": 0,
+        "weighted": 420524
+      }
+    },
+    "by_hotspot": {
+      "H01": {
+        "agents": 1,
+        "calls": 1,
+        "weighted": 37368
+      },
+      "H02": {
+        "agents": 1,
+        "calls": 1,
+        "weighted": 42209
+      },
+      "H03": {
+        "agents": 1,
+        "calls": 1,
+        "weighted": 45166
+      },
+      "H04": {
+        "agents": 1,
+        "calls": 1,
+        "weighted": 42960
+      },
+      "H05": {
+        "agents": 1,
+        "calls": 1,
+        "weighted": 43706
+      },
+      "H06": {
+        "agents": 1,
+        "calls": 1,
+        "weighted": 44181
+      },
+      "H07": {
+        "agents": 1,
+        "calls": 1,
+        "weighted": 46038
+      },
+      "H08": {
+        "agents": 1,
+        "calls": 1,
+        "weighted": 43439
+      },
+      "H09": {
+        "agents": 1,
+        "calls": 1,
+        "weighted": 37985
+      },
+      "H10": {
+        "agents": 1,
+        "calls": 1,
+        "weighted": 37472
+      }
+    }
+  },
+  "total_weighted": 420524,
+  "missing": [
+    "orchestrator: session transcript not readable"
+  ]
+}

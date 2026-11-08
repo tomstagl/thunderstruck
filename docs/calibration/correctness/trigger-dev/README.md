@@ -17,6 +17,11 @@ figures on it are reported as totals.
 | Licence | Apache-2.0 (root); MIT for the package directories listed in `LICENSES/` |
 | Tests at the pinned commit | `pnpm run test --run` in `internal-packages/run-engine`: `Tests  1390 passed \| 2 skipped (1392)`; see below |
 | Picked | recorded on #59 by the maintainer before 2026-10-12 |
+| Scan | `/thunderstruck-scan --top 10 --since 2025-10-22`, profile `scan/profile.toml` (UI and the published SDK/CLI excluded, spec §3.1) |
+| Plugin | 0.10.1 from a clean clone at `4dff62c` (the newest `main` commit with #55 and none of #56/#37/#57), installed as a local marketplace |
+| Session model | claude-haiku-5-5 (orchestrator, a fresh `claude -p` session) |
+| Investigator model | claude-sonnet-5-5 (10 investigators, one per hotspot) |
+| Findings | 15 from 10 hotspots; incomplete: none |
 
 Copied files under `scan/` and `repro/` are unchanged except that local
 absolute paths were replaced with `<repo>`, `<thunderstruck>`,
