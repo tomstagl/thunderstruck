@@ -57,3 +57,57 @@ its container warm-up (`Hook timed out in 300000ms`; the run's total time was
 5.4 hours because the machine slept during it) and had 1 of its 2 tests
 skipped; the other skipped test is elsewhere. Run alone the file reports
 `Tests  2 passed (2)`.
+
+## Today's pipeline on this set
+
+The baseline #56, #37 and #57 are measured against (spec §7). Totals only;
+this set is a holdout.
+
+```
+# triggerdotdev/trigger.dev@8491915 (holdout) — pipeline · claude-sonnet-5-5
+## verdicts
+verdict: same                4/15  (11–52%)  triggerdotdev/trigger.dev@8491915 · n=15 findings · labels: 15 claude-opus-5-5 (8 executed, 7 read)
+verdict: one step            1/15  (1–30%)  triggerdotdev/trigger.dev@8491915 · n=15 findings · labels: 15 claude-opus-5-5 (8 executed, 7 read)
+verdict: wrong direction     10/15  (42–85%)  triggerdotdev/trigger.dev@8491915 · n=15 findings · labels: 15 claude-opus-5-5 (8 executed, 7 read)
+verdict: correct refuted     0/15  (0–20%)  triggerdotdev/trigger.dev@8491915 · n=15 findings · labels: 15 claude-opus-5-5 (8 executed, 7 read)
+## duplicates
+duplicates found             0/0  (0–100%)  triggerdotdev/trigger.dev@8491915 · n=15 findings · labels: 15 claude-opus-5-5 (8 executed, 7 read)
+false duplicates             0/15  (0–20%)  triggerdotdev/trigger.dev@8491915 · n=15 findings · labels: 15 claude-opus-5-5 (8 executed, 7 read)
+## confidence
+confidence: exact            10/15  (42–85%)  triggerdotdev/trigger.dev@8491915 · n=15 findings · labels: 15 claude-opus-5-5 (8 executed, 7 read)
+confidence: within one       14/15  (70–99%)  triggerdotdev/trigger.dev@8491915 · n=15 findings · labels: 15 claude-opus-5-5 (8 executed, 7 read)
+confidence: over             1/15  (1–30%)  triggerdotdev/trigger.dev@8491915 · n=15 findings · labels: 15 claude-opus-5-5 (8 executed, 7 read)
+confidence: under            4/15  (11–52%)  triggerdotdev/trigger.dev@8491915 · n=15 findings · labels: 15 claude-opus-5-5 (8 executed, 7 read)
+## bundles
+refuting fact shown          0/3  (0–56%)  triggerdotdev/trigger.dev@8491915 · n=11 of 15 labelled findings · labels: 11 claude-opus-5-5 (4 executed, 7 read)
+shown, partly elsewhere      0/3  (0–56%)  triggerdotdev/trigger.dev@8491915 · n=11 of 15 labelled findings · labels: 11 claude-opus-5-5 (4 executed, 7 read)
+refuting fact elsewhere      8/11  (43–90%)  triggerdotdev/trigger.dev@8491915 · n=11 of 15 labelled findings · labels: 11 claude-opus-5-5 (4 executed, 7 read)
+refuting fact not in repository 0/11  (0–26%)  triggerdotdev/trigger.dev@8491915 · n=11 of 15 labelled findings · labels: 11 claude-opus-5-5 (4 executed, 7 read)
+refuting fact unreadable     0/11  (0–26%)  triggerdotdev/trigger.dev@8491915 · n=11 of 15 labelled findings · labels: 11 claude-opus-5-5 (4 executed, 7 read)
+
+## pooled verdicts
+verdict: same                9/36  (14–41%)  celery/celery + triggerdotdev/trigger.dev@pooled · n=36 findings · labels: 21 claude-fable-5-1 (20 executed, 1 read); 15 claude-opus-5-5 (8 executed, 7 read)
+verdict: one step            5/36  (6–29%)  celery/celery + triggerdotdev/trigger.dev@pooled · n=36 findings · labels: 21 claude-fable-5-1 (20 executed, 1 read); 15 claude-opus-5-5 (8 executed, 7 read)
+verdict: wrong direction     22/36  (45–75%)  celery/celery + triggerdotdev/trigger.dev@pooled · n=36 findings · labels: 21 claude-fable-5-1 (20 executed, 1 read); 15 claude-opus-5-5 (8 executed, 7 read)
+verdict: correct refuted     0/36  (0–10%)  celery/celery + triggerdotdev/trigger.dev@pooled · n=36 findings · labels: 21 claude-fable-5-1 (20 executed, 1 read); 15 claude-opus-5-5 (8 executed, 7 read)
+## pooled duplicates
+duplicates found             0/1  (0–79%)  celery/celery + triggerdotdev/trigger.dev@pooled · n=36 findings · labels: 21 claude-fable-5-1 (20 executed, 1 read); 15 claude-opus-5-5 (8 executed, 7 read)
+false duplicates             0/36  (0–10%)  celery/celery + triggerdotdev/trigger.dev@pooled · n=36 findings · labels: 21 claude-fable-5-1 (20 executed, 1 read); 15 claude-opus-5-5 (8 executed, 7 read)
+## pooled confidence
+confidence: exact            18/36  (34–66%)  celery/celery + triggerdotdev/trigger.dev@pooled · n=36 findings · labels: 21 claude-fable-5-1 (20 executed, 1 read); 15 claude-opus-5-5 (8 executed, 7 read)
+confidence: within one       34/36  (82–98%)  celery/celery + triggerdotdev/trigger.dev@pooled · n=36 findings · labels: 21 claude-fable-5-1 (20 executed, 1 read); 15 claude-opus-5-5 (8 executed, 7 read)
+confidence: over             7/36  (10–35%)  celery/celery + triggerdotdev/trigger.dev@pooled · n=36 findings · labels: 21 claude-fable-5-1 (20 executed, 1 read); 15 claude-opus-5-5 (8 executed, 7 read)
+confidence: under            11/36  (18–47%)  celery/celery + triggerdotdev/trigger.dev@pooled · n=36 findings · labels: 21 claude-fable-5-1 (20 executed, 1 read); 15 claude-opus-5-5 (8 executed, 7 read)
+## pooled bundles
+refuting fact shown          4/12  (14–61%)  celery/celery + triggerdotdev/trigger.dev@pooled · n=23 of 36 labelled findings · labels: 12 claude-fable-5-1 (11 executed, 1 read); 11 claude-opus-5-5 (4 executed, 7 read)
+shown, partly elsewhere      2/12  (5–45%)  celery/celery + triggerdotdev/trigger.dev@pooled · n=23 of 36 labelled findings · labels: 12 claude-fable-5-1 (11 executed, 1 read); 11 claude-opus-5-5 (4 executed, 7 read)
+refuting fact elsewhere      11/23  (29–67%)  celery/celery + triggerdotdev/trigger.dev@pooled · n=23 of 36 labelled findings · labels: 12 claude-fable-5-1 (11 executed, 1 read); 11 claude-opus-5-5 (4 executed, 7 read)
+refuting fact not in repository 0/23  (0–14%)  celery/celery + triggerdotdev/trigger.dev@pooled · n=23 of 36 labelled findings · labels: 12 claude-fable-5-1 (11 executed, 1 read); 11 claude-opus-5-5 (4 executed, 7 read)
+refuting fact unreadable     0/23  (0–14%)  celery/celery + triggerdotdev/trigger.dev@pooled · n=23 of 36 labelled findings · labels: 12 claude-fable-5-1 (11 executed, 1 read); 11 claude-opus-5-5 (4 executed, 7 read)
+```
+
+With about 20 findings each interval spans 30–40 points: a change that drops
+outside it on this set has not generalised; one that stays inside has not
+been shown to.
+
+Reproduce: `uv run scripts/benchmark.py --run docs/calibration/correctness/celery/runs/pipeline.json --run docs/calibration/correctness/trigger-dev/runs/pipeline.json`

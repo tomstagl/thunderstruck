@@ -140,3 +140,135 @@ def test_review_has_a_section_per_finding():
     text = (SECOND / "review.md").read_text()
     for lb in labels()["labels"]:
         assert re.search(rf"^## {re.escape(lb['display'])} ", text, re.M), lb["display"]
+
+
+# --- Task 4 -----------------------------------------------------------------
+PIPELINE_SOURCE = ("scan/report.json and scan/bundles via benchmark.run_from_report and add_bundles; "
+                   "verdict upheld for every reported finding (spec §7.1)")
+
+
+def _second_model() -> str | None:
+    m = readme_row("Investigator model")
+    # The row reads "<model id> (<how many investigators>)"; the run records the id only.
+    return None if m == "not recorded" else m.split(" (")[0]
+
+
+def pipeline_run(set_dir: Path, model: str | None) -> dict:
+    """Today's pipeline as one run (spec §7.1).
+
+    run_from_report puts its argument path in produced_by.source; it is
+    replaced below, so no local path reaches the file."""
+    run = b.run_from_report(set_dir / "scan" / "report.json")
+    b.add_bundles(run, set_dir / "scan" / "bundles", set_dir / "scan" / "report.json")
+    for rec in run["findings"].values():
+        rec["verdict"] = "upheld"
+        rec["duplicate_of"] = None
+    run["produced_by"] = {"stage": "pipeline", "model": model, "source": PIPELINE_SOURCE}
+    run["findings"] = dict(sorted(run["findings"].items()))
+    return run
+
+
+def _dump(run: dict) -> str:
+    return json.dumps(run, indent=2, sort_keys=True) + "\n"
+
+
+def write_pipeline_runs() -> None:
+    for set_dir, model in ((CELERY, None), (SECOND, _second_model())):
+        (set_dir / "runs").mkdir(exist_ok=True)
+        (set_dir / "runs" / "pipeline.json").write_text(_dump(pipeline_run(set_dir, model)))
+
+
+def totals(run_path: Path) -> dict[str, dict[str, list[int]]]:
+    sets = b.load_label_sets([CELERY / "labels.json", SECOND / "labels.json"])
+    [r] = b.evaluate([b.load_run(run_path)], sets)["runs"]
+    assert r["excluded"] == [], "the labeller is the scored model (spec §5.3)"
+    assert r["unlabelled"] == []
+    return {name: {f["name"]: [f["k"], f["n"]] for f in m["figures"]} for name, m in r["measures"].items()}
+
+
+def _cli(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run([sys.executable, str(ROOT / "scripts" / "benchmark.py"), *args],
+                          capture_output=True, text=True, cwd=ROOT)
+
+
+CELERY_RUN = CELERY / "runs" / "pipeline.json"
+SECOND_RUN = SECOND / "runs" / "pipeline.json"
+
+# Filled in Step 4 from the set's own figures; totals only, whatever the role (spec §6).
+SECOND_PIPELINE_TOTALS: dict[str, dict[str, list[int]]] = {
+    "bundles": {
+        "refuting fact elsewhere": [8, 11],
+        "refuting fact not in repository": [0, 11],
+        "refuting fact shown": [0, 3],
+        "refuting fact unreadable": [0, 11],
+        "shown, partly elsewhere": [0, 3],
+    },
+    "confidence": {
+        "confidence: exact": [10, 15],
+        "confidence: over": [1, 15],
+        "confidence: under": [4, 15],
+        "confidence: within one": [14, 15],
+    },
+    "duplicates": {
+        "duplicates found": [0, 0],
+        "false duplicates": [0, 15],
+    },
+    "verdicts": {
+        "verdict: correct refuted": [0, 15],
+        "verdict: one step": [1, 15],
+        "verdict: same": [4, 15],
+        "verdict: wrong direction": [10, 15],
+    },
+}
+
+
+def test_pipeline_runs_rederive_from_the_scans():
+    assert CELERY_RUN.read_text() == _dump(pipeline_run(CELERY, None))
+    assert SECOND_RUN.read_text() == _dump(pipeline_run(SECOND, _second_model()))
+
+
+def test_celery_pipeline_baseline():
+    t = totals(CELERY_RUN)
+    assert t["verdicts"] == {"verdict: same": [5, 21], "verdict: one step": [4, 21],
+                             "verdict: wrong direction": [12, 21], "verdict: correct refuted": [0, 21]}
+    assert t["duplicates"]["duplicates found"] == [0, 1]
+    assert t["confidence"]["confidence: exact"] == [8, 21]
+    assert t["confidence"]["confidence: within one"] == [20, 21]
+    assert t["confidence"]["confidence: over"] == [6, 21]
+    assert t["confidence"]["confidence: under"] == [7, 21]
+    assert t["bundles"]["refuting fact shown"] == [4, 9]
+
+
+def test_second_set_pipeline_baseline():
+    assert SECOND_PIPELINE_TOTALS, "Task 4 Step 4 fills these in"
+    assert totals(SECOND_RUN) == SECOND_PIPELINE_TOTALS
+
+
+def test_both_sets_are_reported_per_set_and_pooled_with_their_n():
+    p = _cli("--run", str(CELERY_RUN), "--run", str(SECOND_RUN))
+    assert p.returncode == 0, p.stderr
+    out = p.stdout
+    s = labels()
+    assert "# celery/celery@508c112 (development)" in out
+    assert f"# {s['repo']}@{s['commit'][:7]} ({s['role']})" in out
+    for measure in ("verdicts", "duplicates", "confidence", "bundles"):
+        assert f"## pooled {measure}" in out, measure
+    for ln in (ln for ln in out.splitlines() if re.search(r" \d+/\d+  \(", ln)):
+        assert "@" in ln and "n=" in ln and "labels:" in ln, ln
+    m = re.search(r"verdict: same\s+\d+/(\d+)  \(.*pooled", out)
+    assert m and int(m.group(1)) == 21 + len(s["labels"])
+
+
+def test_the_role_decides_what_prints_by_default():
+    s = labels()
+    head = f"# {s['repo']}@{s['commit'][:7]} ({s['role']})"
+    default = _cli("--run", str(SECOND_RUN)).stdout
+    assert head in default
+    rows = re.search(r"^  FR-\d+ ", default, re.M)
+    if s["role"] == "holdout":
+        assert not rows
+        shown = _cli("--run", str(SECOND_RUN), "--reveal").stdout
+        rate_lines = [ln for ln in shown.splitlines() if re.search(r" \d+/\d+  \(", ln)]
+        assert rate_lines and all(ln.endswith("· revealed") for ln in rate_lines)
+    else:
+        assert rows

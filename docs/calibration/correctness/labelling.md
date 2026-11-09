@@ -56,6 +56,12 @@ are printed separately, with a pooled line only below them. A set no change was
 tuned on can be marked `"role": "holdout"`: its per-finding rows then appear
 only with `--reveal`, and every figure line says `revealed`.
 
+The second set, `trigger-dev/` (#59), is a holdout. Each set has a
+`runs/pipeline.json`, today's pipeline as one run, so
+`--run celery/runs/pipeline.json --run trigger-dev/runs/pipeline.json` prints
+both sets and a pooled line per measure. Pass one run per set: two runs on the
+same set are never pooled.
+
 ## Changing a label
 
 Adding labels never changes another finding's result. Changing an existing

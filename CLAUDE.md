@@ -148,6 +148,9 @@ show: recall (missed defects have no key); an investigator change without new
 labels (reworded findings get new keys); anything beyond the labelled
 repositories; an effect smaller than the printed interval. Do not tune a stage
 against the Celery findings until the score looks good — that fits Celery.
+The second set (`trigger-dev/`, #59) is a holdout: do not read its
+`labels.json` or `review.md` while changing a stage, report its totals beside
+Celery's, and say why if a PR used `--reveal`.
 Adding a set is data only (`labelling.md`); changing a label fails the
 baseline tests on purpose.
 
