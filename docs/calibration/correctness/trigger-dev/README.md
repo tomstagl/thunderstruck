@@ -22,6 +22,10 @@ figures on it are reported as totals.
 | Session model | claude-haiku-5-5 (orchestrator, a fresh `claude -p` session) |
 | Investigator model | claude-sonnet-5-5 (10 investigators, one per hotspot) |
 | Findings | 15 from 10 hotspots; incomplete: none |
+| Labelled by | claude-opus-5-5, 2026-11-09; #37 default skeptic model: sonnet (`agents/thunderstruck-skeptic.md`); not the default claude-fable-5-1 because the labelling session ran on claude-opus-5-5, which the maintainer accepted as labeller; it is neither the session, the investigator nor the skeptic model. A scored run on claude-opus-5-5 has every finding of this set excluded |
+| Basis | 8 executed, 7 read (1 from dependency source), 0 reasoned; AC-2 count 9 of 15 |
+| Verdicts | 4 correct, 1 correct but gated, 6 partially correct, 4 wrong |
+| Labelling cost | 4,333,242.3 weighted tokens (126 calls, all claude-opus-5-5, no subagents), measured as in `docs/calibration/consumption.md` from the labelling session's transcript, up to the end of the labelling turn |
 
 Copied files under `scan/` and `repro/` are unchanged except that local
 absolute paths were replaced with `<repo>`, `<thunderstruck>`,

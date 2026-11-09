@@ -426,7 +426,8 @@ def test_a_scan_of_an_unlabelled_commit_is_refused(tmp_path):
     report["repo"]["head"] = "c" * 40
     p = tmp_path / "report.json"
     p.write_text(json.dumps(report))
-    r = _cli("--report", str(p))
+    # Pinned to Celery's set: the default sets grow as repositories are added (#59).
+    r = _cli("--labels", str(CELERY), "--report", str(p))
     assert r.returncode == 2 and "matches no loaded label set (loaded: celery/celery@508c112)" in r.stderr
 
 
