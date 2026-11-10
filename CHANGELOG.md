@@ -10,7 +10,7 @@ Findings are refuted before they reach the report (#37).
 
 ### Added
 
-- **Verification.** After validation, one read-only `thunderstruck-skeptic` subagent per finding tries to refute it. Its verdict is resolved mechanically and settled into the check status: `upheld`, `narrowed` (with what still holds), `refuted`, `inconclusive` or `unchecked`. On by default provisionally; whether it stays on by default, and with which model, is set from measurement before release.
+- **Verification.** After validation, one read-only `thunderstruck-skeptic` subagent per finding tries to refute it. Its verdict is resolved mechanically and settled into the check status: `upheld`, `narrowed` (with what still holds), `refuted`, `inconclusive` or `unchecked`. Off by default: run it with `--verify`. No skeptic model met the benchmark bar (`haiku`, the default for `--verify`, agreed with the labels on 11 of 21 findings against a bar of 15), and a verified scan of celery/celery cost about 2.01M weighted tokens, 121% of the baseline.
 - **`--verify`, `--no-verify`, `--verify-model haiku|sonnet|opus`** on `/thunderstruck-scan`.
 - **Dependency source at declared versions.** The skeptic may read the source of the project's declared dependencies (PyPI, npm, Maven and Gradle), at the locked, pinned or installed-in-range version, copied from what is installed locally into `.thunderstruck/deps/`. Nothing is downloaded or executed. A verdict may cite it with a `dependency` ref.
 - **Refuted by verification**: a section of `report.md` and the HTML report listing each refuted finding with the reason and evidence, out of *Findings*.

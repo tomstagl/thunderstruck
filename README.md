@@ -217,10 +217,11 @@ At most four subagents run at once across the whole scan, one skeptic per
 finding, with no repair round and no re-spawn. `--verify` runs verification
 for a scan, `--no-verify` skips it (every finding is then reported
 `unchecked`), and `--verify-model haiku|sonnet|opus` picks the skeptics'
-model. Whether it runs by default, and with which model, is set from
-measurement on the correctness benchmark and against the scan's token
-ceiling; until that measurement lands it is on by default, provisionally,
-and its measured cost is not yet stated. The report's Consumption section
+model. It is off by default: no skeptic model met the bar on the correctness
+benchmark (15 of 21 findings with no correct finding refuted; `haiku`, the
+model `--verify` uses, reached 11), and a scan with verification used about
+2.01M weighted tokens against 1.65M for the baseline scan without it
+(`docs/calibration/consumption.md`). The report's Consumption section
 lists the skeptics' tokens separately from the investigators'.
 
 ## The catalog

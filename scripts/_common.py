@@ -583,8 +583,11 @@ CHECKS_DIRNAME = "checks"
 DEPS_DIRNAME = "deps"
 # Set by measurement only (spec §12.3, #37 AC-15/AC-16): on by default when a
 # skeptic model meets AC-12 and the cost ceiling, otherwise opt-in (--verify).
-VERIFY_BY_DEFAULT = True  # provisional until the maintainer's Task 22
-VERIFY_MEASURED_COST: str | None = None  # one line, with its calibration source
+# Task 21 found no model that qualifies and Task 22 measured the cost above the
+# baseline, so it is opt-in (docs/calibration/consumption.md, verification.md).
+VERIFY_BY_DEFAULT = False
+VERIFY_MEASURED_COST: str | None = (
+    "about 2,008k weighted tokens per scan of celery/celery with verification, 121% of the 1,652k baseline, docs/calibration/consumption.md")
 
 
 def skeptic_settings(finding: dict) -> list[dict]:

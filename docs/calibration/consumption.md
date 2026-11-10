@@ -285,3 +285,93 @@ investigator came near it here (maximum 5).
 
 Investigator tokens per bundle token: 6.4
 Read cap: 9
+
+## With verification (#37)
+
+Two scans of the same repository, commit and arguments as the baseline, with
+verification on (`--verify`), measured for #37 Task 22 (AC-15, AC-16). Two
+further scans on a Sonnet orchestrator are recorded after them as a secondary
+data point.
+
+| Repo | Commit | Scan arguments |
+|---|---|---|
+| celery/celery | `508c1129269d2b1baffc516d8f5c05da06273ef0` | `/thunderstruck-scan --since 2025-10-03 --verify` |
+
+| Run | Session | `generated_at` | Orchestrator |
+|---|---|---|---|
+| 1 | `7ae7690d-1fc5-412a-a8f5-0501c2f9502e` | 2026-11-10T20:07:44+00:00 | `claude-opus-5-5` |
+| 2 | `389a87f5-64fc-4d1e-9604-b76ba319fedf` | 2026-11-10T20:42:34+00:00  | `claude-opus-5-5` |
+
+- Plugin: thunderstruck 0.13.0 at `5f8b6b3` (branch `agent/37-verification-fixture`,
+  #87), installed as a local-directory marketplace. Claude Code 2.1.322.
+- Skeptic model: the default from Task 21, `haiku`. The alias table maps it to
+  `claude-haiku-4-5`; the skeptics actually ran as `claude-haiku-5-5`, which
+  `TOKEN_WEIGHTS` has no row for. Their tokens are weighted here with the
+  `claude-haiku-4-5` row (0.5, 0.625, 1, 0.05, 2.5), as the alias table implies.
+  Investigators ran on `claude-sonnet-5-5`, the default.
+- Each run was a fresh headless session (`claude -p --model claude-opus-5-5`),
+  not an interactive one, started in a clean `.thunderstruck/`. The scan
+  command was the only prompt. Every run ranked the same 10 hotspots.
+- Method: as under **Method** and **Task N** above. `usage.json` could not be
+  used: in all four runs it says `source: partial`, with a total of 0, because
+  neither hook ran (#96). The figures are from the session transcripts and
+  `subagents/agent-*.jsonl`, with the same rules, and skeptics are the
+  subagents whose `agentType` contains `thunderstruck-skeptic`. No skeptic
+  failed in any run; none was reused (the directory was empty).
+
+### Tokens
+
+**Run 1**
+
+| Role | Model | Calls | Input | Cache write 5m | Cache write 1h | Cache read | Output | Weighted |
+|---|---|---|---|---|---|---|---|---|
+| Orchestrator | claude-opus-5-5 | 23 | 60 | 0 | 78,828 | 1,720,468 | 38,460 | 872,078.8 |
+| Investigators | claude-sonnet-5-5 | 38 | 76 | 224,072 | 0 | 586,063 | 26,720 | 472,372.3 |
+| Skeptics (16 agents) | claude-haiku-5-5 | 151 | 314 | 397,277 | 0 | 2,908,461 | 102,214 | 649,413.2 |
+| **Total** | | 212 | | | | | | **1,993,864.3** |
+
+14 findings and 2 refuted: 3 upheld, 10 narrowed, 1 inconclusive, 2 refuted.
+
+**Run 2**
+
+| Role | Model | Calls | Input | Cache write 5m | Cache write 1h | Cache read | Output | Weighted |
+|---|---|---|---|---|---|---|---|---|
+| Orchestrator | claude-opus-5-5 | 31 | 76 | 0 | 88,953 | 2,364,845 | 40,705 | 999,498.5 |
+| Investigators | claude-sonnet-5-5 | 33 | 66 | 212,514 | 0 | 466,710 | 25,155 | 438,154.5 |
+| Skeptics (16 agents) | claude-haiku-5-5 | 129 | 268 | 376,867 | 0 | 2,213,675 | 95,311 | 584,637.1 |
+| **Total** | | 193 | | | | | | **2,022,290.1** |
+
+15 findings and 1 refuted: 2 upheld, 13 narrowed, 1 refuted.
+
+### Mean and comparison
+
+| Role | Mean weighted | Task N mean |
+|---|---|---|
+| Orchestrator | 935,788.7 | 576,672.3 |
+| Investigators | 455,263.4 | 320,991.6 |
+| Skeptics | 617,025.2 (38,564.1 per skeptic, 16 skeptics) | — |
+| **Total** | **2,008,077.2** | 897,663.9 |
+
+With verification: mean 2,008,077.2 weighted tokens, 121.5% of the Task 0 baseline (1,652,683.0).
+
+That is 2.24 times Task N's mean. The skeptics are 30.7% of it; the orchestrator
+and the investigators also cost more than in Task N, by 359,116.4 and 134,271.8,
+which verification does not explain by itself. The two runs differ in kind from
+Task N's (headless sessions, 0.13.0 against 0.10.0, 23 and 31 orchestrator
+calls against 20), so the split is indicative; the total is the measured
+figure.
+
+### Secondary: Sonnet orchestrator
+
+Runs on `claude-sonnet-5-5` as the orchestrator (sessions
+`0a5ca9f1-e172-4799-a957-3f2d49fa8a5f` and `7b19fac5-d362-4f8f-8202-43db0bcfe7ec`),
+otherwise identical: 1,461,914.9 and 1,524,013.6, mean 1,492,964.3, which is 90.3% of
+the baseline. It is not comparable with the baseline, whose orchestrator was
+`claude-opus-5-5`, and is not the figure the default rests on. Weighted with
+Opus rows the orchestrator alone would have cost about 0.5M more.
+
+### What this settles
+
+Task 21 found no skeptic model that qualifies (AC-12) and the mean is over the
+baseline, so both conditions in Task 22 Step 4 point to the same result:
+verification is **off** by default and runs with `--verify`.

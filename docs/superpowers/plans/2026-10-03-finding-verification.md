@@ -3757,15 +3757,15 @@ git commit -m "Verification: the default skeptic model, measured on the Celery b
 - Modify: `skills/thunderstruck-scan/references/orchestration.md` (Cost control figures)
 - Modify: `scripts/_common.py` (`VERIFY_BY_DEFAULT`, `VERIFY_MEASURED_COST`), `skills/thunderstruck-scan/SKILL.md` (the default sentence), `README.md`, `CHANGELOG.md`, `examples/` (regenerated)
 
-- [ ] **Step 1:** On celery/celery at `508c1129269d2b1baffc516d8f5c05da06273ef0`, with this branch installed as the plugin, run `/thunderstruck-scan --since 2025-10-03 --verify` (the default skeptic model from Task 21) twice, each in a fresh session with `.thunderstruck/findings/` and `.thunderstruck/checks/` deleted first, and the `.venv` of Task 21 present.
-- [ ] **Step 2:** From each run's `usage.json`: orchestrator, investigators and skeptics weighted totals, `total_weighted`, skeptic agents, failures, reused verdicts; from `report.json`: `counts.check_status`. Record both runs and the mean in the new section, in the format of the Task 0 tables.
-- [ ] **Step 3:** Compare the mean `total_weighted` with **1,652,683.0** and write the result line `With verification: mean <n> weighted tokens, <p>% of the Task 0 baseline.`; add the measured per-skeptic mean to `orchestration.md`'s Cost control.
-- [ ] **Step 4: Set the default (AC-15, AC-16).**
+- [x] **Step 1:** On celery/celery at `508c1129269d2b1baffc516d8f5c05da06273ef0`, with this branch installed as the plugin, run `/thunderstruck-scan --since 2025-10-03 --verify` (the default skeptic model from Task 21) twice, each in a fresh session with `.thunderstruck/findings/` and `.thunderstruck/checks/` deleted first, and the `.venv` of Task 21 present.
+- [x] **Step 2:** From each run's `usage.json`: orchestrator, investigators and skeptics weighted totals, `total_weighted`, skeptic agents, failures, reused verdicts; from `report.json`: `counts.check_status`. Record both runs and the mean in the new section, in the format of the Task 0 tables.
+- [x] **Step 3:** Compare the mean `total_weighted` with **1,652,683.0** and write the result line `With verification: mean <n> weighted tokens, <p>% of the Task 0 baseline.`; add the measured per-skeptic mean to `orchestration.md`'s Cost control.
+- [x] **Step 4: Set the default (AC-15, AC-16).**
   - Task 21's model qualified and the mean is at or under the baseline: `VERIFY_BY_DEFAULT = True`; the SKILL.md sentence reads "Verification is **on** by default."; README and CHANGELOG say on by default.
   - Otherwise (the mean is over the baseline, or Task 21 found no qualifying model): `VERIFY_BY_DEFAULT = False`; the SKILL.md sentence reads "Verification is **off** by default."; README and CHANGELOG say it is opt-in with `--verify` and state the measured cost.
   - Either way set `VERIFY_MEASURED_COST` to one line naming the mean and its source, e.g. `"about 1,610k weighted tokens per scan of celery/celery with verification, docs/calibration/consumption.md"`.
   - Regenerate the samples (`uv run scripts/gen_sample_report.py`; the sample runs canned verification, so it changes only if the README-facing text does) and run the full suite, both freshness checks and `claude plugin validate . --strict`.
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/calibration/consumption.md skills/ scripts/_common.py README.md CHANGELOG.md examples/
