@@ -1,0 +1,241 @@
+{
+  "commit": "849191591a185b017c069469efefc1bc6530b8cb",
+  "findings": {
+    "054ddbb8f061": {
+      "bundle": {
+        "file": "internal-packages/run-store/src/PostgresRunStore.ts",
+        "shown": [
+          [
+            2077,
+            2238
+          ]
+        ]
+      },
+      "confidence": "low",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "1802d412b41a": {
+      "bundle": {
+        "file": "internal-packages/run-store/src/PostgresRunStore.ts",
+        "shown": [
+          [
+            2077,
+            2238
+          ]
+        ]
+      },
+      "confidence": "low",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "19a53a5ffb77": {
+      "bundle": {
+        "file": "apps/webapp/app/services/runsReplicationService.server.ts",
+        "shown": [
+          [
+            1295,
+            1408
+          ]
+        ]
+      },
+      "confidence": "medium",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "1a8d24e57647": {
+      "bundle": {
+        "file": "apps/webapp/app/services/queryService.server.ts",
+        "shown": [
+          [
+            184,
+            492
+          ]
+        ]
+      },
+      "confidence": "low",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "31c7136e8886": {
+      "bundle": {
+        "file": "apps/webapp/app/services/runsReplicationService.server.ts",
+        "shown": [
+          [
+            1295,
+            1408
+          ]
+        ]
+      },
+      "confidence": "low",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "37482446c863": {
+      "bundle": {
+        "file": "apps/webapp/app/services/queryService.server.ts",
+        "shown": [
+          [
+            184,
+            492
+          ]
+        ]
+      },
+      "confidence": "medium",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "452b7414872b": {
+      "bundle": {
+        "file": "apps/supervisor/src/index.ts",
+        "shown": [
+          [
+            118,
+            335
+          ],
+          [
+            537,
+            627
+          ]
+        ]
+      },
+      "confidence": "low",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "62589d73c708": {
+      "bundle": {
+        "file": "apps/webapp/app/presenters/v3/LogsListPresenter.server.ts",
+        "shown": [
+          [
+            102,
+            354
+          ],
+          [
+            440,
+            536
+          ]
+        ]
+      },
+      "confidence": "low",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "764aaef4039d": {
+      "bundle": {
+        "file": "apps/supervisor/src/index.ts",
+        "shown": [
+          [
+            118,
+            335
+          ],
+          [
+            537,
+            627
+          ]
+        ]
+      },
+      "confidence": "medium",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "7ba8fe9ea6e3": {
+      "bundle": {
+        "file": "internal-packages/run-engine/src/engine/index.ts",
+        "shown": [
+          [
+            949,
+            1188
+          ],
+          [
+            1289,
+            1388
+          ]
+        ]
+      },
+      "confidence": "low",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "7f9c301b9295": {
+      "bundle": {
+        "file": "apps/webapp/app/env.server.ts",
+        "shown": [
+          [
+            180,
+            216
+          ]
+        ]
+      },
+      "confidence": "low",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "8ed671234b0e": {
+      "bundle": {
+        "file": "apps/webapp/app/routes/resources.orgs.$organizationSlug.projects.$projectParam.env.$envParam.dashboard-agent.ts",
+        "shown": [
+          [
+            318,
+            550
+          ],
+          [
+            842,
+            953
+          ]
+        ]
+      },
+      "confidence": "low",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "a2a8cc519a94": {
+      "bundle": {
+        "file": "apps/webapp/app/v3/services/createBackgroundWorker.server.ts",
+        "shown": [
+          [
+            549,
+            763
+          ]
+        ]
+      },
+      "confidence": "medium",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "a7968abf39a7": {
+      "bundle": {
+        "file": "apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts",
+        "shown": [
+          [
+            2542,
+            2713
+          ]
+        ]
+      },
+      "confidence": "low",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "bd098490aa80": {
+      "bundle": {
+        "file": "apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts",
+        "shown": [
+          [
+            2542,
+            2713
+          ]
+        ]
+      },
+      "confidence": "low",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    }
+  },
+  "produced_by": {
+    "model": "claude-sonnet-5-5",
+    "source": "scan/report.json and scan/bundles via benchmark.run_from_report and add_bundles; verdict upheld for every reported finding (spec \u00a77.1)",
+    "stage": "pipeline"
+  },
+  "schema": "thunderstruck.benchmark-run/v1"
+}

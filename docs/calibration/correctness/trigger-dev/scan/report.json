@@ -1,0 +1,1887 @@
+{
+  "schema": "thunderstruck.report/v1",
+  "generated_at": "2026-11-08T16:41:05+00:00",
+  "scanned_at": "2026-11-08T16:38:03+00:00",
+  "repo": {
+    "root": "<repo>",
+    "head": "849191591a185b017c069469efefc1bc6530b8cb",
+    "branch": "HEAD"
+  },
+  "window": {
+    "since": "2025-10-22",
+    "since_date": "2025-10-22",
+    "commits": 1765,
+    "skipped_bot_commits": 57
+  },
+  "catalog_schema": "thunderstruck.hotspots/v1",
+  "counts": {
+    "hotspots": 10,
+    "files_considered": 1977,
+    "findings": 15,
+    "clean_hotspots": 0,
+    "failed_hotspots": 0
+  },
+  "warnings": [],
+  "run_warnings": [],
+  "suppressed": [],
+  "links": {
+    "provider": "github",
+    "base_url": "https://github.com/triggerdotdev/trigger.dev",
+    "sha": "849191591a185b017c069469efefc1bc6530b8cb",
+    "remote": "origin"
+  },
+  "degraded": {
+    "complexity": false
+  },
+  "service_context": null,
+  "pattern_coverage": {
+    "S01": {
+      "name": "Timeouts on every external call",
+      "tier": "A",
+      "files": 25,
+      "scanned": true
+    },
+    "S02": {
+      "name": "Capped exponential backoff with full jitter",
+      "tier": "A",
+      "files": 4,
+      "scanned": true
+    },
+    "S03": {
+      "name": "Honor server pushback (Retry-After, 429/503)",
+      "tier": "A",
+      "files": 15,
+      "scanned": true
+    },
+    "S04": {
+      "name": "Retry only transient errors",
+      "tier": "A",
+      "files": 19,
+      "scanned": true
+    },
+    "S05": {
+      "name": "Client-side rate limiting / budget gating",
+      "tier": "A",
+      "files": 48,
+      "scanned": true
+    },
+    "S06": {
+      "name": "Request prioritization (interactive over background)",
+      "tier": "A",
+      "files": 41,
+      "scanned": true
+    },
+    "S07": {
+      "name": "Idempotent, resumable jobs",
+      "tier": "A",
+      "files": 59,
+      "scanned": true
+    },
+    "S08": {
+      "name": "Bounded result sets and pagination",
+      "tier": "A",
+      "files": 174,
+      "scanned": true
+    },
+    "S09": {
+      "name": "Single-flight / request coalescing plus caching",
+      "tier": "A",
+      "files": 39,
+      "scanned": true
+    },
+    "S10": {
+      "name": "Retry at one layer plus a retry budget",
+      "tier": "A",
+      "files": 10,
+      "scanned": true
+    },
+    "S11": {
+      "name": "Deadline propagation across hops",
+      "tier": "B",
+      "files": 24,
+      "scanned": true
+    },
+    "S12": {
+      "name": "Circuit breaker or retry token bucket",
+      "tier": "B",
+      "files": 41,
+      "scanned": true
+    },
+    "S13": {
+      "name": "Bulkheads (separate pools, queues, workers)",
+      "tier": "B",
+      "files": 5,
+      "scanned": true
+    },
+    "S14": {
+      "name": "Bounded queues with backpressure or load shedding",
+      "tier": "B",
+      "files": 3,
+      "scanned": true
+    },
+    "S15": {
+      "name": "Graceful degradation and fallbacks",
+      "tier": "B",
+      "files": 37,
+      "scanned": true
+    },
+    "S16": {
+      "name": "Jitter on periodic work",
+      "tier": "B",
+      "files": 21,
+      "scanned": true
+    },
+    "S17": {
+      "name": "Steady state (TTLs, cleanup, growth bounds)",
+      "tier": "B",
+      "files": 38,
+      "scanned": true
+    },
+    "S18": {
+      "name": "Fail fast (validate before expensive work)",
+      "tier": "B",
+      "files": 18,
+      "scanned": true
+    },
+    "S19": {
+      "name": "No error swallowing; failures stay observable",
+      "tier": "B",
+      "files": 43,
+      "scanned": true
+    },
+    "S27": {
+      "name": "No blocking calls on non-blocking/event-loop threads",
+      "tier": "A",
+      "files": 0,
+      "scanned": true
+    },
+    "S28": {
+      "name": "Bounded, timed lock/wait acquisition",
+      "tier": "A",
+      "files": 0,
+      "scanned": true
+    },
+    "S29": {
+      "name": "Bounded query fan-out (no N+1 lazy-loading amplification)",
+      "tier": "A",
+      "files": 0,
+      "scanned": true
+    },
+    "S30": {
+      "name": "Liveness checks only the process itself",
+      "tier": "A",
+      "files": 0,
+      "scanned": true
+    }
+  },
+  "coverage_rows": [
+    {
+      "id": "S01",
+      "name": "Timeouts on every external call",
+      "tier": "A",
+      "unconfirmed_files": 24,
+      "leads_read": 1,
+      "leads_confirmed": 1,
+      "findings": 1
+    },
+    {
+      "id": "S02",
+      "name": "Capped exponential backoff with full jitter",
+      "tier": "A",
+      "unconfirmed_files": 3,
+      "leads_read": 1,
+      "leads_confirmed": 1,
+      "findings": 1
+    },
+    {
+      "id": "S03",
+      "name": "Honor server pushback (Retry-After, 429/503)",
+      "tier": "A",
+      "unconfirmed_files": 15,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 0
+    },
+    {
+      "id": "S04",
+      "name": "Retry only transient errors",
+      "tier": "A",
+      "unconfirmed_files": 19,
+      "leads_read": 1,
+      "leads_confirmed": 0,
+      "findings": 1
+    },
+    {
+      "id": "S05",
+      "name": "Client-side rate limiting / budget gating",
+      "tier": "A",
+      "unconfirmed_files": 48,
+      "leads_read": 1,
+      "leads_confirmed": 0,
+      "findings": 0
+    },
+    {
+      "id": "S06",
+      "name": "Request prioritization (interactive over background)",
+      "tier": "A",
+      "unconfirmed_files": 41,
+      "leads_read": 3,
+      "leads_confirmed": 0,
+      "findings": 0
+    },
+    {
+      "id": "S07",
+      "name": "Idempotent, resumable jobs",
+      "tier": "A",
+      "unconfirmed_files": 58,
+      "leads_read": 2,
+      "leads_confirmed": 1,
+      "findings": 6
+    },
+    {
+      "id": "S08",
+      "name": "Bounded result sets and pagination",
+      "tier": "A",
+      "unconfirmed_files": 172,
+      "leads_read": 22,
+      "leads_confirmed": 3,
+      "findings": 3
+    },
+    {
+      "id": "S09",
+      "name": "Single-flight / request coalescing plus caching",
+      "tier": "A",
+      "unconfirmed_files": 39,
+      "leads_read": 3,
+      "leads_confirmed": 0,
+      "findings": 0
+    },
+    {
+      "id": "S10",
+      "name": "Retry at one layer plus a retry budget",
+      "tier": "A",
+      "unconfirmed_files": 10,
+      "leads_read": 1,
+      "leads_confirmed": 0,
+      "findings": 0
+    },
+    {
+      "id": "S11",
+      "name": "Deadline propagation across hops",
+      "tier": "B",
+      "unconfirmed_files": 24,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 1
+    },
+    {
+      "id": "S12",
+      "name": "Circuit breaker or retry token bucket",
+      "tier": "B",
+      "unconfirmed_files": 40,
+      "leads_read": 3,
+      "leads_confirmed": 1,
+      "findings": 3
+    },
+    {
+      "id": "S13",
+      "name": "Bulkheads (separate pools, queues, workers)",
+      "tier": "B",
+      "unconfirmed_files": 5,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 0
+    },
+    {
+      "id": "S14",
+      "name": "Bounded queues with backpressure or load shedding",
+      "tier": "B",
+      "unconfirmed_files": 3,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 1
+    },
+    {
+      "id": "S15",
+      "name": "Graceful degradation and fallbacks",
+      "tier": "B",
+      "unconfirmed_files": 37,
+      "leads_read": 1,
+      "leads_confirmed": 0,
+      "findings": 5
+    },
+    {
+      "id": "S16",
+      "name": "Jitter on periodic work",
+      "tier": "B",
+      "unconfirmed_files": 21,
+      "leads_read": 2,
+      "leads_confirmed": 0,
+      "findings": 0
+    },
+    {
+      "id": "S17",
+      "name": "Steady state (TTLs, cleanup, growth bounds)",
+      "tier": "B",
+      "unconfirmed_files": 38,
+      "leads_read": 1,
+      "leads_confirmed": 0,
+      "findings": 0
+    },
+    {
+      "id": "S18",
+      "name": "Fail fast (validate before expensive work)",
+      "tier": "B",
+      "unconfirmed_files": 18,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 2
+    },
+    {
+      "id": "S19",
+      "name": "No error swallowing; failures stay observable",
+      "tier": "B",
+      "unconfirmed_files": 43,
+      "leads_read": 2,
+      "leads_confirmed": 0,
+      "findings": 6
+    },
+    {
+      "id": "S27",
+      "name": "No blocking calls on non-blocking/event-loop threads",
+      "tier": "A",
+      "unconfirmed_files": 0,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 0
+    },
+    {
+      "id": "S28",
+      "name": "Bounded, timed lock/wait acquisition",
+      "tier": "A",
+      "unconfirmed_files": 0,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 0
+    },
+    {
+      "id": "S29",
+      "name": "Bounded query fan-out (no N+1 lazy-loading amplification)",
+      "tier": "A",
+      "unconfirmed_files": 0,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 0
+    },
+    {
+      "id": "S30",
+      "name": "Liveness checks only the process itself",
+      "tier": "A",
+      "unconfirmed_files": 0,
+      "leads_read": 0,
+      "leads_confirmed": 0,
+      "findings": 0
+    }
+  ],
+  "files_affected": 10,
+  "coverage_gaps": {
+    "tracked": 7371,
+    "considered": 1977,
+    "unchanged": 66,
+    "not_citable": 0,
+    "excluded": {
+      "asset": 174,
+      "generated": 14,
+      "migration": 856,
+      "profile": 1833,
+      "test": 1539,
+      "tooling": 92
+    },
+    "unsupported": {
+      "(no extension)": 31,
+      ".json": 124,
+      ".md": 108,
+      ".mdc": 7,
+      ".mdx": 423,
+      ".patch": 12,
+      ".sh": 18,
+      ".sql": 62,
+      "other": 35
+    }
+  },
+  "not_scanned": {
+    "intro": "Of 7371 tracked files, 1977 changed in the window in a supported language and were considered for ranking.",
+    "items": [
+      "66 in a supported language had no commit in the window, so they could not rank on churn",
+      "174 excluded: lock files and assets",
+      "14 excluded: generated code",
+      "856 excluded: database migrations",
+      "1833 excluded: excluded by the repo profile",
+      "1539 excluded: test code",
+      "92 excluded: CI and tooling configuration",
+      "no detectors for their language or format: 423 .mdx, 124 .json, 108 .md, 62 .sql, 35 other, 31 (no extension), 18 .sh, 12 .patch, 7 .mdc"
+    ]
+  },
+  "dormant": [],
+  "lead_precision": {
+    "S01": {
+      "read": 1,
+      "confirmed": 1
+    },
+    "S02": {
+      "read": 1,
+      "confirmed": 1
+    },
+    "S04": {
+      "read": 1,
+      "confirmed": 0
+    },
+    "S05": {
+      "read": 1,
+      "confirmed": 0
+    },
+    "S06": {
+      "read": 3,
+      "confirmed": 0
+    },
+    "S07": {
+      "read": 2,
+      "confirmed": 1
+    },
+    "S08": {
+      "read": 22,
+      "confirmed": 3
+    },
+    "S09": {
+      "read": 3,
+      "confirmed": 0
+    },
+    "S10": {
+      "read": 1,
+      "confirmed": 0
+    },
+    "S12": {
+      "read": 3,
+      "confirmed": 1
+    },
+    "S15": {
+      "read": 1,
+      "confirmed": 0
+    },
+    "S16": {
+      "read": 2,
+      "confirmed": 0
+    },
+    "S17": {
+      "read": 1,
+      "confirmed": 0
+    },
+    "S19": {
+      "read": 2,
+      "confirmed": 0
+    }
+  },
+  "consumption": {
+    "schema": "thunderstruck.usage/v1",
+    "source": "partial",
+    "window": {
+      "from": "2026-11-08T16:38:03+00:00",
+      "to": "2026-11-08T16:41:03+00:00"
+    },
+    "orchestrator": {
+      "calls": 0,
+      "by_model": {}
+    },
+    "investigators": {
+      "agents": 10,
+      "respawns": 0,
+      "repairs": 0,
+      "fallback_saves": 10,
+      "calls": 10,
+      "by_model": {
+        "claude-sonnet-5-5": {
+          "input": 420524,
+          "cache_write_5m": 0,
+          "cache_write_1h": 0,
+          "cache_read": 0,
+          "output": 0,
+          "weighted": 420524
+        }
+      },
+      "by_hotspot": {
+        "H01": {
+          "agents": 1,
+          "calls": 1,
+          "weighted": 37368
+        },
+        "H02": {
+          "agents": 1,
+          "calls": 1,
+          "weighted": 42209
+        },
+        "H03": {
+          "agents": 1,
+          "calls": 1,
+          "weighted": 45166
+        },
+        "H04": {
+          "agents": 1,
+          "calls": 1,
+          "weighted": 42960
+        },
+        "H05": {
+          "agents": 1,
+          "calls": 1,
+          "weighted": 43706
+        },
+        "H06": {
+          "agents": 1,
+          "calls": 1,
+          "weighted": 44181
+        },
+        "H07": {
+          "agents": 1,
+          "calls": 1,
+          "weighted": 46038
+        },
+        "H08": {
+          "agents": 1,
+          "calls": 1,
+          "weighted": 43439
+        },
+        "H09": {
+          "agents": 1,
+          "calls": 1,
+          "weighted": 37985
+        },
+        "H10": {
+          "agents": 1,
+          "calls": 1,
+          "weighted": 37472
+        }
+      }
+    },
+    "total_weighted": 420524,
+    "missing": [
+      "orchestrator: session transcript not readable"
+    ]
+  },
+  "findings": [
+    {
+      "location": {
+        "file": "apps/webapp/app/services/queryService.server.ts",
+        "symbol": "executeQuery",
+        "lines": "228-358",
+        "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/services/queryService.server.ts#L228-L358"
+      },
+      "missing_patterns": [
+        "S15",
+        "S19"
+      ],
+      "failure_mode": "Users see 'exceeded your query concurrency' or 'a lot of queries at the moment' rejections although few queries are running, until leaked slots expire",
+      "trigger_condition": "getDefaultPeriod/getLimit (platform lookup) throws or times out after the concurrency slot is acquired and before the try block begins",
+      "amplifier": "Each failed call leaks a slot for the org/project key and the global key. Dashboard auto-refresh and alert evaluators re-issue queries, so more slots leak while the platform lookup stays unhealthy",
+      "sustaining_effect": null,
+      "blast_radius": "Queries for the affected project are rejected at its concurrency limit. Under a wide platform outage the global limit can fill and reject queries for all tenants, until the limiter's 5-minute expiry clears the slots",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/services/queryService.server.ts:228",
+          "note": "slot acquired before any fallible awaits",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/services/queryService.server.ts#L228"
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/services/queryService.server.ts:259-301",
+          "note": "awaited getDefaultPeriod/getLimit run outside the try/finally that releases",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/services/queryService.server.ts#L259-L301"
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/services/queryService.server.ts:358",
+          "note": "try begins only after those awaits",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/services/queryService.server.ts#L358"
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/services/redisConcurrencyLimiter.server.ts:7",
+          "note": "stale entries auto-expire after 300s, so the leak self-heals",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/services/redisConcurrencyLimiter.server.ts#L7"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "The control-flow gap is visible in the code, but I did not read getLimit to confirm it can throw. The limiter's expiry bounds the impact.",
+      "how_to_verify": "Stub getLimit to reject, call executeQuery repeatedly with a limit of 2, then check whether later calls get a key_limit rejection.",
+      "prediction": "Bursts of concurrency-limit errors on dashboards that coincide with platform/billing lookup errors",
+      "key": "37482446c863",
+      "content_hash": "sha256:b594aedf273cdfb635787cfe5c43c1f55c8c3b417b0a85bcbd37e7a58002e56e",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "apps/webapp/app/services/queryService.server.ts": "sha256:b594aedf273cdfb635787cfe5c43c1f55c8c3b417b0a85bcbd37e7a58002e56e",
+        "apps/webapp/app/services/redisConcurrencyLimiter.server.ts": "sha256:2ee1203c4c5dc045e878f201f865b9c3737c3f767d11d278024e594fd3f5b69a"
+      },
+      "hotspot_id": "H02",
+      "hotspot_score": 0.1307,
+      "id": "FR-001",
+      "shares_code_with": []
+    },
+    {
+      "location": {
+        "file": "apps/supervisor/src/index.ts",
+        "symbol": "tryWarmStart",
+        "lines": "841-911",
+        "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/supervisor/src/index.ts#L841-L911"
+      },
+      "missing_patterns": [
+        "S01",
+        "S15"
+      ],
+      "failure_mode": "Runs stop starting on a supervisor. Dequeued runs sit in the dequeued state with no runner, and the warm_start phase duration climbs without bound.",
+      "trigger_condition": "The warm-start receiver accepts the TCP connection but never answers, for example because it is overloaded, deadlocked or its pod is frozen.",
+      "amplifier": "The warm-start fetch has no AbortSignal or timeout. The dequeue handler awaits it before it can reach the cold-create path, so each stuck message holds its slot and its run.",
+      "sustaining_effect": null,
+      "blast_radius": "Every run dequeued by this supervisor instance is delayed or stalled until the hung sockets are closed or the process restarts.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "apps/supervisor/src/index.ts:873-877",
+          "note": "fetch to the warm-start URL has no signal or timeout.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/supervisor/src/index.ts#L873-L877"
+        },
+        {
+          "type": "code",
+          "ref": "apps/supervisor/src/index.ts:555",
+          "note": "The dequeue handler awaits tryWarmStart before the cold-create fallback.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/supervisor/src/index.ts#L555"
+        },
+        {
+          "type": "detector",
+          "ref": "S01@apps/supervisor/src/index.ts:873",
+          "note": "Confirmed: no timeout on the external call.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/supervisor/src/index.ts#L873"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "The missing timeout is visible in the code and the call is awaited on the dequeue path. I did not read the dequeue consumer's concurrency handling, and no fix commit targets this call.",
+      "how_to_verify": "Point TRIGGER_WARM_START_URL at a server that accepts connections and never responds. Dequeue a run and check whether it ever reaches createWorkload.",
+      "prediction": "A warm-start service incident will show up as a supervisor-wide dequeue stall rather than a fall back to cold starts.",
+      "key": "764aaef4039d",
+      "content_hash": "sha256:d065d7c883accf87252db9f0eafe75142f2d592db199ed61a39bbc24f08571dd",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "apps/supervisor/src/index.ts": "sha256:d065d7c883accf87252db9f0eafe75142f2d592db199ed61a39bbc24f08571dd"
+      },
+      "hotspot_id": "H04",
+      "hotspot_score": 0.1233,
+      "id": "FR-002",
+      "shares_code_with": []
+    },
+    {
+      "location": {
+        "file": "apps/webapp/app/v3/services/createBackgroundWorker.server.ts",
+        "symbol": "createWorkerTask",
+        "lines": "564-748",
+        "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/v3/services/createBackgroundWorker.server.ts#L564-L748"
+      },
+      "missing_patterns": [
+        "S19",
+        "S07"
+      ],
+      "failure_mode": "A deploy reports success, but some tasks are silently missing from the new worker. Triggers for those tasks then fail with task-not-found or run against stale metadata, and the only trace is an error log line.",
+      "trigger_condition": "A transient DB error or timeout, a unique-constraint race, or a queue-creation failure occurs for one task while the worker's tasks are registered.",
+      "amplifier": "createWorkerTask catches every non-validation error and returns null. createWorkerTasks drops null entries with `if (entry)`, so the worker is finalized with a partial task set. The 3-attempt createMany loop only covers duplicate conflicts, not other errors.",
+      "sustaining_effect": "The partial worker is the current worker until the next deploy. Re-deploys of an unchanged build may skip the task again, so the gap persists.",
+      "blast_radius": "Every trigger of the dropped tasks in that environment fails until a redeploy succeeds. Other tasks in the worker are unaffected.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/v3/services/createBackgroundWorker.server.ts:719-747",
+          "note": "catch logs the error and returns null for all non-validation errors",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/v3/services/createBackgroundWorker.server.ts#L719-L747"
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/v3/services/createBackgroundWorker.server.ts:427-429",
+          "note": "null entries are skipped with no count check or throw",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/v3/services/createBackgroundWorker.server.ts#L427-L429"
+        },
+        {
+          "type": "commit",
+          "ref": "d93f848",
+          "note": "changed the task-registration conflict handling in this function",
+          "subject": "perf(webapp): avoid task registration conflict errors",
+          "kind": "feature",
+          "url": "https://github.com/triggerdotdev/trigger.dev/commit/d93f8483e28b0f48c1aa3f3c30b58d59859a1ac2"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "The swallow-and-drop path is plain in the code, but I did not observe a production partial registration. The cited commit is a [feature], not a [fix].",
+      "how_to_verify": "Make backgroundWorkerTask.createMany throw a non-validation error for one task in a 5-task deploy. Check whether the deploy succeeds with 4 task entries and no error returned to the CLI.",
+      "key": "a2a8cc519a94",
+      "content_hash": "sha256:2aa2219646b22ccd592712425c60dc7cb1a3610a2d3e8af883a91139a7d6d4e7",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "apps/webapp/app/v3/services/createBackgroundWorker.server.ts": "sha256:2aa2219646b22ccd592712425c60dc7cb1a3610a2d3e8af883a91139a7d6d4e7"
+      },
+      "hotspot_id": "H06",
+      "hotspot_score": 0.1108,
+      "id": "FR-003",
+      "shares_code_with": []
+    },
+    {
+      "location": {
+        "file": "apps/webapp/app/services/runsReplicationService.server.ts",
+        "symbol": "#acknowledgeLatestTransaction / #flush",
+        "lines": "830-858",
+        "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/services/runsReplicationService.server.ts#L830-L858"
+      },
+      "missing_patterns": [
+        "S07",
+        "S19"
+      ],
+      "failure_mode": "Runs silently go missing or stay stale in ClickHouse (dashboard run lists, status and metrics diverge from Postgres) after a ClickHouse outage or a process crash. The only signals are error logs and a failed-batch counter.",
+      "trigger_condition": "ClickHouse insert fails past _insertMaxRetries (outage, memory limit, un-ingestable row), or the webapp process dies while batches sit in the in-memory scheduler.",
+      "amplifier": "The LSN is acknowledged to Postgres on a 1s timer based only on the latest commit received. It does not depend on the batch having been flushed or inserted.",
+      "sustaining_effect": null,
+      "blast_radius": "The ClickHouse run replica diverges from Postgres for the affected rows. That divergence is permanent, because Postgres will not resend acknowledged WAL.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/services/runsReplicationService.server.ts:735-741",
+          "note": "latestCommitEndLsn is advanced when the transaction is only queued in memory.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/services/runsReplicationService.server.ts#L735-L741"
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/services/runsReplicationService.server.ts:849-858",
+          "note": "The timer acknowledges latestCommitEndLsn with no check that the data was flushed.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/services/runsReplicationService.server.ts#L849-L858"
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/services/runsReplicationService.server.ts:1010-1016",
+          "note": "An insert error after retries is only logged and recorded on the span, with no requeue.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/services/runsReplicationService.server.ts#L1010-L1016"
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/services/runsReplicationService.server.ts:1624-1629",
+          "note": "A failed batch is already cleared from memory and only increments failedBatchCount.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/services/runsReplicationService.server.ts#L1624-L1629"
+        },
+        {
+          "type": "commit",
+          "ref": "0445b8e",
+          "note": "[fix] The ClickHouse JSON-failure path is an earlier fix in the same flush and insert area.",
+          "subject": "fix(webapp,clickhouse): keep the rest of a ClickHouse batch when one run or span has un-ingestable JSON (#4358)",
+          "kind": "fix",
+          "url": "https://github.com/triggerdotdev/trigger.dev/commit/0445b8ec27f0efd37adc577c539b934a03224c20"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "The ack and flush decoupling is plain in the code, and repeated fixes in the insert path (eefb96c, 0445b8e) show inserts do fail. I did not trace whether the flush callback re-adds failed rows elsewhere.",
+      "how_to_verify": "Make ClickHouse reject inserts for longer than the retry budget, then check that the slot confirmed_flush_lsn passes those commits and the rows never appear in ClickHouse.",
+      "key": "19a53a5ffb77",
+      "content_hash": "sha256:f47ef37c36dabcf0fa80c298a6641e37d88b196936afcf92c140b35fce730917",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "apps/webapp/app/services/runsReplicationService.server.ts": "sha256:f47ef37c36dabcf0fa80c298a6641e37d88b196936afcf92c140b35fce730917"
+      },
+      "hotspot_id": "H07",
+      "hotspot_score": 0.0983,
+      "id": "FR-004",
+      "shares_code_with": []
+    },
+    {
+      "location": {
+        "file": "internal-packages/run-engine/src/engine/index.ts",
+        "symbol": "RunEngine.trigger",
+        "lines": "1306-1357",
+        "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/internal-packages/run-engine/src/engine/index.ts#L1306-L1357"
+      },
+      "missing_patterns": [
+        "S07",
+        "S19"
+      ],
+      "failure_mode": "A trigger call returns an error, but the run is already persisted as PENDING with its initial QUEUED snapshot. Because it was never published to the run queue, it can sit in the dashboard as queued and never start. A client retry with no idempotency key creates a second run.",
+      "trigger_condition": "enqueueSystem.publishRun (or the DEV scheduleExpireRun) throws, for example on a Redis blip or timeout, after runStore.createRun has committed.",
+      "amplifier": "The create-run and enqueue steps are not atomic or compensated. The catch block only logs and rethrows. The 'executionSnapshotCreated' event is emitted before the enqueue succeeds, so observers see a queued snapshot for a run that was never queued.",
+      "sustaining_effect": "Callers retry the failed trigger. Each retry makes another orphan run, and the earlier orphans stay stuck until a heartbeat or stall sweep, if one exists, reclaims them.",
+      "blast_radius": "Runs triggered during a Redis impairment are left orphaned in the database. Users see runs stuck in 'Queued', and concurrency or TTL accounting for them is inconsistent.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "internal-packages/run-engine/src/engine/index.ts:1306-1357",
+          "note": "the enqueue try/catch logs and rethrows with no rollback or requeue of the already-created run",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/internal-packages/run-engine/src/engine/index.ts#L1306-L1357"
+        },
+        {
+          "type": "code",
+          "ref": "internal-packages/run-engine/src/engine/index.ts:179",
+          "note": "the run and its snapshot are committed via runStore.createRun before any enqueue happens",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/internal-packages/run-engine/src/engine/index.ts#L179"
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "The ordering is visible in code, but I did not verify whether a downstream sweeper recovers runs that were created but never enqueued. No history commit specifically targets this path.",
+      "how_to_verify": "Make enqueueSystem.publishRun throw after createRun. Check whether a PENDING run with a QUEUED snapshot remains and whether anything ever enqueues it.",
+      "key": "7ba8fe9ea6e3",
+      "content_hash": "sha256:1c1b795e2cb078692306c6e5be58d81830d8a29769d5a64dd982c96e3a6e5782",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "internal-packages/run-engine/src/engine/index.ts": "sha256:1c1b795e2cb078692306c6e5be58d81830d8a29769d5a64dd982c96e3a6e5782"
+      },
+      "hotspot_id": "H01",
+      "hotspot_score": 0.1903,
+      "id": "FR-005",
+      "shares_code_with": []
+    },
+    {
+      "location": {
+        "file": "apps/webapp/app/services/queryService.server.ts",
+        "symbol": "executeQuery",
+        "lines": "360-368",
+        "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/services/queryService.server.ts#L360-L368"
+      },
+      "missing_patterns": [
+        "S08"
+      ],
+      "failure_mode": "Every query for a very large org runs two unbounded Postgres scans before ClickHouse is touched, so query latency and DB load grow with the project and environment count",
+      "trigger_condition": "Org with thousands of projects/environments, with dashboards or alerts issuing frequent queries",
+      "amplifier": "Auto-refreshing widgets and alert evaluators multiply the per-query Postgres scans, and the full id-to-ref maps are rebuilt in memory each time",
+      "sustaining_effect": null,
+      "blast_radius": "Query latency rises for that org and Postgres read load increases for anything sharing the database",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/services/queryService.server.ts:360",
+          "note": "project.findMany with no take, run per query",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/services/queryService.server.ts#L360"
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/services/queryService.server.ts:365",
+          "note": "runtimeEnvironment.findMany with no take, run per query",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/services/queryService.server.ts#L365"
+        },
+        {
+          "type": "detector",
+          "ref": "S08@apps/webapp/app/services/queryService.server.ts:360",
+          "note": "unbounded findMany lead confirmed in code",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/services/queryService.server.ts#L360"
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "The queries are unbounded and uncached, but real org sizes are unknown and the select is narrow.",
+      "how_to_verify": "Seed an org with 10k environments and time executeQuery; the Postgres time should grow linearly.",
+      "key": "1a8d24e57647",
+      "content_hash": "sha256:b594aedf273cdfb635787cfe5c43c1f55c8c3b417b0a85bcbd37e7a58002e56e",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "apps/webapp/app/services/queryService.server.ts": "sha256:b594aedf273cdfb635787cfe5c43c1f55c8c3b417b0a85bcbd37e7a58002e56e"
+      },
+      "hotspot_id": "H02",
+      "hotspot_score": 0.1307,
+      "id": "FR-006",
+      "shares_code_with": []
+    },
+    {
+      "location": {
+        "file": "apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts",
+        "symbol": "#insertLogsSearchRows",
+        "lines": "638-705",
+        "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts#L638-L705"
+      },
+      "missing_patterns": [
+        "S02",
+        "S12",
+        "S07"
+      ],
+      "failure_mode": "During a ClickHouse writer outage or slowdown, logs-search rows are silently lost. Each batch gets one 500ms retry and is then dropped, so the logs search index develops gaps. The only signs are an error log and drop counters.",
+      "trigger_condition": "The logs-search ClickHouse writer is unavailable or slow for longer than about 500ms per batch, or the limiter queue fills (default concurrency 2).",
+      "amplifier": "The retry is a fixed 500ms with no jitter or growth, and there are only 2 attempts. Failed batches are not re-queued or spooled, and nothing breaks the circuit while the writer is down.",
+      "sustaining_effect": null,
+      "blast_radius": "Logs search results are incomplete for the affected window. Primary task-event ingest is not affected, because this is a dual-write path.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts:642-686",
+          "note": "2-attempt loop with a constant 500ms sleep, then the batch is dropped.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts#L642-L686"
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts:600-603",
+          "note": "When the limiter is full the batch is dropped with reason limiter_full.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts#L600-L603"
+        },
+        {
+          "type": "detector",
+          "ref": "S02@apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts:683",
+          "note": "Constant retry delay, no jitter.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts#L683"
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "The drop behaviour is visible in code, but it looks like a deliberate best-effort design with metrics. Impact depends on whether the dual-write is meant to be lossless.",
+      "how_to_verify": "Make taskEventsSearch.insert fail for 2s while flushing batches. Check that the rows never land and that the insert_failed drop counter rises.",
+      "prediction": "A ClickHouse blip produces gaps in logs search that have no matching gap in the run trace view.",
+      "key": "a7968abf39a7",
+      "content_hash": "sha256:3a9fef3d0a4c5582fbf04c005ef14ae5fe6a1206c271338d033ef89edc5343c1",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts": "sha256:3a9fef3d0a4c5582fbf04c005ef14ae5fe6a1206c271338d033ef89edc5343c1"
+      },
+      "hotspot_id": "H03",
+      "hotspot_score": 0.1258,
+      "id": "FR-007",
+      "shares_code_with": []
+    },
+    {
+      "location": {
+        "file": "apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts",
+        "symbol": "#parseAttributes",
+        "lines": "2700-2706",
+        "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts#L2700-L2706"
+      },
+      "missing_patterns": [
+        "S15",
+        "S19"
+      ],
+      "failure_mode": "Opening a span detail returns a 500 or errors the panel when any one record for the span has malformed attributes_text. The JSON.parse is unguarded and is called inside the record loop, so one bad row fails the whole span.",
+      "trigger_condition": "A span has a stored attributes_text that is not valid JSON, for example from the invalid JSON escapes the write path has already had to work around.",
+      "amplifier": "The parse is repeated per record and has no try/catch or fallback to the partial record's properties.",
+      "sustaining_effect": null,
+      "blast_radius": "The span detail view and any API consumers of it fail for the affected span. Other spans are unaffected.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts:2681",
+          "note": "Parse call inside the record loop with no error handling.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts#L2681"
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts:2705",
+          "note": "Bare JSON.parse.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts#L2705"
+        },
+        {
+          "type": "commit",
+          "ref": "e82eca1",
+          "note": "Fix for invalid JSON escapes in log search batches shows malformed JSON occurs in this pipeline.",
+          "subject": "fix(webapp): preserve log search batches with invalid JSON escapes",
+          "kind": "fix",
+          "url": "https://github.com/triggerdotdev/trigger.dev/commit/e82eca1b3d7bce454fed07deeed2081b1e8d67b0"
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "The unguarded parse is visible, but I have no evidence that malformed attributes_text reaches ClickHouse on this table. The cited fixes concern a different path.",
+      "how_to_verify": "Feed #mergeRecordsIntoSpanDetail a record with attributes_text set to '{\"a\":\"\\\\x\"}'. It throws instead of returning the span.",
+      "prediction": null,
+      "key": "bd098490aa80",
+      "content_hash": "sha256:3a9fef3d0a4c5582fbf04c005ef14ae5fe6a1206c271338d033ef89edc5343c1",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts": "sha256:3a9fef3d0a4c5582fbf04c005ef14ae5fe6a1206c271338d033ef89edc5343c1"
+      },
+      "hotspot_id": "H03",
+      "hotspot_score": 0.1258,
+      "id": "FR-008",
+      "shares_code_with": []
+    },
+    {
+      "location": {
+        "file": "apps/supervisor/src/index.ts",
+        "symbol": "createWorkload",
+        "lines": "809-839",
+        "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/supervisor/src/index.ts#L809-L839"
+      },
+      "missing_patterns": [
+        "S19",
+        "S07"
+      ],
+      "failure_mode": "A run that was dequeued is left with no container. The supervisor only writes an error log line and the run sits until some heartbeat or timeout elsewhere notices.",
+      "trigger_condition": "workloadManager.create fails, for example from a Kubernetes API error, an image pull failure or a Docker daemon error, during a platform or cluster blip.",
+      "amplifier": "The catch block logs and records metrics, then returns normally. Nothing re-queues the run or reports the failure to the platform.",
+      "sustaining_effect": "Runs lost this way wait on slower recovery timers, and the lost capacity piles up for as long as create keeps failing.",
+      "blast_radius": "All runs dequeued while create is failing are delayed or stuck.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "apps/supervisor/src/index.ts:824-838",
+          "note": "The catch only observes metrics and logs, and the failure is not propagated.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/supervisor/src/index.ts#L824-L838"
+        },
+        {
+          "type": "detector",
+          "ref": "S07@apps/supervisor/src/index.ts:812",
+          "note": "The create call has no resumable or replay-safe handling visible in this file.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/supervisor/src/index.ts#L812"
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "I did not read the downstream recovery (snapshot heartbeat timeouts), which may bound how long a run stays stuck. The swallowing itself is visible in the code.",
+      "how_to_verify": "Make workloadManager.create throw. Check whether the run is re-queued or marked failed without waiting for a heartbeat timeout.",
+      "key": "452b7414872b",
+      "content_hash": "sha256:d065d7c883accf87252db9f0eafe75142f2d592db199ed61a39bbc24f08571dd",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "apps/supervisor/src/index.ts": "sha256:d065d7c883accf87252db9f0eafe75142f2d592db199ed61a39bbc24f08571dd"
+      },
+      "hotspot_id": "H04",
+      "hotspot_score": 0.1233,
+      "id": "FR-009",
+      "shares_code_with": []
+    },
+    {
+      "location": {
+        "file": "apps/webapp/app/routes/resources.orgs.$organizationSlug.projects.$projectParam.env.$envParam.dashboard-agent.ts",
+        "symbol": "action (intent=create)",
+        "lines": "389-552",
+        "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/routes/resources.orgs.%24organizationSlug.projects.%24projectParam.env.%24envParam.dashboard-agent.ts#L389-L552"
+      },
+      "missing_patterns": [
+        "S07",
+        "S18"
+      ],
+      "failure_mode": "Users can start more agent sessions than the org's message quota allows. A create that returns 500 can leave a live, billed agent session behind, and a client retry then starts a second one.",
+      "trigger_condition": "Concurrent create requests from one org, or a failure in recordAgentMessageSent or in the token mint after the session has already started.",
+      "amplifier": "The quota is read at the start of the request and only incremented after the LLM session has been dispatched. Nothing reserves quota in between, and the create path has no idempotency key.",
+      "sustaining_effect": null,
+      "blast_radius": "LLM spend and agent runs for one org exceed its plan. The org sees duplicate chats in its history. Each affected chat is a separate failure and nothing keeps the system degraded.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/routes/resources.orgs.$organizationSlug.projects.$projectParam.env.$envParam.dashboard-agent.ts:389-396",
+          "note": "Quota is checked up front and not reserved.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/routes/resources.orgs.%24organizationSlug.projects.%24projectParam.env.%24envParam.dashboard-agent.ts#L389-L396"
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/routes/resources.orgs.$organizationSlug.projects.$projectParam.env.$envParam.dashboard-agent.ts:525-527",
+          "note": "Usage is recorded only after the session start succeeded. If this throws, the outer catch returns an error and the chat is not deleted.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/routes/resources.orgs.%24organizationSlug.projects.%24projectParam.env.%24envParam.dashboard-agent.ts#L525-L527"
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/routes/resources.orgs.$organizationSlug.projects.$projectParam.env.$envParam.dashboard-agent.ts:530-547",
+          "note": "A token mint failure returns 500 while the agent is already running.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/routes/resources.orgs.%24organizationSlug.projects.%24projectParam.env.%24envParam.dashboard-agent.ts#L530-L547"
+        },
+        {
+          "type": "commit",
+          "ref": "480bede",
+          "note": "Plan enforcement was added here as a feature, with 'and fixes' in the subject.",
+          "subject": "feat(webapp,sdk): dashboard agent plan enforcement, component gallery \u2014 and fixes (#4516)",
+          "kind": "feature",
+          "url": "https://github.com/triggerdotdev/trigger.dev/commit/480bede0ad4eb69d992c50533288c333d9a557ef"
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "The ordering is visible in the code, but I did not read the quota helpers, and part of the middle of the create path was trimmed from the bundle. I did not confirm whether recordAgentMessageSent is atomic or whether the client retries after a 500.",
+      "how_to_verify": "Fire N parallel create requests with quota at limit-1 and count how many sessions start. Also make the token mint throw after the start and check that a live session remains with a 500 returned.",
+      "prediction": "Quota overshoot or duplicate chats show up in an org billing or support review.",
+      "key": "8ed671234b0e",
+      "content_hash": "sha256:25c9ff0113d294fefcd41d77667b3144fd598cfc8f66d2ff3495eb8d1a644051",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "apps/webapp/app/routes/resources.orgs.$organizationSlug.projects.$projectParam.env.$envParam.dashboard-agent.ts": "sha256:25c9ff0113d294fefcd41d77667b3144fd598cfc8f66d2ff3495eb8d1a644051"
+      },
+      "hotspot_id": "H05",
+      "hotspot_score": 0.1127,
+      "id": "FR-010",
+      "shares_code_with": []
+    },
+    {
+      "location": {
+        "file": "apps/webapp/app/services/runsReplicationService.server.ts",
+        "symbol": "#insertWithRetry",
+        "lines": "1047-1128",
+        "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/services/runsReplicationService.server.ts#L1047-L1128"
+      },
+      "missing_patterns": [
+        "S12",
+        "S04",
+        "S14"
+      ],
+      "failure_mode": "During a ClickHouse brownout, replication lag grows and webapp memory climbs, and ClickHouse sees repeated retried inserts from every concurrent flush.",
+      "trigger_condition": "ClickHouse is slow or erroring, with sustained run write volume.",
+      "amplifier": "Every error that is not on a short string list is retried. There is no circuit breaker or retry budget, and each flush has its own retries. The jitter is only 0-100ms.",
+      "sustaining_effect": "While inserts are slow, the unbounded in-memory batch and the limiter's pending queue keep growing. Each flush then retries at full size, adding load to the already struggling ClickHouse.",
+      "blast_radius": "Run analytics and dashboard freshness degrade, and the webapp process is at risk of memory pressure.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/services/runsReplicationService.server.ts:1088-1116",
+          "note": "Any error not matching a short permanent-error string list is treated as retryable.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/services/runsReplicationService.server.ts#L1088-L1116"
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/services/runsReplicationService.server.ts:1118-1128",
+          "note": "Backoff jitter is a fixed 0-100ms.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/services/runsReplicationService.server.ts#L1118-L1128"
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/services/runsReplicationService.server.ts:1503-1517",
+          "note": "addToBatch has no size cap or backpressure to the replication stream.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/services/runsReplicationService.server.ts#L1503-L1517"
+        },
+        {
+          "type": "detector",
+          "ref": "S12@apps/webapp/app/services/runsReplicationService.server.ts:1069",
+          "note": "Retries with no circuit breaker or token bucket.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/services/runsReplicationService.server.ts#L1069"
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "Structure is visible but I did not read the configured limits or the concurrency settings. The effect depends on env values.",
+      "how_to_verify": "Inject ClickHouse latency above the insert timeout under steady write load, then watch the pending count of concurrencyLimiter, heap size and insert attempts per second.",
+      "key": "31c7136e8886",
+      "content_hash": "sha256:f47ef37c36dabcf0fa80c298a6641e37d88b196936afcf92c140b35fce730917",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "apps/webapp/app/services/runsReplicationService.server.ts": "sha256:f47ef37c36dabcf0fa80c298a6641e37d88b196936afcf92c140b35fce730917"
+      },
+      "hotspot_id": "H07",
+      "hotspot_score": 0.0983,
+      "id": "FR-011",
+      "shares_code_with": []
+    },
+    {
+      "location": {
+        "file": "apps/webapp/app/presenters/v3/LogsListPresenter.server.ts",
+        "symbol": "LogsListPresenter.call",
+        "lines": "408-426",
+        "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/presenters/v3/LogsListPresenter.server.ts#L408-L426"
+      },
+      "missing_patterns": [
+        "S12",
+        "S15",
+        "S11"
+      ],
+      "failure_mode": "Log searches over large or busy tenants repeatedly return empty pages with a 'timed out' progress flag, so the user watches the search crawl through slices without results. Other ClickHouse resource-limit errors surface as a hard error banner.",
+      "trigger_condition": "A search with a rare or non-word term, or a wide time range on a high-volume environment, exceeds the 8s (first slice) or 5s (later slices) max_execution_time.",
+      "amplifier": "Each timeout is turned into a retry slice (retryTimedOutLogsSearchSlice) and handed back as a cursor, so the caller re-issues the next query. Nothing in this path counts per-tenant timeouts or backs off, and the slice query is the same expensive scan that just timed out.",
+      "sustaining_effect": "Every timed-out request returns a next cursor, so a client that auto-continues keeps issuing 5-8s scans against the shared ClickHouse. There is no breaker or budget, so the load persists until the slice ladder is exhausted or the user leaves.",
+      "blast_radius": "ClickHouse capacity for the logs list queries is consumed. Other log viewers and query users on the same cluster may see slower or timed-out searches.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/presenters/v3/LogsListPresenter.server.ts:411-425",
+          "note": "Timeout is converted into a retry slice and a cursor, with no backoff or budget.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/presenters/v3/LogsListPresenter.server.ts#L411-L425"
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/presenters/v3/LogsListPresenter.server.ts:393-395",
+          "note": "Only an abort signal is passed; the server-side max_execution_time is the sole bound.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/presenters/v3/LogsListPresenter.server.ts#L393-L395"
+        },
+        {
+          "type": "commit",
+          "ref": "c6f0769",
+          "note": "Earlier [fix] to bound logs search memory and pagination at scale; the same cost problem is still being tuned.",
+          "subject": "fix(webapp): bound logs search memory and fix pagination at scale (#4012)",
+          "kind": "fix",
+          "url": "https://github.com/triggerdotdev/trigger.dev/commit/c6f076929947b2be1736db935c6211fa506e2e02"
+        },
+        {
+          "type": "commit",
+          "ref": "34ec7ee",
+          "note": "Latest change added adaptive time slices, which is where the timeout retry loop comes from.",
+          "subject": "feat(webapp): search logs in adaptive time slices",
+          "kind": "feature",
+          "url": "https://github.com/triggerdotdev/trigger.dev/commit/34ec7eebd1dc416bd918bd3ed3559db2e18ba179"
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "I did not see the client or route code that decides whether to auto-continue after a timed-out slice, and the retry-slice helper is in another file I did not open. The risk rests on this presenter's logic alone.",
+      "how_to_verify": "Search a high-volume environment for a non-word term over a long period. Check whether the route or UI follows the returned cursor automatically, and count the ClickHouse queries tagged log_comment 'logs_list' per user action.",
+      "prediction": "Further perf or fix commits to this file will tune slice sizes or time limits for large tenants.",
+      "key": "62589d73c708",
+      "content_hash": "sha256:7283619c7b034ea484746d460fe5a6698714db96e729de82942ac5698716b289",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "apps/webapp/app/presenters/v3/LogsListPresenter.server.ts": "sha256:7283619c7b034ea484746d460fe5a6698714db96e729de82942ac5698716b289"
+      },
+      "hotspot_id": "H08",
+      "hotspot_score": 0.0836,
+      "id": "FR-012",
+      "shares_code_with": []
+    },
+    {
+      "location": {
+        "file": "internal-packages/run-store/src/PostgresRunStore.ts",
+        "symbol": "hydrateBlockingTaskRuns",
+        "lines": "344-380",
+        "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/internal-packages/run-store/src/PostgresRunStore.ts#L344-L380"
+      },
+      "missing_patterns": [
+        "S08"
+      ],
+      "failure_mode": "Reading a widely-shared waitpoint (for example a manual token or datetime waitpoint many runs wait on) on the dedicated schema becomes slow and memory-heavy, and the request times out or the process runs out of memory.",
+      "trigger_condition": "A waitpoint has thousands of TaskRunWaitpoint edges and is read through the dedicated-schema hydrator with a nested taskRun select.",
+      "amplifier": "The edge query has no take/limit, and the run hydration then loads every distinct run row for those edges, with in-memory Maps built over all of them.",
+      "sustaining_effect": null,
+      "blast_radius": "Callers that fetch the waitpoint stall or fail for that waitpoint. Other waitpoints are unaffected, but the Postgres connection and Node heap are shared.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "internal-packages/run-store/src/PostgresRunStore.ts:350-352",
+          "note": "taskRunWaitpoint.findMany with only a waitpointId filter, no take.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/internal-packages/run-store/src/PostgresRunStore.ts#L350-L352"
+        },
+        {
+          "type": "code",
+          "ref": "internal-packages/run-store/src/PostgresRunStore.ts:357-365",
+          "note": "All edge run ids are loaded into a Map with no cap.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/internal-packages/run-store/src/PostgresRunStore.ts#L357-L365"
+        },
+        {
+          "type": "detector",
+          "ref": "S08@internal-packages/run-store/src/PostgresRunStore.ts:350",
+          "note": "Detector flagged the unbounded findMany.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/internal-packages/run-store/src/PostgresRunStore.ts#L350"
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "The code is unbounded, but I did not verify that real waitpoints reach very large fan-in on this path. boundedIn only chunks the IN list and does not cap the result.",
+      "how_to_verify": "Create 50k TaskRunWaitpoint rows for one waitpoint on the dedicated schema and hydrate it with a nested taskRun select. Memory and latency grow with the edge count.",
+      "key": "054ddbb8f061",
+      "content_hash": "sha256:6ac90d2be00c920f8abe35f4b37f6d58d9b3070399b9f9dfafde5220e90d5eb5",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "internal-packages/run-store/src/PostgresRunStore.ts": "sha256:6ac90d2be00c920f8abe35f4b37f6d58d9b3070399b9f9dfafde5220e90d5eb5"
+      },
+      "hotspot_id": "H09",
+      "hotspot_score": 0.0731,
+      "id": "FR-013",
+      "shares_code_with": []
+    },
+    {
+      "location": {
+        "file": "internal-packages/run-store/src/PostgresRunStore.ts",
+        "symbol": "findSnapshotCompletedWaitpointIds",
+        "lines": "2236-2250",
+        "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/internal-packages/run-store/src/PostgresRunStore.ts#L2236-L2250"
+      },
+      "missing_patterns": [
+        "S08"
+      ],
+      "failure_mode": "Fetching the completed waitpoints of a snapshot that completed a very large batch returns every link row in one query, and loads slowly on the run-continue path.",
+      "trigger_condition": "A snapshot has tens of thousands of completed-waitpoint links, for example a large batchTriggerAndWait.",
+      "amplifier": "The link read and the LEFT JOIN variant at 2255-2288 have no LIMIT, and the snapshot is read again on each continue or replay.",
+      "sustaining_effect": null,
+      "blast_radius": "Run continuation is slow for the affected runs only.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "internal-packages/run-store/src/PostgresRunStore.ts:2239-2243",
+          "note": "Unbounded join findMany on snapshotId.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/internal-packages/run-store/src/PostgresRunStore.ts#L2239-L2243"
+        },
+        {
+          "type": "code",
+          "ref": "internal-packages/run-store/src/PostgresRunStore.ts:2246-2249",
+          "note": "Legacy raw SELECT with no LIMIT.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/internal-packages/run-store/src/PostgresRunStore.ts#L2246-L2249"
+        },
+        {
+          "type": "detector",
+          "ref": "S08@internal-packages/run-store/src/PostgresRunStore.ts:2247",
+          "note": "Detector flagged the raw SELECT with no LIMIT.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/internal-packages/run-store/src/PostgresRunStore.ts#L2247"
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "The result set is inherently the set of completed waitpoints, so it may be bounded by upstream batch-size limits that I did not check.",
+      "how_to_verify": "Complete a snapshot with 50k waitpoints and time findSnapshotCompletedWaitpointIds. If upstream caps batch size, reject this.",
+      "key": "1802d412b41a",
+      "content_hash": "sha256:6ac90d2be00c920f8abe35f4b37f6d58d9b3070399b9f9dfafde5220e90d5eb5",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "internal-packages/run-store/src/PostgresRunStore.ts": "sha256:6ac90d2be00c920f8abe35f4b37f6d58d9b3070399b9f9dfafde5220e90d5eb5"
+      },
+      "hotspot_id": "H09",
+      "hotspot_score": 0.0731,
+      "id": "FR-014",
+      "shares_code_with": []
+    },
+    {
+      "location": {
+        "file": "apps/webapp/app/env.server.ts",
+        "symbol": "env",
+        "lines": "2808-2827",
+        "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/env.server.ts#L2808-L2827"
+      },
+      "missing_patterns": [
+        "S18",
+        "S15"
+      ],
+      "failure_mode": "Every webapp process (web, workers, background replicas) crashes at import time with a zod validation error and restart-loops, rather than starting with the one bad setting rejected or defaulted",
+      "trigger_condition": "A deploy sets or omits one env var that violates a strict rule. Examples: a cross-field rule such as RUN_TOKEN_ISSUER_URL equal to OIDC_ISSUER_URL, RUN_OPS_SHARDS set without RUN_OPS_DATABASE_URL, or a non-integer value for one of the many z.coerce.number().int() settings. The rule list grows with almost every feature commit.",
+      "amplifier": "One module-level EnvironmentSchema.parse(process.env) covers about 2,800 lines of settings, including optional feature knobs. A typo in any optional setting therefore blocks startup of the whole app.",
+      "sustaining_effect": null,
+      "blast_radius": "The whole webapp is down on that rollout until the config is corrected or rolled back. It recovers as soon as the env is fixed.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/env.server.ts:2827",
+          "note": "Unconditional parse at module load; any issue throws and kills the process.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/env.server.ts#L2827"
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/env.server.ts:2808-2824",
+          "note": "Cross-field superRefine rules that hard-fail startup.",
+          "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/env.server.ts#L2808-L2824"
+        },
+        {
+          "type": "commit",
+          "ref": "95b7888",
+          "note": "Feature commit that added the RUN_TOKEN_ISSUER_URL cross-field startup check.",
+          "subject": "feat(webapp): inject a signed per-attempt run token into deployed runs",
+          "kind": "feature",
+          "url": "https://github.com/triggerdotdev/trigger.dev/commit/95b7888b0db480a3be51a16c710b79aa54cdbf9b"
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "Fail-fast at boot is partly deliberate, and the bundle shows no incident or fix commit where a config error caused an outage. This is a structural risk only.",
+      "how_to_verify": "Set RUN_OPS_SHARDS to a non-empty value with RUN_OPS_DATABASE_URL unset, then start the webapp. If it boots, the hypothesis is wrong.",
+      "key": "7f9c301b9295",
+      "content_hash": "sha256:dd746a54aa77c3bc6f9289980b55773f6555f30c30b8bdfaa2481223855ec368",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "apps/webapp/app/env.server.ts": "sha256:dd746a54aa77c3bc6f9289980b55773f6555f30c30b8bdfaa2481223855ec368"
+      },
+      "hotspot_id": "H10",
+      "hotspot_score": 0.0681,
+      "id": "FR-015",
+      "shares_code_with": []
+    }
+  ],
+  "clean": [],
+  "incomplete": [],
+  "hotspots": [
+    {
+      "id": "H01",
+      "file": "internal-packages/run-engine/src/engine/index.ts",
+      "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/internal-packages/run-engine/src/engine/index.ts",
+      "history_url": "https://github.com/triggerdotdev/trigger.dev/commits/849191591a185b017c069469efefc1bc6530b8cb/internal-packages/run-engine/src/engine/index.ts",
+      "score": 0.1903,
+      "churn": {
+        "commits": 65,
+        "insertions": 2363,
+        "deletions": 700,
+        "authors": 10,
+        "fix_commits": 22,
+        "resilience_commits": 0,
+        "refactor_commits": 6,
+        "fix_ratio": 0.338,
+        "last_modified": "2026-10-21T13:49:44+00:00",
+        "recent_shas": [
+          "8e28ab47deaa0eb9221d4e9f1ae1b3fa604b9839",
+          "0e9937c7c24655517c7c6103d76dc1b1eeb36b69",
+          "c55c97afd6269f4c7287640db63e2693ade3073f",
+          "a7575c76b2f1811ffcd00baf79e026f41193e22d",
+          "c49fd05f44119ec2a036afaabaad8f9e148a3db6",
+          "2a7bedad9ce937b27fb16359383622d33bd7a969",
+          "7a0a73e11a9ac5c7b133854f928cd0e01e601db3",
+          "dba857b40a0278996fae2466cadb65ee4244f2eb",
+          "aba49bfe0eb8d42663f4778f4f4b431922f25df2",
+          "9272d0150e3ceb29664b46eee413e3cf3397d5ce",
+          "dcf8133c9eb4aeb729899984bee3c9c96498125f",
+          "b59385dbabe0a30bd473bae4c61708cb283b959e",
+          "d69eac21628e788345c1efdefb1923ccaa6d25bc",
+          "0aedf39e27ddd9b7035bb88dc03b2f40546fdcf3",
+          "fade75bc29e0e48309b4785dbc513daf0e95dff4"
+        ]
+      },
+      "complexity": {
+        "nloc": 2936,
+        "functions": 125,
+        "ccn_max": 49,
+        "ccn_avg": 3.13,
+        "top_function": {
+          "name": "(anonymous)",
+          "ccn": 49,
+          "nloc": 341,
+          "lines": "964-1373"
+        }
+      },
+      "patterns": [
+        "S08",
+        "S12",
+        "S16"
+      ]
+    },
+    {
+      "id": "H02",
+      "file": "apps/webapp/app/services/queryService.server.ts",
+      "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/services/queryService.server.ts",
+      "history_url": "https://github.com/triggerdotdev/trigger.dev/commits/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/services/queryService.server.ts",
+      "score": 0.1307,
+      "churn": {
+        "commits": 21,
+        "insertions": 704,
+        "deletions": 212,
+        "authors": 4,
+        "fix_commits": 3,
+        "resilience_commits": 0,
+        "refactor_commits": 3,
+        "fix_ratio": 0.143,
+        "last_modified": "2026-10-20T09:54:50+00:00",
+        "recent_shas": [
+          "68e906f27fe345cedbae6348bfa4577cbd97b30b",
+          "9944f44f8528985f3a76cddc2dd4b5bc2402165c",
+          "b33197691b4936192f3d7bb741fd91735f7963ec",
+          "480bede0ad4eb69d992c50533288c333d9a557ef",
+          "45696579233527dade718676f6d9622d69409f9b",
+          "9d57aff5426be111bbf3315c8167c754d4c25c10",
+          "6e5f0f0fe74fceb2f8462e7fd354790572d5f03c",
+          "4eb9292cbeee57304c9ddb3487b1948c6d0e3248",
+          "4fde283e76cdf008057e46f867be870e15a0a5fb",
+          "71d98b4e6b4d27c4745c5e336f6c439d365be7bb",
+          "1a6481a5797fff05195ea06fbe18764cec1e44f6",
+          "54d95ee4b98f638b41a708036b099bd54a80d44f",
+          "1cfc296c6ba520ee76a5e064a407443babed0bb7",
+          "469b039090741ca20ad4d8c1af28dd5c4994e3af",
+          "9030e943622c6ab682653908ae162e559466bf3c"
+        ]
+      },
+      "complexity": {
+        "nloc": 376,
+        "functions": 13,
+        "ccn_max": 75,
+        "ccn_avg": 7.31,
+        "top_function": {
+          "name": "executeQuery",
+          "ccn": 75,
+          "nloc": 242,
+          "lines": "199-492"
+        }
+      },
+      "patterns": [
+        "S07",
+        "S08"
+      ]
+    },
+    {
+      "id": "H03",
+      "file": "apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts",
+      "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts",
+      "history_url": "https://github.com/triggerdotdev/trigger.dev/commits/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts",
+      "score": 0.1258,
+      "churn": {
+        "commits": 34,
+        "insertions": 2311,
+        "deletions": 560,
+        "authors": 7,
+        "fix_commits": 11,
+        "resilience_commits": 0,
+        "refactor_commits": 4,
+        "fix_ratio": 0.324,
+        "last_modified": "2026-10-22T16:16:39+00:00",
+        "recent_shas": [
+          "ff7f091ec2a6b7f44540ad3875725af399bec169",
+          "434b7f08dddc1300ddd4fb5a14aa469ffb87a895",
+          "e6b6b5277b9f73dfdfa3f7545886c4bdee1cb9b8",
+          "6be6c1816c2dd2dc09fc361f40be6af2a07c2de2",
+          "8178ba7a31a9911bad09218ca4a047b2fb5c453a",
+          "bd28d054a1f3ceb4a9f3295d538a81919ffefa1c",
+          "3f8ba0ab624313efd4b98a0293ba98f03fee02eb",
+          "aaf70fd2a02864c2b68378a0eaed0e27237641a2",
+          "de97106d3bafc9ad089c3bb0eea939a12ee6eb03",
+          "e82eca1b3d7bce454fed07deeed2081b1e8d67b0",
+          "c1dfce7c0b0185ccae97bf68057ea9c0aad5b1b1",
+          "1d1e45c17e1576c4500ec9462ae6e4365dd1fc99",
+          "b33197691b4936192f3d7bb741fd91735f7963ec",
+          "0445b8ec27f0efd37adc577c539b934a03224c20",
+          "45527e317a9fa935ab63d53163e19af8bfee59fa"
+        ]
+      },
+      "complexity": {
+        "nloc": 3024,
+        "functions": 155,
+        "ccn_max": 41,
+        "ccn_avg": 3.96,
+        "top_function": {
+          "name": "#mergeRecordsIntoSpanDetail",
+          "ccn": 41,
+          "nloc": 116,
+          "lines": "2557-2698"
+        }
+      },
+      "patterns": [
+        "S02",
+        "S06",
+        "S09"
+      ]
+    },
+    {
+      "id": "H04",
+      "file": "apps/supervisor/src/index.ts",
+      "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/supervisor/src/index.ts",
+      "history_url": "https://github.com/triggerdotdev/trigger.dev/commits/849191591a185b017c069469efefc1bc6530b8cb/apps/supervisor/src/index.ts",
+      "score": 0.1233,
+      "churn": {
+        "commits": 36,
+        "insertions": 1198,
+        "deletions": 606,
+        "authors": 8,
+        "fix_commits": 7,
+        "resilience_commits": 0,
+        "refactor_commits": 3,
+        "fix_ratio": 0.194,
+        "last_modified": "2026-10-20T08:44:30+00:00",
+        "recent_shas": [
+          "dfa3a3293abaa3368d5bc36538c882d50e2ee92c",
+          "c55c97afd6269f4c7287640db63e2693ade3073f",
+          "2a7bedad9ce937b27fb16359383622d33bd7a969",
+          "8fcb03574384a8934605d10887b4c6b0f5b45100",
+          "7a0a73e11a9ac5c7b133854f928cd0e01e601db3",
+          "f3d9d795d1d976fd5e0172eb97a90f82af830cd1",
+          "e39f4452ef61bc57c07aacb49f438011a6d483fb",
+          "d44c7e538a7152c8f46a8059f3ecba4c3b047400",
+          "3ae7e35b0c7db673e460bc3251a3faeab3a5067e",
+          "a3bd4e2416e652ecab5cd7796c166577382adde3",
+          "f049c346c80844a3932156f476ec516023bb7f4d",
+          "a7629e80908b4fc665d8e12d2f977d0ebda4c41c",
+          "4e83d834d66a93cc9afd16b879875d494f081e50",
+          "daaaa50855a0d4b424b75a801e906d3037eb772c",
+          "73d611b8bc2d76a74576bac1000c89033bd03964"
+        ]
+      },
+      "complexity": {
+        "nloc": 856,
+        "functions": 39,
+        "ccn_max": 29,
+        "ccn_avg": 2.74,
+        "top_function": {
+          "name": "constructor",
+          "ccn": 29,
+          "nloc": 288,
+          "lines": "133-612"
+        }
+      },
+      "patterns": [
+        "S01",
+        "S04",
+        "S05",
+        "S06",
+        "S07",
+        "S12",
+        "S15"
+      ]
+    },
+    {
+      "id": "H05",
+      "file": "apps/webapp/app/routes/resources.orgs.$organizationSlug.projects.$projectParam.env.$envParam.dashboard-agent.ts",
+      "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/routes/resources.orgs.%24organizationSlug.projects.%24projectParam.env.%24envParam.dashboard-agent.ts",
+      "history_url": "https://github.com/triggerdotdev/trigger.dev/commits/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/routes/resources.orgs.%24organizationSlug.projects.%24projectParam.env.%24envParam.dashboard-agent.ts",
+      "score": 0.1127,
+      "churn": {
+        "commits": 16,
+        "insertions": 1146,
+        "deletions": 190,
+        "authors": 4,
+        "fix_commits": 3,
+        "resilience_commits": 0,
+        "refactor_commits": 2,
+        "fix_ratio": 0.188,
+        "last_modified": "2026-10-20T15:48:56+00:00",
+        "recent_shas": [
+          "99ea13007ebad7b637f1dbec68977b559cf7c183",
+          "b21b2ec2f6928b2257676c5d4955723075bf380e",
+          "9dbc5f984f064202eda137ad9a00a14d9d6baad4",
+          "82c12929bd3c15fe2efd71806712c7ce095ee360",
+          "33cf5701b4536012d45e365761c4a36067ea5f1d",
+          "dc3f98fc8c825c3b7875053e3b9053ba96a2f66f",
+          "35e57e785c6c80ee22329c597287ff88a3486e4e",
+          "9baebbd1a629b772b0c0595651b7a078e9042e03",
+          "06f99aeb31eb9238f98a093de93ffe5f9df9dc6a",
+          "e768d0a724332a916582cc4ced689923db0156e2",
+          "480bede0ad4eb69d992c50533288c333d9a557ef",
+          "0b750d00dda05533486496ad0f658d70193e7314",
+          "9a3bee02888764efad6b46b7f059dfd64c8c0499",
+          "45696579233527dade718676f6d9622d69409f9b",
+          "4fde283e76cdf008057e46f867be870e15a0a5fb"
+        ]
+      },
+      "complexity": {
+        "nloc": 790,
+        "functions": 12,
+        "ccn_max": 99,
+        "ccn_avg": 11.67,
+        "top_function": {
+          "name": "action",
+          "ccn": 99,
+          "nloc": 488,
+          "lines": "333-938"
+        }
+      },
+      "patterns": [
+        "S08",
+        "S19"
+      ]
+    },
+    {
+      "id": "H06",
+      "file": "apps/webapp/app/v3/services/createBackgroundWorker.server.ts",
+      "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/v3/services/createBackgroundWorker.server.ts",
+      "history_url": "https://github.com/triggerdotdev/trigger.dev/commits/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/v3/services/createBackgroundWorker.server.ts",
+      "score": 0.1108,
+      "churn": {
+        "commits": 33,
+        "insertions": 1763,
+        "deletions": 492,
+        "authors": 8,
+        "fix_commits": 10,
+        "resilience_commits": 0,
+        "refactor_commits": 3,
+        "fix_ratio": 0.303,
+        "last_modified": "2026-10-04T05:50:35+00:00",
+        "recent_shas": [
+          "0c45a0a4efcc8fa62b48e5096cd94fcd61a2c846",
+          "218efa65747ca5b03df3de606ce261011b84d333",
+          "b59385dbabe0a30bd473bae4c61708cb283b959e",
+          "3fef4acdab408a66bca1562c199f9a84a2ad41c2",
+          "8fe554a7a5ce4b75954d89070b160171216161cb",
+          "ea9758117bc4abb3e2d09deeab36d5c113c8496c",
+          "c9a1b998818365ab8eb3715032f783855bf43d41",
+          "723fde4a86b8b57ba7b037a04a7147c45f5287b8",
+          "108c54f53367a394e5e96bb93649333a860dc535",
+          "d93f8483e28b0f48c1aa3f3c30b58d59859a1ac2",
+          "2991bb48a284f8b0c140b7a3890f1e4ee73e224d",
+          "b33197691b4936192f3d7bb741fd91735f7963ec",
+          "c0b84595a3522dbbd102af1a082d492dabfdba6f",
+          "69f396fbefd23daaa880afcedfd97b8d3a7d2c6e",
+          "ed1bb72fb8158b93118df5eba40360e53a3018fa"
+        ]
+      },
+      "complexity": {
+        "nloc": 1648,
+        "functions": 67,
+        "ccn_max": 36,
+        "ccn_avg": 4.54,
+        "top_function": {
+          "name": "createWorkerTask",
+          "ccn": 36,
+          "nloc": 160,
+          "lines": "564-748"
+        }
+      },
+      "patterns": [
+        "S06",
+        "S08",
+        "S10"
+      ]
+    },
+    {
+      "id": "H07",
+      "file": "apps/webapp/app/services/runsReplicationService.server.ts",
+      "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/services/runsReplicationService.server.ts",
+      "history_url": "https://github.com/triggerdotdev/trigger.dev/commits/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/services/runsReplicationService.server.ts",
+      "score": 0.0983,
+      "churn": {
+        "commits": 24,
+        "insertions": 1155,
+        "deletions": 537,
+        "authors": 8,
+        "fix_commits": 7,
+        "resilience_commits": 0,
+        "refactor_commits": 1,
+        "fix_ratio": 0.292,
+        "last_modified": "2026-10-12T10:29:49+00:00",
+        "recent_shas": [
+          "2a7bedad9ce937b27fb16359383622d33bd7a969",
+          "dfb31592b823330a9c81259b58530179d116fab3",
+          "a3bd4e2416e652ecab5cd7796c166577382adde3",
+          "94cb791572ebc6cde319170a28684264cd43ea2c",
+          "17f29b7b176aa1ff503e1aa7ffd47de38d18183e",
+          "8b0385c429f727fcbd3305d08cefd4a5ec02fba2",
+          "ed1bb72fb8158b93118df5eba40360e53a3018fa",
+          "0445b8ec27f0efd37adc577c539b934a03224c20",
+          "c9f427e21f1a500483b31dfe34b25b9740ad37ce",
+          "5be6a4fe38c52dcdd7a998f6cf8fe75eb4951741",
+          "4fde283e76cdf008057e46f867be870e15a0a5fb",
+          "6bdf800a1193a65bdeae1c2e9b90ba117cf0e698",
+          "7aa871f37b6c7770969a064b7dd829552557edf3",
+          "0ee1461d86b41c3c297c345745a61f99957e924a",
+          "eefb96c87d95ac48ea92a4012306549b1628e5e9"
+        ]
+      },
+      "complexity": {
+        "nloc": 1319,
+        "functions": 85,
+        "ccn_max": 42,
+        "ccn_avg": 3.26,
+        "top_function": {
+          "name": "#prepareTaskRunInsert",
+          "ccn": 42,
+          "nloc": 79,
+          "lines": "1310-1393"
+        }
+      },
+      "patterns": [
+        "S08",
+        "S09",
+        "S12",
+        "S16"
+      ]
+    },
+    {
+      "id": "H08",
+      "file": "apps/webapp/app/presenters/v3/LogsListPresenter.server.ts",
+      "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/presenters/v3/LogsListPresenter.server.ts",
+      "history_url": "https://github.com/triggerdotdev/trigger.dev/commits/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/presenters/v3/LogsListPresenter.server.ts",
+      "score": 0.0836,
+      "churn": {
+        "commits": 16,
+        "insertions": 1319,
+        "deletions": 783,
+        "authors": 3,
+        "fix_commits": 4,
+        "resilience_commits": 0,
+        "refactor_commits": 3,
+        "fix_ratio": 0.25,
+        "last_modified": "2026-10-08T09:39:37+00:00",
+        "recent_shas": [
+          "34ec7eebd1dc416bd918bd3ed3559db2e18ba179",
+          "1615ec72d34281600019e4fca224feee4169927a",
+          "af0453e01344ae8daad02c7b420aae1592904159",
+          "b9e80bdbf7fdc7edccf003e9b9b6a841bd867f64",
+          "b4313c819920783a7404dff729f59e94fb360edf",
+          "b33197691b4936192f3d7bb741fd91735f7963ec",
+          "c7861be520df8f06fe772553e7627f42d13d35a7",
+          "4fde283e76cdf008057e46f867be870e15a0a5fb",
+          "c6f076929947b2be1736db935c6211fa506e2e02",
+          "79b6053e1327dc845827779ba216bd5255212010",
+          "b793f33e59f89f58fef4cf49b2c6df5d9b618b9d",
+          "a8f9a902804cbeae4b709fa1c7acf8216e38fb5e",
+          "eaed7d0ba4a6f5302218ae829fb208db402e9a7a",
+          "e29e1c86d9b9cdc01c36b5fbd083c857c5909180",
+          "0b0df071bff0ffb91a4ff90767b32289608480c0"
+        ]
+      },
+      "complexity": {
+        "nloc": 486,
+        "functions": 8,
+        "ccn_max": 80,
+        "ccn_avg": 14.62,
+        "top_function": {
+          "name": "call",
+          "ccn": 80,
+          "nloc": 255,
+          "lines": "117-535"
+        }
+      },
+      "patterns": [
+        "S08"
+      ]
+    },
+    {
+      "id": "H09",
+      "file": "internal-packages/run-store/src/PostgresRunStore.ts",
+      "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/internal-packages/run-store/src/PostgresRunStore.ts",
+      "history_url": "https://github.com/triggerdotdev/trigger.dev/commits/849191591a185b017c069469efefc1bc6530b8cb/internal-packages/run-store/src/PostgresRunStore.ts",
+      "score": 0.0731,
+      "churn": {
+        "commits": 32,
+        "insertions": 3784,
+        "deletions": 695,
+        "authors": 6,
+        "fix_commits": 9,
+        "resilience_commits": 0,
+        "refactor_commits": 5,
+        "fix_ratio": 0.281,
+        "last_modified": "2026-10-20T20:44:49+00:00",
+        "recent_shas": [
+          "0e9937c7c24655517c7c6103d76dc1b1eeb36b69",
+          "366671e1f377142e813f3307e8b78e6b93c0880a",
+          "2a7bedad9ce937b27fb16359383622d33bd7a969",
+          "7a0a73e11a9ac5c7b133854f928cd0e01e601db3",
+          "05bf16aeed402b0a6eb53c4ad039072a2ac5321b",
+          "f347f0e675feaabdfd2f5adb7f040f8ee4d479f9",
+          "480105cdabb8563bb4e699617786cb5e95d21fd4",
+          "15dd973f92d588152cb671325dccf269021b9f92",
+          "920892bc1186bc751c1b8a38b8ae4da0c9612f62",
+          "02e6157d12078647fbf686b1394c38bfc269c702",
+          "97d70b890696929c1afd1e7700d0f7e2ff0503fc",
+          "967dedcebccab33a16354e460d5ec72931d3e5ac",
+          "8b0385c429f727fcbd3305d08cefd4a5ec02fba2",
+          "0f725cf2baff7ead37e71c62d310d8f209a615c7",
+          "b98dd79fe4722003e878249a8ac5fa3b9e57cbdc"
+        ]
+      },
+      "complexity": {
+        "nloc": 2467,
+        "functions": 199,
+        "ccn_max": 22,
+        "ccn_avg": 2.45,
+        "top_function": {
+          "name": "#createExecutionSnapshot",
+          "ccn": 22,
+          "nloc": 106,
+          "lines": "2092-2223"
+        }
+      },
+      "patterns": [
+        "S08",
+        "S09",
+        "S17"
+      ]
+    },
+    {
+      "id": "H10",
+      "file": "apps/webapp/app/env.server.ts",
+      "url": "https://github.com/triggerdotdev/trigger.dev/blob/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/env.server.ts",
+      "history_url": "https://github.com/triggerdotdev/trigger.dev/commits/849191591a185b017c069469efefc1bc6530b8cb/apps/webapp/app/env.server.ts",
+      "score": 0.0681,
+      "churn": {
+        "commits": 183,
+        "insertions": 2054,
+        "deletions": 414,
+        "authors": 17,
+        "fix_commits": 40,
+        "resilience_commits": 0,
+        "refactor_commits": 8,
+        "fix_ratio": 0.219,
+        "last_modified": "2026-10-22T16:18:13+00:00",
+        "recent_shas": [
+          "71486a924e030072ea23bee24e88f7cc5f670925",
+          "342c2fc995e8289b40af45a3893574c0843f49cb",
+          "95b7888b0db480a3be51a16c710b79aa54cdbf9b",
+          "68e906f27fe345cedbae6348bfa4577cbd97b30b",
+          "dfa3a3293abaa3368d5bc36538c882d50e2ee92c",
+          "366671e1f377142e813f3307e8b78e6b93c0880a",
+          "13d02beb284c305bb082eef80a39ea4d26f8ce2c",
+          "01bc5f717896a5142d8f2fcac54a3cf3dbd701fc",
+          "9629749371b2425af7a307d99adfa664bb99d811",
+          "882ebbb4f1cc4a9b8e5591e1df5d943bff0b6c35",
+          "39d66e0b1b32292a8bed676b8225683d0731f290",
+          "89431c7b8b6d7645470accdda30ffb50424e933c",
+          "c49fd05f44119ec2a036afaabaad8f9e148a3db6",
+          "e6b6b5277b9f73dfdfa3f7545886c4bdee1cb9b8",
+          "3d54889ac14a28159e156278cfd91bff7adfac98"
+        ]
+      },
+      "complexity": {
+        "nloc": 2166,
+        "functions": 171,
+        "ccn_max": 5,
+        "ccn_avg": 2.32,
+        "top_function": {
+          "name": "(anonymous)",
+          "ccn": 5,
+          "nloc": 6,
+          "lines": "195-201"
+        }
+      },
+      "patterns": []
+    }
+  ]
+}

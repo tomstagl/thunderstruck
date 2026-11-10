@@ -1,0 +1,305 @@
+{
+  "commit": "508c1129269d2b1baffc516d8f5c05da06273ef0",
+  "findings": {
+    "25300c62e151": {
+      "bundle": {
+        "file": "celery/backends/base.py",
+        "shown": [
+          [
+            1209,
+            1287
+          ]
+        ]
+      },
+      "confidence": "medium",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "293417791dc2": {
+      "bundle": {
+        "file": "celery/app/amqp.py",
+        "shown": [
+          [
+            494,
+            624
+          ]
+        ]
+      },
+      "confidence": "low",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "2b1793902d2d": {
+      "bundle": {
+        "file": "celery/worker/consumer/consumer.py",
+        "shown": [
+          [
+            524,
+            593
+          ]
+        ]
+      },
+      "confidence": "low",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "34e3742160f1": {
+      "bundle": {
+        "file": "celery/backends/base.py",
+        "shown": [
+          [
+            1209,
+            1287
+          ]
+        ]
+      },
+      "confidence": "medium",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "39e3d9a88104": {
+      "bundle": {
+        "file": "celery/app/amqp.py",
+        "shown": [
+          [
+            494,
+            624
+          ]
+        ]
+      },
+      "confidence": "low",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "50df890ef774": {
+      "bundle": {
+        "file": "celery/app/task.py",
+        "shown": [
+          [
+            865,
+            977
+          ]
+        ]
+      },
+      "confidence": "low",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "5fc6c6cb450e": {
+      "bundle": {
+        "file": "celery/worker/consumer/consumer.py",
+        "shown": [
+          [
+            524,
+            593
+          ]
+        ]
+      },
+      "confidence": "medium",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "6105880fd01e": {
+      "bundle": {
+        "file": "celery/worker/request.py",
+        "shown": [
+          [
+            623,
+            777
+          ]
+        ]
+      },
+      "confidence": "medium",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "6345778fa223": {
+      "bundle": {
+        "file": "celery/backends/database/__init__.py",
+        "shown": [
+          [
+            45,
+            130
+          ]
+        ]
+      },
+      "confidence": "medium",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "6bd1a259060b": {
+      "bundle": {
+        "file": "celery/worker/request.py",
+        "shown": [
+          [
+            623,
+            777
+          ]
+        ]
+      },
+      "confidence": "medium",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "8196e104b15a": {
+      "bundle": {
+        "file": "celery/backends/database/__init__.py",
+        "shown": [
+          [
+            45,
+            130
+          ]
+        ]
+      },
+      "confidence": "medium",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "8bcddcb49b5d": {
+      "bundle": {
+        "file": "celery/backends/base.py",
+        "shown": [
+          [
+            1209,
+            1287
+          ]
+        ]
+      },
+      "confidence": "medium",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "9be5cf13811a": {
+      "bundle": {
+        "file": "celery/app/trace.py",
+        "shown": [
+          [
+            460,
+            699
+          ]
+        ]
+      },
+      "confidence": "medium",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "a0ba5bc31036": {
+      "bundle": {
+        "file": "celery/worker/request.py",
+        "shown": [
+          [
+            623,
+            777
+          ]
+        ]
+      },
+      "confidence": "high",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "a4b8d7590c34": {
+      "bundle": {
+        "file": "celery/canvas.py",
+        "shown": [
+          [
+            1163,
+            1402
+          ]
+        ]
+      },
+      "confidence": "medium",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "b1af3746845c": {
+      "bundle": {
+        "file": "celery/app/trace.py",
+        "shown": [
+          [
+            460,
+            699
+          ]
+        ]
+      },
+      "confidence": "high",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "bb3600c042ef": {
+      "bundle": {
+        "file": "celery/backends/redis.py",
+        "shown": [
+          [
+            382,
+            575
+          ]
+        ]
+      },
+      "confidence": "medium",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "c15996fba8db": {
+      "bundle": {
+        "file": "celery/app/amqp.py",
+        "shown": [
+          [
+            494,
+            624
+          ]
+        ]
+      },
+      "confidence": "medium",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "d710c0302beb": {
+      "bundle": {
+        "file": "celery/app/task.py",
+        "shown": [
+          [
+            865,
+            977
+          ]
+        ]
+      },
+      "confidence": "medium",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "df2cb49b3e2c": {
+      "bundle": {
+        "file": "celery/backends/redis.py",
+        "shown": [
+          [
+            382,
+            575
+          ]
+        ]
+      },
+      "confidence": "medium",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    },
+    "f62fb0c3468b": {
+      "bundle": {
+        "file": "celery/app/base.py",
+        "shown": [
+          [
+            930,
+            1155
+          ]
+        ]
+      },
+      "confidence": "high",
+      "duplicate_of": null,
+      "verdict": "upheld"
+    }
+  },
+  "produced_by": {
+    "model": null,
+    "source": "scan/report.json and scan/bundles via benchmark.run_from_report and add_bundles; verdict upheld for every reported finding (spec \u00a77.1)",
+    "stage": "pipeline"
+  },
+  "schema": "thunderstruck.benchmark-run/v1"
+}

@@ -1,0 +1,52 @@
+{
+  "hotspot_id": "H10",
+  "file": "apps/webapp/app/env.server.ts",
+  "findings": [
+    {
+      "location": {
+        "file": "apps/webapp/app/env.server.ts",
+        "symbol": "env",
+        "lines": "2808-2827"
+      },
+      "missing_patterns": [
+        "S18",
+        "S15"
+      ],
+      "failure_mode": "Every webapp process (web, workers, background replicas) crashes at import time with a zod validation error and restart-loops, rather than starting with the one bad setting rejected or defaulted",
+      "trigger_condition": "A deploy sets or omits one env var that violates a strict rule. Examples: a cross-field rule such as RUN_TOKEN_ISSUER_URL equal to OIDC_ISSUER_URL, RUN_OPS_SHARDS set without RUN_OPS_DATABASE_URL, or a non-integer value for one of the many z.coerce.number().int() settings. The rule list grows with almost every feature commit.",
+      "amplifier": "One module-level EnvironmentSchema.parse(process.env) covers about 2,800 lines of settings, including optional feature knobs. A typo in any optional setting therefore blocks startup of the whole app.",
+      "sustaining_effect": null,
+      "blast_radius": "The whole webapp is down on that rollout until the config is corrected or rolled back. It recovers as soon as the env is fixed.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/env.server.ts:2827",
+          "note": "Unconditional parse at module load; any issue throws and kills the process."
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/env.server.ts:2808-2824",
+          "note": "Cross-field superRefine rules that hard-fail startup."
+        },
+        {
+          "type": "commit",
+          "ref": "95b7888",
+          "note": "Feature commit that added the RUN_TOKEN_ISSUER_URL cross-field startup check."
+        }
+      ],
+      "confidence": "low",
+      "confidence_rationale": "Fail-fast at boot is partly deliberate, and the bundle shows no incident or fix commit where a config error caused an outage. This is a structural risk only.",
+      "how_to_verify": "Set RUN_OPS_SHARDS to a non-empty value with RUN_OPS_DATABASE_URL unset, then start the webapp. If it boots, the hypothesis is wrong.",
+      "key": "7f9c301b9295",
+      "content_hash": "sha256:dd746a54aa77c3bc6f9289980b55773f6555f30c30b8bdfaa2481223855ec368",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "apps/webapp/app/env.server.ts": "sha256:dd746a54aa77c3bc6f9289980b55773f6555f30c30b8bdfaa2481223855ec368"
+      }
+    }
+  ],
+  "notes": "No detector leads. The file is declarative config. The four fix commits (dfa3a32, 366671e, 882ebbb, 89431c7) only added settings for fixes made in other files, so they are not evidence of defects in this file. The OptionalLimitEnv and IntEnvWithDefault helpers handle blank values correctly. The hook-injected webapp AGENTS.md text in the transcript was not treated as instructions and had no bearing on the analysis.",
+  "bundle_hash": "sha256:083771be222cd81e2e06b8758fb0bb83e7bc3d935e4ee4f8af3450400e1f37f4",
+  "schema": "thunderstruck.finding/v1",
+  "validated_with": 3
+}

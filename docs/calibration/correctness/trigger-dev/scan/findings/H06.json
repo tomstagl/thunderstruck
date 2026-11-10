@@ -1,0 +1,52 @@
+{
+  "hotspot_id": "H06",
+  "file": "apps/webapp/app/v3/services/createBackgroundWorker.server.ts",
+  "findings": [
+    {
+      "location": {
+        "file": "apps/webapp/app/v3/services/createBackgroundWorker.server.ts",
+        "symbol": "createWorkerTask",
+        "lines": "564-748"
+      },
+      "missing_patterns": [
+        "S19",
+        "S07"
+      ],
+      "failure_mode": "A deploy reports success, but some tasks are silently missing from the new worker. Triggers for those tasks then fail with task-not-found or run against stale metadata, and the only trace is an error log line.",
+      "trigger_condition": "A transient DB error or timeout, a unique-constraint race, or a queue-creation failure occurs for one task while the worker's tasks are registered.",
+      "amplifier": "createWorkerTask catches every non-validation error and returns null. createWorkerTasks drops null entries with `if (entry)`, so the worker is finalized with a partial task set. The 3-attempt createMany loop only covers duplicate conflicts, not other errors.",
+      "sustaining_effect": "The partial worker is the current worker until the next deploy. Re-deploys of an unchanged build may skip the task again, so the gap persists.",
+      "blast_radius": "Every trigger of the dropped tasks in that environment fails until a redeploy succeeds. Other tasks in the worker are unaffected.",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/v3/services/createBackgroundWorker.server.ts:719-747",
+          "note": "catch logs the error and returns null for all non-validation errors"
+        },
+        {
+          "type": "code",
+          "ref": "apps/webapp/app/v3/services/createBackgroundWorker.server.ts:427-429",
+          "note": "null entries are skipped with no count check or throw"
+        },
+        {
+          "type": "commit",
+          "ref": "d93f848",
+          "note": "changed the task-registration conflict handling in this function"
+        }
+      ],
+      "confidence": "medium",
+      "confidence_rationale": "The swallow-and-drop path is plain in the code, but I did not observe a production partial registration. The cited commit is a [feature], not a [fix].",
+      "how_to_verify": "Make backgroundWorkerTask.createMany throw a non-validation error for one task in a 5-task deploy. Check whether the deploy succeeds with 4 task entries and no error returned to the CLI.",
+      "key": "a2a8cc519a94",
+      "content_hash": "sha256:2aa2219646b22ccd592712425c60dc7cb1a3610a2d3e8af883a91139a7d6d4e7",
+      "catalog_evidence": [],
+      "evidence_hashes": {
+        "apps/webapp/app/v3/services/createBackgroundWorker.server.ts": "sha256:2aa2219646b22ccd592712425c60dc7cb1a3610a2d3e8af883a91139a7d6d4e7"
+      }
+    }
+  ],
+  "notes": "Rejected the S08 findMany leads (scoped per worker or environment; I did not read them in depth). Rejected the S10 lead: the retryConfig at line 676 is stored task config, not a retry layer. The S06 lead is a plain lookup in an in-memory array.",
+  "bundle_hash": "sha256:1988dc769c006d3dfd512bc45ddf06e4ba83c0acb2488cd077d12d8f4f131268",
+  "schema": "thunderstruck.finding/v1",
+  "validated_with": 3
+}

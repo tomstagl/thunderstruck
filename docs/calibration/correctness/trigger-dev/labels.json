@@ -1,0 +1,695 @@
+{
+ "schema": "thunderstruck.labels/v1",
+ "repo": "triggerdotdev/trigger.dev",
+ "commit": "849191591a185b017c069469efefc1bc6530b8cb",
+ "role": "holdout",
+ "scan": "scan/report.json",
+ "labels": [
+  {
+   "key": "37482446c863",
+   "display": "FR-001",
+   "source": "review.md#FR-001",
+   "verdict": "wrong",
+   "basis": "executed",
+   "labelled_by": "claude-opus-5-5",
+   "established_by": "repro/FR-001.test.ts: real Redis limiter, billing client enabled against a local server that resets every connection or returns malformed JSON; 6 executeQuery calls at a per-project limit of 2 made 14 billing calls, every call got past getDefaultPeriod/getLimit into the try (it then failed on Postgres inside the try), no concurrency rejection, 0 limiter entries afterwards. Also read <node_modules>/.pnpm/@trigger.dev+platform@1.3.1_zod@4.5.4/node_modules/@trigger.dev/platform/dist/index.js 730-756 (no timeout; a hang is bounded by Node fetch's 300 s headers timeout, measured in repro/FR-002.test.ts) and apps/webapp/app/services/platform.v3.server.ts 422-448.",
+   "deserved_confidence": "low",
+   "duplicate_of": null,
+   "refuting_fact": {
+    "ranges": [
+     {
+      "file": "apps/webapp/app/services/platform.v3.server.ts",
+      "lo": 422,
+      "hi": 448,
+      "kind": "repo"
+     },
+     {
+      "file": "<node_modules>/.pnpm/@trigger.dev+platform@1.3.1_zod@4.5.4/node_modules/@trigger.dev/platform/dist/index.js",
+      "lo": 730,
+      "hi": 756,
+      "kind": "dependency"
+     }
+    ]
+   },
+   "preconditions": [
+    {
+     "setting": "QUERY_DEFAULT_ORG_CONCURRENCY_LIMIT",
+     "kind": "setting",
+     "literal": {
+      "type": "number",
+      "value": 3
+     },
+     "effective": {
+      "type": "number",
+      "value": 3
+     }
+    },
+    {
+     "setting": "RedisConcurrencyLimiter expiryTimeInSeconds",
+     "kind": "setting",
+     "literal": {
+      "type": "number",
+      "value": 300,
+      "unit": "s"
+     },
+     "effective": {
+      "type": "number",
+      "value": 300,
+      "unit": "s"
+     }
+    },
+    {
+     "setting": "billing client configured (cloud origin + BILLING_API_URL/KEY)",
+     "kind": "environment",
+     "literal": {
+      "type": "none"
+     },
+     "effective": {
+      "type": "none"
+     }
+    }
+   ]
+  },
+  {
+   "key": "764aaef4039d",
+   "display": "FR-002",
+   "source": "review.md#FR-002",
+   "verdict": "partially_correct",
+   "basis": "executed",
+   "labelled_by": "claude-opus-5-5",
+   "established_by": "repro/FR-002.test.ts: real SupervisorSession + RunQueueConsumer against a local platform server, runQueueMessage handler making tryWarmStart's fetch to a TCP server that accepts and never answers. One consumer: 161 dequeues and 161 handlers started in 2 s, 0 settled (the loop does not await the handler). The same fetch at Node defaults rejected after 300.7 s with UND_ERR_HEADERS_TIMEOUT; tryWarmStart's catch then returns false and the run is cold-created. Both cases green in one run.",
+   "deserved_confidence": "medium",
+   "duplicate_of": null,
+   "refuting_fact": {
+    "ranges": [
+     {
+      "file": "packages/core/src/v3/runEngineWorker/supervisor/session.ts",
+      "lo": 95,
+      "hi": 109,
+      "kind": "repo"
+     },
+     {
+      "file": "apps/supervisor/src/index.ts",
+      "lo": 902,
+      "hi": 910,
+      "kind": "repo"
+     },
+     {
+      "file": "apps/supervisor/src/services/dequeueDrain.ts",
+      "lo": 4,
+      "hi": 8,
+      "kind": "repo"
+     }
+    ]
+   },
+   "preconditions": [
+    {
+     "setting": "TRIGGER_WARM_START_URL",
+     "kind": "setting",
+     "literal": {
+      "type": "none"
+     },
+     "effective": {
+      "type": "none"
+     }
+    },
+    {
+     "setting": "Node fetch (undici) headersTimeout",
+     "kind": "environment",
+     "literal": {
+      "type": "number",
+      "value": 300,
+      "unit": "s"
+     },
+     "effective": {
+      "type": "number",
+      "value": 300,
+      "unit": "s"
+     }
+    },
+    {
+     "setting": "TRIGGER_DEQUEUE_MAX_CONSUMER_COUNT",
+     "kind": "setting",
+     "literal": {
+      "type": "number",
+      "value": 10
+     },
+     "effective": {
+      "type": "number",
+      "value": 10
+     }
+    }
+   ]
+  },
+  {
+   "key": "a2a8cc519a94",
+   "display": "FR-003",
+   "source": "review.md#FR-003",
+   "verdict": "correct",
+   "basis": "executed",
+   "labelled_by": "claude-opus-5-5",
+   "established_by": "repro/FR-003.test.ts: real Postgres, createWorkerResources with 5 tasks on the plain client (as both callers pass it), one task with a NUL byte in its description; Postgres rejected that insert, it was logged and dropped, the call resolved without error with entries and rows task-1,2,4,5. No downstream task-count check in createDeploymentBackgroundWorkerV4/finalizeDeployment.",
+   "deserved_confidence": "high",
+   "duplicate_of": null,
+   "refuting_fact": null,
+   "preconditions": []
+  },
+  {
+   "key": "19a53a5ffb77",
+   "display": "FR-004",
+   "source": "review.md#FR-004",
+   "verdict": "correct",
+   "basis": "executed",
+   "labelled_by": "claude-opus-5-5",
+   "established_by": "repro/FR-004.test.ts: real Postgres logical replication + ClickHouse; task_runs_v2 renamed away while a run was written (UNKNOWN_TABLE is retried, 3 attempts, then logged). 5 s later the slot's confirmed_flush_lsn (0/1B24981) had passed the lost write's LSN (0/1B24980); after renaming the table back and starting a fresh service, a later run replicated and the lost run never reached ClickHouse though it is in Postgres.",
+   "deserved_confidence": "high",
+   "duplicate_of": null,
+   "refuting_fact": null,
+   "preconditions": [
+    {
+     "setting": "RUN_REPLICATION_INSERT_MAX_RETRIES",
+     "kind": "setting",
+     "literal": {
+      "type": "number",
+      "value": 3
+     },
+     "effective": {
+      "type": "number",
+      "value": 3
+     }
+    },
+    {
+     "setting": "acknowledgeTimeoutMs (ack timer)",
+     "kind": "setting",
+     "literal": {
+      "type": "number",
+      "value": 1,
+      "unit": "s"
+     },
+     "effective": {
+      "type": "number",
+      "value": 1,
+      "unit": "s"
+     }
+    }
+   ]
+  },
+  {
+   "key": "7ba8fe9ea6e3",
+   "display": "FR-005",
+   "source": "review.md#FR-005",
+   "verdict": "correct",
+   "basis": "executed",
+   "labelled_by": "claude-opus-5-5",
+   "established_by": "repro/FR-005.test.ts: real Postgres + Redis; Redis set to maxmemory 1/noeviction during engine.trigger, so publishRun failed with OOM. trigger rejected; the run row was committed as PENDING with its QUEUED snapshot and executionSnapshotCreated(QUEUED) had fired. With Redis restored, 10 s later: 0 dequeued, still PENDING, no queue keys for it. QUEUED has no heartbeat (index.ts 2951-2953). Read: the webapp rethrows (triggerTask.server.ts 840-860) and the SDK's default fetch retries 5 times (packages/core/src/v3/apiClient/index.ts 213-218), minting a new run id each time without an idempotency key.",
+   "deserved_confidence": "high",
+   "duplicate_of": null,
+   "refuting_fact": null,
+   "preconditions": []
+  },
+  {
+   "key": "1a8d24e57647",
+   "display": "FR-006",
+   "source": "review.md#FR-006",
+   "verdict": "partially_correct",
+   "basis": "read",
+   "labelled_by": "claude-opus-5-5",
+   "established_by": "read apps/webapp/app/services/queryService.server.ts 358-372, internal-packages/database/prisma/schema.prisma 243 and the RuntimeEnvironment indexes, apps/webapp/app/models/project.server.ts 73-75",
+   "deserved_confidence": "low",
+   "duplicate_of": null,
+   "refuting_fact": {
+    "ranges": [
+     {
+      "file": "internal-packages/database/prisma/schema.prisma",
+      "lo": 243,
+      "hi": 243,
+      "kind": "repo"
+     },
+     {
+      "file": "apps/webapp/app/models/project.server.ts",
+      "lo": 73,
+      "hi": 75,
+      "kind": "repo"
+     }
+    ]
+   },
+   "preconditions": [
+    {
+     "setting": "Organization.maximumProjectCount",
+     "kind": "setting",
+     "literal": {
+      "type": "number",
+      "value": 25
+     },
+     "effective": {
+      "type": "number",
+      "value": 25
+     }
+    }
+   ]
+  },
+  {
+   "key": "a7968abf39a7",
+   "display": "FR-007",
+   "source": "review.md#FR-007",
+   "verdict": "correct_but_gated",
+   "basis": "read",
+   "labelled_by": "claude-opus-5-5",
+   "established_by": "read apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts 254-257, 570-705 and apps/webapp/app/env.server.ts 2470-2473",
+   "deserved_confidence": "low",
+   "duplicate_of": null,
+   "refuting_fact": {
+    "ranges": [
+     {
+      "file": "apps/webapp/app/env.server.ts",
+      "lo": 2470,
+      "hi": 2473,
+      "kind": "repo"
+     }
+    ]
+   },
+   "preconditions": [
+    {
+     "setting": "LOGS_SEARCH_DUAL_WRITE_ACTIVE",
+     "kind": "setting",
+     "literal": {
+      "type": "text",
+      "value": "off"
+     },
+     "effective": {
+      "type": "text",
+      "value": "off"
+     }
+    },
+    {
+     "setting": "LOGS_SEARCH_DUAL_WRITE_MAX_CONCURRENCY",
+     "kind": "setting",
+     "literal": {
+      "type": "number",
+      "value": 2
+     },
+     "effective": {
+      "type": "number",
+      "value": 2
+     }
+    },
+    {
+     "setting": "LOGS_SEARCH_DUAL_WRITE_MAX_PENDING",
+     "kind": "setting",
+     "literal": {
+      "type": "number",
+      "value": 4
+     },
+     "effective": {
+      "type": "number",
+      "value": 4
+     }
+    }
+   ]
+  },
+  {
+   "key": "bd098490aa80",
+   "display": "FR-008",
+   "source": "review.md#FR-008",
+   "verdict": "wrong",
+   "basis": "executed",
+   "labelled_by": "claude-opus-5-5",
+   "established_by": "repro/FR-008.test.ts: 12 hostile attribute values (lone and reversed surrogates, literal backslash escapes incl. the finding's '{\"a\":\"\\x\"}' as a value, control chars, NUL, a 200 kB string, a lone surrogate in a key) written through the real taskEventsV2 writer into a real ClickHouse; every stored attributes_text parsed with JSON.parse. attributes_text is JSON.stringify output (taskEvents.ts 233-239); task_events_v2 has no other writer.",
+   "deserved_confidence": "low",
+   "duplicate_of": null,
+   "refuting_fact": {
+    "ranges": [
+     {
+      "file": "internal-packages/clickhouse/src/taskEvents.ts",
+      "lo": 233,
+      "hi": 247,
+      "kind": "repo"
+     }
+    ]
+   },
+   "preconditions": []
+  },
+  {
+   "key": "452b7414872b",
+   "display": "FR-009",
+   "source": "review.md#FR-009",
+   "verdict": "correct",
+   "basis": "executed",
+   "labelled_by": "claude-opus-5-5",
+   "established_by": "repro/FR-009.test.ts: real Postgres + Redis RunEngine; a dequeued run that is never started (no workload) was requeued by the PENDING_EXECUTING heartbeat timeout and could be dequeued and started again; with a nack budget of 2 it ended FINISHED/SYSTEM_FAILURE. Timeouts scaled down; defaults read: RUN_ENGINE_TIMEOUT_PENDING_EXECUTING 60 s, run-queue maxAttempts 12 (webapp passes none).",
+   "deserved_confidence": "medium",
+   "duplicate_of": null,
+   "refuting_fact": null,
+   "preconditions": [
+    {
+     "setting": "RUN_ENGINE_TIMEOUT_PENDING_EXECUTING",
+     "kind": "setting",
+     "literal": {
+      "type": "number",
+      "value": 60,
+      "unit": "s"
+     },
+     "effective": {
+      "type": "number",
+      "value": 60,
+      "unit": "s"
+     }
+    },
+    {
+     "setting": "run queue nack maxAttempts",
+     "kind": "setting",
+     "literal": {
+      "type": "number",
+      "value": 12
+     },
+     "effective": {
+      "type": "number",
+      "value": 12
+     }
+    }
+   ]
+  },
+  {
+   "key": "8ed671234b0e",
+   "display": "FR-010",
+   "source": "review.md#FR-010",
+   "verdict": "partially_correct",
+   "basis": "read",
+   "labelled_by": "claude-opus-5-5",
+   "established_by": "read apps/webapp/app/routes/resources.orgs.$organizationSlug.projects.$projectParam.env.$envParam.dashboard-agent.ts 389-552, apps/webapp/app/services/dashboardAgentQuota.server.ts 15-104, apps/webapp/app/components/dashboard-agent/DashboardAgentPanel.tsx 395-450, apps/webapp/app/env.server.ts 276",
+   "deserved_confidence": "low",
+   "duplicate_of": null,
+   "refuting_fact": {
+    "ranges": [
+     {
+      "file": "apps/webapp/app/services/dashboardAgentQuota.server.ts",
+      "lo": 87,
+      "hi": 104,
+      "kind": "repo"
+     },
+     {
+      "file": "apps/webapp/app/services/dashboardAgentQuota.server.ts",
+      "lo": 15,
+      "hi": 21,
+      "kind": "repo"
+     },
+     {
+      "file": "apps/webapp/app/env.server.ts",
+      "lo": 276,
+      "hi": 276,
+      "kind": "repo"
+     }
+    ]
+   },
+   "preconditions": [
+    {
+     "setting": "DASHBOARD_AGENT_QUOTA_ENABLED",
+     "kind": "setting",
+     "literal": {
+      "type": "text",
+      "value": "0"
+     },
+     "effective": {
+      "type": "text",
+      "value": "0"
+     }
+    },
+    {
+     "setting": "plan limit agentMessages",
+     "kind": "environment",
+     "literal": {
+      "type": "none"
+     },
+     "effective": {
+      "type": "none"
+     }
+    }
+   ]
+  },
+  {
+   "key": "31c7136e8886",
+   "display": "FR-011",
+   "source": "review.md#FR-011",
+   "verdict": "partially_correct",
+   "basis": "read",
+   "labelled_by": "claude-opus-5-5",
+   "established_by": "read apps/webapp/app/services/runsReplicationService.server.ts 1047-1128, 1503-1629 and <node_modules>/.pnpm/p-limit@6.2.0/node_modules/p-limit/index.js 1-80 (pending queue is an unbounded yocto-queue; activeCount capped at concurrency)",
+   "deserved_confidence": "low",
+   "duplicate_of": null,
+   "refuting_fact": {
+    "ranges": [
+     {
+      "file": "apps/webapp/app/services/runsReplicationService.server.ts",
+      "lo": 1585,
+      "hi": 1610,
+      "kind": "repo"
+     },
+     {
+      "file": "<node_modules>/.pnpm/p-limit@6.2.0/node_modules/p-limit/index.js",
+      "lo": 3,
+      "hi": 59,
+      "kind": "dependency"
+     }
+    ]
+   },
+   "preconditions": [
+    {
+     "setting": "RUN_REPLICATION_MAX_FLUSH_CONCURRENCY",
+     "kind": "setting",
+     "literal": {
+      "type": "number",
+      "value": 2
+     },
+     "effective": {
+      "type": "number",
+      "value": 2
+     }
+    },
+    {
+     "setting": "RUN_REPLICATION_INSERT_MAX_RETRIES",
+     "kind": "setting",
+     "literal": {
+      "type": "number",
+      "value": 3
+     },
+     "effective": {
+      "type": "number",
+      "value": 3
+     }
+    },
+    {
+     "setting": "RUN_REPLICATION_INSERT_BASE_DELAY_MS",
+     "kind": "setting",
+     "literal": {
+      "type": "number",
+      "value": 0.1,
+      "unit": "s"
+     },
+     "effective": {
+      "type": "number",
+      "value": 0.1,
+      "unit": "s"
+     }
+    },
+    {
+     "setting": "RUN_REPLICATION_INSERT_MAX_DELAY_MS",
+     "kind": "setting",
+     "literal": {
+      "type": "number",
+      "value": 2,
+      "unit": "s"
+     },
+     "effective": {
+      "type": "number",
+      "value": 2,
+      "unit": "s"
+     }
+    }
+   ]
+  },
+  {
+   "key": "62589d73c708",
+   "display": "FR-012",
+   "source": "review.md#FR-012",
+   "verdict": "partially_correct",
+   "basis": "read",
+   "labelled_by": "claude-opus-5-5",
+   "established_by": "read apps/webapp/app/presenters/v3/LogsListPresenter.server.ts 396-425, apps/webapp/app/utils/logSearchSlices.ts 1-3 and 122-136, apps/webapp/app/routes/_app.orgs.$organizationSlug.projects.$projectParam.env.$envParam.logs/route.tsx 58 and 542-610",
+   "deserved_confidence": "low",
+   "duplicate_of": null,
+   "refuting_fact": {
+    "ranges": [
+     {
+      "file": "apps/webapp/app/utils/logSearchSlices.ts",
+      "lo": 122,
+      "hi": 136,
+      "kind": "repo"
+     },
+     {
+      "file": "apps/webapp/app/routes/_app.orgs.$organizationSlug.projects.$projectParam.env.$envParam.logs/route.tsx",
+      "lo": 556,
+      "hi": 563,
+      "kind": "repo"
+     }
+    ]
+   },
+   "preconditions": [
+    {
+     "setting": "AUTOMATIC_SEARCH_BUDGET_MS (constant)",
+     "kind": "setting",
+     "literal": {
+      "type": "number",
+      "value": 20,
+      "unit": "s"
+     },
+     "effective": {
+      "type": "number",
+      "value": 20,
+      "unit": "s"
+     }
+    },
+    {
+     "setting": "LOGS_SEARCH_MIN_SLICE_MS (constant)",
+     "kind": "setting",
+     "literal": {
+      "type": "number",
+      "value": 300,
+      "unit": "s"
+     },
+     "effective": {
+      "type": "number",
+      "value": 300,
+      "unit": "s"
+     }
+    }
+   ]
+  },
+  {
+   "key": "054ddbb8f061",
+   "display": "FR-013",
+   "source": "review.md#FR-013",
+   "verdict": "wrong",
+   "basis": "read",
+   "labelled_by": "claude-opus-5-5",
+   "established_by": "read internal-packages/run-store/src/PostgresRunStore.ts 341-379, 497, 675; internal-packages/run-engine/src/engine/index.ts 2208-2239; a repo-wide search for getWaitpoint( and blockingTaskRuns callers (none outside tests and the store); apps/webapp/app/env.server.ts 334-337",
+   "deserved_confidence": "low",
+   "duplicate_of": null,
+   "refuting_fact": {
+    "ranges": [
+     {
+      "file": "internal-packages/run-engine/src/engine/index.ts",
+      "lo": 2208,
+      "hi": 2239,
+      "kind": "repo"
+     },
+     {
+      "file": "internal-packages/run-store/src/PostgresRunStore.ts",
+      "lo": 675,
+      "hi": 675,
+      "kind": "repo"
+     }
+    ]
+   },
+   "preconditions": [
+    {
+     "setting": "RUN_OPS_DATABASE_URL (dedicated schema)",
+     "kind": "setting",
+     "literal": {
+      "type": "none"
+     },
+     "effective": {
+      "type": "none"
+     }
+    }
+   ]
+  },
+  {
+   "key": "1802d412b41a",
+   "display": "FR-014",
+   "source": "review.md#FR-014",
+   "verdict": "wrong",
+   "basis": "read",
+   "labelled_by": "claude-opus-5-5",
+   "established_by": "read internal-packages/run-store/src/PostgresRunStore.ts 2225-2250, internal-packages/run-engine/src/engine/systems/executionSnapshotSystem.ts 145-175, apps/webapp/app/env.server.ts 1182-1186",
+   "deserved_confidence": "low",
+   "duplicate_of": null,
+   "refuting_fact": {
+    "ranges": [
+     {
+      "file": "apps/webapp/app/env.server.ts",
+      "lo": 1182,
+      "hi": 1186,
+      "kind": "repo"
+     }
+    ]
+   },
+   "preconditions": [
+    {
+     "setting": "STREAMING_BATCH_MAX_ITEMS",
+     "kind": "setting",
+     "literal": {
+      "type": "number",
+      "value": 1000
+     },
+     "effective": {
+      "type": "number",
+      "value": 1000
+     }
+    },
+    {
+     "setting": "MAX_BATCH_AND_WAIT_V2_TRIGGER_ITEMS",
+     "kind": "setting",
+     "literal": {
+      "type": "number",
+      "value": 500
+     },
+     "effective": {
+      "type": "number",
+      "value": 500
+     }
+    }
+   ]
+  },
+  {
+   "key": "7f9c301b9295",
+   "display": "FR-015",
+   "source": "review.md#FR-015",
+   "verdict": "partially_correct",
+   "basis": "executed",
+   "labelled_by": "claude-opus-5-5",
+   "established_by": "repro/FR-015.test.ts: env.server imported fresh per case from a valid baseline (started); QUERY_GLOBAL_CONCURRENCY_LIMIT=ten, RUN_OPS_SHARDS not JSON or malformed, and RUN_TOKEN_ISSUER_URL==OIDC_ISSUER_URL each threw a ZodError at import. Blast radius read: hosting/k8s/helm/templates/webapp.yaml 44 (Deployment, default rolling update) with readinessProbe enabled by default (hosting/k8s/helm/values.yaml 196-197), so old pods keep serving; a single docker-compose container would not.",
+   "deserved_confidence": "low",
+   "duplicate_of": null,
+   "refuting_fact": {
+    "ranges": [
+     {
+      "file": "hosting/k8s/helm/templates/webapp.yaml",
+      "lo": 44,
+      "hi": 44,
+      "kind": "repo"
+     },
+     {
+      "file": "hosting/k8s/helm/values.yaml",
+      "lo": 196,
+      "hi": 197,
+      "kind": "repo"
+     }
+    ]
+   },
+   "preconditions": [
+    {
+     "setting": "rollout strategy",
+     "kind": "environment",
+     "literal": {
+      "type": "text",
+      "value": "Deployment rolling update with readiness probe (helm chart)"
+     },
+     "effective": {
+      "type": "text",
+      "value": "Deployment rolling update with readiness probe (helm chart)"
+     }
+    }
+   ]
+  }
+ ]
+}

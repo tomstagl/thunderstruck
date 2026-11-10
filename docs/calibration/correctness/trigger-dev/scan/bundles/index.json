@@ -1,0 +1,127 @@
+{
+  "schema": "thunderstruck.bundles/v1",
+  "budget": 8000,
+  "context_hash": null,
+  "bundles": [
+    {
+      "id": "H01",
+      "file": "internal-packages/run-engine/src/engine/index.ts",
+      "bundle": "<repo>/.thunderstruck/bundles/H01.md",
+      "bundle_hash": "sha256:c110009bae6fe85ce017f5fb407bc07a336dbb3ff0bc125456754d10551b44cc",
+      "content_hash": "sha256:1c1b795e2cb078692306c6e5be58d81830d8a29769d5a64dd982c96e3a6e5782",
+      "tokens_estimated": 7526,
+      "score": 0.1903,
+      "cached": false,
+      "context_hash": null,
+      "findings_path": "<repo>/.thunderstruck/findings/H01.json"
+    },
+    {
+      "id": "H02",
+      "file": "apps/webapp/app/services/queryService.server.ts",
+      "bundle": "<repo>/.thunderstruck/bundles/H02.md",
+      "bundle_hash": "sha256:33a504d96bdaa2253d238d4701dfdaf1b1cf3f1d9cddb2f346b7c9c20e7e7992",
+      "content_hash": "sha256:b594aedf273cdfb635787cfe5c43c1f55c8c3b417b0a85bcbd37e7a58002e56e",
+      "tokens_estimated": 6897,
+      "score": 0.1307,
+      "cached": false,
+      "context_hash": null,
+      "findings_path": "<repo>/.thunderstruck/findings/H02.json"
+    },
+    {
+      "id": "H03",
+      "file": "apps/webapp/app/v3/eventRepository/clickhouseEventRepository.server.ts",
+      "bundle": "<repo>/.thunderstruck/bundles/H03.md",
+      "bundle_hash": "sha256:840a6f423a72088aec330f3d5fbdfe690c817a45d26370ded40942de0fac576b",
+      "content_hash": "sha256:3a9fef3d0a4c5582fbf04c005ef14ae5fe6a1206c271338d033ef89edc5343c1",
+      "tokens_estimated": 6593,
+      "score": 0.1258,
+      "cached": false,
+      "context_hash": null,
+      "findings_path": "<repo>/.thunderstruck/findings/H03.json"
+    },
+    {
+      "id": "H04",
+      "file": "apps/supervisor/src/index.ts",
+      "bundle": "<repo>/.thunderstruck/bundles/H04.md",
+      "bundle_hash": "sha256:149b6eb516b811465c5140161daef6d555164f0cf33b17bb1a2ba944a512b5df",
+      "content_hash": "sha256:d065d7c883accf87252db9f0eafe75142f2d592db199ed61a39bbc24f08571dd",
+      "tokens_estimated": 8045,
+      "score": 0.1233,
+      "cached": false,
+      "context_hash": null,
+      "findings_path": "<repo>/.thunderstruck/findings/H04.json"
+    },
+    {
+      "id": "H05",
+      "file": "apps/webapp/app/routes/resources.orgs.$organizationSlug.projects.$projectParam.env.$envParam.dashboard-agent.ts",
+      "bundle": "<repo>/.thunderstruck/bundles/H05.md",
+      "bundle_hash": "sha256:ff191fb523aadd8e9fd5bf5b733127a01d81f372b9a4ff8675fb9f05db5ebcc2",
+      "content_hash": "sha256:25c9ff0113d294fefcd41d77667b3144fd598cfc8f66d2ff3495eb8d1a644051",
+      "tokens_estimated": 7263,
+      "score": 0.1127,
+      "cached": false,
+      "context_hash": null,
+      "findings_path": "<repo>/.thunderstruck/findings/H05.json"
+    },
+    {
+      "id": "H06",
+      "file": "apps/webapp/app/v3/services/createBackgroundWorker.server.ts",
+      "bundle": "<repo>/.thunderstruck/bundles/H06.md",
+      "bundle_hash": "sha256:1988dc769c006d3dfd512bc45ddf06e4ba83c0acb2488cd077d12d8f4f131268",
+      "content_hash": "sha256:2aa2219646b22ccd592712425c60dc7cb1a3610a2d3e8af883a91139a7d6d4e7",
+      "tokens_estimated": 7089,
+      "score": 0.1108,
+      "cached": false,
+      "context_hash": null,
+      "findings_path": "<repo>/.thunderstruck/findings/H06.json"
+    },
+    {
+      "id": "H07",
+      "file": "apps/webapp/app/services/runsReplicationService.server.ts",
+      "bundle": "<repo>/.thunderstruck/bundles/H07.md",
+      "bundle_hash": "sha256:f5afff47a876ea4938d77c3a5dd70d8677b1d21e04b20de80c11fa6513415277",
+      "content_hash": "sha256:f47ef37c36dabcf0fa80c298a6641e37d88b196936afcf92c140b35fce730917",
+      "tokens_estimated": 5160,
+      "score": 0.0983,
+      "cached": false,
+      "context_hash": null,
+      "findings_path": "<repo>/.thunderstruck/findings/H07.json"
+    },
+    {
+      "id": "H08",
+      "file": "apps/webapp/app/presenters/v3/LogsListPresenter.server.ts",
+      "bundle": "<repo>/.thunderstruck/bundles/H08.md",
+      "bundle_hash": "sha256:53375eb057dd75ee0f1d59cf1436856b66ba18120fc829dc96f5cfbca4457bbe",
+      "content_hash": "sha256:7283619c7b034ea484746d460fe5a6698714db96e729de82942ac5698716b289",
+      "tokens_estimated": 6961,
+      "score": 0.0836,
+      "cached": false,
+      "context_hash": null,
+      "findings_path": "<repo>/.thunderstruck/findings/H08.json"
+    },
+    {
+      "id": "H09",
+      "file": "internal-packages/run-store/src/PostgresRunStore.ts",
+      "bundle": "<repo>/.thunderstruck/bundles/H09.md",
+      "bundle_hash": "sha256:a177ad6fc344d78defeea8a397c3d1576fa030083ba14eea0cde2d52b85fc7fa",
+      "content_hash": "sha256:6ac90d2be00c920f8abe35f4b37f6d58d9b3070399b9f9dfafde5220e90d5eb5",
+      "tokens_estimated": 6079,
+      "score": 0.0731,
+      "cached": false,
+      "context_hash": null,
+      "findings_path": "<repo>/.thunderstruck/findings/H09.json"
+    },
+    {
+      "id": "H10",
+      "file": "apps/webapp/app/env.server.ts",
+      "bundle": "<repo>/.thunderstruck/bundles/H10.md",
+      "bundle_hash": "sha256:083771be222cd81e2e06b8758fb0bb83e7bc3d935e4ee4f8af3450400e1f37f4",
+      "content_hash": "sha256:dd746a54aa77c3bc6f9289980b55773f6555f30c30b8bdfaa2481223855ec368",
+      "tokens_estimated": 4148,
+      "score": 0.0681,
+      "cached": false,
+      "context_hash": null,
+      "findings_path": "<repo>/.thunderstruck/findings/H10.json"
+    }
+  ]
+}
