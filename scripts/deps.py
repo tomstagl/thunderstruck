@@ -595,6 +595,12 @@ NO_MANIFEST = ("No dependency manifest was found (pyproject.toml, requirements*.
                "pom.xml, build.gradle); verification reads the repository only.")
 
 
+def _manifests_present(repo: Path) -> list[str]:
+    names = ["pyproject.toml", "package.json", "pom.xml", "build.gradle", "build.gradle.kts"]
+    found = [n for n in names if (repo / n).is_file()]
+    return sorted(found + [p.name for p in repo.glob("requirements*.txt") if p.is_file()])
+
+
 def discover(repo: Path, env: dict[str, str] | None = None, home: Path | None = None) -> dict:
     env = dict(os.environ) if env is None else env
     home = Path.home() if home is None else home
@@ -604,7 +610,10 @@ def discover(repo: Path, env: dict[str, str] | None = None, home: Path | None = 
         packages += found
         warnings += warns
     if not packages:
-        warnings.append(NO_MANIFEST)
+        present = _manifests_present(repo)
+        warnings.append(NO_MANIFEST if not present else
+                        f"A dependency manifest was found ({', '.join(present)}) but it declares no "
+                        "dependencies; verification reads the repository only.")
     return {"schema": DEPS_SCHEMA, "packages": sorted(packages, key=lambda p: p["id"]),
             "warnings": warnings}
 

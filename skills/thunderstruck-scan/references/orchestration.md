@@ -60,8 +60,12 @@ Verification (step 4b) adds one skeptic per finding, at most four at a time,
 with no repair round and no re-spawn. A verdict is reused through
 `checks/ledger.json` when the finding's claim and every file it or its verdict
 cites are unchanged, so an unchanged finding costs no skeptic on the next
-scan. `--no-verify` skips the pass for one scan. Its measured cost per scan is
-recorded here once the maintainer has measured it (#37, Task 22).
+scan. Verification is off by default; `--verify` runs it. Measured on a default
+`--top 10` scan of the same repository (orchestrator `claude-opus-5-5`,
+investigators `claude-sonnet-5-5`, skeptics `haiku`, mean of two runs): about
+**2.01M weighted tokens**, 121% of the 1.65M baseline above, of which the
+sixteen skeptics were 617k, or about 38.6k each (`docs/calibration/consumption.md`,
+*With verification*).
 
 `bundle.py` ends with an estimate for the investigators, and every report has
 a **Consumption** section with what the scan actually used.

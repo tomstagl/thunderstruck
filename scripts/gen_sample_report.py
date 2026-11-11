@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pyyaml==6.0.3", "lizard==1.24.0"]  # exact: they shape the sample (#26)
+# dependencies = ["pyyaml==6.0.3", "lizard==1.24.0", "packaging==25.0"]  # exact: they shape the sample (#26)
 # [tool.uv]
 # exclude-newer = "2026-09-24T00:00:00Z"  # transitive deps too; bump with the pins
 # ///
@@ -88,15 +88,15 @@ CANNED: dict[str, list[dict]] = {
         "symbol": "fetchRelease",
         "anchor": "setTimeout(resolve, SLEEP_MS)",
         "missing_patterns": ["S02", "S10"],
-        "failure_mode": "Release fetches retry on a fixed 2s schedule through three "
-                        "stacked retry layers, so one upstream blip becomes 60 "
+        "failure_mode": "Release fetches retry on a fixed 2s schedule through two "
+                        "stacked retry layers, so one upstream blip becomes 20 "
                         "requests per caller arriving in lockstep",
         "trigger_condition": "The releases API returns 5xx or times out for more "
                              "than two seconds while several callers are active",
-        "amplifier": "withRetry retries 3 times inside a loop that retries 5 "
-                     "times, and the mesh route retries each request up to 3 "
-                     "more times; attempts multiply to 5 x 3 x 4 = 60 rather "
-                     "than adding",
+        "amplifier": "The loop retries 5 times and the mesh route retries each "
+                     "5xx up to 3 more times; attempts multiply to 5 x 4 = 20 "
+                     "rather than adding. withRetry adds 3 attempts only when "
+                     "fetch throws, so a 5xx passes straight through it",
         "sustaining_effect": "Every client waits exactly SLEEP_MS and returns "
                              "together, so the upstream is re-saturated the "
                              "moment it starts recovering — the herd re-forms "
@@ -108,17 +108,17 @@ CANNED: dict[str, list[dict]] = {
         # the inner retry layer lives in another file; citing it files FR-001
         # under that file too (#19 AC-4)
         "also_cite": [("src/client/retry-wrapper.ts", "export async function withRetry",
-                       "the inner retry layer: 3 attempts per call"),
+                       "the inner retry layer: 3 attempts, only when fetch throws"),
                       ("deploy/releases-virtualservice.yaml", "attempts: 3",
                        "the mesh layer: up to 4 tries per request, outside the code")],
         "confidence": "high",
-        "confidence_rationale": "All three retry layers are visible in the code and "
-                                "the mesh configuration, and five separate 'fix "
+        "confidence_rationale": "Both retry layers on the 5xx path are visible in the "
+                                "code and the mesh configuration, and five separate 'fix "
                                 "timeout' commits on this file in the window show "
                                 "the cause was never addressed",
-        "how_to_verify": "Stub the releases endpoint to fail for 3s and call "
+        "how_to_verify": "Stub the releases endpoint to return 503 for 15s and call "
                          "fetchRelease from 10 clients at once; count upstream "
-                         "requests (expect 600) and assert the inter-arrival "
+                         "requests (expect 200) and assert the inter-arrival "
                          "times are not identical",
         "prediction": "The next incident on this path is a retry storm after a "
                       "brief upstream degradation, not a slow dependency",
@@ -214,7 +214,59 @@ CANNED: dict[str, list[dict]] = {
         "prediction": "Left in place, this text will eventually be obeyed by "
                       "some tool in the pipeline",
     }],
+    # wrong on purpose (#37 AC-13): the timeout is set in another file, and the
+    # sample's verification refutes it
+    "client/labels.ts": [{
+        "symbol": "fetchLabel",
+        "anchor": "withDefaults());",
+        "missing_patterns": ["S01"],
+        "failure_mode": "A label fetch has no timeout, so a stalled upstream hangs the "
+                        "caller until the process is restarted",
+        "trigger_condition": "The labels API accepts the connection and never answers",
+        "blast_radius": "Every page that shows a label waits on the hung request",
+        "confidence": "medium",
+        "confidence_rationale": "The fetch call passes no signal of its own, and a fix "
+                                "commit in the window mentions a hang",
+        "how_to_verify": "Serve a labels endpoint that never responds and call fetchLabel; "
+                         "assert it is still pending after a minute",
+    }],
 }
+
+# Verdicts the sample shows (#37). Settled by the real verify.py apply, so
+# every ref here must resolve exactly as a skeptic's would. Anchors are
+# resolved to file:line at generation time.
+CANNED_VERDICTS: dict[str, dict] = {
+    "client/releases.ts": {"verdict": "upheld",
+                           "reason": "The loop and the mesh retries are both on the 5xx path and "
+                                     "neither caps the attempts of the other."},
+    "client/api.ts": {"verdict": "narrowed",
+                      "reason": "Each retry waits the fixed 5 s before recursing.",
+                      "holds": "With API_RETRY_ON_429 set, a 429 is retried after a fixed 5 s "
+                               "whatever Retry-After asks for, without a limit.",
+                      "refuted_claims": [{"field": "amplifier", "claim": "immediately schedules another",
+                                          "fact": "Each retry first waits the fixed 5 s, then recurses.",
+                                          "evidence": [0]}],
+                      "evidence": [("src/client/api.ts", "setTimeout(resolve, 5000)", "the fixed wait")]},
+    "sync/scheduler.ts": {"verdict": "inconclusive",
+                          "reason": "Whether batchSync and userLookup run in one process depends on "
+                                    "the deployment, which the repository does not show."},
+    "sync/collection.ts": {"verdict": "upheld",
+                           "reason": "The page counter is local and db.create is not an upsert."},
+    "util/format.ts": {"verdict": "upheld",
+                       "reason": "The comment is present verbatim; its claim to be reviewed is "
+                                 "part of what the finding reports."},
+    "client/labels.ts": {"verdict": "refuted",
+                         "reason": "withDefaults sets an 8 s AbortSignal on every request it builds.",
+                         "refuted_claims": [{"field": "failure_mode", "claim": "has no timeout",
+                                             "fact": "The init object comes from withDefaults, which sets "
+                                                     "signal to AbortSignal.timeout(8000).",
+                                             "evidence": [0]}],
+                         "evidence": [("src/client/http-defaults.ts", "AbortSignal.timeout(REQUEST_TIMEOUT_MS)",
+                                       "the timeout every label request gets")]},
+}
+# The model the sample's verdicts are attributed to: none ran. Pinned like the
+# dates; a real scan never writes this.
+CANNED_MODEL = "canned (no model ran)"
 
 
 def _corroborating_commit(repo: Path, hs: dict, spec: dict, line: int,
@@ -281,7 +333,7 @@ def build_validated(dest: Path) -> tuple[Path, dict]:
                             if not k.startswith(("FAKE_CATALOG_", "CLAUDE_PLUGIN_"))})
     env.update(THUNDERSTRUCK_TRUST_CONTEXT="1", XDG_CONFIG_HOME=str(dest.parent / "xdg"))
     _run([sys.executable, str(scripts / "signals.py"), "--repo", str(repo),
-          "--top", "9", "--since", SINCE], repo, env)
+          "--top", "11", "--since", SINCE], repo, env)
     _run([sys.executable, str(scripts / "context.py"), "--repo", str(repo)], repo, env)
     _run([sys.executable, str(scripts / "bundle.py"), "--repo", str(repo)], repo, env)
 
@@ -359,11 +411,54 @@ def build_validated(dest: Path) -> tuple[Path, dict]:
     return repo, env
 
 
+def _prepare(repo: Path, env: dict) -> dict:
+    _run([sys.executable, str(ROOT / "scripts" / "verify.py"), "prepare", "--model", "haiku",
+          "--repo", str(repo)], repo, env)
+    return json.loads((repo / ".thunderstruck" / "checks" / "plan.json").read_text(encoding="utf-8"))
+
+
+def verify_canned(repo: Path, env: dict) -> None:
+    """Step 4b with the canned verdicts in place of skeptics: the real
+    verify.py prepare, save and apply."""
+    scripts = ROOT / "scripts"
+    plan = _prepare(repo, env)
+    plan["model"] = CANNED_MODEL
+    c.write_json(repo / ".thunderstruck" / "checks" / "plan.json", plan)
+    expected = {}
+    with tempfile.TemporaryDirectory() as tmp:
+        for fragment, spec in CANNED_VERDICTS.items():
+            entry = next((e for e in plan["findings"] if fragment in e["file"]), None)
+            if entry is None:
+                raise SystemExit(f"no planned check for {fragment}: the fixture or the "
+                                 "canned findings changed")
+            verdict = {"key": entry["key"], "holds": None, "refuted_claims": [], "evidence": [],
+                       "dependencies_read": [], "duplicate_of": None, **spec}
+            for rel, anchor, _ in spec.get("evidence", []):
+                if anchor not in repo.joinpath(rel).read_text(encoding="utf-8"):
+                    raise SystemExit(f"canned verdict anchor {anchor!r} is not in {rel}")
+            verdict["evidence"] = [{"type": "code", "ref": f"{rel}:{_line_of(repo, rel, anchor)}",
+                                    "note": note} for rel, anchor, note in spec.get("evidence", [])]
+            path = Path(tmp) / f"{entry['key']}.json"
+            path.write_text(json.dumps(verdict), encoding="utf-8")
+            _run([sys.executable, str(scripts / "verify.py"), "save", "--key", entry["key"],
+                  "--from", str(path), "--repo", str(repo)], repo, env)
+            expected[entry["key"]] = spec["verdict"]
+    _run([sys.executable, str(scripts / "verify.py"), "apply", "--repo", str(repo)], repo, env)
+    checks = json.loads((repo / ".thunderstruck" / "checks" / "verdicts.json")
+                        .read_text(encoding="utf-8"))["checks"]
+    for key, verdict in expected.items():
+        status = (checks.get(key) or {}).get("status")
+        if status != verdict:
+            raise SystemExit(f"canned verdict for {key} settled as {status}, not {verdict}: "
+                             f"{(checks.get(key) or {}).get('reason')}")
+
+
 def generate_all() -> dict[str, str]:
     """Both samples, from one run of the pipeline: file name -> content."""
     scripts = ROOT / "scripts"
     with tempfile.TemporaryDirectory() as tmp:
         repo, env = build_validated(Path(tmp) / "fixture")
+        verify_canned(repo, env)
         _run([sys.executable, str(scripts / "report.py"), "--repo", str(repo)], repo, env)
         # the fixture's last commit: no pinned date can predate what was scanned
         day = _run(["git", "-C", str(repo), "log", "-1", "--format=%cs"], repo, env).stdout.strip()
@@ -440,7 +535,20 @@ def check(dest: Path, body: str) -> tuple[bool, str]:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="gen_sample_report.py")
     ap.add_argument("--check", action="store_true")
+    ap.add_argument("--keep", metavar="DIR", default=None,
+                    help="build the validated fixture into DIR with checks/plan.json "
+                         "prepared and no verdicts saved, and write no samples")
     args = ap.parse_args(argv)
+
+    if args.keep:
+        keep = Path(args.keep).resolve()
+        if keep.exists() and any(keep.iterdir()):
+            # build_fixture replaces its destination; never a directory with content
+            ap.error(f"--keep {args.keep}: the directory exists and is not empty")
+        repo, env = build_validated(keep)
+        _prepare(repo, env)
+        print(repo)
+        return 0
 
     samples = generate_all()
     if args.check:

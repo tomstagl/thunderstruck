@@ -195,7 +195,7 @@ partial report that says so beats a loop.
 
 ## Step 4b — verify
 
-Verification is **on** by default.
+Verification is **off** by default.
 
 Run this step when the user gave `--verify`, or when verification is on by
 default and they did not give `--no-verify`. Otherwise skip it entirely:

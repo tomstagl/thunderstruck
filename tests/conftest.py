@@ -38,7 +38,7 @@ def scanned_repo(fixture_repo: Path, plugin_root: Path) -> Path:
     """The fixture repo with the deterministic pipeline already run over it."""
     for args in (
         [sys.executable, str(plugin_root / "scripts" / "signals.py"),
-         "--repo", str(fixture_repo), "--top", "8", "--since", "24m"],
+         "--repo", str(fixture_repo), "--top", "10", "--since", "24m"],
         [sys.executable, str(plugin_root / "scripts" / "bundle.py"),
          "--repo", str(fixture_repo)],
     ):
@@ -90,7 +90,7 @@ def context_scanned_repo(context_repo_template, context_env, run_steps,
                          tmp_path_factory) -> Path:
     repo = tmp_path_factory.mktemp("ctxscan") / "fixture"
     shutil.copytree(context_repo_template, repo, symlinks=True)
-    run_steps(repo, context_env, ["signals.py", "--top", "8", "--since", "24m"],
+    run_steps(repo, context_env, ["signals.py", "--top", "10", "--since", "24m"],
               ["context.py"], ["bundle.py"])
     return repo
 

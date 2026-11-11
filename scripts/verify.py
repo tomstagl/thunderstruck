@@ -501,6 +501,8 @@ def apply(repo: Path) -> dict:
         item = by_key.get(entry["key"])
         if item is None:
             continue
+        if entry["action"] == "skip" and entry["key"] in checks:
+            continue  # the finding that shares this key was checked; its verdict stands for both
         result = c.load_json(checks_dir(repo) / "results" / f"{entry['key']}.json", None)
         checks[entry["key"]] = settle(item["finding"], entry, result, resolver, plan, ledger.get(entry["key"]))
     if not frozen:
@@ -543,12 +545,64 @@ def _cmd_apply(args) -> int:
     return 0
 
 
+def run_verdict(finding: dict, check: dict) -> str | None:
+    """#55's run vocabulary (spec §13). inconclusive and unchecked carry none."""
+    status = check.get("status")
+    gated = c.finding_gate({**finding, "check": check}) == "non_default_setting"
+    if status == "upheld":
+        return "upheld_but_gated" if gated else "upheld"
+    if status == "narrowed":
+        claims = [rc for rc in check.get("refuted_claims") or [] if isinstance(rc, dict)]
+        only_gate = claims and all(rc.get("field") == "preconditions" and rc.get("setting") for rc in claims)
+        return "upheld_but_gated" if only_gate else "narrowed"
+    return "refuted" if status == "refuted" else None
+
+
+def _accepted_duplicate(check: dict, checks: dict[str, dict]) -> str | None:
+    """duplicate_of as the report accepts it: it names another finding of this scan,
+    and neither finding is refuted (a refuted finding leaves the report, so nothing
+    merges into or out of it)."""
+    target = check.get("duplicate_of")
+    other = checks.get(target) if isinstance(target, str) else None
+    if other is None or "refuted" in (check.get("status"), other.get("status")):
+        return None
+    return target
+
+
+def export_run(repo: Path) -> dict:
+    plan = _plan(repo)
+    checks = (c.load_json(checks_dir(repo) / "verdicts.json", {}) or {}).get("checks") or {}
+    frozen = Path(plan["frozen"]) if plan.get("frozen") else None
+    items = {i["finding"]["key"]: i["finding"] for i in (load_frozen(frozen) if frozen else load_findings(repo))}
+    findings: dict[str, dict] = {}
+    for key, check in sorted(checks.items()):
+        record: dict = {}
+        verdict = run_verdict(items.get(key, {}), check)
+        if verdict:
+            record["verdict"] = verdict
+        record["duplicate_of"] = _accepted_duplicate(check, checks)
+        findings[key] = record
+    # check.model (spec §13): what each verdict ran as. A reused verdict keeps the
+    # model it was first checked with, so a run can name more than one.
+    models = sorted({ch["model"] for ch in checks.values() if ch.get("by") == "skeptic" and ch.get("model")})
+    model = ",".join(models) or c.MODEL_ALIASES.get(plan["model"], plan["model"])
+    return {"schema": "thunderstruck.benchmark-run/v1", "commit": plan["head"],
+            "produced_by": {"stage": "skeptic", "model": model,
+                            "source": "verify.py export-run over checks/verdicts.json"},
+            "findings": findings}
+
+
+def _cmd_export_run(args) -> int:
+    c.write_json(Path(args.out), export_run(c.find_repo_root(args.repo)))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="verify.py", description="verification of findings (#37)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("prepare")
     p.add_argument("--repo", default=None)
-    p.add_argument("--model", default="sonnet", choices=sorted(c.MODEL_ALIASES))
+    p.add_argument("--model", default="haiku", choices=sorted(c.MODEL_ALIASES))
     p.add_argument("--frozen", default=None)
     p.set_defaults(fn=_cmd_prepare)
     p = sub.add_parser("check")
@@ -568,6 +622,10 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("apply")
     p.add_argument("--repo", default=None)
     p.set_defaults(fn=_cmd_apply)
+    p = sub.add_parser("export-run")
+    p.add_argument("--repo", default=None)
+    p.add_argument("--out", required=True)
+    p.set_defaults(fn=_cmd_export_run)
     args = ap.parse_args(argv)
     try:
         return args.fn(args)

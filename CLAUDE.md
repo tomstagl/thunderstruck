@@ -68,13 +68,18 @@ python3 tests/fixtures/build_fixture.py /tmp/fixture
 signals.py    deterministic   churn × complexity × (1+weight), coupling, detectors
 context.py    deterministic   runs the approved catalog command → context.json (optional)
 bundle.py     deterministic   one token-budgeted briefing per hotspot
-investigator  ← MODEL →       the only inference in the system
+investigator  ← MODEL →       one read-only reader per hotspot
 validate.py   deterministic   resolves every evidence ref
+verify.py     deterministic   prepare: plan, briefs, reuse; deps.py snapshots declared dependency source
+skeptic       ← MODEL →       one read-only refuter per finding (verification, #37)
+verify.py     deterministic   apply: resolves every verdict ref, settles the check status
 report.py     deterministic   report.md · report.json · index.json
 report_html.py deterministic  report.json → report.html (templates/report.html, stdlib only)
                                               ↓
 guardrail.py  (PreToolUse hook) reads index.json, injects findings before an edit
 ```
+
+The investigator and the skeptic are the only inference in the system.
 
 **The governing rule: models for judgment, scripts for anything that must be
 reproducible.** Detection, scoring, evidence checking and rendering never
@@ -124,7 +129,7 @@ hits: a suppressed lead is still a retry layer.
 `confidence` in its findings file is the investigator's claim. `report.py`
 reports `_common.effective_confidence(claim, check status)`: only `upheld`
 can be `high`, everything else is at most `medium`, and `narrowed` drops one
-level. Until #37 lands every finding is `unchecked`. `finding_shape.shape()` strips
+level. A scan that did not verify reports every finding `unchecked`. `finding_shape.shape()` strips
 `check`, `history` and `confidence_claimed` from model output, so a model
 cannot raise its own finding, and `validate.py` never overwrites an existing
 `check`. A cited commit's class (`_common.classify_commit`) and whether it
@@ -134,8 +139,28 @@ Findings whose `preconditions` need a setting changed (`_common.finding_gate`)
 are listed after default-path findings and marked. Tightening a validator
 rule means bumping `VALIDATION_RULES`.
 
-**The plugin must not exhibit the patterns it hunts.** At most 4 investigators
-in parallel, exactly one repair round and no retry loops, `--top` caps scope,
+**Verdicts are resolved like findings.** `verify.settle` is the one place a
+check status is decided. A `refuted` or `narrowed` verdict with no resolving
+evidence is `inconclusive`, and a `dependency` ref resolves only into a
+snapshot under `.thunderstruck/deps/` that `deps.py` made. `deps.py` never
+downloads or executes anything, and imports only the stdlib and `_common` at
+module level, because `validate.py` imports it on every scan.
+
+**`run.json` decides whether verification ran.** `report.py` treats it as run
+only when `checks/run.json`'s `generated_at` equals `hotspots.json`'s;
+otherwise every finding is reported `unchecked`, whatever `check` an earlier
+verified scan left in the findings files. Never read a status from a findings
+file without it.
+
+**Briefs are deterministic and withhold the claimed confidence.** A skeptic's
+brief (`checks/briefs/<key>.md`) carries the claim and its evidence, never
+`confidence`, `confidence_rationale`, `notes`, `history` or `check`, and no
+volatile value: `apply` tells a stale verdict from this scan's by the plan's
+`brief_hash`.
+
+**The plugin must not exhibit the patterns it hunts.** At most 4 subagents
+(investigators and skeptics together) in parallel, exactly one repair round
+for investigators, none for skeptics, no re-spawn and no retry loops, `--top` caps scope,
 preflight fails fast. A tool that spawns unbounded concurrent workers against a
 shared quota has no standing to report S05.
 
