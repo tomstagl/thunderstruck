@@ -21,7 +21,7 @@ Verification: ran on 6 findings, 6 checked by `canned (no model ran)` and 0 reus
 ## Run warnings
 
 - attribute value rejected (not a short label): component:default/mobile-bff tier
-- No dependency manifest was found (`pyproject.toml`, `requirements*.txt`, `package.json`, `pom.xml`, `build.gradle`); verification reads the repository only.
+- A dependency manifest was found (`package.json`) but it declares no dependencies; verification reads the repository only.
 - **Suppressed leads** — 1 rule(s) in `.thunderstruck.toml` silence detector hits before ranking:
   - `S15-ts-no-fallback` on `src/client/artists.ts`: 1 hit(s) — artist pages fall back to the CDN snapshot at the edge
 
@@ -281,7 +281,7 @@ Findings a check refuted. They are not in the findings above and the edit guardr
 
 withDefaults sets an 8 s AbortSignal on every request it builds.
 
-- *Failure mode*: “has no timeout”. The init object comes from withDefaults, which sets signal to `AbortSignal.timeout(8000`). Evidence: [`src/client/http-defaults.ts:4`](https://github.example.com/acme/fixture/blob/1aed98566889981ee1af90ff3efa6617deb1b885/src/client/http-defaults.ts#L4)
+- *Failure mode*: “has no timeout”. The init object comes from withDefaults, which sets signal to `AbortSignal.timeout(8000)`. Evidence: [`src/client/http-defaults.ts:4`](https://github.example.com/acme/fixture/blob/1aed98566889981ee1af90ff3efa6617deb1b885/src/client/http-defaults.ts#L4)
 
 Checked by `canned (no model ran)`
 

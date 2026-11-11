@@ -651,6 +651,42 @@ def test_export_run(validated_repo, validated_env, tmp_path):
     assert run["findings"][unchecked] == {"duplicate_of": None}
 
 
+def test_export_run_names_the_checks_model_and_the_accepted_duplicate(validated_repo, validated_env, tmp_path):
+    plan = _prepare(validated_repo, validated_env)
+    rel, api = _entry(plan, "releases.ts"), _entry(plan, "api.ts")
+    sched, coll = _entry(plan, "scheduler.ts"), _entry(plan, "collection.ts")
+    _save(validated_repo, validated_env, tmp_path, {**_v(rel["key"], "refuted"), **_refute_releases(validated_repo)})
+    _save(validated_repo, validated_env, tmp_path, _v(api["key"], "upheld", duplicate_of=rel["key"]))
+    _save(validated_repo, validated_env, tmp_path, _v(sched["key"], "upheld", duplicate_of=coll["key"]))
+    _save(validated_repo, validated_env, tmp_path, _v(coll["key"], "upheld"))
+    _apply(validated_repo, validated_env)
+    verdicts = validated_repo / ".thunderstruck" / "checks" / "verdicts.json"
+    doc = json.loads(verdicts.read_text())
+    doc["checks"][coll["key"]]["model"] = "claude-haiku-4-5"  # a verdict reused from an earlier run
+    verdicts.write_text(json.dumps(doc))
+    out = tmp_path / "run.json"
+    assert _verify(validated_repo, validated_env, "export-run", "--out", str(out)).returncode == 0
+    run = json.loads(out.read_text())
+    assert run["produced_by"]["model"] == "claude-haiku-4-5,claude-sonnet-5-5"
+    assert run["findings"][api["key"]]["duplicate_of"] is None   # its target is refuted: not merged
+    assert run["findings"][sched["key"]]["duplicate_of"] == coll["key"]
+
+
+def test_a_second_finding_with_the_same_key_does_not_overwrite_the_checked_verdict(validated_repo, validated_env, tmp_path):
+    path = next(p for p in sorted((validated_repo / ".thunderstruck" / "findings").glob("*.json"))
+                if "releases.ts" in p.read_text())
+    doc = json.loads(path.read_text())
+    doc["findings"].append(json.loads(json.dumps(doc["findings"][0])))
+    path.write_text(json.dumps(doc))
+    plan = _prepare(validated_repo, validated_env)
+    key = doc["findings"][0]["key"]
+    assert [e["action"] for e in plan["findings"] if e["key"] == key] == ["check", "skip"]
+    _save(validated_repo, validated_env, tmp_path, _v(key, "upheld"))
+    checks = _apply(validated_repo, validated_env)
+    assert checks[key]["status"] == "upheld" and checks[key]["by"] == "skeptic"
+    assert [f["check"]["status"] for f in json.loads(path.read_text())["findings"]] == ["upheld", "upheld"]
+
+
 # --- Task 21 ----------------------------------------------------------------
 def test_the_default_skeptic_model_is_the_measured_one():
     doc = (ROOT / "docs" / "calibration" / "verification.md").read_text()

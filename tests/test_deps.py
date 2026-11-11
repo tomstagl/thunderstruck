@@ -371,6 +371,15 @@ def test_discover_is_sorted_deterministic_and_warns_without_manifests(tmp_path):
     assert first == deps.discover(repo, env={}, home=tmp_path / "home")
 
 
+def test_a_manifest_without_dependencies_is_not_reported_missing(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "package.json").write_text('{"name":"x","private":true}\n')
+    got = deps.discover(repo, env={}, home=tmp_path / "home")
+    assert got["packages"] == [] and got["warnings"] == [
+        "A dependency manifest was found (package.json) but it declares no dependencies; "
+        "verification reads the repository only."]
+
+
 def test_the_cli_writes_only_under_deps(tmp_path):
     repo = _repo(tmp_path)
     (repo / "requirements.txt").write_text("redis==8.1.0\n")

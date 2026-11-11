@@ -36,6 +36,7 @@ _LINKISH = re.compile(
 # Sentence punctuation peeled off a linkish token, so the span wraps only the
 # word: "(x.co)," renders as (`x.co`), not `(x.co),`. None of it can start a
 # link or a shortcode on its own.
+_CLOSERS = {")": "(", "]": "[", "}": "{"}
 _PEEL = re.compile(r"^([(\[{\"']*)(.*?)([)\]},;:.!?\"']*)$", re.DOTALL)
 
 # ASCII punctuation CommonMark/GFM/GitHub give meaning to inline; each may be
@@ -92,6 +93,10 @@ def _word(token: str, cell: bool, heading: bool) -> str:
     lead, core, trail = _PEEL.match(token).groups()
     if not core or not _LINKISH.search(core):
         lead, core, trail = "", token, ""
+    # A closing bracket the word itself opened belongs to it: "timeout(8000)"
+    # keeps its ")", while "(x.co)" gives its ")" back to the sentence.
+    while trail and trail[0] in _CLOSERS and core.count(_CLOSERS[trail[0]]) > core.count(trail[0]):
+        core, trail = core + trail[0], trail[1:]
     return _escape(lead, heading) + code(core, cell) + _escape(trail, heading)
 
 

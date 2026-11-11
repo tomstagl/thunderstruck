@@ -219,6 +219,9 @@ def test_review_payloads_stay_inert(payload, renderer):
     ("span `record.fetch_error`) fires", "span `` `record.fetch_error` ``) fires"),
     ("see api.example.com.", "see `api.example.com`."),
     ("(x.co)", "(`x.co`)"),
+    ("AbortSignal.timeout(8000)", "`AbortSignal.timeout(8000)`"),
+    ("(calls AbortSignal.timeout(8000))", "(calls `AbortSignal.timeout(8000)`)"),
+    ("f(a.co).", "`f(a.co)`."),
     ("x.co:smile:", "`x.co:smile`:"),
 ])
 def test_sentence_punctuation_stays_outside_the_span(value, expected):
