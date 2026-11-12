@@ -645,3 +645,16 @@ def test_the_unconfirmed_default_finding_is_listed_after_default_path_ones():
     assert rank == sorted(rank) and 1 in rank and 2 in rank
     collection = next(i for i, l in enumerate(badges) if "collection.ts" in l)
     assert rank[collection] == 1
+
+
+# --- Task 13 ----------------------------------------------------------------
+def test_export_run_carries_the_checks_defaults(validated_repo, validated_env, tmp_path):
+    plan, e = _collection(validated_repo, validated_env)
+    reg = _line(validated_repo, "src/config/settings.ts", "\"sync.pageSize\": 500")
+    _save(validated_repo, validated_env, tmp_path, _v(e["key"], "upheld", confirmations=[
+        _conf(found="different", default="500", default_ref=f"src/config/settings.ts:{reg}")]))
+    _apply(validated_repo, validated_env)
+    run = verify.export_run(validated_repo)
+    assert run["findings"][e["key"]]["preconditions"] == [
+        {"setting": "sync.pageSize", "default": "500", "confirmation": "unconfirmed"}]
+    assert "verdict" not in run["findings"][e["key"]]  # inconclusive carries none (#37)

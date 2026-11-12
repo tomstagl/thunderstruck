@@ -1911,7 +1911,7 @@ git commit -m "Confirmed defaults: a settings registry in the fixture, shown in 
 - Consumes: #37's `export_run(repo)`; #55's `score_defaults(records, label_set)`, `figure`, `format_figure`, `basis_of`, `EFFECTIVE`.
 - Produces: run records with `preconditions: [{"setting", "default", "confirmation"}]`; `score_defaults(...)["rows"][i]["confirmation"]` when the run gives one; `score_defaults(...)["confirmed_not_effective"]: list[{"key", "setting"}]` and `["confirmed"]: int`; `benchmark.upheld_on_wrong_default(records: dict, label_set: dict) -> list[{"key", "setting"}]`. #55's spec reserves both figures and the run record's `preconditions[].confirmation` (a one-line extension point the lead adds to #55); if it does not, stop and report it.
 
-- [ ] **Step 1: Write the failing tests.** In `tests/test_benchmark.py`, after #55's Task 6 tests:
+- [x] **Step 1: Write the failing tests.** In `tests/test_benchmark.py`, after #55's Task 6 tests:
 
 ```python
 def test_confirmed_defaults_that_are_not_effective_are_listed():
@@ -1957,9 +1957,9 @@ def test_export_run_carries_the_checks_defaults(validated_repo, validated_env, t
     assert "verdict" not in run["findings"][e["key"]]  # inconclusive carries none (#37)
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** Expected: FAIL (`KeyError: 'confirmed'`, no `preconditions` in the record).
+- [x] **Step 2: Run them to verify they fail.** Expected: FAIL (`KeyError: 'confirmed'`, no `preconditions` in the record).
 
-- [ ] **Step 3: Implement.** In `verify.export_run`, for each key, after `record["duplicate_of"] = …`:
+- [x] **Step 3: Implement.** In `verify.export_run`, for each key, after `record["duplicate_of"] = …`:
 
 ```python
         finding = c.with_confirmations({**items.get(key, {}), "check": check}, check.get("confirmations"))
@@ -2009,9 +2009,9 @@ def upheld_on_wrong_default(records: dict, label_set: dict) -> list[dict]:
 
 and print it as a figure over the run's upheld findings, `figure("upheld on a default not stated at its effective value", len(found keys), upheld count, basis)`, listing keys and settings. Where `benchmark.py` prints the defaults measure, also add one figure line when `confirmed` is non-zero: `figure("confirmed defaults that are not effective", len(wrong), confirmed, basis)` through `format_figure`, and list the keys and settings (no prose; #55 §9).
 
-- [ ] **Step 4: Run the tests and the full suite.** Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests and the full suite.** Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/verify.py scripts/benchmark.py tests/test_benchmark.py tests/test_confirmed_defaults.py

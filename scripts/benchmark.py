@@ -460,6 +460,8 @@ def score_defaults(records: dict, label_set: dict) -> dict:
             continue
         stated = {str(p.get("setting", "")).strip().casefold(): p["default"]
                   for p in r["preconditions"] if "default" in p}
+        stated_conf = {str(p.get("setting", "")).strip().casefold(): p.get("confirmation")
+                       for p in r["preconditions"] if "default" in p}
         for pc in label_set["_by_key"][k].get("preconditions") or []:
             if pc["kind"] != "setting":
                 continue
@@ -471,12 +473,40 @@ def score_defaults(records: dict, label_set: dict) -> dict:
                 v = normalise_value(stated[name])
                 outcome = (EFFECTIVE if values_match(v, pc["effective"])
                            else LITERAL_ONLY if values_match(v, pc["literal"]) else NEITHER)
-            rows.append({"key": k, "setting": pc["setting"], "discriminating": discriminating, "outcome": outcome})
+            row = {"key": k, "setting": pc["setting"], "discriminating": discriminating, "outcome": outcome}
+            if stated_conf.get(name) is not None:
+                row["confirmation"] = stated_conf[name]
+            rows.append(row)
     head = [x for x in rows if x["discriminating"]]
     counts = {o: sum(1 for x in head if x["outcome"] == o) for o in DEFAULT_OUTCOMES}
     rest = {o: sum(1 for x in rows if not x["discriminating"] and x["outcome"] == o) for o in DEFAULT_OUTCOMES}
+    # #57 (its spec §13.2): a confirmed default should be the effective one
+    confirmed = [x for x in rows if x.get("confirmation") == "confirmed"]
+    wrong = [{"key": x["key"], "setting": x["setting"]} for x in confirmed if x["outcome"] != EFFECTIVE]
+    keys = {x["key"] for x in rows}
+    scored = {k: r for k, r in records.items() if k in keys}
     return {"rows": rows, "counts": counts, "non_discriminating": rest,
-            "keys": sorted({x["key"] for x in rows})}
+            "keys": sorted(keys), "confirmed": len(confirmed), "confirmed_not_effective": wrong,
+            "upheld": sum(1 for r in scored.values() if r.get("verdict") in ("upheld", "upheld_but_gated")),
+            "upheld_on_wrong_default": upheld_on_wrong_default(scored, label_set)}
+
+
+def upheld_on_wrong_default(records: dict, label_set: dict) -> list[dict]:
+    """Upheld findings whose label has a discriminating precondition the run did not
+    state at its effective value: the ticket's success measure, counted directly."""
+    out = []
+    for k, r in sorted(records.items()):
+        if r.get("verdict") not in ("upheld", "upheld_but_gated"):
+            continue
+        stated = {str(p.get("setting", "")).strip().casefold(): p.get("default")
+                  for p in r.get("preconditions") or []}
+        for pc in label_set["_by_key"][k].get("preconditions") or []:
+            if pc["kind"] != "setting" or values_match(pc["literal"], pc["effective"]):
+                continue
+            name = pc["setting"].casefold()
+            if name not in stated or not values_match(normalise_value(stated[name]), pc["effective"]):
+                out.append({"key": k, "setting": pc["setting"]})
+    return out
 
 
 # ------------------------------------------------------------------ results
@@ -500,11 +530,19 @@ def _figures(measure: str, m: dict, basis: dict) -> list[dict]:
                 figure(f"refuting fact {o}", c[o], n, basis) for o in (ELSEWHERE, NOT_IN_REPO, UNREADABLE)]
     if measure == "defaults":
         n = sum(c.values())
-        return [figure(f"default {o}", c[o], n, basis) for o in DEFAULT_OUTCOMES]
+        figs = [figure(f"default {o}", c[o], n, basis) for o in DEFAULT_OUTCOMES]
+        if m.get("confirmed"):
+            figs.append(figure("confirmed defaults that are not effective",
+                               len(m["confirmed_not_effective"]), m["confirmed"], basis))
+        if m.get("upheld"):
+            figs.append(figure("upheld on a default not stated at its effective value",
+                               len({x["key"] for x in m["upheld_on_wrong_default"]}), m["upheld"], basis))
+        return figs
     raise ValueError(measure)
 
 
-PER_FINDING = ("rows", "found", "missed", "false", "high_above_deserved")
+PER_FINDING = ("rows", "found", "missed", "false", "high_above_deserved",
+               "confirmed_not_effective", "upheld_on_wrong_default")
 SCORERS = {"verdicts": score_verdicts, "duplicates": score_duplicates, "confidence": score_confidence,
            "bundles": score_bundles, "defaults": score_defaults}
 
@@ -611,8 +649,14 @@ def _rows(name: str, m: dict, r: dict) -> list[str]:
         return [f"  {_disp(r, k)}: {x['outcome']}{' (partly elsewhere)' if x['partly_elsewhere'] else ''}"
                 for k, x in ((k, m["rows"][k]) for k in _order(r, m["rows"]))]
     if name == "defaults":
-        return [f"  {_disp(r, x['key'])} {x['setting']}: {x['outcome']}{'' if x['discriminating'] else ' (non-discriminating)'}"
-                for x in sorted(m["rows"], key=lambda x: (r["display"].get(x["key"]) or "~", x["key"]))]
+        order = lambda x: (r["display"].get(x["key"]) or "~", x["key"], x["setting"])  # noqa: E731
+        return ([f"  {_disp(r, x['key'])} {x['setting']}: {x['outcome']}{'' if x['discriminating'] else ' (non-discriminating)'}"
+                 + (f" · {x['confirmation']}" if x.get("confirmation") else "")
+                 for x in sorted(m["rows"], key=order)]
+                + [f"  confirmed, not effective: {_disp(r, x['key'])} {x['setting']}"
+                   for x in sorted(m.get("confirmed_not_effective") or [], key=order)]
+                + [f"  upheld on a wrong default: {_disp(r, x['key'])} {x['setting']}"
+                   for x in sorted(m.get("upheld_on_wrong_default") or [], key=order)])
     if name == "duplicates":
         return ([f"  found: {_disp(r, k)}" for k in m["found"]] + [f"  missed: {_disp(r, k)}" for k in m["missed"]]
                 + [f"  false: {_disp(r, k)}" for k in m["false"]])

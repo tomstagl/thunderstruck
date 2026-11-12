@@ -721,6 +721,20 @@ def export_run(repo: Path) -> dict:
         if verdict:
             record["verdict"] = verdict
         record["duplicate_of"] = _accepted_duplicate(check, checks)
+        finding = c.with_confirmations({**items.get(key, {}), "check": check}, check.get("confirmations"))
+        pres = []
+        listed = {it.get("precondition"): it for it in finding["check"].get("confirmations") or []}
+        for j, p in enumerate(finding.get("preconditions") or []):
+            it = listed.get(j)
+            default = it["default"] if it and it.get("default") is not None else p.get("default")
+            pres.append({"setting": p.get("setting"), "default": default,
+                         "confirmation": p["confirmation"]["state"]})
+        for it in finding["check"].get("confirmations") or []:
+            if it.get("precondition") is None and it.get("default") is not None:
+                pres.append({"setting": it["setting"], "default": it["default"],
+                             "confirmation": it["confirmation"]["state"]})
+        if pres:
+            record["preconditions"] = pres
         findings[key] = record
     # check.model (spec §13): what each verdict ran as. A reused verdict keeps the
     # model it was first checked with, so a run can name more than one.
