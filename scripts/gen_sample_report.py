@@ -153,8 +153,9 @@ CANNED: dict[str, list[dict]] = {
         "symbol": "syncCollection",
         "anchor": "let page = 1",
         "missing_patterns": ["S07"],
-        "failure_mode": "An interrupted collection sync restarts at page 1 and "
-                        "re-creates every row it already wrote",
+        "failure_mode": "An interrupted collection sync restarts at page 1, "
+                        "re-fetches every page of 100 items and re-creates every "
+                        "row it already wrote",
         "trigger_condition": "Any failure part-way through a multi-page sync",
         "amplifier": "handleSyncFailure re-queues the whole job, so the retry "
                      "pays the full cost of the pages that already succeeded",
@@ -163,6 +164,9 @@ CANNED: dict[str, list[dict]] = {
                              "re-queues indefinitely without ever progressing",
         "blast_radius": "The user's collection, which gains duplicate rows on "
                         "every attempt",
+        "preconditions": [{"setting": "sync.pageSize", "default": "100",
+                           "anchor": "sync.pageSize", "needs": "default", "value": None,
+                           "documented": "no", "doc_ref": None}],
         "confidence": "high",
         "confidence_rationale": "The loop has no persisted cursor and db.create "
                                 "is not an upsert; three commits in the window "
@@ -246,12 +250,23 @@ CANNED_VERDICTS: dict[str, dict] = {
                       "refuted_claims": [{"field": "amplifier", "claim": "immediately schedules another",
                                           "fact": "Each retry first waits the fixed 5 s, then recurses.",
                                           "evidence": [0]}],
-                      "evidence": [("src/client/api.ts", "setTimeout(resolve, 5000)", "the fixed wait")]},
+                      "evidence": [("src/client/api.ts", "setTimeout(resolve, 5000)", "the fixed wait")],
+                      "confirmations": [{"setting": "API_RETRY_ON_429", "claim": None, "stated_ref": None,
+                                         "found": "same", "default": "false (unset)",
+                                         "default_ref": ("src/client/api.ts", "const RETRY_ON_429"),
+                                         "reason": "Unset means false; nothing else registers it."}]},
     "sync/scheduler.ts": {"verdict": "inconclusive",
                           "reason": "Whether batchSync and userLookup run in one process depends on "
                                     "the deployment, which the repository does not show."},
-    "sync/collection.ts": {"verdict": "upheld",
-                           "reason": "The page counter is local and db.create is not an upsert."},
+    # #57: upheld, but the page size it rests on is registered as 500, not the
+    # 100 the finding states, so apply settles it inconclusive (expect).
+    "sync/collection.ts": {"verdict": "upheld", "expect": "inconclusive",
+                           "reason": "The page counter is local and db.create is not an upsert.",
+                           "confirmations": [{"setting": "sync.pageSize", "claim": None, "stated_ref": None,
+                                              "found": "different", "default": "500",
+                                              "default_ref": ("src/config/settings.ts", '"sync.pageSize": 500'),
+                                              "reason": "The registry holds 500; get() returns it, so the "
+                                                        "fallback 100 never applies."}]},
     "util/format.ts": {"verdict": "upheld",
                        "reason": "The comment is present verbatim; its claim to be reviewed is "
                                  "part of what the finding reports."},
@@ -332,8 +347,9 @@ def build_validated(dest: Path) -> tuple[Path, dict]:
     env = isolated_git_env({k: v for k, v in os.environ.items()
                             if not k.startswith(("FAKE_CATALOG_", "CLAUDE_PLUGIN_"))})
     env.update(THUNDERSTRUCK_TRUST_CONTEXT="1", XDG_CONFIG_HOME=str(dest.parent / "xdg"))
+    # 12: #57's settings registry ranks too, and util/format.ts must stay in
     _run([sys.executable, str(scripts / "signals.py"), "--repo", str(repo),
-          "--top", "11", "--since", SINCE], repo, env)
+          "--top", "12", "--since", SINCE], repo, env)
     _run([sys.executable, str(scripts / "context.py"), "--repo", str(repo)], repo, env)
     _run([sys.executable, str(scripts / "bundle.py"), "--repo", str(repo)], repo, env)
 
@@ -432,7 +448,19 @@ def verify_canned(repo: Path, env: dict) -> None:
                 raise SystemExit(f"no planned check for {fragment}: the fixture or the "
                                  "canned findings changed")
             verdict = {"key": entry["key"], "holds": None, "refuted_claims": [], "evidence": [],
-                       "dependencies_read": [], "duplicate_of": None, **spec}
+                       "dependencies_read": [], "duplicate_of": None,
+                       **{k: v for k, v in spec.items() if k != "expect"}}
+            # a confirmation's default_ref is an anchor, resolved like evidence (#57)
+            verdict["confirmations"] = [
+                {**it, "default_ref": (f"{it['default_ref'][0]}:"
+                                       f"{_line_of(repo, it['default_ref'][0], it['default_ref'][1])}"
+                                       if isinstance(it.get("default_ref"), tuple) else it.get("default_ref"))}
+                for it in spec.get("confirmations", [])]
+            for it in spec.get("confirmations", []):
+                if isinstance(it.get("default_ref"), tuple) and \
+                        it["default_ref"][1] not in repo.joinpath(it["default_ref"][0]).read_text(encoding="utf-8"):
+                    raise SystemExit(f"canned confirmation anchor {it['default_ref'][1]!r} "
+                                     f"is not in {it['default_ref'][0]}")
             for rel, anchor, _ in spec.get("evidence", []):
                 if anchor not in repo.joinpath(rel).read_text(encoding="utf-8"):
                     raise SystemExit(f"canned verdict anchor {anchor!r} is not in {rel}")
@@ -442,7 +470,7 @@ def verify_canned(repo: Path, env: dict) -> None:
             path.write_text(json.dumps(verdict), encoding="utf-8")
             _run([sys.executable, str(scripts / "verify.py"), "save", "--key", entry["key"],
                   "--from", str(path), "--repo", str(repo)], repo, env)
-            expected[entry["key"]] = spec["verdict"]
+            expected[entry["key"]] = spec.get("expect", spec["verdict"])
     _run([sys.executable, str(scripts / "verify.py"), "apply", "--repo", str(repo)], repo, env)
     checks = json.loads((repo / ".thunderstruck" / "checks" / "verdicts.json")
                         .read_text(encoding="utf-8"))["checks"]

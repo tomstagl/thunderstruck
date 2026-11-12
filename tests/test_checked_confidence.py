@@ -68,7 +68,7 @@ def test_vocabularies_are_the_spec_spelling():
     assert c.COMMIT_ROLES == ("introduced", "fixed", "mitigated", "changed")
     assert c.PRECONDITION_NEEDS == ("changed", "default")
     assert c.DOCUMENTED == ("yes", "no", "not_checked")
-    assert c.GATES == ("none", "non_default_setting")
+    assert c.GATES == ("none", "unconfirmed_default", "non_default_setting")
     assert set(c.CHECK_SENTENCES) == set(c.CHECK_STATUSES)
     assert set(c.GATE_MARKERS) == set(c.GATES) - {"none"}
 
@@ -117,11 +117,14 @@ def test_complete_preconditions_pass(repo):
     ({"documented": True}, "documented True is not one of"),
     ({"documented": "yes"}, "preconditions[0].doc_ref must be one string"),
     ({"documented": "no", "doc_ref": "src/a.ts:2"}, 'doc_ref is only given when documented is "yes"'),
-    ({"confirmation": {"state": "confirmed"}}, "unknown key(s) ['confirmation']"),
 ])
 def test_each_precondition_rule(repo, over, fragment):
     errors = _errors(repo, _pre(**over))
     assert any(fragment in e for e in errors), errors
+
+
+def test_a_precondition_confirmation_is_accepted_then_replaced(repo):
+    assert not [e for e in _errors(repo, _pre(confirmation={"state": "confirmed"})) if "confirmation" in e]
 
 
 def test_a_setting_is_listed_once(repo):
@@ -332,7 +335,7 @@ def test_reported_confidence_is_capped_and_the_claim_kept(scanned_copy, plugin_r
     assert payload["schema"] == "thunderstruck.report/v2"
     assert payload["counts"]["check_status"] == {"unchecked": 1, "upheld": 0, "narrowed": 0,
                                                  "inconclusive": 0, "refuted": 0}
-    assert payload["counts"]["gate"] == {"none": 1, "non_default_setting": 0}
+    assert payload["counts"]["gate"] == {"none": 1, "unconfirmed_default": 0, "non_default_setting": 0}
     entry = index["files"][f["location"]["file"]]["findings"][0]
     assert entry["confidence"] == "medium" and entry["check_status"] == "unchecked"
     assert entry["gate"] == "none" and entry["preconditions"] == []

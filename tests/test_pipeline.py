@@ -140,6 +140,8 @@ FIXTURE_FILES = {"src/client/releases.ts", "src/sync/collection.ts", "src/sync/s
                  "src/client/api.ts", "src/client/limiter.ts", "src/util/format.ts",
                  # the planted wrong finding and the file that refutes it (#37 AC-13)
                  "src/client/labels.ts", "src/client/http-defaults.ts",
+                 # the settings registry that contradicts collection.ts's fallback (#57)
+                 "src/config/settings.ts",
                  # config ranks because it carries leads (#19 AC-14)
                  "deploy/releases-virtualservice.yaml"}
 

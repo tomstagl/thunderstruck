@@ -81,6 +81,9 @@ Run the test. Then say plainly which happened:
 
 ## Scope
 
+This skill runs the project's tests because you asked, under Claude Code's
+permission prompts; it is not part of a scan, and nothing it produces feeds one.
+
 This skill writes tests. It does not fix the code. If the user wants the fix
 too, that is a separate request — diagnosis and remedy are kept apart on
 purpose, so the test stays an honest check rather than something shaped to

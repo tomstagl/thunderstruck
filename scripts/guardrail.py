@@ -42,7 +42,8 @@ EDGE_PHRASES = (("inbound", "Cited dependents of this component"),
 LEVELS = ("low", "medium", "high")
 CEILING = {"upheld": "high", "unchecked": "medium", "narrowed": "medium",
            "inconclusive": "medium", "refuted": "low"}
-GATE_ORDER = ("none", "non_default_setting")
+GATE_ORDER = ("none", "unconfirmed_default", "non_default_setting")
+_CONFIRMED = {"confirmed": ", which a check confirmed", "unconfirmed": ", which no check confirmed"}
 MAX_ITEMS_SHOWN = 3
 
 
@@ -72,7 +73,8 @@ def precondition_line(f: dict) -> str | None:
              for p in changed], ", ") + ".")
     if items:
         return ("It happens on default settings and rests on " + _capped(
-            [f"{p.get('setting')} at its default {p.get('default')}" for p in items], ", ") + ".")
+            [f"{p.get('setting')} at its default {p.get('default')}{_CONFIRMED.get(p.get('confirmation'), '')}"
+             for p in items], ", ") + ".")
     return "It happens on default settings."
 
 
