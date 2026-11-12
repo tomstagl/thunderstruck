@@ -81,6 +81,11 @@ guardrail.py  (PreToolUse hook) reads index.json, injects findings before an edi
 
 The investigator and the skeptic are the only inference in the system.
 
+No scan stage and not the guardrail runs, imports or builds the scanned
+project (the approved catalog command excepted); `tests/test_no_execution.py`
+holds every script and hook to that. `/thunderstruck-verify` runs a test only
+when the user asks.
+
 **The governing rule: models for judgment, scripts for anything that must be
 reproducible.** Detection, scoring, evidence checking and rendering never
 depend on model output format. If you find yourself needing an LLM to make the
@@ -139,6 +144,17 @@ Findings whose `preconditions` need a setting changed (`_common.finding_gate`)
 are listed after default-path findings and marked. Tightening a validator
 rule means bumping `VALIDATION_RULES`.
 
+**A default is confirmed only by a check.** `validate.py` writes each
+precondition's `confirmation` on every run from the fallback-read rule
+(`setting_reads` in the catalog, `_common.reads_with_fallback`); only a
+skeptic's item whose location resolves, names the setting, is not a fallback
+read and says `same` confirms one (`_common.confirm`, the one rule).
+`report.py` re-derives confirmations from stored facts; never read a stored
+state. `verify.settle` turns `upheld` into `inconclusive` when a
+`needs: default` precondition is unconfirmed. Only doubtful bases gate
+(`DOUBTFUL_BASES`); `not_checked` does not. Gates sort `none`,
+`unconfirmed_default`, `non_default_setting`.
+
 **Verdicts are resolved like findings.** `verify.settle` is the one place a
 check status is decided. A `refuted` or `narrowed` verdict with no resolving
 evidence is `inconclusive`, and a `dependency` ref resolves only into a
@@ -184,6 +200,10 @@ baseline tests on purpose.
 `catalog/stability.yaml` defines every pattern and detector. Adding a pattern
 should be a catalog entry plus sample files — if you are editing `signals.py`
 to add one, something is wrong.
+
+`setting_reads` (#57) follows the negative-control discipline too: every
+language in it needs a positive and a negative case in `READS`
+(`tests/test_confirmed_defaults.py`).
 
 Three detector kinds: `regex` (line match with a look-ahead/behind window),
 `file_absent` (anchor present *and* absent-regex matching nowhere, optionally

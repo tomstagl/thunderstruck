@@ -2027,9 +2027,9 @@ git commit -m "Confirmed defaults: carry confirmations into benchmark runs (#57)
 **Files:**
 - Modify: `README.md` (*Findings are falsifiable, and checked*; *Privacy*), `CLAUDE.md`, `skills/thunderstruck-scan/references/report-format.md`, `skills/thunderstruck-verify/SKILL.md` (one sentence), `CHANGELOG.md`, `pyproject.toml`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`
 
-- [ ] **Step 1: README.** Under *Findings are falsifiable, and checked*, a paragraph: every default a finding relies on is shown as confirmed or unconfirmed with why; a default stated at the line that reads the setting with a fallback argument is flagged mechanically, because a settings layer may hold another value; a finding resting on an unconfirmed default is never reported upheld; when the default is doubtful (stated at a fallback read, contradicted, not found, unresolved) the finding is listed after default-path findings, marked, and when it was merely not checked it keeps its place, marked "default unconfirmed". Under *Privacy*: thunderstruck never runs, imports, installs or builds the project it scans; it starts `git`, and the catalog command you approved by hash (even when that command is a script in the repository, it runs only as approved); its hooks start Python with `-S`.
+- [x] **Step 1: README.** Under *Findings are falsifiable, and checked*, a paragraph: every default a finding relies on is shown as confirmed or unconfirmed with why; a default stated at the line that reads the setting with a fallback argument is flagged mechanically, because a settings layer may hold another value; a finding resting on an unconfirmed default is never reported upheld; when the default is doubtful (stated at a fallback read, contradicted, not found, unresolved) the finding is listed after default-path findings, marked, and when it was merely not checked it keeps its place, marked "default unconfirmed". Under *Privacy*: thunderstruck never runs, imports, installs or builds the project it scans; it starts `git`, and the catalog command you approved by hash (even when that command is a script in the repository, it runs only as approved); its hooks start Python with `-S`.
 
-- [ ] **Step 2: CLAUDE.md.** In *Things that will bite you*, a paragraph:
+- [x] **Step 2: CLAUDE.md.** In *Things that will bite you*, a paragraph:
 
 ```markdown
 **A default is confirmed only by a check.** `validate.py` writes each
@@ -2045,11 +2045,11 @@ not. Gates sort `none`, `unconfirmed_default`, `non_default_setting`.
 
 In *The catalog is the source of truth*, one line: `setting_reads` patterns follow the negative-control discipline; every language needs a positive and a negative case in `READS`. In *Architecture*, after the pipeline diagram: "No scan stage and not the guardrail runs, imports or builds the scanned project (the approved catalog command excepted); `tests/test_no_execution.py` holds every script and hook to that. `/thunderstruck-verify` runs a test only when the user asks."
 
-- [ ] **Step 3: report-format.md.** Document `preconditions[].confirmation` (keys, states, bases), `check.confirmations[]` (keys, `precondition`, `default_url`), the verdict key `confirmations`, `counts.defaults`, the third gate and its marker, and `index.json`'s `confirmation`.
+- [x] **Step 3: report-format.md.** Document `preconditions[].confirmation` (keys, states, bases), `check.confirmations[]` (keys, `precondition`, `default_url`), the verdict key `confirmations`, `counts.defaults`, the third gate and its marker, and `index.json`'s `confirmation`.
 
-- [ ] **Step 4: thunderstruck-verify.** One sentence at the top of its *Scope*: "This skill runs the project's tests because you asked, under Claude Code's permission prompts; it is not part of a scan, and nothing it produces feeds one." (Product decision: the no-execution rule binds the scan pipeline and the edit guardrail, not this skill; spec §11.1.)
+- [x] **Step 4: thunderstruck-verify.** One sentence at the top of its *Scope*: "This skill runs the project's tests because you asked, under Claude Code's permission prompts; it is not part of a scan, and nothing it produces feeds one." (Product decision: the no-execution rule binds the scan pipeline and the edit guardrail, not this skill; spec §11.1.)
 
-- [ ] **Step 5: Version and CHANGELOG.** Bump the minor version in all four places (the next minor above `main`'s) and add under it:
+- [x] **Step 5: Version and CHANGELOG.** Bump the minor version in all four places (the next minor above `main`'s) and add under it:
 
 ```markdown
 ### Added
@@ -2063,7 +2063,7 @@ In *The catalog is the source of truth*, one line: `setting_reads` patterns foll
 - A test proves no scan stage runs, imports or builds the scanned project.
 ```
 
-- [ ] **Step 6: Verify everything.**
+- [x] **Step 6: Verify everything.**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/ -q; echo "exit=$?"
@@ -2076,7 +2076,7 @@ claude plugin list
 
 Expected: `exit=0`; both checks clean; validate clean; `claude plugin list` says `enabled`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add README.md CLAUDE.md skills/ CHANGELOG.md pyproject.toml .claude-plugin/

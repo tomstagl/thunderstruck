@@ -4,6 +4,21 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.14.0
+
+Defaults a finding relies on are confirmed or flagged, never assumed (#57).
+
+### Added
+
+- Every default a finding relies on is shown as confirmed or unconfirmed, with why (#57).
+  A default stated at a fallback argument where the setting is read is flagged
+  mechanically; the skeptic confirms a default only by citing where it is registered.
+- Findings resting on an unconfirmed default are never `upheld`, and are listed after
+  default-path findings when the default is doubtful (stated at a fallback read, contradicted,
+  not found or unresolved), marked "relies on a doubtful default"; an unchecked default
+  is marked "default unconfirmed" and keeps its place.
+- A test proves no scan stage runs, imports or builds the scanned project.
+
 ## 0.13.0
 
 Findings are refuted before they reach the report (#37).
