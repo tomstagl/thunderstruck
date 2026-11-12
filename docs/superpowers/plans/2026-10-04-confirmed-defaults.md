@@ -536,7 +536,7 @@ git commit -m "Confirmed defaults: recognise a default stated at a fallback read
 - Consumes: `Validator.check_ref(ref, where, errors, allow_dependency=False)` (#56, #37); `deps.DEP_REF`, `deps.resolve_dependency_ref`, `deps.snapshot_dir` (#37); `c.reads_with_fallback`, `c.confirm` (Tasks 1–2).
 - Produces: `Validator.fallback_read(ref, setting, allow_dependency: bool = False) -> bool | None`; `Validator.names_setting(ref, setting, allow_dependency: bool = False) -> bool | None` (spec §4.3; `None` when the ref does not resolve or the file is not text); every precondition of a passing document carries `confirmation = {"state", "basis", "reason", "call_site", "by": "validator"}`.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 3 -----------------------------------------------------------------
@@ -645,9 +645,9 @@ def test_names_setting_on_repository_refs(tmp_path):
     assert v.names_setting("backends/database.py:99", "x") is None
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** Expected: FAIL, `AttributeError: 'Validator' object has no attribute 'fallback_read'`, and the confirmation assertions.
+- [x] **Step 2: Run them to verify they fail.** Expected: FAIL, `AttributeError: 'Validator' object has no attribute 'fallback_read'`, and the confirmation assertions.
 
-- [ ] **Step 3: Write the implementation.** In `scripts/validate.py`:
+- [x] **Step 3: Write the implementation.** In `scripts/validate.py`:
 
 ```python
 # The keys an investigator may write, plus "confirmation", which validate.py
@@ -722,9 +722,9 @@ In `scripts/finding_shape.py`, in `shape(doc, entry)`, after it pops `OWNED_FIND
                 p.pop("confirmation", None)  # #57: never from a model
 ```
 
-- [ ] **Step 4: Run the tests and the full suite.** Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests and the full suite.** Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/validate.py scripts/finding_shape.py tests/test_confirmed_defaults.py tests/test_checked_confidence.py

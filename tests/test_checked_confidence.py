@@ -117,11 +117,14 @@ def test_complete_preconditions_pass(repo):
     ({"documented": True}, "documented True is not one of"),
     ({"documented": "yes"}, "preconditions[0].doc_ref must be one string"),
     ({"documented": "no", "doc_ref": "src/a.ts:2"}, 'doc_ref is only given when documented is "yes"'),
-    ({"confirmation": {"state": "confirmed"}}, "unknown key(s) ['confirmation']"),
 ])
 def test_each_precondition_rule(repo, over, fragment):
     errors = _errors(repo, _pre(**over))
     assert any(fragment in e for e in errors), errors
+
+
+def test_a_precondition_confirmation_is_accepted_then_replaced(repo):
+    assert not [e for e in _errors(repo, _pre(confirmation={"state": "confirmed"})) if "confirmation" in e]
 
 
 def test_a_setting_is_listed_once(repo):

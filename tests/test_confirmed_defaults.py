@@ -195,3 +195,113 @@ def test_names_setting(text, setting, lang, expected):
 def test_a_language_without_setting_reads_is_unknown():
     assert c.reads_with_fallback("x := os.Getenv(\"X\")\n", "X", "go", CATALOG) is None
     assert c.reads_with_fallback("x\n", "X", None, CATALOG) is None
+
+
+# --- Task 3 -----------------------------------------------------------------
+import validate  # noqa: E402
+
+
+def _git(repo: Path, *args: str) -> str:
+    return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True).stdout
+
+
+def _tiny_repo(tmp_path: Path, files: dict[str, str | bytes]) -> Path:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "t@example.com")
+    _git(repo, "config", "user.name", "T")
+    for rel, body in files.items():
+        p = repo / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(body) if isinstance(body, bytes) else p.write_text(body)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "init")
+    return repo
+
+
+CELERYISH = {
+    "backends/database.py": (
+        "class DatabaseBackend:\n"
+        "    def __init__(self, conf):\n"
+        "        # We maintain this behavior by default.\n"
+        "        self.always_retry = conf.get('result_backend_always_retry', True)\n"
+        "        self.max_retries = conf.get('result_backend_max_retries', 3)\n"),
+    "app/defaults.py": (
+        "NAMESPACES = dict(\n"
+        "    backend_always_retry=Option(False, type='bool'),\n"
+        "    backend_max_retries=Option(float('inf'), type='float'),\n"
+        ")\n"),
+    "conf/blob.properties": b"timeout=\xff\xfe\n",
+    "cmd/main.go": "package main\n",
+}
+
+
+def _validator(repo: Path) -> "validate.Validator":
+    return validate.Validator(repo, {"hotspots": []}, c.load_catalog())
+
+
+def test_fallback_read_on_repository_refs(tmp_path):
+    v = _validator(_tiny_repo(tmp_path, CELERYISH))
+    assert v.fallback_read("backends/database.py:4", "result_backend_always_retry") is True
+    assert v.fallback_read("backends/database.py:4-5", "result_backend_max_retries") is True
+    assert v.fallback_read("app/defaults.py:2", "result_backend_always_retry") is False
+    assert v.fallback_read("conf/blob.properties:1", "timeout") is None      # not UTF-8
+    assert v.fallback_read("cmd/main.go:1", "X") is None                     # no setting_reads for go
+    assert v.fallback_read("backends/database.py:99", "x") is None           # does not resolve
+
+
+def test_validate_writes_a_mechanical_confirmation_and_overwrites_a_claimed_one(validated_repo, validated_env):
+    out = validated_repo / ".thunderstruck"
+    path = next(p for p in sorted((out / "findings").glob("*.json"))
+                if any(f.get("preconditions") for f in json.loads(p.read_text())["findings"]))
+    doc = json.loads(path.read_text())
+    doc["findings"][0]["preconditions"][0]["confirmation"] = {"state": "confirmed", "basis": "registered"}
+    path.write_text(json.dumps(doc))
+    proc = subprocess.run([sys.executable, str(SCRIPTS / "validate.py"), "--repo", str(validated_repo)],
+                          capture_output=True, text=True, env=validated_env)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    pre = json.loads(path.read_text())["findings"][0]["preconditions"][0]
+    assert pre["confirmation"]["state"] == "unconfirmed"
+    assert pre["confirmation"]["by"] == "validator"
+    assert pre["confirmation"]["basis"] in ("call_site_fallback", "not_checked")
+    assert "call_site" in pre["confirmation"]
+
+
+def test_save_finding_strips_a_model_written_confirmation(validated_repo, validated_env, tmp_path):
+    out = validated_repo / ".thunderstruck"
+    path = next(p for p in sorted((out / "findings").glob("*.json"))
+                if any(f.get("preconditions") for f in json.loads(p.read_text())["findings"]))
+    doc = json.loads(path.read_text())
+    doc["findings"][0]["preconditions"][0]["confirmation"] = {"state": "confirmed"}
+    raw = tmp_path / "raw.json"
+    raw.write_text(json.dumps({"hotspot_id": doc["hotspot_id"], "findings": doc["findings"]}))
+    proc = subprocess.run([sys.executable, str(SCRIPTS / "save_finding.py"), "--repo", str(validated_repo),
+                           "--id", doc["hotspot_id"], "--from", str(raw)],
+                          capture_output=True, text=True, env=validated_env)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    saved = json.loads(path.read_text())
+    assert all("confirmation" not in p for f in saved["findings"] for p in f.get("preconditions") or [])
+
+
+def test_names_setting_on_repository_refs(tmp_path):
+    v = _validator(_tiny_repo(tmp_path, CELERYISH))
+    assert v.names_setting("app/defaults.py:2", "result_backend_always_retry") is True
+    assert v.names_setting("app/defaults.py:4", "result_backend_always_retry") is False
+    assert v.names_setting("backends/database.py:99", "x") is None
+
+
+def test_the_capture_hook_strips_a_model_written_confirmation(scanned_copy):
+    payloads = ROOT / "tests" / "fixtures" / "hook_payloads"
+    doc = json.loads((payloads / "valid.json").read_text())
+    message = json.loads(doc["last_assistant_message"])
+    message["findings"][0]["preconditions"] = [
+        {"setting": "S", "default": "1", "default_ref": "src/client/releases.ts:12", "needs": "default",
+         "documented": "no", "doc_ref": None, "confirmation": {"state": "confirmed"}}]
+    doc = {**doc, "cwd": str(scanned_copy), "last_assistant_message": json.dumps(message)}
+    proc = subprocess.run([sys.executable, str(SCRIPTS / "capture_finding.py")], input=json.dumps(doc),
+                          capture_output=True, text=True)
+    assert proc.returncode == 0
+    saved = json.loads((scanned_copy / ".thunderstruck" / "findings" / "H01.json").read_text())
+    pres = [p for f in saved["findings"] for p in f.get("preconditions") or []]
+    assert pres and all("confirmation" not in p for p in pres)

@@ -126,6 +126,9 @@ def shape(doc: dict, entry: dict) -> dict:
         if isinstance(f, dict):
             for owned in OWNED_FINDING_KEYS:
                 f.pop(owned, None)
+            for p in f.get("preconditions") or []:
+                if isinstance(p, dict):
+                    p.pop("confirmation", None)  # #57: never from a model
     return _stamp(doc, entry)
 
 
