@@ -275,6 +275,7 @@ New model-written strings are rendered inert everywhere (§6). Positions are int
 | A finding from before | "Not assessed" in every new section; counted nowhere in `counts.not_checked` |
 | An evidence position out of range in a hand-edited file | Not linked; the item's text is still shown |
 | A file whose lines cannot be read | An empty numbered block with `whole file, 0 lines`, as before |
+| An investigator that cannot satisfy the new rules after the one repair round | Its hotspot is Incomplete, as for any rule, and the report says so; nothing is retried |
 
 ## 13. Consumption
 
@@ -297,13 +298,25 @@ No model call is added. An investigator writes more fields per finding (not meas
 13. **Numbers are the file's, counted as `validate.py` counts, and count against the budget.** §7.
 14. **One regeneration.** The samples change once, in one task.
 
-## 15. Open design questions
+## 15. Extension points and open design questions
+
+### Extension points
+
+- **#108** reads §16 and renders it; it must not recompute states or counts.
+- **#99** (callees in the bundle, confidence capped on "did not read") can read `not_checked_states` and `check.not_checked`; this ticket made "did not read" structured, which those need.
+- **#103** (a recorded reproduction and fix simulation) adds its own keys to the finding or `check`; nothing here reserves them.
+- **#106** (lessons) may select by `fix_touches`, which is data in the catalog.
+- **A vocabulary for `removed_by`** is a later tightening: a rules bump, with the evaluation's counts as its evidence.
+- **A check that quoted code occurs in the cited lines** (deferred) can use the same positions: each is a resolved `code` item with a line range.
+
+### Open design questions
 
 None blocks the plan: it builds each recommendation, and the answer changes a constant or opens a follow-up.
 
 1. **Raise the skeptic's read cap for scans that resolve items?** Recommendation: no, until `counts.not_checked` from the #104 evaluation shows the resolved share.
 2. **Line numbers outside the Source block.** Detector leads and boundaries come from `c.read_text`, so a file with a lone `\r` (classic Mac line ends) is numbered differently from git. Recommendation: a follow-up ticket; changing it changes `hotspots.json` hits and every hotspot hash. A form feed or CRLF is not affected.
 3. **Should `S05` and `S12` join the gate?** Recommendation: no; one catalog line each if the maintainer disagrees.
+4. **Are two more required keys worth the repair rate?** Recommendation: keep them required, count Incomplete hotspots on the first scans, and make `not_checked` optional (a rules bump) if the repair round fails visibly more often than before.
 
 ## 16. Contract for #108
 
