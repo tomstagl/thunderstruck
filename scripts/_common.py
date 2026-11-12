@@ -636,6 +636,10 @@ CONFIRMATION_REASONS = {
 }
 
 
+# The one sentence every agent and the scan skill carry (#57 AC-5).
+NO_EXECUTION = "Never run, import, install or build the project you are analysing, or anything in it."
+
+
 def confirm(call_site, item: dict | None = None) -> dict:
     """The one confirmation rule (spec §3.2). `call_site` is the fallback-read
     rule applied to the stated location; `item` is a check's resolved item."""

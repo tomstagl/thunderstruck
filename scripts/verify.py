@@ -40,7 +40,8 @@ WITHHELD = ("confidence", "confidence_rationale", "notes", "history", "check")
 MAX_MESSAGES = 12
 MAX_MESSAGE_CHARS = 2000
 VERDICT_KEYS = ("key", "verdict", "reason", "holds", "refuted_claims", "evidence",
-                "dependencies_read", "duplicate_of")
+                "dependencies_read", "duplicate_of", "confirmations")
+CONFIRMATION_KEYS = ("setting", "claim", "stated_ref", "found", "default", "default_ref", "reason")
 REFUTED_CLAIM_KEYS = ("field", "claim", "fact", "evidence", "setting")
 SETTING_KEYS = ("setting", "default", "default_ref", "value")
 CODE_REF = re.compile(r"^(?P<path>[^:]+):(?P<start>[0-9]+)(?:-(?P<end>[0-9]+))?\Z")
@@ -157,6 +158,24 @@ def _block(title: str, text: str) -> list[str]:
     return [f"### {title}", "", f + "text", text, f, ""]
 
 
+def defaults_section(finding: dict) -> list[str]:
+    """Spec §6.2: each default to confirm, as written (in #37's fenced _block),
+    then one line written by the tool."""
+    items = [p for p in finding.get("preconditions") or [] if isinstance(p, dict)]
+    L = ["## Defaults to confirm", ""]
+    if not items:
+        return L + ["The finding lists no preconditions. If its claim rests on a default, "
+                    "confirm it as an unlisted default: quote the claim in `claim`.", ""]
+    for j, p in enumerate(items):
+        stated = "\n".join([f"setting: {p.get('setting')}", f"stated default: {p.get('default')}",
+                            f"stated at: {p.get('default_ref')}", f"needs: {p.get('needs')}"])
+        L += _block(f"default {j} (the investigator's words)", stated)
+        conf = p.get("confirmation") if isinstance(p.get("confirmation"), dict) else {}
+        said = {True: "yes", False: "no"}.get(conf.get("call_site"), "could not be read")
+        L += [f"Stated at a fallback read of this setting: {said}", ""]
+    return L
+
+
 def render_brief(finding: dict, others: list[dict], deps_index: dict | None,
                  messages: list[tuple[str, str]]) -> str:
     loc = finding.get("location") or {}
@@ -173,7 +192,10 @@ def render_brief(finding: dict, others: list[dict], deps_index: dict | None,
                   "blast_radius", "how_to_verify", "prediction"):
         if isinstance(finding.get(field), str) and finding[field].strip():
             L += _block(field, finding[field])
-    L += _block("preconditions", json.dumps(finding.get("preconditions") or [], indent=2, ensure_ascii=False))
+    shown = [{k: v for k, v in p.items() if k != "confirmation"} if isinstance(p, dict) else p
+             for p in finding.get("preconditions") or []]
+    L += _block("preconditions", json.dumps(shown, indent=2, ensure_ascii=False))
+    L += defaults_section(finding)
     L += ["## Evidence as cited (the investigator's)", ""]
     for i, ev in enumerate(finding.get("evidence") or []):
         L += _block(f"evidence[{i}]", json.dumps({k: ev.get(k) for k in ("type", "ref", "role", "note")

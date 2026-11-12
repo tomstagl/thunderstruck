@@ -747,7 +747,7 @@ git commit -m "Confirmed defaults: the validator states each default's mechanica
 - Consumes: #37's `render_brief(finding, others, deps_index, messages)`, `VERDICT_KEYS`.
 - Produces: `verify.VERDICT_KEYS` ending in `"confirmations"`; `verify.CONFIRMATION_KEYS = ("setting", "claim", "stated_ref", "found", "default", "default_ref", "reason")`; `verify.defaults_section(finding: dict) -> list[str]`; `NO_EXECUTION = "Never run, import, install or build the project you are analysing, or anything in it."` in `_common`.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 4 -----------------------------------------------------------------
@@ -803,9 +803,9 @@ def test_the_skeptic_prompt_says_how_to_confirm_a_default(needle):
     assert needle in SKEPTIC
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** Expected: FAIL (`VERDICT_KEYS[-1]`, `defaults_section`, `NO_EXECUTION`).
+- [x] **Step 2: Run them to verify they fail.** Expected: FAIL (`VERDICT_KEYS[-1]`, `defaults_section`, `NO_EXECUTION`).
 
-- [ ] **Step 3: Write the implementation.** In `scripts/_common.py`, beside the confirmation vocabulary:
+- [x] **Step 3: Write the implementation.** In `scripts/_common.py`, beside the confirmation vocabulary:
 
 ```python
 # The one sentence every agent and the scan skill carry (#57 AC-5).
@@ -873,9 +873,9 @@ N. **Confirm every default the claim rests on.** For each setting under
 
 In `tests/test_skeptic_contract.py`, the pinned `VERDICT_KEYS` gains `"confirmations"`.
 
-- [ ] **Step 4: Run the tests and the full suite.** #37's brief-determinism test must still pass. Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests and the full suite.** #37's brief-determinism test must still pass. Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/_common.py scripts/verify.py agents/thunderstruck-skeptic.md tests/test_skeptic_contract.py tests/test_confirmed_defaults.py
