@@ -705,6 +705,42 @@ def unconfirmed_defaults(finding: dict) -> list[dict]:
     return out
 
 
+_SETTING_NAME = re.compile(r"[\w.\-:/\[\]@]+")
+
+
+def names_setting(text: str, setting, lang: str | None) -> bool:
+    """Spec §4.3: the text (comments blanked when the language is known) contains
+    the setting's name or a `_`/`.`-delimited suffix of it of two or more segments."""
+    name = setting.strip() if isinstance(setting, str) else ""
+    if not name or not _SETTING_NAME.fullmatch(name):
+        return False
+    body = (strip_comments(text, lang) if lang else text).casefold()
+    parts = re.split(r"[_.]", name.casefold())
+    seps = re.findall(r"[_.]", name)
+    candidates = {name.casefold()}
+    for i in range(1, len(parts) - 1):
+        candidates.add("".join(parts[j] + (seps[j] if j < len(seps) else "") for j in range(i, len(parts))))
+    return any(cand and cand in body for cand in candidates)
+
+
+def reads_with_fallback(text: str, setting, lang: str | None, catalog: dict) -> bool | None:
+    """True when `text` reads `setting` and supplies its own fallback at that read
+    (spec §4). None when the language has no setting_reads patterns."""
+    reads = catalog.get("setting_reads") or {}
+    if not lang:
+        return None
+    patterns = reads.get(lang) or reads.get(detector_language(catalog, lang))
+    if not patterns:
+        return None
+    name = setting.strip() if isinstance(setting, str) else ""
+    if not name or not _SETTING_NAME.fullmatch(name):
+        return False
+    body = strip_comments(text, lang)
+    escaped = re.escape(name)
+    return any(re.search(p.replace("{setting}", escaped), body, re.IGNORECASE | re.MULTILINE)
+               for p in patterns)
+
+
 # Product decision (#57): only these move a finding behind the default-path ones.
 DOUBTFUL_BASES = ("call_site_fallback", "contradicted", "not_found", "unresolved")
 DEFAULT_UNCONFIRMED_MARKER = "default unconfirmed"

@@ -112,3 +112,86 @@ def test_unconfirmed_defaults_counts_needs_default_and_unlisted_only():
 ])
 def test_finding_gate_has_three_gates_in_precedence(finding, gate):
     assert c.finding_gate(finding) == gate
+
+
+# --- Task 2 -----------------------------------------------------------------
+CATALOG = c.load_catalog()
+
+# (language, text, setting, expected). Positives first per language, then the
+# negative controls of spec §4.2.
+READS = [
+    ("python", "        self.always_retry = conf.get('result_backend_always_retry', True)\n",
+     "result_backend_always_retry", True),
+    ("python", "        self.max_retries = conf.get('result_backend_max_retries', 3)\n",
+     "result_backend_max_retries", True),
+    ("python", "x = conf.get(\n    'result_backend_always_retry',\n    True)\n", "result_backend_always_retry", True),
+    ("python", "max_retries = kwargs.pop('max_retries', 3)\n", "max_retries", True),
+    ("python", "t = getattr(settings, 'HTTP_TIMEOUT', 30)\n", "HTTP_TIMEOUT", True),
+    ("python", "t = os.getenv('HTTP_TIMEOUT', '30')\n", "HTTP_TIMEOUT", True),
+    ("python", "t = os.environ.get(\"HTTP_TIMEOUT\", \"30\")\n", "http_timeout", True),
+    ("python", "    backend_always_retry=Option(False, type='bool'),\n", "backend_always_retry", False),
+    ("python", "DEFAULTS = {'max_retries': 3}\n", "max_retries", False),
+    ("python", "x = conf.result_backend_always_retry\n", "result_backend_always_retry", False),
+    ("python", "x = conf.get('result_backend_always_retry')\n", "result_backend_always_retry", False),
+    ("python", "x = conf.get('other_setting', True)\n", "result_backend_always_retry", False),
+    ("python", "# x = conf.get('result_backend_always_retry', True)\n", "result_backend_always_retry", False),
+    ("python", "parser.add_argument('--timeout', default=30)\n", "timeout", False),
+    ("typescript", "const PAGE_SIZE = get<number>(\"sync.pageSize\", 100);\n", "sync.pageSize", True),
+    ("typescript", "const n = config.get('sync.pageSize', 100);\n", "sync.pageSize", True),
+    ("typescript", "const t = process.env.TIMEOUT_MS ?? 30000;\n", "TIMEOUT_MS", True),
+    ("typescript", "const t = process.env[\"TIMEOUT_MS\"] || \"30000\";\n", "TIMEOUT_MS", True),
+    ("typescript", "const REGISTERED = { \"sync.pageSize\": 500 };\n", "sync.pageSize", False),
+    ("typescript", "const on = process.env.API_RETRY_ON_429 === \"true\";\n", "API_RETRY_ON_429", False),
+    ("typescript", "// const n = config.get('sync.pageSize', 100);\n", "sync.pageSize", False),
+    ("java", "String t = props.getProperty(\"http.timeout\", \"30\");\n", "http.timeout", True),
+    ("java", "@Value(\"${http.timeout:30}\") private int timeout;\n", "http.timeout", True),
+    ("java", "int n = map.getOrDefault(\"pool.size\", 10);\n", "pool.size", True),
+    ("java", "private Duration timeout = Duration.ofSeconds(30);\n", "timeout", False),
+    ("java", "String t = System.getenv(\"HTTP_TIMEOUT\");\n", "HTTP_TIMEOUT", False),
+    ("yaml", "timeout: ${http.timeout:30}\n", "http.timeout", True),
+    ("yaml", "http:\n  timeout: 30\n", "http.timeout", False),
+    ("properties", "client.timeout=${http.timeout:30}\n", "http.timeout", True),
+    ("properties", "http.timeout=30\n", "http.timeout", False),
+]
+
+
+@pytest.mark.parametrize("lang, text, setting, expected", READS)
+def test_fallback_reads(lang, text, setting, expected):
+    assert c.reads_with_fallback(text, setting, lang, CATALOG) is expected
+
+
+def test_javascript_uses_the_typescript_patterns():
+    assert c.reads_with_fallback("const t = process.env.T ?? 5;\n", "T", "javascript", CATALOG) is True
+
+
+def test_every_language_with_setting_reads_has_both_polarities():
+    langs = set(CATALOG["setting_reads"])
+    for lang in langs:
+        polarities = {exp for lg, _, _, exp in READS if lg == lang}
+        assert polarities == {True, False}, f"{lang} needs a positive and a negative case"
+
+
+@pytest.mark.parametrize("setting", ["max_retries (database backend)", "a.b*c", "x)(", "", "   "])
+def test_a_name_that_is_prose_or_regex_never_matches_and_never_raises(setting):
+    assert c.reads_with_fallback("x = conf.get('a.b*c', 1)\n", setting, "python", CATALOG) in (False,)
+
+
+@pytest.mark.parametrize("text, setting, lang, expected", [
+    ("x = conf.get('result_backend_always_retry', True)\n", "result_backend_always_retry", "python", True),
+    ("    backend_always_retry=Option(False, type='bool'),\n", "result_backend_always_retry", "python", True),
+    ("        socket_connect_timeout=None,\n", "redis_socket_connect_timeout", "python", True),
+    ("    retry=Option(False),\n", "result_backend_always_retry", "python", False),  # one segment
+    ("TIMEOUT = 30\n", "TIMEOUT", "python", True),
+    ("x = 1  # result_backend_always_retry\n", "result_backend_always_retry", "python", False),
+    ('  "sync.pageSize": 500,\n', "sync.pageSize", "typescript", True),
+    ("const x = 1;\n", "sync.pageSize", "typescript", False),
+    ("pool.size=10\n", "pool.size", None, True),
+    ("anything\n", "max_retries (database backend)", "python", False),
+])
+def test_names_setting(text, setting, lang, expected):
+    assert c.names_setting(text, setting, lang) is expected
+
+
+def test_a_language_without_setting_reads_is_unknown():
+    assert c.reads_with_fallback("x := os.Getenv(\"X\")\n", "X", "go", CATALOG) is None
+    assert c.reads_with_fallback("x\n", "X", None, CATALOG) is None

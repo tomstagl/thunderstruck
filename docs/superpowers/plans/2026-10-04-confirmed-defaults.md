@@ -356,7 +356,7 @@ git commit -m "Confirmed defaults: the confirmation rule and the third gate (#57
 - Consumes: `c.strip_comments(text, lang)`, `c.detector_language(catalog, lang)`, `c.load_catalog()`.
 - Produces: `c.reads_with_fallback(text: str, setting: str, lang: str | None, catalog: dict) -> bool | None` (`None` when the language has no `setting_reads` entry); `c.names_setting(text: str, setting: str, lang: str | None) -> bool` (spec §4.3); catalog key `setting_reads: {language: [pattern, …]}`.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 2 -----------------------------------------------------------------
@@ -444,9 +444,9 @@ def test_a_language_without_setting_reads_is_unknown():
 
 The regex-metacharacter row expects `False` for `"a.b*c"` although the text contains it literally: a name with `*` is not a setting name the patterns accept. Implement that by refusing names outside `[\w.\-:/\[\]@]+`.
 
-- [ ] **Step 2: Run them to verify they fail.** Expected: FAIL, `KeyError: 'setting_reads'` / `AttributeError`.
+- [x] **Step 2: Run them to verify they fail.** Expected: FAIL, `KeyError: 'setting_reads'` / `AttributeError`.
 
-- [ ] **Step 3: Write the implementation.** In `catalog/stability.yaml`, after the `aliases:` block:
+- [x] **Step 3: Write the implementation.** In `catalog/stability.yaml`, after the `aliases:` block:
 
 ```yaml
 # Reads of a setting that supply their own fallback (#57). A default stated at
@@ -511,9 +511,9 @@ def reads_with_fallback(text: str, setting, lang: str | None, catalog: dict) -> 
                for p in patterns)
 ```
 
-- [ ] **Step 4: Run the tests and the full suite** (including `gen_catalog_docs.py --check`, which must stay clean: the generator renders `patterns` and `tier_c` only). Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests and the full suite** (including `gen_catalog_docs.py --check`, which must stay clean: the generator renders `patterns` and `tier_c` only). Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add catalog/stability.yaml scripts/_common.py tests/test_confirmed_defaults.py
