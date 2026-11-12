@@ -458,3 +458,54 @@ def test_claim_hash_ignores_confirmation_and_the_registry_is_in_the_ledger(valid
     _apply(validated_repo, validated_env)
     ledger = json.loads((validated_repo / ".thunderstruck" / "checks" / "ledger.json").read_text())["entries"]
     assert "src/config/settings.ts" in ledger[e["key"]]["files"]
+
+
+# --- Task 6 -----------------------------------------------------------------
+FR015_LIKE = {
+    "key": "6345778fa223", "location": {"file": "backends/database.py", "lines": "4-5"},
+    "missing_patterns": ["S04"],
+    "failure_mode": "Workers retry every DatabaseError and dispose the pool before each retry.",
+    "trigger_condition": "The database returns errors.",
+    "amplifier": "Every DatabaseError is treated as retryable. always_retry defaults to True with 3 retries.",
+    "blast_radius": "Result storage.", "how_to_verify": "Run a burst.",
+    "evidence": [{"type": "code", "ref": "backends/database.py:4-5",
+                  "note": "always_retry is on by default with 3 retries"}],
+    "confidence": "medium", "confidence_rationale": "-",
+}
+
+
+def _settle(repo: Path, verdict: dict) -> dict:
+    plan = {"generated_at": "t", "head": "h", "model": "sonnet",
+            "findings": [{"key": FR015_LIKE["key"], "action": "check", "brief_hash": "b"}]}
+    result = {**verdict, "key": FR015_LIKE["key"], "brief_hash": "b", "scan": "t"}
+    return verify.settle(FR015_LIKE, plan["findings"][0], result, verify.Resolver(repo, None), plan, None)
+
+
+def _conf015(found: str, default: str, ref: str) -> dict:
+    return {"setting": "result_backend_always_retry", "claim": "always_retry defaults to True with 3 retries",
+            "stated_ref": "backends/database.py:4-5", "found": found, "default": default,
+            "default_ref": ref, "reason": "r"}
+
+
+def test_refuter_a_upholds_from_the_fallback_line_and_cannot(tmp_path):
+    repo = _tiny_repo(tmp_path, CELERYISH)
+    check = _settle(repo, {"verdict": "upheld", "reason": "Retries are on by default.", "evidence": [],
+                           "confirmations": [_conf015("same", "True", "backends/database.py:4")]})
+    assert check["status"] == "inconclusive"
+    [item] = check["confirmations"]
+    assert item["stated_call_site"] is True and item["default_call_site"] is True
+    assert (item["confirmation"]["state"], item["confirmation"]["basis"]) == ("unconfirmed", "call_site_fallback")
+
+
+def test_refuter_b_cites_the_registry_and_contradicts(tmp_path):
+    repo = _tiny_repo(tmp_path, CELERYISH)
+    check = _settle(repo, {
+        "verdict": "narrowed", "reason": "No retries on defaults.",
+        "holds": "Every DatabaseError is classified retryable when a user opts in.",
+        "refuted_claims": [{"field": "amplifier", "claim": "always_retry defaults to True with 3 retries",
+                            "fact": "The registered default is False.", "evidence": [0]}],
+        "evidence": [{"type": "code", "ref": "app/defaults.py:2", "note": "registered False"}],
+        "confirmations": [_conf015("different", "False", "app/defaults.py:2")]})
+    assert check["status"] == "narrowed"
+    [item] = check["confirmations"]
+    assert (item["default"], item["confirmation"]["basis"]) == ("False", "contradicted")

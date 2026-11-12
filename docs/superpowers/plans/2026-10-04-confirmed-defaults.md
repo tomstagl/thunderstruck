@@ -1164,7 +1164,7 @@ git commit -m "Confirmed defaults: settle each confirmation; no upheld on an unc
 **Interfaces:**
 - Consumes: `verify.settle`, `verify.Resolver` (#37, Task 5); `_tiny_repo`, `CELERYISH` (Task 3).
 
-- [ ] **Step 1: Write the test.** Append:
+- [x] **Step 1: Write the test.** Append:
 
 ```python
 # --- Task 6 -----------------------------------------------------------------
@@ -1218,9 +1218,9 @@ def test_refuter_b_cites_the_registry_and_contradicts(tmp_path):
     assert (item["default"], item["confirmation"]["basis"]) == ("False", "contradicted")
 ```
 
-- [ ] **Step 2: Run it.** Expected: PASS on the first run, since Tasks 3–5 implement the rule; if it fails, the failure is in those tasks, fixed there.
+- [x] **Step 2: Run it.** Expected: PASS on the first run, since Tasks 3–5 implement the rule; if it fails, the failure is in those tasks, fixed there.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add tests/test_confirmed_defaults.py
