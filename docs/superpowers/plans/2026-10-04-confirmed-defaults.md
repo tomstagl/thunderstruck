@@ -1815,7 +1815,7 @@ git commit -m "Confirmed defaults: prove that no stage runs the scanned project 
 - Consumes: `gen_sample_report.CANNED_VERDICTS`, `build_validated` (#37); `_line_of(repo, rel, anchor)`.
 - Produces: fixture files `src/config/settings.ts` and the page-size read in `src/sync/collection.ts`.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 12 ----------------------------------------------------------------
@@ -1841,9 +1841,9 @@ def test_the_unconfirmed_default_finding_is_listed_after_default_path_ones():
     assert rank[collection] == 1
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** Expected: FAIL (the sample has none of it yet).
+- [x] **Step 2: Run them to verify they fail.** Expected: FAIL (the sample has none of it yet).
 
-- [ ] **Step 3: The fixture** (already made in Task 5; check it is as below). In `tests/fixtures/build_fixture.py`:
+- [x] **Step 3: The fixture** (already made in Task 5; check it is as below). In `tests/fixtures/build_fixture.py`:
 
 ```python
 SETTINGS_REGISTRY = '''\
@@ -1861,7 +1861,7 @@ export function get<T>(key: string, fallback: T): T {
 
 `UNCHECKPOINTED_SYNC` gains, after its first import, `import { get } from "../config/settings";`, a line `const PAGE_SIZE = get<number>("sync.pageSize", 100);` before `syncCollection`, and the page fetch passes it: `fetchCollectionPage(userId, page, PAGE_SIZE)`. Add `("src/config/settings.ts", SETTINGS_REGISTRY)` to `FILES`, and one `HISTORY` entry `("feat: page size from settings", ["src/config/settings.ts", "src/sync/collection.ts"])` placed before the entries from #56/#37 that later touch `collection.ts`, so S07 still fires and the collection file stays a hotspot. Run `uv run --with pytest --with pyyaml --with lizard pytest tests/test_pipeline.py -q` and adjust only counts that the new file changes.
 
-- [ ] **Step 4: The canned findings and verdicts** (already made in Task 5; check them). In `scripts/gen_sample_report.py`, the canned collection finding gains:
+- [x] **Step 4: The canned findings and verdicts** (already made in Task 5; check them). In `scripts/gen_sample_report.py`, the canned collection finding gains:
 
 ```python
 "preconditions": [{"setting": "sync.pageSize", "default": "100",
@@ -1879,7 +1879,7 @@ and its `failure_mode` or `trigger_condition` says the restart re-fetches pages 
 
 `expect` is the generator's, not the contract's: #37's generator fails (`SystemExit` naming the key) when a canned verdict settles to a status other than its `verdict`; change that guard to compare against `entry.get("expect", entry["verdict"])`, and pop `expect` before the verdict is saved (an unknown top-level key would make `apply` leave it `unchecked`). With `{registry_line}` filled by `_line_of(repo, "src/config/settings.ts", '"sync.pageSize": 500')` where the verdict is saved. The api.ts verdict (`narrowed`) gains a confirmation of `API_RETRY_ON_429`: `found: same`, `default: "false (unset)"`, `default_ref` = the canned precondition's `default_ref`, reason "Unset means false; nothing else registers it."
 
-- [ ] **Step 5: Regenerate and run everything.**
+- [x] **Step 5: Regenerate and run everything.**
 
 ```bash
 uv run scripts/gen_sample_report.py
@@ -1888,7 +1888,7 @@ uv run scripts/gen_sample_report.py --check
 
 Then the full suite. Expected: `--check` clean; PASS, `exit=0`. Read the regenerated `examples/sample-report.md` once: the collection finding is `inconclusive` with the reason naming `sync.pageSize`, marked, listed after the default-path findings and before the api.ts finding; its Preconditions line shows both `100` and `500` with their locations; api.ts shows **Confirmed**.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add tests/fixtures/build_fixture.py scripts/gen_sample_report.py examples/ tests/

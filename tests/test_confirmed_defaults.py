@@ -622,3 +622,26 @@ def test_guardrail_states_the_confirmation(state, phrase):
 def test_guardrail_says_nothing_about_confirmation_for_an_older_index():
     f = {"check_status": "unchecked", "preconditions": [{"setting": "s", "default": "1", "needs": "default"}]}
     assert guardrail.precondition_line(f) == "It happens on default settings and rests on s at its default 1."
+
+
+# --- Task 12 ----------------------------------------------------------------
+SAMPLE = (ROOT / "examples" / "sample-report.md").read_text
+
+
+def test_the_sample_shows_confirmed_contradicted_and_call_site_defaults():
+    text = SAMPLE()
+    assert "**Confirmed**" in text
+    assert "a check found a different default registered" in text
+    assert "relies on a doubtful default" in text
+    assert "rests on a default no one confirmed: `sync.pageSize`" in text  # md.text code-spans the name
+    assert "Defaults: " in text
+
+
+def test_the_unconfirmed_default_finding_is_listed_after_default_path_ones():
+    """Badge lines in finding order: no marker, then the doubtful default, then the setting."""
+    badges = [l for l in SAMPLE().splitlines() if l.startswith("**") and " confidence** · " in l]
+    rank = [2 if c.GATE_MARKERS["non_default_setting"] in l
+            else 1 if c.GATE_MARKERS["unconfirmed_default"] in l else 0 for l in badges]
+    assert rank == sorted(rank) and 1 in rank and 2 in rank
+    collection = next(i for i, l in enumerate(badges) if "collection.ts" in l)
+    assert rank[collection] == 1
