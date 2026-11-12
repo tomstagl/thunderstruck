@@ -509,3 +509,57 @@ def test_refuter_b_cites_the_registry_and_contradicts(tmp_path):
     assert check["status"] == "narrowed"
     [item] = check["confirmations"]
     assert (item["default"], item["confirmation"]["basis"]) == ("False", "contradicted")
+
+
+# --- Task 7 -----------------------------------------------------------------
+import report  # noqa: E402
+
+
+def _report(repo: Path, env: dict) -> dict:
+    proc = subprocess.run([sys.executable, str(SCRIPTS / "report.py"), "--repo", str(repo)],
+                          capture_output=True, text=True, env=env)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    return json.loads((repo / ".thunderstruck" / "report.json").read_text())
+
+
+def test_without_verification_confirmations_are_mechanical_only(validated_repo, validated_env, tmp_path):
+    """Review focus 3: findings files still carry an earlier skeptic's confirmations."""
+    plan, e = _collection(validated_repo, validated_env)
+    api = _entry(plan, "api.ts")
+    pre = _finding(validated_repo, api["key"])["preconditions"][0]
+    _save(validated_repo, validated_env, tmp_path, _v(api["key"], "upheld", confirmations=[
+        _conf(setting=pre["setting"], default=pre["default"], default_ref=pre["default_ref"])]))
+    _apply(validated_repo, validated_env)
+    (validated_repo / ".thunderstruck" / "checks" / "run.json").unlink()  # this scan did not verify
+    data = _report(validated_repo, validated_env)
+    bases = {p["confirmation"]["basis"] for f in data["findings"] for p in f.get("preconditions") or []}
+    assert bases <= {"call_site_fallback", "not_checked"}
+    assert data["counts"]["defaults"]["confirmed"] == 0
+
+
+def test_the_report_orders_three_gates_and_counts_defaults(validated_repo, validated_env):
+    data = _report(validated_repo, validated_env)
+    gates = [f["gate"] for f in data["findings"]]
+    assert gates == sorted(gates, key=c.GATES.index)
+    assert set(data["counts"]["gate"]) == set(c.GATES)
+    d = data["counts"]["defaults"]
+    assert set(d["basis"]) == set(c.CONFIRMATION_BASES)
+    assert d["confirmed"] + d["unconfirmed"] == sum(d["basis"].values())
+    index = json.loads((validated_repo / ".thunderstruck" / "index.json").read_text())
+    pres = [p for entry in index["files"].values() for f in entry["findings"] for p in f.get("preconditions") or []]
+    assert pres and all(p["confirmation"] in c.CONFIRMATION_STATES for p in pres)
+
+
+def test_a_contradicted_default_keeps_both_with_their_locations(validated_repo, validated_env, tmp_path):
+    plan, e = _collection(validated_repo, validated_env)
+    reg = _line(validated_repo, "src/config/settings.ts", "\"sync.pageSize\": 500")
+    _save(validated_repo, validated_env, tmp_path, _v(e["key"], "upheld", confirmations=[
+        _conf(found="different", default="500", default_ref=f"src/config/settings.ts:{reg}")]))
+    _apply(validated_repo, validated_env)
+    data = _report(validated_repo, validated_env)
+    f = next(x for x in data["findings"] if x["key"] == e["key"])
+    p = f["preconditions"][0]
+    [item] = f["check"]["confirmations"]
+    assert (p["default"], p["default_ref"]) != (item["default"], item["default_ref"])
+    assert item["default_url"] is None or "settings.ts" in item["default_url"]
+    assert f["gate"] == "unconfirmed_default"

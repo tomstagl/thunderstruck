@@ -161,6 +161,11 @@ def collect(repo: Path) -> dict[str, Any]:
             f["check"] = {"by": None, "reason": None, **stored, "status": status}
             f["confidence_claimed"] = f.get("confidence")
             f["confidence"] = c.effective_confidence(f["confidence_claimed"], status)
+            # #57: confirmations derived from stored facts, never a stored state
+            derived = c.with_confirmations(f, (f.get("check") or {}).get("confirmations"))
+            f["preconditions"] = derived["preconditions"]
+            if "confirmations" in f["check"]:  # an unchecked check carries none
+                f["check"] = derived["check"]
             f["gate"] = c.finding_gate(f)
             findings.append(f)
 
@@ -441,6 +446,10 @@ def _set_urls(findings: list[dict], result: "links.LinkResult | None", repo: Pat
                          if ctx and ev.get("type") in ("code", "commit") else None)
         for s in _check_settings(check):
             s["default_url"] = _ref_url(ctx, s.get("default_ref"))
+        for it in check.get("confirmations") or []:
+            if isinstance(it, dict):
+                it["default_url"] = _ref_url(ctx, it.get("default_ref"))
+                it["stated_url"] = _ref_url(ctx, it.get("stated_ref"))
         for at in f.get("also_at") or []:
             at["url"] = _location_url(ctx, at["location"], repo) if ctx else None
 
@@ -1097,6 +1106,20 @@ def _hotspot_link(data: dict, hid: str, key: str) -> str | None:
     return ((data.get("hotspot_links") or {}).get(hid) or {}).get(key)
 
 
+def defaults_counts(findings: list[dict]) -> dict:
+    """counts.defaults: every listed precondition and unlisted item of the reported findings."""
+    basis = {b: 0 for b in c.CONFIRMATION_BASES}
+    for f in findings:
+        confs = [p.get("confirmation") for p in _preconditions(f)]
+        confs += [it.get("confirmation") for it in (f.get("check") or {}).get("confirmations") or []
+                  if isinstance(it, dict) and it.get("precondition") is None]
+        for conf in confs:
+            b = conf.get("basis") if isinstance(conf, dict) else None
+            basis[b if b in basis else "not_checked"] += 1
+    return {"confirmed": basis["registered"], "unconfirmed": sum(basis.values()) - basis["registered"],
+            "basis": basis}
+
+
 def render_json(data: dict) -> dict:
     hs = data["hotspots"]
     cited_by = clean_cited_by(data["findings"])
@@ -1119,6 +1142,7 @@ def render_json(data: dict) -> dict:
             "refuted": len(data["refuted"]),
             "duplicates_merged": data["duplicates_merged"],
             "gate": {g: sum(1 for f in data["findings"] if f["gate"] == g) for g in c.GATES},
+            "defaults": defaults_counts(data["findings"]),
         },
         "warnings": list(hs.get("warnings") or []) + list(data.get("link_warnings") or []),
         "run_warnings": run_warnings(data),
@@ -1175,7 +1199,8 @@ def render_index(data: dict) -> dict:
             "confidence": f.get("confidence"),
             "check_status": f["check"]["status"],
             "gate": f["gate"],
-            "preconditions": [{k: p.get(k) for k in ("setting", "default", "needs", "value")}
+            "preconditions": [{**{k: p.get(k) for k in ("setting", "default", "needs", "value")},
+                               "confirmation": c.confirmation_state(p.get("confirmation"))}
                               for p in _preconditions(f)],
             "history": [{k: h.get(k) for k in ("sha", "class", "wrote_cited_line")}
                         for h in _history(f)],

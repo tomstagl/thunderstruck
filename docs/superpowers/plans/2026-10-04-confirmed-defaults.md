@@ -1241,7 +1241,7 @@ git commit -m "Confirmed defaults: replay Spike 2's disagreement on Celery's sha
 - Consumes: `c.with_confirmations`, `c.finding_gate` (Task 1); #37's verification-ran decision in `collect()`; #56's `order_key`, `_ref_url`.
 - Produces: each finding in `collect()`'s data carries derived `preconditions[].confirmation` and `check.confirmations[]` (each with `confirmation` and `default_url`); `report.defaults_counts(findings: list[dict]) -> dict` (`{"confirmed", "unconfirmed", "basis": {…}}`); `report.json` `counts.defaults`, `counts.gate` with three keys; `index.json` precondition entries with `confirmation`.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 7 -----------------------------------------------------------------
@@ -1300,9 +1300,9 @@ def test_a_contradicted_default_keeps_both_with_their_locations(validated_repo, 
 
 If `index.json`'s shape on `main` is not `{"files": {path: {"findings": [...]}}}`, read its entries the way `tests/test_checked_confidence.py`'s Task 3 tests do.
 
-- [ ] **Step 2: Run them to verify they fail.** Expected: FAIL (`KeyError: 'defaults'`, confirmations not derived).
+- [x] **Step 2: Run them to verify they fail.** Expected: FAIL (`KeyError: 'defaults'`, confirmations not derived).
 
-- [ ] **Step 3: Write the implementation.** In `scripts/report.py`'s `collect()`, after #37 has set `f["check"]` (the stored check when verification ran for this scan, the reset `unchecked` one otherwise) and **before** `f["gate"] = c.finding_gate(f)`:
+- [x] **Step 3: Write the implementation.** In `scripts/report.py`'s `collect()`, after #37 has set `f["check"]` (the stored check when verification ran for this scan, the reset `unchecked` one otherwise) and **before** `f["gate"] = c.finding_gate(f)`:
 
 ```python
             derived = c.with_confirmations(f, (f.get("check") or {}).get("confirmations"))
@@ -1332,9 +1332,9 @@ def defaults_counts(findings: list[dict]) -> dict:
 
 In `render_json`, `counts["defaults"] = defaults_counts(findings)`; `counts["gate"]` is built from `c.GATES` (it already is, per #56; confirm it lists all three keys with zeros). In `render_index`, each precondition entry gains `"confirmation": c.confirmation_state(p.get("confirmation"))`.
 
-- [ ] **Step 4: Run the tests and the full suite.** Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests and the full suite.** Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/report.py tests/test_confirmed_defaults.py
