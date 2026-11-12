@@ -563,3 +563,40 @@ def test_a_contradicted_default_keeps_both_with_their_locations(validated_repo, 
     assert (p["default"], p["default_ref"]) != (item["default"], item["default_ref"])
     assert item["default_url"] is None or "settings.ts" in item["default_url"]
     assert f["gate"] == "unconfirmed_default"
+
+
+# --- Task 8 -----------------------------------------------------------------
+def _md(repo: Path, env: dict) -> str:
+    _report(repo, env)
+    return (repo / ".thunderstruck" / "report.md").read_text()
+
+
+def test_report_md_states_every_default_and_shows_both_when_they_differ(validated_repo, validated_env, tmp_path):
+    plan, e = _collection(validated_repo, validated_env)
+    reg = _line(validated_repo, "src/config/settings.ts", "\"sync.pageSize\": 500")
+    _save(validated_repo, validated_env, tmp_path, _v(e["key"], "upheld", confirmations=[
+        _conf(found="different", default="500", default_ref=f"src/config/settings.ts:{reg}",
+              reason="The registry holds 500.")]))
+    _apply(validated_repo, validated_env)
+    text = _md(validated_repo, validated_env)
+    assert text.count("**Unconfirmed**") + text.count("**Confirmed**") >= 1
+    assert "a check found a different default registered: `500` at" in text
+    assert "relies on a doubtful default" in text
+    assert "Check's note: “The registry holds 500.”" in text
+    assert text.startswith("#") and "Defaults: " in text
+
+
+def test_defaults_line_counts_bases():
+    data = {"findings": [], "counts": {"defaults": {"confirmed": 1, "unconfirmed": 3, "basis": {
+        "registered": 1, "contradicted": 1, "call_site_fallback": 2, "not_found": 0, "unresolved": 0,
+        "not_checked": 0}}, "gate": {"none": 1, "unconfirmed_default": 2, "non_default_setting": 0}}}
+    assert report.defaults_line(data) == (
+        "Defaults: 1 confirmed · 3 unconfirmed (2 stated where the setting is read, 1 contradicted by a check)"
+        " · 2 findings rely on a doubtful default and are listed after default-path findings")
+    assert report.defaults_line({"findings": [], "counts": {"defaults": {"confirmed": 0, "unconfirmed": 0,
+                                                                         "basis": {}}, "gate": {}}}) is None
+def test_an_ungated_finding_with_an_unchecked_default_is_marked(validated_repo, validated_env):
+    text = _md(validated_repo, validated_env)  # no verification: the api.ts-style needs:default items are not_checked
+    data = json.loads((validated_repo / ".thunderstruck" / "report.json").read_text())
+    if any(f["gate"] == "none" and c.unconfirmed_defaults(f) for f in data["findings"]):
+        assert "· default unconfirmed" in text

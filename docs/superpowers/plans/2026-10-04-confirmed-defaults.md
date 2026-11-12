@@ -1356,7 +1356,7 @@ git commit -m "Confirmed defaults: derive, order and count them in the report's 
 - Consumes: Task 7's data; #56's `_precondition_line(p)`, `render_preconditions(f)`, `_linked`, `md`.
 - Produces: `report.defaults_line(data: dict) -> str | None`; `report._confirmation_clause(conf: dict, item: dict | None) -> str`.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 8 -----------------------------------------------------------------
@@ -1393,9 +1393,9 @@ def test_defaults_line_counts_bases():
 
 In `tests/test_inert_report.py`, extend `MODEL_FIELDS` with the paths `check.confirmations[].setting`, `.default`, `.default_ref`, `.stated_ref`, `.claim` and `.reason` (in the form that file uses for nested fields) so the hostile-text test plants text there.
 
-- [ ] **Step 2: Run them to verify they fail.** Expected: FAIL.
+- [x] **Step 2: Run them to verify they fail.** Expected: FAIL.
 
-- [ ] **Step 3: Write the implementation.** In `scripts/report.py`:
+- [x] **Step 3: Write the implementation.** In `scripts/report.py`:
 
 ```python
 _BASIS_PHRASE = {"call_site_fallback": "stated where the setting is read",
@@ -1449,9 +1449,9 @@ def test_an_ungated_finding_with_an_unchecked_default_is_marked(validated_repo, 
         assert "· default unconfirmed" in text
 ```
 
-- [ ] **Step 4: Run the tests and the full suite.** Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests and the full suite.** Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/report.py tests/test_inert_report.py tests/test_confirmed_defaults.py
