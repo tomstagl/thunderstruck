@@ -897,7 +897,7 @@ git commit -m "Confirmed defaults: the skeptic confirms each default it is shown
 - Consumes: `Validator.fallback_read` (Task 3); `c.with_confirmations`, `c.unconfirmed_defaults`, `c.CONFIRMATION_FOUND`, `c.CONFIRMATION_REASONS` (Task 1); #37's `settle`, `_norm`, `Resolver`, `apply`, `claim_hash`, `cited_files`, `OWNED`.
 - Produces: `Resolver.fallback_read(ref, setting) -> bool | None`; `verify.resolve_confirmations(finding: dict, result: dict, resolver: Resolver, ignored: list[str]) -> list[dict]` (items with `precondition`, `stated_call_site`, `default_names_setting`, `default_call_site`, `default_ref_error` added); `Resolver.names_setting(ref, setting) -> bool | None`; `verify.no_upheld_on_unconfirmed(finding: dict, check: dict) -> dict`; `check.confirmations` on every settled check that came from a result or the ledger; `preconditions[j].confirmation` written by `apply`; `cited_files(finding, verdict_evidence=(), confirmations=())`.
 
-- [ ] **Step 1: Write the failing tests.** Append (they use #37's `validated_repo` and the helpers of `tests/test_verification.py`, imported):
+- [x] **Step 1: Write the failing tests.** Append (they use #37's `validated_repo` and the helpers of `tests/test_verification.py`, imported):
 
 ```python
 # --- Task 5 -----------------------------------------------------------------
@@ -1002,9 +1002,9 @@ def test_claim_hash_ignores_confirmation_and_the_registry_is_in_the_ledger(valid
 
 These tests need the fixture and the canned collection precondition of Task 12. **Do Task 12 Steps 3 and 4 first, as part of this task**, including the `expect` guard of Task 12 Step 4 (the fixture files, the page-size read, the canned precondition and the two canned confirmations), and include those files in this task's commit; Task 12 then adds its sample tests and regenerates the samples.
 
-- [ ] **Step 2: Run them to verify they fail.** Expected: FAIL (unknown key `confirmations` is now allowed by Task 4, but `check["confirmations"]` is absent and `upheld` stands).
+- [x] **Step 2: Run them to verify they fail.** Expected: FAIL (unknown key `confirmations` is now allowed by Task 4, but `check["confirmations"]` is absent and `upheld` stands).
 
-- [ ] **Step 3: Write the implementation.** In `scripts/verify.py`:
+- [x] **Step 3: Write the implementation.** In `scripts/verify.py`:
 
 ```python
 CLAIM_FIELDS = ("failure_mode", "trigger_condition", "amplifier", "sustaining_effect",
@@ -1143,9 +1143,9 @@ In `claim_hash`, after building `body`:
                         checks[f["key"]].get("confirmations"))["preconditions"]
 ```
 
-- [ ] **Step 4: Run the tests and the full suite.** #37's settle tests must still pass: their verdicts carry no `confirmations`, and a fixture finding they expect `upheld` now settles `inconclusive` only if it lists a `needs: default` precondition. Where such a #37 test expects `upheld` for a finding with a `needs: default` item, add a confirming item to its canned verdict rather than weakening the expectation. Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests and the full suite.** #37's settle tests must still pass: their verdicts carry no `confirmations`, and a fixture finding they expect `upheld` now settles `inconclusive` only if it lists a `needs: default` precondition. Where such a #37 test expects `upheld` for a finding with a `needs: default` item, add a confirming item to its canned verdict rather than weakening the expectation. Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/verify.py tests/test_confirmed_defaults.py tests/test_verification.py tests/fixtures/build_fixture.py scripts/gen_sample_report.py

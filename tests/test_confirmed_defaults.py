@@ -358,3 +358,103 @@ def test_the_brief_without_preconditions_asks_for_unlisted_defaults():
     "bare value", c.NO_EXECUTION])
 def test_the_skeptic_prompt_says_how_to_confirm_a_default(needle):
     assert needle in SKEPTIC
+
+
+# --- Task 5 -----------------------------------------------------------------
+from test_verification import _apply, _entry, _finding, _line, _prepare, _save, _v  # noqa: E402
+
+
+def _collection(repo: Path, env: dict) -> tuple[dict, dict]:
+    plan = _prepare(repo, env)
+    e = _entry(plan, "collection.ts")
+    return plan, e
+
+
+def _conf(**over) -> dict:
+    item = {"setting": "sync.pageSize", "claim": None, "stated_ref": None, "found": "same",
+            "default": "100", "default_ref": None, "reason": "r"}
+    item.update(over)
+    return item
+
+
+def test_a_confirmation_at_the_fallback_read_confirms_nothing(validated_repo, validated_env, tmp_path):
+    plan, e = _collection(validated_repo, validated_env)
+    read = _line(validated_repo, "src/sync/collection.ts", "sync.pageSize")
+    _save(validated_repo, validated_env, tmp_path, _v(e["key"], "upheld", confirmations=[
+        _conf(default_ref=f"src/sync/collection.ts:{read}")]))
+    check = _apply(validated_repo, validated_env)[e["key"]]
+    assert check["status"] == "inconclusive"
+    assert check["reason"].startswith("The check upheld this claim, but it rests on a default no one confirmed: sync.pageSize")
+    pre = _finding(validated_repo, e["key"])["preconditions"][0]
+    assert (pre["confirmation"]["state"], pre["confirmation"]["basis"]) == ("unconfirmed", "call_site_fallback")
+
+
+def test_a_registry_that_disagrees_contradicts_and_keeps_both(validated_repo, validated_env, tmp_path):
+    plan, e = _collection(validated_repo, validated_env)
+    reg = _line(validated_repo, "src/config/settings.ts", "\"sync.pageSize\": 500")
+    _save(validated_repo, validated_env, tmp_path, _v(e["key"], "upheld", confirmations=[
+        _conf(found="different", default="500", default_ref=f"src/config/settings.ts:{reg}")]))
+    check = _apply(validated_repo, validated_env)[e["key"]]
+    assert check["status"] == "inconclusive"
+    [item] = check["confirmations"]
+    assert (item["default"], item["confirmation"]["basis"]) == ("500", "contradicted")
+    pre = _finding(validated_repo, e["key"])["preconditions"][0]
+    assert pre["default"] == "100" and pre["confirmation"]["basis"] == "contradicted"
+
+
+def test_a_registry_that_agrees_confirms_and_upheld_stands(validated_repo, validated_env, tmp_path):
+    plan = _prepare(validated_repo, validated_env)
+    e = _entry(plan, "api.ts")
+    f = _finding(validated_repo, e["key"])
+    pre = f["preconditions"][0]
+    _save(validated_repo, validated_env, tmp_path, _v(e["key"], "upheld", confirmations=[
+        _conf(setting=pre["setting"], default=pre["default"], default_ref=pre["default_ref"])]))
+    check = _apply(validated_repo, validated_env)[e["key"]]
+    assert check["status"] == "upheld"
+    assert _finding(validated_repo, e["key"])["preconditions"][0]["confirmation"]["state"] == "confirmed"
+
+
+def test_items_that_break_the_contract_are_dropped_and_named(validated_repo, validated_env, tmp_path):
+    plan, e = _collection(validated_repo, validated_env)
+    _save(validated_repo, validated_env, tmp_path, _v(e["key"], "inconclusive", confirmations=[
+        {"setting": "sync.pageSize", "found": "maybe"},
+        _conf(setting="unlisted.thing", claim="a paraphrase not in the finding"),
+        _conf(default_ref="src/nowhere.ts:1"),
+        _conf()]))
+    check = _apply(validated_repo, validated_env)[e["key"]]
+    assert "Ignored: confirmations[0]" in check["reason"]
+    assert "confirmations[1]" in check["reason"]
+    [item] = check["confirmations"]  # [2] kept as unresolved; [3] names the same setting twice
+    assert item["confirmation"]["basis"] == "unresolved" and item["default_ref_error"]
+    assert "confirmations[3]" in check["reason"]
+
+
+def test_a_reused_upheld_without_confirmations_settles_inconclusive(validated_repo, validated_env, tmp_path):
+    """Review focus 4: a ledger entry written before #57."""
+    plan, e = _collection(validated_repo, validated_env)
+    reg = _line(validated_repo, "src/config/settings.ts", "\"sync.pageSize\": 500")
+    _save(validated_repo, validated_env, tmp_path, _v(e["key"], "upheld", confirmations=[
+        _conf(found="same", default="100", default_ref=f"src/config/settings.ts:{reg}")]))
+    _apply(validated_repo, validated_env)
+    ledger_path = validated_repo / ".thunderstruck" / "checks" / "ledger.json"
+    ledger = json.loads(ledger_path.read_text())
+    ledger["entries"][e["key"]]["check"].pop("confirmations")
+    ledger["entries"][e["key"]]["check"]["status"] = "upheld"
+    ledger_path.write_text(json.dumps(ledger))
+    again = _prepare(validated_repo, validated_env)
+    assert _entry(again, "collection.ts")["action"] == "reuse"
+    assert _apply(validated_repo, validated_env)[e["key"]]["status"] == "inconclusive"
+
+
+def test_claim_hash_ignores_confirmation_and_the_registry_is_in_the_ledger(validated_repo, validated_env, tmp_path):
+    plan, e = _collection(validated_repo, validated_env)
+    f = _finding(validated_repo, e["key"])
+    g = json.loads(json.dumps(f))
+    g["preconditions"][0]["confirmation"] = {"state": "confirmed"}
+    assert verify.claim_hash(f) == verify.claim_hash(g)
+    reg = _line(validated_repo, "src/config/settings.ts", "\"sync.pageSize\": 500")
+    _save(validated_repo, validated_env, tmp_path, _v(e["key"], "inconclusive", confirmations=[
+        _conf(found="different", default="500", default_ref=f"src/config/settings.ts:{reg}")]))
+    _apply(validated_repo, validated_env)
+    ledger = json.loads((validated_repo / ".thunderstruck" / "checks" / "ledger.json").read_text())["entries"]
+    assert "src/config/settings.ts" in ledger[e["key"]]["files"]

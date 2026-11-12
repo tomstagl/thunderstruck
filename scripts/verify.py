@@ -76,6 +76,9 @@ def load_frozen(frozen: Path) -> list[dict]:
 
 def claim_hash(finding: dict) -> str:
     body = {k: v for k, v in finding.items() if k not in OWNED}
+    if isinstance(body.get("preconditions"), list):
+        body["preconditions"] = [{k: v for k, v in p.items() if k != "confirmation"}
+                                 if isinstance(p, dict) else p for p in body["preconditions"]]
     return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"),
                                      ensure_ascii=False).encode()).hexdigest()
 
@@ -85,8 +88,11 @@ def _ref_path(ref) -> str | None:
     return m["path"] if m and not deps.DEP_REF.match(str(ref).strip()) else None
 
 
-def cited_files(finding: dict, verdict_evidence=()) -> list[str]:
+def cited_files(finding: dict, verdict_evidence=(), confirmations=()) -> list[str]:
     files = [(finding.get("location") or {}).get("file")]
+    for it in confirmations or ():
+        if isinstance(it, dict):
+            files += [_ref_path(it.get("default_ref")), _ref_path(it.get("stated_ref"))]
     for ev in list(finding.get("evidence") or []) + list(verdict_evidence):
         if isinstance(ev, dict) and ev.get("type") == "code":
             files.append(_ref_path(ev.get("ref")))
@@ -345,6 +351,12 @@ class Resolver:
     def ref(self, ref, where: str, errors: list[str]) -> bool:
         return self.v.check_ref(ref, where, errors, allow_dependency=True) is not None
 
+    def fallback_read(self, ref, setting) -> bool | None:
+        return self.v.fallback_read(ref, setting, allow_dependency=True)
+
+    def names_setting(self, ref, setting) -> bool | None:
+        return self.v.names_setting(ref, setting, allow_dependency=True)
+
 
 def _norm(text) -> str:
     return " ".join(str(text or "").split()).casefold()
@@ -387,6 +399,103 @@ def _contract_problem(result: dict, entry: dict) -> str | None:
     return None
 
 
+CLAIM_FIELDS = ("failure_mode", "trigger_condition", "amplifier", "sustaining_effect",
+                "blast_radius", "how_to_verify")
+
+
+def _quotes_any(finding: dict, claim) -> bool:
+    if not isinstance(claim, str) or not claim.strip():
+        return False
+    notes = [ev.get("note") for ev in finding.get("evidence") or [] if isinstance(ev, dict)]
+    source = " ".join(str(finding.get(k) or "") for k in CLAIM_FIELDS) + " " + " ".join(map(str, notes))
+    return _norm(claim) in _norm(source)
+
+
+def _code_refs(finding: dict) -> set[str]:
+    out = set()
+    for ev in finding.get("evidence") or []:
+        m = CODE_REF.match(str(ev.get("ref") or "").strip()) if isinstance(ev, dict) and ev.get("type") == "code" else None
+        if m:
+            out.add(f"{c.ref_path(m['path'])}:{m['start']}" + (f"-{m['end']}" if m["end"] else ""))
+    return out
+
+
+def resolve_confirmations(finding: dict, result: dict, resolver: "Resolver", ignored: list[str]) -> list[dict]:
+    """Spec §6.3: keep, resolve and annotate the skeptic's confirmation items."""
+    index = {"".join(str(p.get("setting", "")).split()).casefold(): j
+             for j, p in enumerate(finding.get("preconditions") or []) if isinstance(p, dict)}
+    refs = _code_refs(finding)
+    kept, seen = [], set()
+    for n, item in enumerate(result.get("confirmations") or []):
+        where = f"confirmations[{n}]"
+        if not isinstance(item, dict) or set(item) - set(CONFIRMATION_KEYS):
+            ignored.append(f"{where} is not an object with the keys {list(CONFIRMATION_KEYS)}")
+            continue
+        setting = item.get("setting")
+        if not isinstance(setting, str) or not setting.strip():
+            ignored.append(f"{where}.setting must be a non-empty string")
+            continue
+        norm = "".join(setting.split()).casefold()
+        if norm in seen:
+            ignored.append(f"{where} names {setting!r} a second time")
+            continue
+        if item.get("found") not in c.CONFIRMATION_FOUND:
+            ignored.append(f"{where}.found {item.get('found')!r} is not one of {list(c.CONFIRMATION_FOUND)}")
+            continue
+        j = index.get(norm)
+        out = {"setting": setting, "precondition": j, "claim": None, "stated_ref": None,
+               "stated_call_site": None, "found": item["found"], "default": None, "default_ref": None,
+               "default_ref_error": None, "default_names_setting": None, "default_call_site": None,
+               "reason": str(item.get("reason") or "")}
+        if j is None:
+            if not _quotes_any(finding, item.get("claim")):
+                ignored.append(f"{where} names a setting the finding does not list, and its claim "
+                               f"does not quote the finding")
+                continue
+            out["claim"] = item["claim"]
+            sref = item.get("stated_ref")
+            if sref is not None:
+                m = CODE_REF.match(str(sref).strip())
+                canon = (f"{c.ref_path(m['path'])}:{m['start']}" + (f"-{m['end']}" if m["end"] else "")) if m else None
+                if canon in refs:
+                    out["stated_ref"] = canon
+                    out["stated_call_site"] = resolver.fallback_read(canon, setting)
+                else:
+                    ignored.append(f"{where}.stated_ref {sref!r} is not one of the finding's code refs")
+        if item["found"] != "not_found":
+            if not isinstance(item.get("default"), str) or not item["default"].strip():
+                ignored.append(f"{where}.default must be the value found")
+                continue
+            out["default"], out["default_ref"] = item["default"], item.get("default_ref")
+            errors: list[str] = []
+            if resolver.ref(item.get("default_ref"), f"{where}.default_ref", errors):
+                out["default_names_setting"] = resolver.names_setting(item["default_ref"], setting)
+                out["default_call_site"] = resolver.fallback_read(item["default_ref"], setting)
+            else:
+                out["default_ref_error"] = errors[0] if errors else f"{where}.default_ref does not resolve"
+        seen.add(norm)
+        kept.append(out)
+    return kept
+
+
+def no_upheld_on_unconfirmed(finding: dict, check: dict) -> dict:
+    """Spec §7.1: the one place #57 changes a status."""
+    derived = c.with_confirmations({**finding, "check": check}, check.get("confirmations") or [])
+    if "confirmations" in check:  # unchecked paths and pre-#57 ledger entries carry none
+        check = {**check, "confirmations": derived["check"]["confirmations"]}
+    if check.get("status") != "upheld":
+        return check
+    missing = c.unconfirmed_defaults(derived)
+    if not missing:
+        return check
+    first = missing[0]
+    basis = (first.get("confirmation") or {}).get("basis", "not_checked")
+    more = f" and {len(missing) - 1} more" if len(missing) > 1 else ""
+    return {**check, "status": "inconclusive",
+            "reason": (f"The check upheld this claim, but it rests on a default no one confirmed: "
+                       f"{first.get('setting')} ({c.CONFIRMATION_REASONS[basis]}){more}.")}
+
+
 UNCHECKED_NO_RESULT = "No verdict reached disk: the skeptic failed, stopped or its result was not saved."
 
 
@@ -395,7 +504,7 @@ def settle(finding: dict, entry: dict, result: dict | None, resolver: Resolver, 
     """The one place a check status is decided (spec §9). Every path, the
     ledger-reuse path included, leaves through here: #57 adds its rule after
     _decide (spec §16)."""
-    return _decide(finding, entry, result, resolver, plan, ledger_entry)
+    return no_upheld_on_unconfirmed(finding, _decide(finding, entry, result, resolver, plan, ledger_entry))
 
 
 def _decide(finding: dict, entry: dict, result: dict | None, resolver: Resolver, plan: dict,
@@ -460,6 +569,7 @@ def _decide(finding: dict, entry: dict, result: dict | None, resolver: Resolver,
             else:
                 ignored.append(errors[0] if errors else f"{where}.setting needs {list(SETTING_KEYS)}")
         claims.append(kept)
+    items = resolve_confirmations(finding, result, resolver, ignored)
 
     status, reason = verdict, str(result.get("reason") or "")
     if verdict in ("refuted", "narrowed") and not claims:
@@ -489,6 +599,10 @@ def _decide(finding: dict, entry: dict, result: dict | None, resolver: Resolver,
         if ev.get("type") == "dependency":
             m = deps.DEP_REF.match(ev["ref"].strip())
             read[f"{m['eco']}:{m['name']}"] = m["version"]
+    for it in items:
+        m = deps.DEP_REF.match(str(it.get("default_ref") or "").strip())
+        if m and it.get("default_ref_error") is None:
+            read[f"{m['eco']}:{m['name']}"] = m["version"]
     target = result.get("duplicate_of")
     planned = {e["key"] for e in plan["findings"]}
     duplicate = target if isinstance(target, str) and target in planned and target != entry["key"] else None
@@ -503,7 +617,7 @@ def _decide(finding: dict, entry: dict, result: dict | None, resolver: Resolver,
             "evidence": [resolved[i] for i in sorted(resolved)],
             "model": c.MODEL_ALIASES.get(plan["model"], plan["model"]),
             "dependency_versions": dict(sorted(read.items())),
-            "reused_from": None, "duplicate_of": duplicate}
+            "reused_from": None, "duplicate_of": duplicate, "confirmations": items}
 
 
 def apply(repo: Path) -> dict:
@@ -533,13 +647,17 @@ def apply(repo: Path) -> dict:
             for f in doc.get("findings") or []:
                 if isinstance(f, dict) and f.get("key") in checks:
                     f["check"] = checks[f["key"]]
+                    f["preconditions"] = c.with_confirmations(
+                        {**f, "check": checks[f["key"]]},
+                        checks[f["key"]].get("confirmations"))["preconditions"]
             c.write_json(path, doc)
         for key, check in checks.items():
             if check["by"] == "skeptic" and check["status"] in c.VERDICTS and not check.get("reused_from"):
                 f = by_key[key]["finding"]
                 ledger[key] = {"location": (f.get("location") or {}).get("file"),
                                "claim_hash": claim_hash(f),
-                               "files": hash_files(repo, cited_files(f, check["evidence"])),
+                               "files": hash_files(repo, cited_files(f, check["evidence"],
+                                                                     check.get("confirmations") or [])),
                                "dependency_versions": check["dependency_versions"],
                                "check": {k: v for k, v in check.items() if k != "reused_from"},
                                "scan": plan["generated_at"], "head": plan["head"]}
