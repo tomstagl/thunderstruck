@@ -208,6 +208,30 @@ def test_dossier_shows_check_preconditions_and_history(page, scanned_copy, plugi
     assert "unchecked" in body and "needs a non-default setting" in body
     assert "SWITCH set to on; default off, registered at a.ts:1." in body
     assert "Not stated." in body and "History" in body
+    assert "Unconfirmed" in body or "Confirmed" in body  # #57: each default's state
+
+
+def test_an_unconfirmed_default_is_shown_with_both_locations_and_marked(page, scanned_copy, plugin_root):
+    report = _report(scanned_copy, plugin_root)
+    f = report["findings"][0]
+    f["gate"] = "unconfirmed_default"
+    f["preconditions"] = [{"setting": "sync.pageSize", "default": "100", "default_ref": "a.ts:4",
+                           "default_url": None, "needs": "default", "value": None,
+                           "documented": "no", "doc_ref": None, "doc_url": None,
+                           "confirmation": {"state": "unconfirmed", "basis": "contradicted",
+                                            "reason": "a check found a different default registered"}}]
+    f["check"] = {**f["check"], "confirmations": [
+        {"setting": "sync.pageSize", "precondition": 0, "found": "different", "default": "500",
+         "default_ref": "b.ts:3", "default_url": None, "reason": "The registry holds 500.",
+         "confirmation": {"state": "unconfirmed", "basis": "contradicted"}}]}
+    p = page(report)
+    p.page.keyboard.press("j")
+    body = p.page.text_content("#doc")
+    assert "relies on a doubtful default" in body
+    assert "Unconfirmed" in body
+    assert "a check found a different default registered: 500 at b.ts:3." in body
+    assert "Check's note: “The registry holds 500.”" in body
+    assert p.page.query_selector('.item [title="relies on a doubtful default"]') is not None
 
 
 def test_reviewed_marks_survive_a_reload(page, scanned_copy, plugin_root):

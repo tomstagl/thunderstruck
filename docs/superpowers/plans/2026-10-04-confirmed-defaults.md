@@ -1473,7 +1473,7 @@ git commit -m "Confirmed defaults: report.md states each default's confirmation 
 - Consumes: `report.json`'s `preconditions[].confirmation`, `check.confirmations[]`, `counts.defaults`, the third gate; #56's `GATE_MARKERS` object and preconditions row; `link()`.
 - Produces: in the template script, `var CONFIRMATION_REASONS = {…}` (one line, JSON object literal) and `function confirmationClause(conf, item)` returning a DOM fragment.
 
-- [ ] **Step 1: Write the failing tests.** In `tests/test_report_html.py`:
+- [x] **Step 1: Write the failing tests.** In `tests/test_report_html.py`:
 
 ```python
 def test_confirmation_reasons_match_common():
@@ -1492,9 +1492,9 @@ def test_gate_markers_include_the_unconfirmed_default():
 
 and extend `MODEL_FIELDS` with the same six confirmation paths as Task 8 (`setting`, `default`, `default_ref`, `stated_ref`, `claim`, `reason`). In `tests/test_report_html_browser.py`, in the test that opens a dossier with preconditions, assert that its Preconditions row contains `Unconfirmed` or `Confirmed`, and that a finding with `gate: unconfirmed_default` shows the marker text in its rail item.
 
-- [ ] **Step 2: Run them to verify they fail.** Expected: FAIL (`CONFIRMATION_REASONS` absent; `GATE_MARKERS` has two keys).
+- [x] **Step 2: Run them to verify they fail.** Expected: FAIL (`CONFIRMATION_REASONS` absent; `GATE_MARKERS` has two keys).
 
-- [ ] **Step 3: Write the implementation.** In `templates/report.html`'s script, next to `GATE_MARKERS` (which takes the three-gate value of `c.GATE_MARKERS`, as #56's generator or literal does):
+- [x] **Step 3: Write the implementation.** In `templates/report.html`'s script, next to `GATE_MARKERS` (which takes the three-gate value of `c.GATE_MARKERS`, as #56's generator or literal does):
 
 ```javascript
 var CONFIRMATION_REASONS = {"registered": "a check found this default registered, and it agrees", "contradicted": "a check found a different default registered", "call_site_fallback": "the default is stated where the setting is read, as a fallback; the value in effect may be registered elsewhere", "not_found": "a check found no place that registers this default", "unresolved": "the place a check gave for this default does not resolve", "not_checked": "no check looked for where this default is registered"};
@@ -1523,9 +1523,9 @@ function confirmationClause(conf, item) {
 
 In the Preconditions row builder (#56), append `confirmationClause(p.confirmation, itemFor(f, i))` to each line, where `itemFor` returns the `f.check.confirmations` entry whose `precondition === i`, and add one line per unlisted item ("<setting>: the finding says “<claim>”" + the clause). In the overview counts, add the defaults line built from `report.counts.defaults` with the same words as `report.defaults_line`. `link()` already returns plain text when the URL is null. Use the existing `tag` classes; add `.tag.ok`/`.tag.warn` only if they do not exist, with colours from the existing tokens. `report_html.py` recomputes the CSP hash as today.
 
-- [ ] **Step 4: Run the tests, the browser test** (`THUNDERSTRUCK_REQUIRE_BROWSER=1 uv run --with pytest --with pyyaml --with lizard --with playwright==1.56.0 pytest tests/test_report_html_browser.py -q`) **and the full suite.** Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests, the browser test** (`THUNDERSTRUCK_REQUIRE_BROWSER=1 uv run --with pytest --with pyyaml --with lizard --with playwright==1.56.0 pytest tests/test_report_html_browser.py -q`) **and the full suite.** Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add templates/report.html tests/test_report_html.py tests/test_report_html_browser.py
