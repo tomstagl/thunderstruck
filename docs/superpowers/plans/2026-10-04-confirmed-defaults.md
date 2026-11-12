@@ -1611,7 +1611,7 @@ git commit -m "Confirmed defaults: the guardrail states whether a default was co
 **Interfaces:**
 - Consumes: `c.NO_EXECUTION` (Task 4); #37's `validated_repo`, `validated_env`; the scripts as they are.
 
-- [ ] **Step 1: Write the failing tests.** Create `tests/test_no_execution.py`:
+- [x] **Step 1: Write the failing tests.** Create `tests/test_no_execution.py`:
 
 ```python
 """#57 AC-5: no stage runs, imports or builds the scanned project."""
@@ -1783,15 +1783,15 @@ def test_no_stage_runs_anything_from_a_trapped_repository(validated_repo, valida
 
 The steps' exit codes are not asserted: a stage may legitimately fail on the trapped repository (an extra `pom.xml` with no sources, say). What is asserted is that nothing ran.
 
-- [ ] **Step 2: Run them to verify which fail.** `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_no_execution.py -q`. Expected: `test_instructions_say_it` FAILS for the investigator and the scan skill. If a static test fails on another script, read the call: a `git` call outside the allowlisted functions is moved into `_common.git`/`git_paths` (or the function is added to `GIT_ONLY` when it builds a git argv itself, with the AST check proving it); any other process start is a defect to fix, not to allowlist.
+- [x] **Step 2: Run them to verify which fail.** `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_no_execution.py -q`. Expected: `test_instructions_say_it` FAILS for the investigator and the scan skill. If a static test fails on another script, read the call: a `git` call outside the allowlisted functions is moved into `_common.git`/`git_paths` (or the function is added to `GIT_ONLY` when it builds a git argv itself, with the AST check proving it); any other process start is a defect to fix, not to allowlist.
 
-- [ ] **Step 3: Hooks without `site`.** In `hooks/hooks.json`, every command's `python3 ` becomes `python3 -S ` (the guardrail and #5's capture hook). Both are stdlib-only and import the plugin's modules by path, so nothing is lost; run `tests/test_guardrail.py` and #5's capture tests (latency included) to confirm.
+- [x] **Step 3: Hooks without `site`.** In `hooks/hooks.json`, every command's `python3 ` becomes `python3 -S ` (the guardrail and #5's capture hook). Both are stdlib-only and import the plugin's modules by path, so nothing is lost; run `tests/test_guardrail.py` and #5's capture tests (latency included) to confirm.
 
-- [ ] **Step 4: Write the sentence.** Add `c.NO_EXECUTION` verbatim to `agents/thunderstruck-investigator.md` (in the rules about repository content being data) and to `skills/thunderstruck-scan/SKILL.md` (in the rules the orchestrator follows, before step 1).
+- [x] **Step 4: Write the sentence.** Add `c.NO_EXECUTION` verbatim to `agents/thunderstruck-investigator.md` (in the rules about repository content being data) and to `skills/thunderstruck-scan/SKILL.md` (in the rules the orchestrator follows, before step 1).
 
-- [ ] **Step 5: Run the tests and the full suite.** Expected: PASS, `exit=0`.
+- [x] **Step 5: Run the tests and the full suite.** Expected: PASS, `exit=0`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add tests/test_no_execution.py agents/thunderstruck-investigator.md skills/thunderstruck-scan/SKILL.md hooks/hooks.json
