@@ -1545,7 +1545,7 @@ git commit -m "Confirmed defaults: the HTML report shows each default's confirma
 **Interfaces:**
 - Consumes: `index.json` precondition entries with `confirmation` (Task 7); #56's `precondition_line(f)`, `_capped`.
 
-- [ ] **Step 1: Write the failing tests.** Append:
+- [x] **Step 1: Write the failing tests.** Append:
 
 ```python
 # --- Task 10 ----------------------------------------------------------------
@@ -1570,9 +1570,9 @@ def test_guardrail_says_nothing_about_confirmation_for_an_older_index():
     assert guardrail.precondition_line(f) == "It happens on default settings and rests on s at its default 1."
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** Expected: FAIL.
+- [x] **Step 2: Run them to verify they fail.** Expected: FAIL.
 
-- [ ] **Step 3: Write the implementation.** In `scripts/guardrail.py`:
+- [x] **Step 3: Write the implementation.** In `scripts/guardrail.py`:
 
 ```python
 GATE_ORDER = ("none", "unconfirmed_default", "non_default_setting")
@@ -1588,9 +1588,9 @@ In `precondition_line`, the `needs: default` branch's item text becomes:
 
 The `needs: changed` branch is unchanged. Nothing imperative; nothing new imported.
 
-- [ ] **Step 4: Run the tests, the guardrail latency and stdlib tests, and the full suite.** Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests, the guardrail latency and stdlib tests, and the full suite.** Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/guardrail.py tests/test_confirmed_defaults.py

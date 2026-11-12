@@ -600,3 +600,25 @@ def test_an_ungated_finding_with_an_unchecked_default_is_marked(validated_repo, 
     data = json.loads((validated_repo / ".thunderstruck" / "report.json").read_text())
     if any(f["gate"] == "none" and c.unconfirmed_defaults(f) for f in data["findings"]):
         assert "· default unconfirmed" in text
+
+
+# --- Task 10 ----------------------------------------------------------------
+import guardrail  # noqa: E402
+
+
+def test_guardrail_gate_order_is_common_gates():
+    assert guardrail.GATE_ORDER == c.GATES
+
+
+@pytest.mark.parametrize("state, phrase", [
+    ("confirmed", "which a check confirmed"), ("unconfirmed", "which no check confirmed")])
+def test_guardrail_states_the_confirmation(state, phrase):
+    f = {"check_status": "unchecked", "preconditions": [
+        {"setting": "sync.pageSize", "default": "100", "needs": "default", "confirmation": state}]}
+    line = guardrail.precondition_line(f)
+    assert line == f"It happens on default settings and rests on sync.pageSize at its default 100, {phrase}."
+
+
+def test_guardrail_says_nothing_about_confirmation_for_an_older_index():
+    f = {"check_status": "unchecked", "preconditions": [{"setting": "s", "default": "1", "needs": "default"}]}
+    assert guardrail.precondition_line(f) == "It happens on default settings and rests on s at its default 1."
