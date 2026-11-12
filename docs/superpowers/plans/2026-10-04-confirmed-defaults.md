@@ -58,7 +58,7 @@ New tests go in `tests/test_confirmed_defaults.py` (every task but Task 11) and 
 
 **Satisfies:** none on its own; every later task assumes it.
 
-- [ ] **Step 1: Check that #5, #56, #37 and #55 are merged.** On a branch from current `origin/main`:
+- [x] **Step 1: Check that #5, #56, #37 and #55 are merged.** On a branch from current `origin/main`:
 
 ```bash
 grep -n "def finding_gate\|^GATES\|^GATE_MARKERS" scripts/_common.py
@@ -74,7 +74,7 @@ grep -n "^def shape" scripts/finding_shape.py
 
 Expected: every grep prints a line, and `ok`. **This task blocks.** If any line is missing, #5, #56, #37 or #55 is not merged: stop, start no other task, and report the ticket blocked with the missing names. The plan builds on those exact names.
 
-- [ ] **Step 2: Run the full suite** (the command above). Expected: `exit=0`. No commit.
+- [x] **Step 2: Run the full suite** (the command above). Expected: `exit=0`. No commit.
 
 ---
 
@@ -91,7 +91,7 @@ Expected: every grep prints a line, and `ok`. **This task blocks.** If any line 
 - Consumes: #56's `GATES`, `GATE_MARKERS`, `finding_gate`; #37's extension of `finding_gate`.
 - Produces, in `_common`: `CONFIRMATION_STATES`, `CONFIRMATION_BASES`, `CONFIRMATION_FOUND`, `CONFIRMATION_REASONS: dict[str, str]`; `confirm(call_site: bool | None, item: dict | None = None) -> dict` (`{"state", "basis", "reason"}`); `confirmation_state(conf) -> str`; `with_confirmations(finding: dict, items: list[dict] | None) -> dict` (a shallow copy whose `preconditions[j].confirmation` and `check.confirmations[k].confirmation` are derived); `unconfirmed_defaults(finding: dict) -> list[dict]`; `DOUBTFUL_BASES`; `doubtful_defaults(finding: dict) -> list[dict]`; `DEFAULT_UNCONFIRMED_MARKER = "default unconfirmed"`; `GATES == ("none", "unconfirmed_default", "non_default_setting")`; `GATE_MARKERS["unconfirmed_default"]`.
 
-- [ ] **Step 1: Write the failing tests.** Create `tests/test_confirmed_defaults.py`:
+- [x] **Step 1: Write the failing tests.** Create `tests/test_confirmed_defaults.py`:
 
 ```python
 """#57: defaults a finding relies on are confirmed or flagged, never assumed."""
@@ -210,9 +210,9 @@ def test_finding_gate_has_three_gates_in_precedence(finding, gate):
     assert c.finding_gate(finding) == gate
 ```
 
-- [ ] **Step 2: Run them to verify they fail.** `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_confirmed_defaults.py -q`. Expected: FAIL, `AttributeError: module '_common' has no attribute 'confirm'`.
+- [x] **Step 2: Run them to verify they fail.** `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_confirmed_defaults.py -q`. Expected: FAIL, `AttributeError: module '_common' has no attribute 'confirm'`.
 
-- [ ] **Step 3: Write the implementation.** In `scripts/_common.py`, change #56's two constants:
+- [x] **Step 3: Write the implementation.** In `scripts/_common.py`, change #56's two constants:
 
 ```python
 # Report order: default-path findings first, then findings resting on a
@@ -332,9 +332,9 @@ def doubtful_defaults(finding: dict) -> list[dict]:
 
 In `tests/test_checked_confidence.py`, in `test_vocabularies_are_the_spec_spelling`, `c.GATES` is `("none", "unconfirmed_default", "non_default_setting")`. `test_finding_gate`'s rows stay as they are: an item with no confirmation is `not_checked`, which does not gate.
 
-- [ ] **Step 4: Run the tests and the full suite.** Expected: PASS, `exit=0`. #56's and #37's report-order tests are unaffected: their `needs: default` items carry no doubtful basis.
+- [x] **Step 4: Run the tests and the full suite.** Expected: PASS, `exit=0`. #56's and #37's report-order tests are unaffected: their `needs: default` items carry no doubtful basis.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/_common.py tests/test_confirmed_defaults.py tests/test_checked_confidence.py tests/

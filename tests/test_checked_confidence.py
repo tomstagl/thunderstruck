@@ -68,7 +68,7 @@ def test_vocabularies_are_the_spec_spelling():
     assert c.COMMIT_ROLES == ("introduced", "fixed", "mitigated", "changed")
     assert c.PRECONDITION_NEEDS == ("changed", "default")
     assert c.DOCUMENTED == ("yes", "no", "not_checked")
-    assert c.GATES == ("none", "non_default_setting")
+    assert c.GATES == ("none", "unconfirmed_default", "non_default_setting")
     assert set(c.CHECK_SENTENCES) == set(c.CHECK_STATUSES)
     assert set(c.GATE_MARKERS) == set(c.GATES) - {"none"}
 
@@ -332,7 +332,7 @@ def test_reported_confidence_is_capped_and_the_claim_kept(scanned_copy, plugin_r
     assert payload["schema"] == "thunderstruck.report/v2"
     assert payload["counts"]["check_status"] == {"unchecked": 1, "upheld": 0, "narrowed": 0,
                                                  "inconclusive": 0, "refuted": 0}
-    assert payload["counts"]["gate"] == {"none": 1, "non_default_setting": 0}
+    assert payload["counts"]["gate"] == {"none": 1, "unconfirmed_default": 0, "non_default_setting": 0}
     entry = index["files"][f["location"]["file"]]["findings"][0]
     assert entry["confidence"] == "medium" and entry["check_status"] == "unchecked"
     assert entry["gate"] == "none" and entry["preconditions"] == []

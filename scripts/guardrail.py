@@ -42,7 +42,7 @@ EDGE_PHRASES = (("inbound", "Cited dependents of this component"),
 LEVELS = ("low", "medium", "high")
 CEILING = {"upheld": "high", "unchecked": "medium", "narrowed": "medium",
            "inconclusive": "medium", "refuted": "low"}
-GATE_ORDER = ("none", "non_default_setting")
+GATE_ORDER = ("none", "unconfirmed_default", "non_default_setting")
 MAX_ITEMS_SHOWN = 3
 
 
