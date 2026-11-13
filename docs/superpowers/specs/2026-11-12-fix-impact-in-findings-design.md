@@ -46,7 +46,7 @@ An item says what the current code provides by accident (`guarantee`), the kind 
 
 `removed_by` is free text, not a vocabulary (Decision 3). No "fix class" exists in the catalog or the code (`classify_commit`'s kinds are commit kinds), the requirement comes from one case, and a taxonomy invented from one case misleads when an investigator picks the nearest member. A closed set can be added later as a tightening with a rules bump, once the evaluation under #104 shows which kinds occur.
 
-**The gate.** The catalog marks the patterns whose fix changes an existing mechanism:
+**The gate.** The catalog marks the patterns whose findings must state guarantees. AC-2 scopes the rule to lock, retry and cache patterns, and this is the ticket's list:
 
 | Pattern | `fix_touches` |
 |---|---|
@@ -54,9 +54,9 @@ An item says what the current code provides by accident (`guarantee`), the kind 
 | `S09` | `cache` |
 | `S28` | `lock` |
 
-`Validator` reads `catalog["_by_id"][id]["fix_touches"]` (one of `_common.FIX_TOUCHES`), so a new pattern of that kind needs only the key (the catalog is the source of truth). A finding whose `missing_patterns` include one of them must have a non-empty `implicit_guarantees`, or a non-empty `no_guarantees_reason`. Giving both is an error. The reason is a sibling key, not a sentinel item: a consumer iterating `implicit_guarantees` never meets a "none" entry.
+`Validator` reads `catalog["_by_id"][id]["fix_touches"]` (one of `_common.FIX_TOUCHES`), so adding a pattern to the rule is one catalog line, the key (the catalog is the source of truth). Because it makes the rule stricter, it is a `VALIDATION_RULES` bump. A finding whose `missing_patterns` include one of them must have a non-empty `implicit_guarantees`, or a non-empty `no_guarantees_reason`. Giving both is an error. The reason is a sibling key, not a sentinel item: a consumer iterating `implicit_guarantees` never meets a "none" entry.
 
-Outside the gate both keys are optional and an empty list needs nothing. `S05` (rate limiting) and `S12` (circuit breaker, retry token bucket) are not marked: their fix adds a mechanism rather than changing one, and the ticket scopes the rule to lock, retry and cache (Decision 4). **Limit:** the gate keys off ids, so a lock, retry or cache finding filed under `OTHER` alone escapes it. The investigator prompt asks for guarantees "whatever its patterns"; nothing enforces it.
+Outside the gate both keys are optional and an empty list needs nothing. `S05` (rate limiting) and `S12` (circuit breaker, retry token bucket) are not marked, and `S09` is: the list is scoped by the ticket, not derived from a property of the patterns (Decision 4; whether `S12` joins is an open product question). **Limit:** the gate keys off ids, so a lock, retry or cache finding filed under `OTHER` alone escapes it. The investigator prompt asks for guarantees "whatever its patterns"; nothing enforces it.
 
 **State.** `_common.guarantee_state(finding)` is `stated` (non-empty list), `none_found` (a reason), `not_stated` (the finding has `blast_items`, so it was written under these rules, and says nothing, which only an ungated finding may) or `not_assessed` (no `blast_items`: written before). The split between the last two is what keeps "the investigator was not asked" from reading as "the investigator found none".
 
@@ -66,13 +66,13 @@ Outside the gate both keys are optional and an empty list needs nothing. `S05` (
 
 | `basis` | `evidence` | Meaning |
 |---|---|---|
-| `traced` | 1 or more positions, every one a `code` item | the investigator followed the code path that reaches it and cites the lines along it |
+| `traced` | 1 or more positions, every one a `code` item | the investigator followed code to reach it and cites the lines it followed, in order |
 | `catalog` | 1 or more positions, every one a `catalog` item | rests on a catalog edge |
 | `assumption` | absent (or empty) | rests on neither |
 
 "Traced" and "inferred" (`catalog` plus `assumption`) are separated in every output. An item resting only on a catalog edge cannot be `traced`: a position that points at a `catalog` item (or at any non-`code` item) is rejected with a message that says the item has basis `catalog`. Dependency refs cannot appear at all: investigator evidence has no `dependency` type (`EVIDENCE_TYPES`, `validate.py:47`), and a skeptic's dependency refs live in `check.evidence`, which this field never points at. The list may not be empty: an investigator that traced nothing writes its `blast_radius` as one `assumption` item.
 
-**What this proves.** Each cited step is a line that exists (it is a resolved `code` evidence item). It does not prove the steps connect: whether a path reaches the claim is judgment, and the check for it is the skeptic quoting the item as `blast_radius` (§5.2). `_quotes` accepts the summary's words or an item's `claim` for that field.
+**What this proves.** Each cited line exists (it is a resolved `code` evidence item). Nothing proves the lines connect: whether the investigator followed a path is judgment, and the only check for it is a skeptic quoting the item as `blast_radius` (§5.2). So no user-facing text calls a traced item a path: `report.md`, the HTML, the README, both prompts and the validator's messages say it cites code the investigator says it followed, and that each cited line is checked to exist, not to connect to the next. Cited lines are listed with commas, never arrows, and the investigator prompt's example has a traced item citing two lines. `_quotes` matches a quote against the summary or against one item's `claim`, each separately, so words spanning two items do not pass.
 
 ### 2.4 `not_checked` (AC-4)
 
@@ -98,13 +98,13 @@ Each item is `item` (what was not read or tested that the failure or its impact 
 |---|---|
 | A findings file validated under rules 4 | Lacks `blast_items` and `not_checked`, so `bundle.py`'s `_still_valid` fails it: re-investigated. It also fails `report.py`'s `validated_with` check (Incomplete, "re-run the scan") and is skipped by `verify.load_findings`. No cached finding passes under the old rules |
 | Every bundle | Its source is numbered (§7), so its hash changes: every hotspot is re-investigated once, including clean ones and ones whose finding would still pass. The ticket decided the two costs land together |
-| `report.json` written before | Loads and renders. `REPORT_SCHEMA_VERSION` stays `thunderstruck.report/v2`: `report_html.py` exact-matches it (`report_html.py:95`), so a bump would refuse every old report, which AC-7 forbids. The additions are optional fields, as `report-format.md` records for earlier ones. A finding without `blast_items` renders every new section as "not assessed" |
-| `index.json` written before | The guardrail states neither new line (§6.4); `index.json` stays `thunderstruck.index/v1` |
+| `report.json` written before | Loads without error and renders. `REPORT_SCHEMA_VERSION` stays `thunderstruck.report/v2`: `report_html.py` exact-matches it (`report_html.py:95`), so a bump would refuse every old report, which AC-7 forbids. The additions are optional fields, as `report-format.md` records for earlier ones. A finding without `blast_items` renders every new section as "not assessed" |
+| `index.json` written before | Loads without error. The guardrail states neither new line (§6.4) and says nothing is "not assessed"; `index.json` stays `thunderstruck.index/v1` |
 | `check` in an old ledger or findings file | Has no `guarantees` or `not_checked`; outputs treat an absent key as "no check has looked" (open). A reused verdict needs equal `claim_hash`, which now covers the new fields, so an old verdict never applies to a re-investigated finding |
-| The frozen Celery scan (benchmark) | Read unchanged: `verify.py prepare --frozen` builds briefs without the new blocks, `shown_lines` parses its unnumbered bundles by their notes, no label, verdict or run file is edited |
+| A benchmark scan written before (the frozen Celery scan) | Loads without error, read unchanged: `verify.py prepare --frozen` builds briefs without the new blocks, `shown_lines` parses its unnumbered bundles by their notes, no label, verdict or run file is edited |
 | The sample report | Regenerated once (§8) |
 
-So AC-7's "still load and render" holds for reports, indexes and the frozen scan. A findings file from before is not rendered as a finding, because AC-7's second sentence (re-checked under the new rules) takes precedence; the first sentence cannot apply to it (Ticket feedback in the plan's final message).
+AC-7 splits three ways, and the tests follow it: a `report.json` loads and its new sections read "not assessed"; an `index.json` and a benchmark scan load without error and nothing more is claimed; a findings file validated under the old rules is investigated again and none keeps passing under them.
 
 ## 5. The skeptic
 
@@ -132,7 +132,7 @@ This only acts on `--verify` scans (`VERIFY_BY_DEFAULT = False`, `_common.py:588
 - `no_guarantees_reason`: a non-empty string when the skeptic found none and named none; otherwise `null`.
 - `not_checked` item: `item` is the `index`; `state` is `resolved` (needs resolved evidence of type `code`, `commit` or `dependency`) or `unresolved`; `note` is non-empty (what the reading showed, or why it could not resolve the item).
 
-`_contract_problem` is unchanged except that `VERDICT_KEYS` is longer: a wrong type for a new key is not a contract error (below). The prompt (`agents/thunderstruck-skeptic.md`) gains a "Guarantees and what was not checked" section, rule 6 for the two item shapes (the old rule 6, never invent evidence, becomes 7), the three keys in rule 1 and in the example (`test_the_example_output_follows_the_contract` pins the example's key set to `VERDICT_KEYS`), and a note that for `blast_radius` the quoted words may be an item's.
+`_contract_problem` is unchanged except that `VERDICT_KEYS` is longer: a wrong type for a new key is not a contract error (below). The prompt (`agents/thunderstruck-skeptic.md`) gains a "Guarantees and what was not checked" section, rule 6 for the two item shapes (the old rule 6, never invent evidence, becomes 7), the three keys in rule 1 and in the example (`test_the_example_output_follows_the_contract` pins the example's key set to `VERDICT_KEYS`), and a note that for `blast_radius` the quoted words may be the summary's or one item's, and that a traced item's cited lines are only checked to exist, so whether they connect is the skeptic's to test.
 
 ### 5.3 Settling (`#37 §9`)
 
@@ -159,18 +159,18 @@ All model-written values are inert: `md.text` (`md.code` for refs) in `report.md
 After **Check** and before **Preconditions**, three blocks (the table of the finding is unchanged, so no row is added):
 
 ```
-**Traced impact** — each item cites the code path that reaches it.
+**Traced impact** — each item cites the code the investigator says it followed to reach it; each cited line is checked to exist, not to connect to the next.
 
-- <claim> — path: <link> → <link>
+- <claim> — cites: <link>, <link>
 
-**Inferred impact** — each item rests on a catalog edge or an assumption, not on a traced call path.
+**Inferred impact** — each item rests on a catalog edge or an assumption, not on cited code.
 
 - <claim> — rests on the catalog: `dependencyOf component:default/web-frontend`
 - <claim> — an assumption
 
 **Implicit guarantees** — what this code provides without saying so, as the investigator stated it. No check has confirmed this.
 
-- <guarantee> — provided by <link> → <link> — removed by: <removed_by> [— confirmed by the check: <links> | — not confirmed by the check]
+- <guarantee> — provided by <link>, <link> — removed by: <removed_by> [— confirmed by the check: <links> | — not confirmed by the check]
 
 Added by the check:
 
@@ -183,7 +183,7 @@ Added by the check:
 - <item> — how to check: <how_to_check> — still open after a check: <note>
 ```
 
-Empty or absent: `**Traced impact** — none: no item cites a code path.`, `**Inferred impact** — none.`, `**Implicit guarantees** — none found, per the investigator: <reason>` or `none stated by the investigator, who was not required to for these patterns.`, `**Not checked** — none listed by the investigator.`, and for a finding without `blast_items`: `**Traced and inferred impact** — not assessed: this finding was written before it was recorded.` (and the same words for the other two). The sentences are `_common.IMPACT_SENTENCES`, shared with the HTML. "No check has confirmed this." is shown unless `check.guarantees.state` is `named`, and "confirmed by the check" only beside an item the check confirmed (AC-6). What a check said is shown even when the investigator listed none: "The check found none: <reason>", the not-addressed reason, or "Added by the check".
+Empty or absent: `**Traced impact** — none: no item cites code it followed.`, `**Inferred impact** — none.`, `**Implicit guarantees** — none found, per the investigator: <reason>` or `none stated by the investigator, who was not required to for these patterns.`, `**Not checked** — none listed by the investigator.`, and for a finding without `blast_items`: `**Traced and inferred impact** — not assessed: this finding was written before it was recorded.` (and the same words for the other two). The sentences are `_common.IMPACT_SENTENCES`, shared with the HTML. "No check has confirmed this." is shown unless `check.guarantees.state` is `named`, and "confirmed by the check" only beside an item the check confirmed (AC-6). What a check said is shown even when the investigator listed none: "The check found none: <reason>", the not-addressed reason, or "Added by the check".
 
 ### 6.2 `report.json`
 
@@ -211,7 +211,7 @@ At most 3 each, each flattened to one line and clipped (200 and 160 characters).
 `section_source` (`bundle.py:207`) emitted raw text, so counting from the top of an excerpt (which starts at the function's line minus 15) is off by the excerpt's start line. It now numbers.
 
 - **Format.** `f"{n:>{w}} | {text}"` for line `n` (1-based), `w` the digit count of the file's last line number, constant for the file. Blank lines keep the trailing space. A source line cannot end the fence: its prefix keeps "```" from starting a line.
-- **Lines.** `source_lines(path)` reads bytes, decodes UTF-8 with replacement, splits at `\n` only, drops the empty string after a final newline, and drops one trailing `\r` per line. That is how `validate.py`'s `_count_lines` and `git blame` count; `c.read_text` (universal newlines) and `splitlines()` (form feed, lone `\r`) are not, and are no longer used for this block.
+- **Lines.** `source_lines(path)` reads bytes, decodes UTF-8 with replacement, splits at `\n` only, drops the empty string after a final newline, drops one trailing `\r` per line (CRLF), and shows any other `\r` as `␍` (U+240D). That is how `validate.py`'s `_count_lines` and `git blame` count; `c.read_text` (universal newlines) and `splitlines()` (form feed, lone `\r`) are not, and are no longer used for this block. The shown text therefore differs from the file's in three ways only: the CRLF's `\r` is dropped, a lone `\r` is `␍`, invalid UTF-8 is replaced. A lone `\r` is not a line break to git, so raw it would put `b = 2` after `a = 1` on a row with no number (`1 | a = 1\rb = 2`); `␍` keeps one numbered row per file line. A form feed is shown as is: it breaks no row.
 - **Notes.** The three forms are unchanged in wording (`whole file, N lines`; `lines A-B — the most complex function … the file is N lines and did not fit the budget`; `file trimmed to fit the budget; N lines total`), with `A = max(1, start − 15)`, `B = min(N, end + 15)` and `N` the real count: the old note counted the empty string after a final newline (562 for a 561-line file).
 - **Budget.** The numbers count. Whole file only if the numbered text is within the budget, else the excerpt or the head and tail of the file, clipped by `_clip_lines`: whole lines, 70% of the budget from the start and 25% from the end, and one marker line `... [trimmed: lines X-Y omitted] ...` naming the numbers left out. A line that does not fit is omitted and named, not cut. The block stays within `budget × 4` characters plus the marker. A file that fitted before may now be an excerpt.
 - **Determinism.** Nothing volatile enters the block; `test_bundles_are_within_budget_and_deterministic` is unchanged and passes.
@@ -236,11 +236,11 @@ New tests in `tests/test_fix_impact.py`, appended per task. Existing tests that 
 
 Unchanged and still passing: `test_the_prompt_example_is_a_complete_valid_shape` (reads `REQUIRED_FIELDS`), the skeptic contract tests (they read `VERDICT_KEYS`), `test_refutable_fields_are_finding_fields`, `test_the_brief_holds_the_claim_and_evidence_only`, `test_prepare_is_deterministic`, `test_bundles_are_within_budget_and_deterministic`, every benchmark baseline test, `test_labels_never_reach_the_pipeline`.
 
-- **Validator.** Every §2 rule with its message; the gate over each marked pattern and over `S05`, `S01`, `S12`, `OTHER`; "not both"; a traced item pointing at a catalog item; the broken-evidence case.
+- **Validator.** Every §2 rule with its message; the gate over each marked pattern and over `S05`, `S01`, `S12`, `OTHER`; a quote spanning two blast items; "not both"; a traced item pointing at a catalog item; the broken-evidence case.
 - **Settling.** `settle_guarantees` and `settle_not_checked` as pure functions over every malformed form; end to end through `verify.py save`/`apply`: named guarantees, items resolved and open, a verdict saying nothing, malformed keys, an unknown key (still a contract error), the ledger and reuse, a quoted blast item; resolving everything never changes status or reported confidence.
 - **Outputs.** An unverified finding shows claims as the investigator's; a verified one shows confirmed, added, resolved and open; every listed item appears once in `report.md`; `counts.not_checked` adds up; links come from evidence; old, empty and not-stated findings read as §6.1 says; the HTML in a real browser (rows, an old report, hostile text).
-- **Inert text.** Dedicated tests, because the lists in `test_inert_report.py:24` and `test_report_html.py:235` set top-level strings and `no_guarantees_reason` cannot sit beside guarantees: hostile text in every new field, in `report.md` (no added heading or table row), in the HTML data block, in the browser, and in the guardrail line (newlines flattened).
-- **Numbering.** The number before each line equals the file's line for LF, no-final-newline, CRLF, lone `\r` and form-feed files, for whole, excerpt, trimmed and clipped blocks; the marker's range plus the shown lines equals the note's range; the reproduction (function at line 76); the note counts equal `_count_lines`; the numbers count against the budget; an over-long line is named as omitted; determinism; every fixture bundle numbered; `shown_lines` exact on numbered blocks and unchanged on a legacy one.
+- **Inert text.** Dedicated tests, because the lists in `test_inert_report.py:24` and `test_report_html.py:235` set top-level strings and `no_guarantees_reason` cannot sit beside guarantees: hostile text in every new field (including `no_guarantees_reason`, `removed_by`, `how_to_check`, the check's `reason` and a guarantee the check added), in `report.md` (no added heading or table row), in the HTML data block and in the browser (each in both forms of the guarantees statement), and in the guardrail line (newlines flattened).
+- **Numbering.** The number before each line equals the file's line for LF, no-final-newline, CRLF, lone `\r` and form-feed files, a lone `\r` is shown as `␍` and no row is unnumbered, for whole, excerpt, trimmed and clipped blocks; the marker's range plus the shown lines equals the note's range; the reproduction (function at line 76); the note counts equal `_count_lines`; the numbers count against the budget; an over-long line is named as omitted; determinism; every fixture bundle numbered; `shown_lines` exact on numbered blocks and unchanged on a legacy one.
 - **Prompts and sample.** The investigator example validates; the prompt states the rules; the catalog brief marks exactly the six patterns; the sample shows every state.
 
 ## 10. `CLAUDE.md` invariants
@@ -286,7 +286,7 @@ No model call is added. An investigator writes more fields per finding (not meas
 1. **The impact fields point into `evidence` by position.** A second place for refs would need its own resolver, URLs, hashes, guardrail filing and shared-code detection; positions get all of them from the evidence list, and "every ref resolved mechanically" stays true by construction. Cost: a model must add the evidence item first. Messages name what a position points at.
 2. **`blast_radius` stays a required string; `blast_items` is added.** Changing its type would break old reports, `claim_hash` continuity, the brief and the skeptic's quoting at once. The string is the summary; items carry the basis.
 3. **`removed_by` is free text.** See §2.2.
-4. **The gate keys off the catalog's `fix_touches`.** Six patterns, data not code. `S05` and `S12` out; `OTHER`-only escapes (a limit, stated).
+4. **The gate keys off the catalog's `fix_touches`.** Six patterns, data not code: the ticket's scope of lock, retry and cache, not a property of the patterns. `S05` and `S12` are out and `S09` in because AC-2 says so. Adding one is one catalog line and a rules bump. `OTHER`-only escapes (a limit, stated).
 5. **`no_guarantees_reason` is a sibling key.** A sentinel item would be iterated as a guarantee; an object-or-list value would vary in type.
 6. **`blast_items` and `not_checked` are required, `implicit_guarantees` is not.** The rules bump re-checks everything anyway; leaving the first two optional would let a model skip them silently, which is the problem the ticket names.
 7. **A check annotates, never edits.** The finding keeps the investigator's words; the check's statements live in `check` and never change a status.
@@ -315,7 +315,7 @@ None blocks the plan: it builds each recommendation, and the answer changes a co
 
 1. **Raise the skeptic's read cap for scans that resolve items?** Recommendation: no, until `counts.not_checked` from the #104 evaluation shows the resolved share.
 2. **Line numbers outside the Source block.** Detector leads and boundaries come from `c.read_text`, so a file with a lone `\r` (classic Mac line ends) is numbered differently from git. Recommendation: a follow-up ticket; changing it changes `hotspots.json` hits and every hotspot hash. A form feed or CRLF is not affected.
-3. **Should `S05` and `S12` join the gate?** Recommendation: no; one catalog line each if the maintainer disagrees.
+3. **Product question: should `S12` (and `S05`) join the gate?** The ticket scoped the list, so the plan builds six patterns. One catalog line each and a rules bump if the maintainer says yes.
 4. **Are two more required keys worth the repair rate?** Recommendation: keep them required, count Incomplete hotspots on the first scans, and make `not_checked` optional (a rules bump) if the repair round fails visibly more often than before.
 
 ## 16. Contract for #108
@@ -327,7 +327,7 @@ Everything below is what a finding, `report.json` and `report.md` carry after th
 | Key | Type | Values |
 |---|---|---|
 | `blast_radius` | string | the summary, unchanged |
-| `blast_items` | array of 1 to 8 | `{"claim": string, "basis": "traced" \| "catalog" \| "assumption", "evidence": [int, …]}`; `evidence` present and non-empty for `traced` (positions of `code` items) and `catalog` (positions of `catalog` items), absent for `assumption` |
+| `blast_items` | array of 1 to 8 | `{"claim": string, "basis": "traced" \| "catalog" \| "assumption", "evidence": [int, …]}`; `evidence` present and non-empty for `traced` (positions of the `code` items the investigator says it followed; checked to exist, not to connect) and `catalog` (positions of `catalog` items), absent for `assumption` |
 | `not_checked` | array of 0 to 5 | `{"item": string, "how_to_check": string}` |
 | `implicit_guarantees` | optional array of 1 to 5 | `{"guarantee": string, "removed_by": string, "evidence": [int, …]}`; `removed_by` completes "removed by"; `evidence` positions of `code` items |
 | `no_guarantees_reason` | optional string | present only when `implicit_guarantees` is absent or empty |
@@ -350,4 +350,4 @@ Positions are 0-based indexes into the same finding's `evidence` array. In `repo
 
 **In `report.md`** (after **Check**, before **Preconditions**), in this order: `**Traced impact**`, `**Inferred impact**`, `**Implicit guarantees**`, `**Not checked**`, with the lines and sentences of §6.1. The sentences are in `_common.IMPACT_SENTENCES` (`not_assessed`, `traced`, `traced_none`, `inferred`, `inferred_none`, `guarantees`, `guarantees_none`, `guarantees_not_stated`, `not_checked`, `not_checked_none`, `unverified`); the renderers are `report.render_impact`, `render_guarantees` and `render_not_checked`, which #108 may call rather than copy. Model-written text goes through `mdtext` (`text`, `code`, `linked`).
 
-**Bundle source** (what a snippet is checked against): each shown line is `f"{n:>{w}} | {text}"`, `n` the file's 1-based line number, `w` the digit count of the file's last line number; a clipped block has one marker line `... [trimmed: lines X-Y omitted] ...`. `text` is the line with one trailing `\r` removed.
+**Bundle source** (what a snippet is checked against): each shown line is `f"{n:>{w}} | {text}"`, `n` the file's 1-based line number, `w` the digit count of the file's last line number; a clipped block has one marker line `... [trimmed: lines X-Y omitted] ...`. `text` is the line with one trailing `\r` removed and any other `\r` shown as U+240D.
