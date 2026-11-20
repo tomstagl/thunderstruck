@@ -89,7 +89,7 @@ Expected: every line `ok`.
 
 - [ ] **Step 2: Stop if anything is missing.** Any `MISSING` line ends the run before Task 1: replace `agent:in-progress` with `agent:blocked` on #105, comment "Blocked at Task 0: <the missing lines>. Main moved under this plan", open no PR. (A moved constant, such as another ticket having bumped `VALIDATION_RULES` or added a verdict key after `confirmations`, is amendable: say so in the comment so the next run takes step 6a of the skill.)
 
-- [ ] **Step 3: Record the baseline.** On a clean `origin/main`, run the full suite (command in the header). Expected `exit=0`; at the time of writing `2208 passed, 15 skipped`. Keep the counts: this plan adds tests, and a changed count that is not an addition is a regression to explain.
+- [ ] **Step 3: Record the baseline.** On a clean `origin/main`, run the full suite (command in the header). Expected `exit=0`; at the time of writing `2211 passed, 15 skipped`. Keep the counts: this plan adds tests, and a changed count that is not an addition is a regression to explain.
 
 No commit: this task changes nothing.
 
@@ -1917,7 +1917,7 @@ Expected: FAIL, 40 failed: `AttributeError: module 'verify' has no attribute 'se
 +VERDICT_NOT_CHECKED_KEYS = ("item", "state", "note", "evidence")
  SETTING_KEYS = ("setting", "default", "default_ref", "value")
  CODE_REF = re.compile(r"^(?P<path>[^:]+):(?P<start>[0-9]+)(?:-(?P<end>[0-9]+))?\Z")
-@@ -203,4 +208,13 @@ def render_brief(finding: dict, others: list[dict], deps_index: dict | None,
+@@ -204,4 +209,13 @@ def render_brief(finding: dict, others: list[dict], deps_index: dict | None,
               for p in finding.get("preconditions") or []]
      L += _block("preconditions", json.dumps(shown, indent=2, ensure_ascii=False))
 +    # #105: claims the investigator made; indexes are the ones a verdict answers by.
@@ -1931,7 +1931,7 @@ Expected: FAIL, 40 failed: `AttributeError: module 'verify' has no attribute 'se
 +        L += _block("no_guarantees_reason", finding["no_guarantees_reason"])
      L += defaults_section(finding)
      L += ["## Evidence as cited (the investigator's)", ""]
-@@ -368,8 +382,12 @@ def _quotes(finding: dict, field: str, claim) -> bool:
+@@ -369,8 +383,12 @@ def _quotes(finding: dict, field: str, claim) -> bool:
          return False
      if field == "preconditions":
 -        source = json.dumps(finding.get("preconditions") or [], ensure_ascii=False) + " " + c.MISSING_GATE_PHRASE
@@ -1947,7 +1947,7 @@ Expected: FAIL, 40 failed: `AttributeError: module 'verify' has no attribute 'se
 +    return any(_norm(claim) in _norm(source) for source in sources)
  
  
-@@ -501,4 +519,93 @@ def no_upheld_on_unconfirmed(finding: dict, check: dict) -> dict:
+@@ -502,4 +520,93 @@ def no_upheld_on_unconfirmed(finding: dict, check: dict) -> dict:
  
  
 +def _positions(raw, resolved: dict[int, dict], allowed: tuple[str, ...]) -> list[int]:
@@ -2041,7 +2041,7 @@ Expected: FAIL, 40 failed: `AttributeError: module 'verify' has no attribute 'se
 +
  UNCHECKED_NO_RESULT = "No verdict reached disk: the skeptic failed, stopped or its result was not saved."
  
-@@ -576,4 +683,7 @@ def _decide(finding: dict, entry: dict, result: dict | None, resolver: Resolver,
+@@ -577,4 +684,7 @@ def _decide(finding: dict, entry: dict, result: dict | None, resolver: Resolver,
      items = resolve_confirmations(finding, result, resolver, ignored)
  
 +    guarantees = settle_guarantees(finding, result, resolved, ignored)
@@ -2049,14 +2049,14 @@ Expected: FAIL, 40 failed: `AttributeError: module 'verify' has no attribute 'se
 +
      status, reason = verdict, str(result.get("reason") or "")
      if verdict in ("refuted", "narrowed") and not claims:
-@@ -616,4 +726,6 @@ def _decide(finding: dict, entry: dict, result: dict | None, resolver: Resolver,
+@@ -617,4 +727,6 @@ def _decide(finding: dict, entry: dict, result: dict | None, resolver: Resolver,
      for rc in claims:
          rc["evidence"] = [renumber[k] for k in rc["evidence"]]
 +    for item in [*guarantees["items"], *not_checked]:
 +        item["evidence"] = [renumber[k] for k in item["evidence"]]
      return {"status": status, "by": "skeptic", "reason": reason,
              "holds": result.get("holds") if status in ("narrowed", "upheld") else None,
-@@ -622,5 +734,6 @@ def _decide(finding: dict, entry: dict, result: dict | None, resolver: Resolver,
+@@ -623,5 +735,6 @@ def _decide(finding: dict, entry: dict, result: dict | None, resolver: Resolver,
              "model": c.MODEL_ALIASES.get(plan["model"], plan["model"]),
              "dependency_versions": dict(sorted(read.items())),
 -            "reused_from": None, "duplicate_of": duplicate, "confirmations": items}
@@ -2479,7 +2479,7 @@ Expected: FAIL, 12 failed: `AttributeError: module 'report' has no attribute 're
 +
  def order_key(f: dict) -> tuple:
      """Default-path findings first (#56 AC-5); inside a gate, today's order."""
-@@ -800,4 +804,111 @@ def render_history(f: dict) -> list[str]:
+@@ -802,4 +806,111 @@ def render_history(f: dict) -> list[str]:
  
  
 +def _cited(evidence: list[dict], idx, sep: str) -> str:
@@ -2591,7 +2591,7 @@ Expected: FAIL, 12 failed: `AttributeError: module 'report' has no attribute 're
 +
  def render_dormant(data: dict) -> list[str]:
      """Untouched files that carry integration-point leads (#19 AC-7)."""
-@@ -1107,5 +1218,6 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
+@@ -1109,5 +1220,6 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
                  note = f" — {md.text(ev['note'])}" if ev.get("note") else ""
                  L.append(f"- _{md.text(ev.get('type'))}_ {_evidence_ref(ev)}{note}")
 -            L += ["", *render_check(f), *render_preconditions(f), *render_history(f),
@@ -2599,7 +2599,7 @@ Expected: FAIL, 12 failed: `AttributeError: module 'report' has no attribute 're
 +                  *render_not_checked(f), *render_preconditions(f), *render_history(f),
                    f"**Verify** — {md.text(f.get('how_to_verify', '—'))}  ",
                    f"**Why this confidence** — {md.text(f.get('confidence_rationale', '—'))}  "]
-@@ -1184,4 +1296,11 @@ def defaults_counts(findings: list[dict]) -> dict:
+@@ -1186,4 +1298,11 @@ def defaults_counts(findings: list[dict]) -> dict:
  
  
 +def not_checked_counts(findings: list[dict]) -> dict[str, int]:
@@ -2611,13 +2611,13 @@ Expected: FAIL, 12 failed: `AttributeError: module 'report' has no attribute 're
 +
  def render_json(data: dict) -> dict:
      hs = data["hotspots"]
-@@ -1207,4 +1326,5 @@ def render_json(data: dict) -> dict:
+@@ -1209,4 +1328,5 @@ def render_json(data: dict) -> dict:
              "gate": {g: sum(1 for f in data["findings"] if f["gate"] == g) for g in c.GATES},
              "defaults": defaults_counts(data["findings"]),
 +            "not_checked": not_checked_counts(data["findings"]),
          },
          "warnings": list(hs.get("warnings") or []) + list(data.get("link_warnings") or []),
-@@ -1269,4 +1389,12 @@ def render_index(data: dict) -> dict:
+@@ -1271,4 +1391,12 @@ def render_index(data: dict) -> dict:
                          for h in _history(f)],
          }
 +        guarantees = [{k: g.get(k) for k in ("guarantee", "removed_by")}

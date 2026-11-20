@@ -112,7 +112,7 @@ This only acts on `--verify` scans (`VERIFY_BY_DEFAULT = False`, `_common.py:590
 
 ### 5.1 The brief (AC-4)
 
-`render_brief` is an allowlist (`verify.py:186`). After `preconditions` it adds, only when present and non-empty, fenced blocks under headings that say whose words they are: `blast_items` (as written), `implicit_guarantees` and `not_checked` (each item with an `index`, the position a verdict answers by), and `no_guarantees_reason`. They are claims, so they belong with the claim; none reads `confidence`, `confidence_rationale`, `notes`, `history` or `check`, which stay withheld (`test_the_brief_holds_the_claim_and_evidence_only`). The positions in `blast_items` and `implicit_guarantees` refer to the brief's own `evidence[i]` blocks. The blocks are `json.dumps` of the finding's own lists, so the brief stays byte-identical for an unchanged finding. A finding without the fields (the frozen scan) gets no block.
+`render_brief` is an allowlist (`verify.py:187`). After `preconditions` it adds, only when present and non-empty, fenced blocks under headings that say whose words they are: `blast_items` (as written), `implicit_guarantees` and `not_checked` (each item with an `index`, the position a verdict answers by), and `no_guarantees_reason`. They are claims, so they belong with the claim; none reads `confidence`, `confidence_rationale`, `notes`, `history` or `check`, which stay withheld (`test_the_brief_holds_the_claim_and_evidence_only`). The positions in `blast_items` and `implicit_guarantees` refer to the brief's own `evidence[i]` blocks. The blocks are `json.dumps` of the finding's own lists, so the brief stays byte-identical for an unchanged finding. A finding without the fields (the frozen scan) gets no block.
 
 ### 5.2 The verdict contract, amended (`#37 §8.1`)
 
@@ -136,15 +136,15 @@ This only acts on `--verify` scans (`VERIFY_BY_DEFAULT = False`, `_common.py:590
 
 ### 5.3 Settling (`#37 §9`)
 
-`_decide` resolves the verdict's evidence as today (`Resolver.evidence`, `verify.py:544`) and the refuted claims, and resolves `#57`'s `confirmations` (`resolve_confirmations`); then two new functions read the resolved positions, so a guarantee or an answer can only cite what resolved:
+`_decide` resolves the verdict's evidence as today (`Resolver.evidence`, `verify.py:545`) and the refuted claims, and resolves `#57`'s `confirmations` (`resolve_confirmations`); then two new functions read the resolved positions, so a guarantee or an answer can only cite what resolved:
 
 - `settle_guarantees` returns `check.guarantees = {state, reason, items}`: `named` when at least one item survives, `none_found` when a reason is given and none survive, else `not_addressed` with a fixed reason. Dropped items and a reason given beside items are named under "Ignored".
 - `settle_not_checked` returns `check.not_checked`: **exactly one entry per item of the finding, in order**. An item the skeptic did not answer, or answered badly (unknown index, repeated, no note, `resolved` without resolving evidence), is `unresolved` with `_common.NOT_ADDRESSED` and the cause under "Ignored". So no item disappears (AC-5), and an unresolved item stays open on the reported finding.
-- Evidence positions are renumbered with `refuted_claims`' (`verify.py:615`), so they index `check.evidence`.
+- Evidence positions are renumbered with `refuted_claims`' (`verify.py:616`), so they index `check.evidence`.
 
 A wrong type for `guarantees` or `not_checked` (say a string) is ignored with a note, and every item is then unresolved. It never costs the verdict (Decision 8): the two are secondary duties, and losing a refutation to a malformed secondary field would make verification worse than before this change.
 
-**Neither changes a status.** `_decide`'s table (`#37 §9`) is untouched and runs on the same inputs; the new results are written beside the status, next to `check.confirmations`. A skeptic cannot raise confidence by resolving everything: `effective_confidence` reads `check.status` only. The one rule that can still move a status after the table is `#57`'s, not this ticket's (§5.5). The ledger and reuse copy `check` whole (`verify.py:518, 666`), so resolutions are remembered with the verdict, and any change to a guarantee, blast item or not-checked item changes `claim_hash` (`verify.py:78` hashes every non-owned key, bar `preconditions[].confirmation`, §5.5) and forces a new check.
+**Neither changes a status.** `_decide`'s table (`#37 §9`) is untouched and runs on the same inputs; the new results are written beside the status, next to `check.confirmations`. A skeptic cannot raise confidence by resolving everything: `effective_confidence` reads `check.status` only. The one rule that can still move a status after the table is `#57`'s, not this ticket's (§5.5). The ledger and reuse copy `check` whole (`verify.py:519, 667`), so resolutions are remembered with the verdict, and any change to a guarantee, blast item or not-checked item changes `claim_hash` (`verify.py:78` hashes every non-owned key, bar `preconditions[].confirmation`, §5.5) and forces a new check.
 
 ### 5.4 The read cap and resolving N items (AC-5)
 
