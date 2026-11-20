@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -317,6 +318,31 @@ def section_history(repo: Path, hs: dict, since: str, budget: int, k: int,
     return "\n".join(out)
 
 
+CALLER_GLOBS = ("*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.py")
+CALL_SITES_NONE = ("None found: no other tracked `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs` "
+                   "or `.py` file names these symbols as a whole word.")
+CALL_SITES_NOT_SEARCHED = ("Not searched: the search for call sites did not finish, "
+                           "so they are unknown, not absent.")
+
+
+def call_site_hits(repo: Path, symbols: list[str]) -> str | None:
+    """Return whole-word matches, or None if the search did not finish.
+
+    Fixed strings with git's own word matching avoid the platform-dependent
+    extended regex behavior in #66. Preserve unquoted paths for self-filtering.
+    """
+    args = ["git", "-C", str(repo), "-c", "core.quotePath=false", "grep", "-n", "-I", "-w", "-F"]
+    for symbol in symbols:
+        args += ["-e", symbol]
+    try:
+        proc = subprocess.run([*args, "--", *CALLER_GLOBS], capture_output=True, timeout=60)
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if proc.returncode not in (0, 1):  # 1 means no match, not search failure.
+        return None
+    return proc.stdout.decode("utf-8", "surrogateescape")
+
+
 def section_related(repo: Path, hs: dict, all_hotspots: list[dict], budget: int) -> str:
     rel = hs["file"]
     text = c.read_text(repo / rel) or ""
@@ -362,15 +388,10 @@ def section_related(repo: Path, hs: dict, all_hotspots: list[dict], budget: int)
                     if name and name.isidentifier() and name not in symbols:
                         symbols.append(name)
                 break
-    callers: list[str] = []
     if symbols:
-        pattern = r"\b(" + "|".join(re.escape(s) for s in symbols[:12]) + r")\b"
-        # unquoted names, so a non-ASCII hotspot matches itself below; the
-        # pathspecs stay globs on purpose
-        hits = c.git_paths(repo, "-c", "core.quotePath=false", "grep", "-n", "-I", "-E",
-                           pattern, "--", "*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.py",
-                           check=False, timeout=60)
-        for line in hits.split("\n"):
+        hits = call_site_hits(repo, symbols[:12])
+        callers: list[str] = []
+        for line in (hits or "").split("\n"):
             if not line.strip() or not c.is_utf8(line):
                 continue   # a name or line that isn't UTF-8 can't be written or cited
             path = line.split(":", 1)[0]
@@ -379,12 +400,15 @@ def section_related(repo: Path, hs: dict, all_hotspots: list[dict], budget: int)
             callers.append(line.strip()[:160])
             if len(callers) >= 15:
                 break
-    if symbols:
         out += ["## Symbols this file exports", "",
-                ", ".join(f"`{s}`" for s in symbols[:25]), ""]
-    if callers:
-        out += ["## Call sites elsewhere in the repo", ""]
-        out += [f"- `{ln}`" for ln in callers]
+                ", ".join(f"`{s}`" for s in symbols[:25]), "",
+                "## Call sites elsewhere in the repo", ""]
+        if hits is None:
+            out.append(CALL_SITES_NOT_SEARCHED)
+        elif callers:
+            out.extend(f"- `{ln}`" for ln in callers)
+        else:
+            out.append(CALL_SITES_NONE)
         out.append("")
 
     others = [h["file"] for h in all_hotspots if h["file"] != rel]
@@ -558,6 +582,8 @@ def main(argv: list[str] | None = None) -> int:
                             args.budget, args.commits, hotspots, ctx)
         path = dest_dir / f"{hs['id']}.md"
         path.write_text(body, encoding="utf-8")
+        if f"## Call sites elsewhere in the repo\n\n{CALL_SITES_NOT_SEARCHED}" in body:
+            print(f"{hs['id']} {hs['file']}: call sites not searched; its briefing says so")
         bundle_hash = c.sha256_text(body)
 
         # Checkpoint: a finding produced from an identical bundle is still
