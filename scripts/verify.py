@@ -92,8 +92,9 @@ def _ref_path(ref) -> str | None:
 def cited_files(finding: dict, verdict_evidence=(), confirmations=()) -> list[str]:
     files = [(finding.get("location") or {}).get("file")]
     for it in confirmations or ():
-        if isinstance(it, dict):
-            files += [_ref_path(it.get("default_ref")), _ref_path(it.get("stated_ref"))]
+        if isinstance(it, dict):  # an unresolved default_ref names no file to watch
+            files += [None if it.get("default_ref_error") else _ref_path(it.get("default_ref")),
+                      _ref_path(it.get("stated_ref"))]
     for ev in list(finding.get("evidence") or []) + list(verdict_evidence):
         if isinstance(ev, dict) and ev.get("type") == "code":
             files.append(_ref_path(ev.get("ref")))
@@ -394,7 +395,7 @@ def _contract_problem(result: dict, entry: dict) -> str | None:
         return f"key {result.get('key')!r} is not {entry['key']!r}"
     if result.get("verdict") not in c.VERDICTS:
         return f"verdict {result.get('verdict')!r} is not one of {list(c.VERDICTS)}"
-    for name in ("refuted_claims", "evidence", "dependencies_read"):
+    for name in ("refuted_claims", "evidence", "dependencies_read", "confirmations"):
         if result.get(name) is not None and not isinstance(result[name], list):
             return f"{name} is not a list"
     return None
