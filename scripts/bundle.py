@@ -331,11 +331,12 @@ def call_site_hits(repo: Path, symbols: list[str]) -> str | None:
     Fixed strings with git's own word matching avoid the platform-dependent
     extended regex behavior in #66. Preserve unquoted paths for self-filtering.
     """
-    args = ["git", "-C", str(repo), "-c", "core.quotePath=false", "grep", "-n", "-I", "-w", "-F"]
-    for symbol in symbols:
-        args += ["-e", symbol]
+    patterns = [arg for symbol in symbols for arg in ("-e", symbol)]
     try:
-        proc = subprocess.run([*args, "--", *CALLER_GLOBS], capture_output=True, timeout=60)
+        proc = subprocess.run(
+            ["git", "-C", str(repo), "-c", "core.quotePath=false", "grep", "-n", "-I", "-w", "-F",
+             *patterns, "--", *CALLER_GLOBS], capture_output=True, timeout=60,
+        )
     except (subprocess.TimeoutExpired, OSError):
         return None
     if proc.returncode not in (0, 1):  # 1 means no match, not search failure.

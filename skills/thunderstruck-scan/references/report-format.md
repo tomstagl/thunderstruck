@@ -103,9 +103,10 @@ Per finding, `report.json` carries, in addition to the contract's fields:
 - `confidence`: the reported confidence; `confidence_claimed`: the claim.
 - `check`: the stored check object, with `status` normalised to one of
   `unchecked`, `upheld`, `narrowed`, `inconclusive`, `refuted`.
-- `gate`: `none` or `non_default_setting` (`_common.finding_gate`). Findings
-  are ordered by gate, then confidence, then hotspot score; gated findings
-  come last and are marked.
+- `gate`: `none`, `unconfirmed_default` or `non_default_setting`
+  (`_common.finding_gate`, in that order). Findings are ordered by gate, then
+  confidence, then hotspot score; gated findings come after the default-path
+  ones and are marked.
 - `preconditions`: as validated, each item gaining `default_url` and
   `doc_url` (a link or `null`).
 - `history`: one entry per distinct cited commit, `{sha, class, role,
@@ -113,12 +114,12 @@ Per finding, `report.json` carries, in addition to the contract's fields:
   confidence.
 
 `counts.check_status` counts all five statuses (zeros included) and
-`counts.gate` both gates. Commit evidence no longer carries `kind`; the class
+`counts.gate` all three gates. Commit evidence no longer carries `kind`; the class
 is in `history[].class`.
 
 `index.json` (still `thunderstruck.index/v1`, additive) gives each finding
 `check_status`, `gate`, `preconditions` (`setting`, `default`, `needs`,
-`value`) and `history` (`sha`, `class`, `wrote_cited_line`); `confidence` is
+`value`, and `confirmation`: `confirmed` or `unconfirmed`) and `history` (`sha`, `class`, `wrote_cited_line`); `confidence` is
 the reported one, and `sustaining_effect` is written only when present.
 
 Reserved for #37 (verification), under `check`: `by`, `reason`, `holds`,
@@ -150,10 +151,11 @@ Keys under `check`, all written by `verify.py apply`:
 | `dependency_versions` | `{"pypi:kombu": "5.7.0a1"}`: the packages the skeptic read |
 | `reused_from` | `null`, or `{scan, head}` of the scan whose skeptic produced a reused verdict |
 | `duplicate_of` | `null`, or the key of another finding in this scan |
+| `confirmations` | The skeptic's resolved confirmation items (see *Confirmed defaults*) |
 
 The skeptic returns exactly one JSON object with the top-level keys `key`,
 `verdict`, `reason`, `holds`, `refuted_claims`, `evidence`,
-`dependencies_read` and `duplicate_of`; an unknown key, a `verdict` outside
+`dependencies_read`, `duplicate_of` and `confirmations`; an unknown key, a `verdict` outside
 the four, or a `key` it was not given leaves the finding `unchecked` with the
 reason. A `refuted` or `narrowed` verdict with no resolving evidence is
 `inconclusive`.
@@ -179,8 +181,37 @@ them; a narrowed entry gains `holds`; a survivor of a duplicate group is also
 filed under each absorbed finding's file with `"via": "duplicate"` and
 `"anchor"` its own file.
 
-Reserved for #57 (confirmed defaults): `preconditions[].confirmation`, and the
-gate `unconfirmed_default`, placed in `GATES` by #57.
+## Confirmed defaults
+
+Every precondition carries `confirmation`, written by `validate.py` on every
+run and by `verify.py apply`, and derived again by `report.py` from stored
+facts (`_common.with_confirmations`); a model never writes it.
+
+| Key | Values |
+|---|---|
+| `state` | `confirmed` or `unconfirmed` |
+| `basis` | `registered` (the only confirmed one), `contradicted`, `call_site_fallback`, `not_found`, `unresolved`, `not_checked` |
+| `reason` | `_common.CONFIRMATION_REASONS[basis]` |
+| `call_site` | whether the investigator's `default_ref` is a fallback read of the setting (`setting_reads` in the catalog), or `null` when it could not be read |
+| `by` | `validator` or `skeptic` |
+
+The skeptic's verdict may carry `confirmations`, a list of `{setting, claim,
+stated_ref, found, default, default_ref, reason}`; `found` is `same`,
+`different` or `not_found`. `apply` keeps the items that follow the contract
+under `check.confirmations`, each with `precondition` (the index of the listed
+precondition, or `null` for a default the finding relies on but does not
+list), `stated_call_site`, `default_names_setting`, `default_call_site`,
+`default_ref_error` and its derived `confirmation`. In `report.json` each item
+gains `default_url` and `stated_url` (`null` for a dependency ref). A finding
+whose check is `upheld` but that relies on an unconfirmed default settles as
+`inconclusive`.
+
+`counts.defaults` is `{"confirmed": n, "unconfirmed": n, "basis": {<six
+bases>: n}}` over the listed preconditions and unlisted items of the reported
+findings. A doubtful basis (`call_site_fallback`, `contradicted`, `not_found`,
+`unresolved`) gates the finding as `unconfirmed_default`, marked "relies on a
+doubtful default"; an ungated finding with a `not_checked` default is marked
+"default unconfirmed".
 
 ## Service context
 

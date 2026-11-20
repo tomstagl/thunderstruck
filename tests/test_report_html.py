@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+import _common as c
 import report_html
 from test_pipeline import _hotspots, _valid_finding, _validate, _write_finding
 
@@ -236,7 +237,11 @@ HOSTILE_TEXT = ('</script><script id="pwn">window.pwned=1</script>'
 MODEL_FIELDS = ("failure_mode", "trigger_condition", "amplifier", "sustaining_effect",
                 "blast_radius", "how_to_verify", "confidence_rationale",
                 "check.reason", "check.holds", "check.refuted_claims.0.claim",
-                "check.refuted_claims.0.fact", "check.evidence.0.note")
+                "check.refuted_claims.0.fact", "check.evidence.0.note",
+                # #57: a check's confirmation item, unlisted, so every field is shown
+                "check.confirmations.0.setting", "check.confirmations.0.default",
+                "check.confirmations.0.default_ref", "check.confirmations.0.stated_ref",
+                "check.confirmations.0.claim", "check.confirmations.0.reason")
 
 
 def _set_path(doc: dict, path: str, value) -> None:
@@ -277,7 +282,10 @@ def test_hostile_model_text_stays_inside_the_data_block(scanned_copy, plugin_roo
     saved["findings"][0]["check"] = {
         "status": "narrowed", "by": "skeptic", "model": "claude-haiku-4-5", "duplicate_of": None,
         "refuted_claims": [{"field": "amplifier", "evidence": [0]}],
-        "evidence": [{"type": "code", "ref": code_ref}]}
+        "evidence": [{"type": "code", "ref": code_ref}],
+        "confirmations": [{"precondition": None, "found": "different", "default_ref_error": None,
+                           "default_names_setting": True, "default_call_site": False,
+                           "stated_call_site": None}]}
     for field in MODEL_FIELDS:
         if "." in field:
             _set_path(saved["findings"][0], field, f"{field}: {HOSTILE_TEXT}")
@@ -384,3 +392,17 @@ def test_page_embeds_verdicts_refuted_findings_and_duplicates():
     assert page["refuted"][0]["check"]["reason"] == "not so"
     assert page["findings"][0]["also_at"][0]["location"]["file"] == "src/b.ts"
     assert page["findings"][0]["check"]["refuted_claims"][0]["field"] == "amplifier"
+
+
+def test_confirmation_reasons_match_common():
+    import re
+    template = (ROOT / "templates" / "report.html").read_text()
+    m = re.search(r"var CONFIRMATION_REASONS = (\{.*?\});", template)
+    assert m and json.loads(m.group(1)) == c.CONFIRMATION_REASONS
+
+
+def test_gate_markers_include_the_unconfirmed_default():
+    import re
+    template = (ROOT / "templates" / "report.html").read_text()
+    m = re.search(r"var GATE_MARKERS = (\{.*?\});", template)
+    assert json.loads(m.group(1)) == c.GATE_MARKERS

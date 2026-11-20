@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/guardrail.py\" 2>/dev/null || exit 0",
+            "command": "python3 -S \"${CLAUDE_PLUGIN_ROOT}/scripts/guardrail.py\" 2>/dev/null || exit 0",
             "timeout": 5
           }
         ]
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/capture_finding.py\" 2>/dev/null || exit 0",
+            "command": "python3 -S \"${CLAUDE_PLUGIN_ROOT}/scripts/capture_finding.py\" 2>/dev/null || exit 0",
             "timeout": 5
           }
         ]

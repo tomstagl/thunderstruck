@@ -549,9 +549,11 @@ CHECK_SENTENCES = {
 COMMIT_ROLES = ("introduced", "fixed", "mitigated", "changed")
 PRECONDITION_NEEDS = ("changed", "default")
 DOCUMENTED = ("yes", "no", "not_checked")
-# Report order: default-path findings first. #57 inserts "unconfirmed_default" (its spec).
-GATES = ("none", "non_default_setting")
-GATE_MARKERS = {"non_default_setting": "needs a non-default setting"}
+# Report order: default-path findings first, then findings resting on a
+# doubtful default (#57, only doubtful bases gate), then findings that need a non-default setting.
+GATES = ("none", "unconfirmed_default", "non_default_setting")
+GATE_MARKERS = {"unconfirmed_default": "relies on a doubtful default",
+                "non_default_setting": "needs a non-default setting"}
 
 
 def check_status(finding: dict) -> str:
@@ -612,7 +614,146 @@ def finding_gate(finding: dict) -> str:
         return "non_default_setting"
     if skeptic_settings(finding):
         return "non_default_setting"
-    return "none"
+    return "unconfirmed_default" if doubtful_defaults(finding) else "none"
+
+
+# --------------------------------------------------------------------------
+# confirmed defaults (spec 2026-10-04-confirmed-defaults-design.md)
+# --------------------------------------------------------------------------
+
+CONFIRMATION_STATES = ("confirmed", "unconfirmed")
+CONFIRMATION_BASES = ("registered", "contradicted", "call_site_fallback",
+                      "not_found", "unresolved", "not_checked")
+CONFIRMATION_FOUND = ("same", "different", "not_found")
+CONFIRMATION_REASONS = {
+    "registered": "a check found this default registered, and it agrees",
+    "contradicted": "a check found a different default registered",
+    "call_site_fallback": ("the default is stated where the setting is read, as a fallback; "
+                           "the value in effect may be registered elsewhere"),
+    "not_found": "a check found no place that registers this default",
+    "unresolved": "the place a check gave for this default does not resolve",
+    "not_checked": "no check looked for where this default is registered",
+}
+
+
+# The one sentence every agent and the scan skill carry (#57 AC-5).
+NO_EXECUTION = "Never run, import, install or build the project you are analysing, or anything in it."
+
+
+def confirm(call_site, item: dict | None = None) -> dict:
+    """The one confirmation rule (spec §3.2). `call_site` is the fallback-read
+    rule applied to the stated location; `item` is a check's resolved item."""
+    if not isinstance(item, dict):
+        basis = "call_site_fallback" if call_site is True else "not_checked"
+    elif item.get("found") == "not_found":
+        basis = "not_found"
+    elif item.get("default_ref_error") or item.get("default_names_setting") is False:
+        basis = "unresolved"
+    elif item.get("default_call_site") is True:
+        basis = "call_site_fallback"
+    elif item.get("found") == "different":
+        basis = "contradicted"
+    elif item.get("found") == "same":
+        basis = "registered"
+    else:
+        basis = "not_checked"
+    return {"state": "confirmed" if basis == "registered" else "unconfirmed",
+            "basis": basis, "reason": CONFIRMATION_REASONS[basis]}
+
+
+def confirmation_state(conf) -> str:
+    state = conf.get("state") if isinstance(conf, dict) else None
+    return state if state in CONFIRMATION_STATES else "unconfirmed"
+
+
+def with_confirmations(finding: dict, items: list[dict] | None) -> dict:
+    """A copy of the finding with every confirmation derived from stored facts:
+    each precondition's validator `call_site`, and the check's items (None when
+    no check counts for this scan). Never trusts a stored state."""
+    out = dict(finding)
+    items = [it for it in items or [] if isinstance(it, dict)]
+    by_index = {it["precondition"]: it for it in items if isinstance(it.get("precondition"), int)}
+    pres = []
+    for j, p in enumerate(finding.get("preconditions") or []):
+        if not isinstance(p, dict):
+            pres.append(p)
+            continue
+        stored = p.get("confirmation") if isinstance(p.get("confirmation"), dict) else {}
+        call_site = stored.get("call_site")
+        it = by_index.get(j)
+        pres.append({**p, "confirmation": {**confirm(call_site, it), "call_site": call_site,
+                                           "by": "skeptic" if it else "validator"}})
+    out["preconditions"] = pres
+    check = finding.get("check") if isinstance(finding.get("check"), dict) else None
+    if check is not None or items:
+        derived = []
+        for it in items:
+            j = it.get("precondition")
+            conf = (pres[j]["confirmation"] if isinstance(j, int) and j < len(pres)
+                    and isinstance(pres[j], dict) else confirm(it.get("stated_call_site"), it))
+            derived.append({**it, "confirmation": {k: conf[k] for k in ("state", "basis", "reason")}})
+        out["check"] = {**(check or {}), "confirmations": derived}
+    return out
+
+
+def unconfirmed_defaults(finding: dict) -> list[dict]:
+    """The defaults a finding relies on that no check confirmed: needs-default
+    preconditions and the check's unlisted items. The one reliance rule."""
+    out = [p for p in finding.get("preconditions") or []
+           if isinstance(p, dict) and p.get("needs") == "default"
+           and confirmation_state(p.get("confirmation")) != "confirmed"]
+    check = finding.get("check") if isinstance(finding.get("check"), dict) else {}
+    out += [it for it in check.get("confirmations") or []
+            if isinstance(it, dict) and it.get("precondition") is None
+            and confirmation_state(it.get("confirmation")) != "confirmed"]
+    return out
+
+
+_SETTING_NAME = re.compile(r"[\w.\-:/\[\]@]+")
+
+
+def names_setting(text: str, setting, lang: str | None) -> bool:
+    """Spec §4.3: the text (comments blanked when the language is known) contains
+    the setting's name or a `_`/`.`-delimited suffix of it of two or more segments."""
+    name = setting.strip() if isinstance(setting, str) else ""
+    if not name or not _SETTING_NAME.fullmatch(name):
+        return False
+    body = (strip_comments(text, lang) if lang else text).casefold()
+    parts = re.split(r"[_.]", name.casefold())
+    seps = re.findall(r"[_.]", name)
+    candidates = {name.casefold()}
+    for i in range(1, len(parts) - 1):
+        candidates.add("".join(parts[j] + (seps[j] if j < len(seps) else "") for j in range(i, len(parts))))
+    return any(cand and cand in body for cand in candidates)
+
+
+def reads_with_fallback(text: str, setting, lang: str | None, catalog: dict) -> bool | None:
+    """True when `text` reads `setting` and supplies its own fallback at that read
+    (spec §4). None when the language has no setting_reads patterns."""
+    reads = catalog.get("setting_reads") or {}
+    if not lang:
+        return None
+    patterns = reads.get(lang) or reads.get(detector_language(catalog, lang))
+    if not patterns:
+        return None
+    name = setting.strip() if isinstance(setting, str) else ""
+    if not name or not _SETTING_NAME.fullmatch(name):
+        return False
+    body = strip_comments(text, lang)
+    escaped = re.escape(name)
+    return any(re.search(p.replace("{setting}", escaped), body, re.IGNORECASE | re.MULTILINE)
+               for p in patterns)
+
+
+# Product decision (#57): only these move a finding behind the default-path ones.
+DOUBTFUL_BASES = ("call_site_fallback", "contradicted", "not_found", "unresolved")
+DEFAULT_UNCONFIRMED_MARKER = "default unconfirmed"
+
+
+def doubtful_defaults(finding: dict) -> list[dict]:
+    """The unconfirmed defaults with a reason to doubt them; `not_checked` is not one."""
+    return [d for d in unconfirmed_defaults(finding)
+            if isinstance(d.get("confirmation"), dict) and d["confirmation"].get("basis") in DOUBTFUL_BASES]
 
 
 def path_glob_to_re(glob: str) -> re.Pattern:

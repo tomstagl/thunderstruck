@@ -31,6 +31,10 @@ Every script runs from this plugin's own `scripts/` directory, by the full
 path shown in each command. Use the paths exactly as written; never look for
 the scripts anywhere else, such as a thunderstruck checkout.
 
+Never run, import, install or build the project you are analysing, or anything in it.
+The scan starts `git` and this plugin's own scripts, and the service-catalog
+command only as the user approved it.
+
 ## Step 0 — preflight
 
 Fail fast, before spending anything:
