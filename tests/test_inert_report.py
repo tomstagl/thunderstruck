@@ -75,6 +75,13 @@ def test_hostile_model_text_stays_inert(linked_copy, plugin_root):
     saved_path = linked_copy / ".thunderstruck" / "findings" / f"{hid}.json"
     saved = json.loads(saved_path.read_text())
     saved["findings"][0]["check"]["reason"] = f"reason: {HOSTILE}"
+    # #57: a check's confirmation items, listed and unlisted, carry model text in every field
+    saved["findings"][0]["check"]["confirmations"] = [
+        {"setting": f"setting: {HOSTILE}", "precondition": j, "claim": None if j == 0 else f"claim: {HOSTILE}",
+         "stated_ref": None if j == 0 else f"stated_ref: {HOSTILE}", "stated_call_site": None,
+         "found": "different", "default": f"default: {HOSTILE}", "default_ref": f"default_ref: {HOSTILE}",
+         "default_ref_error": None, "default_names_setting": True, "default_call_site": False,
+         "reason": f"reason: {HOSTILE}"} for j in (0, None)]
     saved_path.write_text(json.dumps(saved))
     _verification_ran(linked_copy)
     subprocess.run([sys.executable, str(plugin_root / "scripts" / "report.py"),
@@ -83,6 +90,7 @@ def test_hostile_model_text_stays_inert(linked_copy, plugin_root):
     _assert_inert(markdown)
     html = render(markdown)
     assert html.tags.count("h3") == 1, "a field must not add a heading"
+    assert "claim: " in markdown and "stated_ref: " in markdown  # the unlisted item was rendered
     finding_table_rows = markdown.split("### FR-001", 1)[1].split("**Evidence**", 1)[0]
     assert render(finding_table_rows).tags.count("tr") == 6, "one row per field, none added"
     assert "fake heading" in "".join(html.text) and "fake item" in "".join(html.text)

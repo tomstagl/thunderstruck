@@ -73,8 +73,9 @@ def test_sample_report_links_its_refs():
     assert refs and locations
     unlinked = [line for line in refs if not re.match(r"- _\w+_ " + link, line)]
     unlinked += [line for line in locations
-                 if not re.search(r"\*\* · (?:unchecked|upheld|narrowed|inconclusive) (?:· needs a non-default setting )?· " + link,
-                                  line)]
+                 if not re.search(r"\*\* · (?:unchecked|upheld|narrowed|inconclusive) "
+                                  r"(?:· (?:needs a non-default setting|relies on a doubtful default"
+                                  r"|default unconfirmed) )?· " + link, line)]
     assert not unlinked, "unlinked refs in sample-report.md:\n" + "\n".join(unlinked)
 
 

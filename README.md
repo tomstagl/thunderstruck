@@ -177,6 +177,17 @@ A finding is a hypothesis, and it has to earn its place:
 - **Preconditions are stated.** Each finding lists the settings it needs
   changed or relies on, with the default and where it is registered.
   Findings that happen on default settings come first; the rest are marked.
+- **Defaults are confirmed or flagged, never assumed.** Every default a
+  finding relies on is shown as confirmed or unconfirmed, with why. A default
+  stated at the line that reads the setting, as a fallback argument
+  (`conf.get('retry', True)`), is flagged mechanically: a settings layer may
+  hold another value, and the fallback then never applies. Only a check that
+  cites where the default is registered can confirm it, and a finding resting
+  on an unconfirmed default is never reported `upheld`. When the default is
+  doubtful (stated at a fallback read, contradicted, not found, or at a place
+  that does not resolve) the finding is listed after default-path findings
+  and marked *relies on a doubtful default*; when it was merely not checked,
+  the finding keeps its place and is marked *default unconfirmed*.
 - **Nothing is filled in.** `amplifier` and `sustaining_effect` are given
   only when the code shows them; otherwise the report says *not stated*.
 - **Validation proves the citations, not the claim.** A commit cited as
@@ -367,6 +378,13 @@ the source of your declared dependencies. That source is read from what is
 already installed locally (the project's virtual environment, `node_modules`,
 the local Maven or Gradle cache) and copied into `.thunderstruck/deps/`. It is
 never downloaded, and nothing in it is executed.
+
+**thunderstruck never runs, imports, installs or builds the project it
+scans.** It starts `git`, and the service-catalog command you approved by
+hash; even when that command is a script in the repository, it runs only as
+approved. Its hooks start Python with `-S`, so an active project virtual
+environment's `.pth` files never run in them. `/thunderstruck-verify` runs a
+test only when you ask it to, under Claude Code's permission prompts.
 
 ## Repository content is data, not instruction
 

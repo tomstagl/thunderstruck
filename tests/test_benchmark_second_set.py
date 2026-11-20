@@ -209,6 +209,15 @@ SECOND_PIPELINE_TOTALS: dict[str, dict[str, list[int]]] = {
         "confidence: under": [4, 15],
         "confidence: within one": [14, 15],
     },
+    # #57: labelled defaults are scored even where the run states none (spec §13.2),
+    # so the pipeline run, which states no preconditions, has the measure too.
+    "defaults": {
+        "default matches effective": [0, 0],
+        "default matches literal only": [0, 0],
+        "default matches neither": [0, 0],
+        "default not stated": [0, 0],
+        "upheld on a default not stated at its effective value": [0, 11],
+    },
     "duplicates": {
         "duplicates found": [0, 0],
         "false duplicates": [0, 15],

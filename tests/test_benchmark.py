@@ -359,6 +359,18 @@ def test_defaults_effective_literal_neither_and_not_stated():
     assert all(not x["discriminating"] for x in m["rows"] if x["outcome"] == "not stated")
 
 
+def test_an_upheld_finding_without_exported_defaults_does_not_escape_scoring():
+    key = "synthetic"
+    label_set = {"_by_key": {key: {"preconditions": [{
+        "kind": "setting", "setting": "retries",
+        "literal": {"type": "number", "value": 0},
+        "effective": {"type": "number", "value": 5},
+    }]}}}
+    score = b.score_defaults({key: {"verdict": "upheld"}}, label_set)
+    assert score["counts"]["not stated"] == 1
+    assert score["upheld_on_wrong_default"] == [{"key": key, "setting": "retries"}]
+
+
 def test_environment_preconditions_are_not_scored():
     s = _celery()
     m = b.score_defaults({_key("FR-014"): {"preconditions": [{"setting": "result_backend", "default": "x"}]}}, s)
@@ -627,3 +639,30 @@ def test_an_unreadable_report_is_named_by_its_own_path(tmp_path):
     with pytest.raises(b.InputError) as e:
         b.add_bundles({"findings": {}}, CELERY / "scan" / "bundles", bad)
     assert str(bad) in e.value.problems[0]
+
+
+def test_confirmed_defaults_that_are_not_effective_are_listed():
+    s = _celery()
+    k = _key("FR-015")
+    m = b.score_defaults({k: {"preconditions": [
+        {"setting": "result_backend_always_retry", "default": "True", "confirmation": "confirmed"},
+        {"setting": "result_backend_max_retries", "default": "inf", "confirmation": "confirmed"}]}}, s)
+    assert m["confirmed"] == 2
+    assert m["confirmed_not_effective"] == [{"key": k, "setting": "result_backend_always_retry"}]
+    assert {r["setting"]: r.get("confirmation") for r in m["rows"] if r["key"] == k}[
+        "result_backend_max_retries"] == "confirmed"
+
+
+def test_upheld_findings_on_a_wrong_or_unstated_default_are_listed():
+    s = _celery()
+    k15, k16 = _key("FR-015"), _key("FR-016")
+    records = {
+        k15: {"verdict": "upheld", "preconditions": [
+            {"setting": "result_backend_always_retry", "default": "True"}]},   # max_retries not stated
+        k16: {"verdict": "upheld", "preconditions": []},                       # no discriminating label
+    }
+    got = b.upheld_on_wrong_default(records, s)
+    assert {"key": k15, "setting": "result_backend_always_retry"} in got
+    assert {"key": k15, "setting": "result_backend_max_retries"} in got
+    assert all(x["key"] != k16 for x in got)
+    assert b.upheld_on_wrong_default({k15: {"verdict": "narrowed"}}, s) == []

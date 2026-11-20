@@ -163,3 +163,119 @@ figures below are each session's own per-model usage, at list price.
 | `sonnet` | `claude-sonnet-5-5` (orchestrator and skeptics) | 208 | 57,381 | 1,852,880 | 388,442 | $1.82 |
 | `opus` | `claude-opus-5-5` (skeptics) | 236 | 54,528 | 1,782,223 | 414,401 | $3.52 |
 | `opus` | `claude-sonnet-5-5` (orchestrator) | 38 | 27,028 | 1,157,708 | 65,813 | $0.65 |
+
+## Defaults (#57, Task 15)
+
+Measured plugin 0.14.0 at `3900888` against the same frozen Celery checkout
+and dependency snapshots as above (4 of 73 available). Claude Code 2.1.327
+loaded the local plugin; one Haiku skeptic ran per finding in fresh headless
+sessions, at most four concurrent, with no re-spawns. All 21 returned: 9
+upheld, 10 narrowed, 2 refuted, 0 inconclusive, 0 unchecked. The actual
+skeptic model was `claude-haiku-5-5` in every session; the unmodified export
+still reports `claude-haiku-4-5` because of the stale alias table (#100).
+
+**AC-6 did not pass the Task 15 gate.** FR-015 was `refuted` and
+`result_backend_max_retries` was `unconfirmed` (`contradicted`). The skeptic
+also cited the registered `result_backend_always_retry` default and marked
+it `different`, but emitted JSON `false` instead of the required string.
+The resolver dropped that item, so the settled result has no confirmation
+state or basis for it. Neither the raw verdict nor the exported result was
+repaired or retried. No settled check carried the reason prefix “The check
+upheld this claim, but it rests on a default no one confirmed”.
+
+`benchmark.py --run` on the exported run:
+
+```text
+verdict: same                10/21  (28–68%)  celery/celery@508c112 · n=21 findings · labels: 21 claude-fable-5-1 (20 executed, 1 read)
+default matches effective    1/3  (6–79%)  celery/celery@508c112 · n=4 of 21 labelled findings · labels: 4 claude-fable-5-1 (4 executed)
+default matches literal only 0/3  (0–56%)  celery/celery@508c112 · n=4 of 21 labelled findings · labels: 4 claude-fable-5-1 (4 executed)
+default matches neither      0/3  (0–56%)  celery/celery@508c112 · n=4 of 21 labelled findings · labels: 4 claude-fable-5-1 (4 executed)
+default not stated           2/3  (21–94%)  celery/celery@508c112 · n=4 of 21 labelled findings · labels: 4 claude-fable-5-1 (4 executed)
+confirmed defaults that are not effective 0/1  (0–79%)  celery/celery@508c112 · n=4 of 21 labelled findings · labels: 4 claude-fable-5-1 (4 executed)
+upheld on a default not stated at its effective value 0/1  (0–79%)  celery/celery@508c112 · n=4 of 21 labelled findings · labels: 4 claude-fable-5-1 (4 executed)
+```
+
+The scorer includes only findings whose export has preconditions, so its
+three discriminating rows do not cover all five named in the plan. Of the
+non-discriminating rows it scored, one matched the effective default and
+four were not stated. The two zero counters apply to the scored rows only.
+The Trigger.dev holdout was not rerun or revealed for this Celery-only task.
+
+The table compares the sessions' own Haiku usage totals, excluding
+orchestration (not an isolated measurement of the prompt change):
+
+| Run | Input | Output | Cache read | Cache write |
+|---|---:|---:|---:|---:|
+| #37 Haiku baseline | 1,736 | 160,374 | 4,374,189 | 588,440 |
+| #57 Task 15 | 478 | 201,568 | 5,623,221 | 636,797 |
+
+### Deterministic replay
+
+Reapplied all 21 saved responses unchanged after normalizing JSON scalar
+values and counting omitted defaults. No model was rerun. FR-015 remained
+`refuted`, and both disputed defaults settled as `unconfirmed` with basis
+`contradicted`. The scorer now accounts for all five discriminating settings
+(three match the effective value; two were not stated) and 36 other settings
+(eight match the effective value; 28 were not stated).
+
+```text
+confirmed defaults that are not effective 0/8  (0–32%)  celery/celery@508c112 · n=16 of 21 labelled findings · labels: 16 claude-fable-5-1 (16 executed)
+upheld on a default not stated at its effective value 1/7  (3–51%)  celery/celery@508c112 · n=16 of 21 labelled findings · labels: 16 claude-fable-5-1 (16 executed)
+```
+
+The latter counter now includes FR-002: the skeptic upheld the finding
+without stating the effective `task_acks_on_timeout` default. The previous
+scorer omitted this row along with other rows whose findings had no
+exported defaults. The same-class verdict count remained 10/21. The gate
+is still not met.
+
+For comparison, rescoring the existing Trigger.dev pipeline capture (not a
+new skeptic run, no label reveal) gave the following holdout totals:
+
+```text
+verdict: same                4/15  (11–52%)  triggerdotdev/trigger.dev@8491915 · n=15 findings · labels: 15 claude-opus-5-5 (8 executed, 7 read)
+confidence: exact            10/15  (42–85%)  triggerdotdev/trigger.dev@8491915 · n=15 findings · labels: 15 claude-opus-5-5 (8 executed, 7 read)
+upheld on a default not stated at its effective value 0/11  (0–26%)  triggerdotdev/trigger.dev@8491915 · n=11 of 15 labelled findings · labels: 11 claude-opus-5-5 (4 executed, 7 read)
+```
+
+The holdout capture has no discriminating default rows, so that last zero
+is not evidence that the verifier handles those defaults correctly.
+
+### Fresh measurement with the branch-condition check
+
+After a read-only synthetic test confirmed that the skeptic traced a
+configuration-gated branch to its registered default, ran all 21 frozen
+Celery findings with plugin 0.14.0 at `06a2f59`. Same pinned checkout and
+four dependency snapshots as before, one fresh headless session per finding,
+up to four concurrent, no re-spawns. Every skeptic ran as `claude-haiku-5-5`;
+the export still uses the stale alias table (#100). Results: 6 upheld, 13
+narrowed, 1 refuted, 1 inconclusive, 0 unchecked.
+
+**Task 15 passed.** FR-015 remained refuted; both disputed defaults settled
+as `unconfirmed` (`contradicted`). FR-002 was narrowed after the skeptic
+identified the effective `task_acks_on_timeout` default. All five
+discriminating settings were counted: four matched and one was not stated.
+Of the 36 non-discriminating settings, 13 matched and 23 were not stated.
+Neither wrong-default counter was nonzero. FR-006 (label: `partially_correct`)
+was the one proposed uphold settled as inconclusive because its retry-policy
+default reference did not resolve.
+
+```text
+verdict: same                11/20  (34–74%)  celery/celery@508c112 · n=20 of 21 labelled findings · labels: 20 claude-fable-5-1 (19 executed, 1 read)
+default matches effective    4/5  (38–96%)  celery/celery@508c112 · n=16 of 21 labelled findings · labels: 16 claude-fable-5-1 (16 executed)
+default matches literal only 0/5  (0–43%)  celery/celery@508c112 · n=16 of 21 labelled findings · labels: 16 claude-fable-5-1 (16 executed)
+default matches neither      0/5  (0–43%)  celery/celery@508c112 · n=16 of 21 labelled findings · labels: 16 claude-fable-5-1 (16 executed)
+default not stated           1/5  (4–62%)  celery/celery@508c112 · n=16 of 21 labelled findings · labels: 16 claude-fable-5-1 (16 executed)
+confirmed defaults that are not effective 0/8  (0–32%)  celery/celery@508c112 · n=16 of 21 labelled findings · labels: 16 claude-fable-5-1 (16 executed)
+upheld on a default not stated at its effective value 0/4  (0–49%)  celery/celery@508c112 · n=16 of 21 labelled findings · labels: 16 claude-fable-5-1 (16 executed)
+```
+
+The verdict scorer excludes the inconclusive result; counted against the
+whole frozen set the same-class count is 11/21. The existing Trigger.dev
+holdout totals above are a rescore of the captured run, not a measurement of
+the changed skeptic prompt.
+
+| Run | Input | Output | Cache read | Cache write |
+|---|---:|---:|---:|---:|
+| #37 Haiku baseline | 1,736 | 160,374 | 4,374,189 | 588,440 |
+| #57 with branch-condition check | 446 | 207,426 | 5,498,841 | 598,863 |

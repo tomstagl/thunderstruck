@@ -161,6 +161,11 @@ def collect(repo: Path) -> dict[str, Any]:
             f["check"] = {"by": None, "reason": None, **stored, "status": status}
             f["confidence_claimed"] = f.get("confidence")
             f["confidence"] = c.effective_confidence(f["confidence_claimed"], status)
+            # #57: confirmations derived from stored facts, never a stored state
+            derived = c.with_confirmations(f, (f.get("check") or {}).get("confirmations"))
+            f["preconditions"] = derived["preconditions"]
+            if "confirmations" in f["check"]:  # an unchecked check carries none
+                f["check"] = derived["check"]
             f["gate"] = c.finding_gate(f)
             findings.append(f)
 
@@ -441,6 +446,10 @@ def _set_urls(findings: list[dict], result: "links.LinkResult | None", repo: Pat
                          if ctx and ev.get("type") in ("code", "commit") else None)
         for s in _check_settings(check):
             s["default_url"] = _ref_url(ctx, s.get("default_ref"))
+        for it in check.get("confirmations") or []:
+            if isinstance(it, dict):
+                it["default_url"] = _ref_url(ctx, it.get("default_ref"))
+                it["stated_url"] = _ref_url(ctx, it.get("stated_ref"))
         for at in f.get("also_at") or []:
             at["url"] = _location_url(ctx, at["location"], repo) if ctx else None
 
@@ -692,7 +701,42 @@ def render_refuted(data: dict) -> list[str]:
     return L
 
 
-def _precondition_line(p: dict) -> str:
+_BASIS_PHRASE = {"call_site_fallback": "stated where the setting is read",
+                 "contradicted": "contradicted by a check", "not_found": "not found by a check",
+                 "unresolved": "with a location that did not resolve", "not_checked": "not checked"}
+
+
+def defaults_line(data: dict) -> str | None:
+    d = (data.get("counts") or {}).get("defaults") or {}
+    if not d.get("confirmed") and not d.get("unconfirmed"):
+        return None
+    basis = d.get("basis") or {}
+    parts = [f"{basis[b]} {phrase}" for b, phrase in _BASIS_PHRASE.items() if basis.get(b)]
+    line = f"Defaults: {d['confirmed']} confirmed · {d['unconfirmed']} unconfirmed"
+    line += f" ({', '.join(parts)})" if parts else ""
+    gated = ((data.get("counts") or {}).get("gate") or {}).get("unconfirmed_default", 0)
+    if gated:
+        line += (f" · {gated} {'finding relies' if gated == 1 else 'findings rely'} on a doubtful "
+                 f"default and {'is' if gated == 1 else 'are'} listed after default-path findings")
+    return line
+
+
+def _confirmation_clause(conf: dict, item: dict | None) -> str:
+    conf = conf if isinstance(conf, dict) else c.confirm(None)
+    head = "**Confirmed**" if conf.get("state") == "confirmed" else "**Unconfirmed**"
+    text = f" {head}: {conf.get('reason') or c.CONFIRMATION_REASONS['not_checked']}"
+    if item and item.get("default") is not None and item.get("default_ref"):
+        where = (_linked(str(item["default_ref"]), item.get("default_url"))
+                 if not deps.DEP_REF.match(str(item["default_ref"])) else md.code(item["default_ref"]))
+        text += (f": {where}" if conf.get("basis") == "registered"
+                 else f": {md.code(item['default'])} at {where}")
+    text += "."
+    if item and item.get("reason"):
+        text += f" Check's note: “{md.text(item['reason'])}”"
+    return text
+
+
+def _precondition_line(p: dict, item: dict | None = None) -> str:
     setting, default = md.code(p.get("setting")), md.code(p.get("default"))
     where = _linked(str(p.get("default_ref")), p.get("default_url"))
     if p.get("needs") == "changed":
@@ -705,17 +749,41 @@ def _precondition_line(p: dict) -> str:
         line += " The docs do not describe this behaviour."
     else:
         line += " Docs not checked."
+    line += _confirmation_clause(p.get("confirmation"), item)
     return f"- {line}"
+
+
+def _confirmation_items(f: dict) -> list[dict]:
+    check = f.get("check") if isinstance(f.get("check"), dict) else {}
+    return [it for it in check.get("confirmations") or [] if isinstance(it, dict)]
+
+
+def _ref_shown(ref, url) -> str:
+    """A model-given ref: linked by the tool when it is a repository ref, else inert."""
+    return md.code(ref) if deps.DEP_REF.match(str(ref)) else _linked(str(ref), url)
 
 
 def render_preconditions(f: dict) -> list[str]:
     items = _preconditions(f)
-    if not items:
+    confirmations = _confirmation_items(f)
+    unlisted = [it for it in confirmations if it.get("precondition") is None]
+    if not items and not unlisted:
         return ["**Preconditions** — none: the failure happens on default settings.", ""]
     L = ["**Preconditions**", ""]
-    if f.get("gate") == "none":
+    if items and f.get("gate") in ("none", "unconfirmed_default"):
         L += ["The failure happens on default settings and rests on these defaults:", ""]
-    return L + [_precondition_line(p) for p in items] + [""]
+    by_index = {it.get("precondition"): it for it in confirmations if isinstance(it.get("precondition"), int)}
+    L += [_precondition_line(p, by_index.get(j)) for j, p in enumerate(items)]
+    if unlisted:
+        if items:
+            L.append("")
+        L += ["Defaults the check found this claim rests on:", ""]
+        for it in unlisted:
+            line = (f"- {md.code(it.get('setting'))}: the finding says “{md.text(it.get('claim'))}”"
+                    + (f" (stated at {_ref_shown(it['stated_ref'], it.get('stated_url'))})"
+                       if it.get("stated_ref") else "") + ";")
+            L.append(line + _confirmation_clause(it.get("confirmation"), it))
+    return L + [""]
 
 
 def render_history(f: dict) -> list[str]:
@@ -943,7 +1011,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
                           sorted(counts.items(), key=lambda kv: CONFIDENCE_RANK.get(kv[0], 9)))
     files_affected = _files_affected(findings)
     by_status = [(s, sum(1 for f in findings if f["check"]["status"] == s)) for s in c.CHECK_STATUSES]
-    gated = sum(1 for f in findings if f["gate"] != "none")
+    gated = sum(1 for f in findings if f["gate"] == "non_default_setting")
     check_line = ("Check status: " + " · ".join(f"{n} {s}" for s, n in by_status if n)
                   + (f" · {gated} {'finding needs' if gated == 1 else 'findings need'} a "
                      f"non-default setting and {'is' if gated == 1 else 'are'} listed last"
@@ -961,6 +1029,9 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
         + (f" — {breakdown}" if breakdown else "") + "  ",
         *([check_line] if check_line else []),
         render_verification_line(data),
+        *([dl + "  "] if (dl := defaults_line({"counts": {
+            "defaults": defaults_counts(findings),
+            "gate": {g: sum(1 for f in findings if f["gate"] == g) for g in c.GATES}}})) else []),
         "",
         "> Findings are **falsifiable hypotheses**. Every citation in them was resolved "
         "mechanically: each cited file:line, commit, detector hit and catalog edge exists. "
@@ -1019,7 +1090,8 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
             if f.get("catalog_evidence"):
                 rows.append(f"| Dependents / dependencies | {_deps(f['catalog_evidence'])} |")
             rows.append(f"| Missing patterns | {', '.join(md.code(p, cell=True) for p in f.get('missing_patterns') or []) or '—'} |")
-            marker = f" · {c.GATE_MARKERS[f['gate']]}" if f["gate"] in c.GATE_MARKERS else ""
+            marker = (f" · {c.GATE_MARKERS[f['gate']]}" if f["gate"] in c.GATE_MARKERS
+                      else f" · {c.DEFAULT_UNCONFIRMED_MARKER}" if c.unconfirmed_defaults(f) else "")
             badge = (f"**{BADGE.get(f.get('confidence'), '?')} confidence** · "
                      f"{f['check']['status']}{marker} · ")
             L += [f"### {f['id']} · {md.text(f.get('failure_mode', '(no failure mode)'), heading=True)}",
@@ -1097,6 +1169,20 @@ def _hotspot_link(data: dict, hid: str, key: str) -> str | None:
     return ((data.get("hotspot_links") or {}).get(hid) or {}).get(key)
 
 
+def defaults_counts(findings: list[dict]) -> dict:
+    """counts.defaults: every listed precondition and unlisted item of the reported findings."""
+    basis = {b: 0 for b in c.CONFIRMATION_BASES}
+    for f in findings:
+        confs = [p.get("confirmation") for p in _preconditions(f)]
+        confs += [it.get("confirmation") for it in (f.get("check") or {}).get("confirmations") or []
+                  if isinstance(it, dict) and it.get("precondition") is None]
+        for conf in confs:
+            b = conf.get("basis") if isinstance(conf, dict) else None
+            basis[b if b in basis else "not_checked"] += 1
+    return {"confirmed": basis["registered"], "unconfirmed": sum(basis.values()) - basis["registered"],
+            "basis": basis}
+
+
 def render_json(data: dict) -> dict:
     hs = data["hotspots"]
     cited_by = clean_cited_by(data["findings"])
@@ -1119,6 +1205,7 @@ def render_json(data: dict) -> dict:
             "refuted": len(data["refuted"]),
             "duplicates_merged": data["duplicates_merged"],
             "gate": {g: sum(1 for f in data["findings"] if f["gate"] == g) for g in c.GATES},
+            "defaults": defaults_counts(data["findings"]),
         },
         "warnings": list(hs.get("warnings") or []) + list(data.get("link_warnings") or []),
         "run_warnings": run_warnings(data),
@@ -1175,7 +1262,8 @@ def render_index(data: dict) -> dict:
             "confidence": f.get("confidence"),
             "check_status": f["check"]["status"],
             "gate": f["gate"],
-            "preconditions": [{k: p.get(k) for k in ("setting", "default", "needs", "value")}
+            "preconditions": [{**{k: p.get(k) for k in ("setting", "default", "needs", "value")},
+                               "confirmation": c.confirmation_state(p.get("confirmation"))}
                               for p in _preconditions(f)],
             "history": [{k: h.get(k) for k in ("sha", "class", "wrote_cited_line")}
                         for h in _history(f)],

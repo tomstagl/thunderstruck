@@ -116,12 +116,15 @@ export function userLookup(id: string): Promise<unknown> {
 
 UNCHECKPOINTED_SYNC = '''\
 import { enqueue } from "./queue";
+import { get } from "../config/settings";
+
+const PAGE_SIZE = get<number>("sync.pageSize", 100);
 
 export async function syncCollection(userId: string): Promise<void> {
   let page = 1;
 
   while (true) {
-    const body = await fetchCollectionPage(userId, page);
+    const body = await fetchCollectionPage(userId, page, PAGE_SIZE);
 
     for (const item of body.items) {
       await db.release.create({ data: item });
@@ -272,6 +275,20 @@ export async function fetchLegacyCatalog(): Promise<unknown> {
 DORMANT: list[tuple[str, str]] = [("src/client/legacy.ts", LEGACY_CLIENT)]
 
 # (path, content, [(commit subject, mutation)])
+# A settings registry (#57): get() returns the registered value, so the
+# fallback collection.ts passes for sync.pageSize never applies.
+SETTINGS_REGISTRY = '''\
+// Registered defaults. get() returns these when present; the fallback a
+// caller passes applies only to keys that are not registered here.
+const REGISTERED: Record<string, unknown> = {
+  "sync.pageSize": 500,
+};
+
+export function get<T>(key: string, fallback: T): T {
+  return key in REGISTERED ? (REGISTERED[key] as T) : fallback;
+}
+'''
+
 FILES: list[tuple[str, str]] = [
     ("src/client/releases.ts", CONSTANT_SLEEP_RETRY),
     ("src/client/retry-wrapper.ts", RETRY_WRAPPER),
@@ -279,6 +296,7 @@ FILES: list[tuple[str, str]] = [
     ("src/client/limiter.ts", LIMITER),
     ("src/sync/scheduler.ts", SHARED_LIMITER),
     ("src/sync/collection.ts", UNCHECKPOINTED_SYNC),
+    ("src/config/settings.ts", SETTINGS_REGISTRY),
     ("src/sync/queue.ts", QUEUE),
     ("src/util/format.ts", INJECTION_ATTEMPT),
     ("src/client/artists.ts", GOOD_CLIENT),
@@ -293,6 +311,7 @@ HISTORY: list[tuple[str, list[str]]] = [
     ("feat: add api helper", ["src/client/api.ts"]),
     ("feat: add rate limiter", ["src/client/limiter.ts"]),
     ("feat: add collection sync", ["src/sync/collection.ts", "src/sync/queue.ts"]),
+    ("feat: page size from settings", ["src/config/settings.ts", "src/sync/collection.ts"]),
     ("feat: add scheduler", ["src/sync/scheduler.ts"]),
     ("feat: add title formatting", ["src/util/format.ts"]),
     ("feat: add artist client", ["src/client/artists.ts"]),

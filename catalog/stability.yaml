@@ -58,6 +58,28 @@ languages:
 aliases:
   javascript: typescript
 
+# Reads of a setting that supply their own fallback (#57). A default stated at
+# one of these is unconfirmed: a settings layer may hold another value. Each
+# pattern is matched against the cited lines with comments blanked; {setting}
+# is replaced by the setting's name, escaped. Matched case-insensitively.
+# Every language here needs a positive and a negative case in
+# tests/test_confirmed_defaults.py (READS).
+setting_reads:
+  python:
+    - '\.(?:get|pop)\(\s*[''"]{setting}[''"]\s*,'
+    - '\bgetattr\(\s*[^,()]+,\s*[''"]{setting}[''"]\s*,'
+    - '\bgetenv\(\s*[''"]{setting}[''"]\s*,'
+  typescript:
+    - '\.?\bget\w*\s*(?:<[^>()]*>)?\(\s*[''"`]{setting}[''"`]\s*,'
+    - 'process\.env(?:\.{setting}\b|\[\s*[''"`]{setting}[''"`]\s*\])\s*(?:\?\?|\|\|)'
+  java:
+    - '\.get\w*\(\s*"{setting}"\s*,'
+    - '\$\{{setting}:'
+  yaml:
+    - '\$\{{setting}:'
+  properties:
+    - '\$\{{setting}:'
+
 patterns:
   # ---------------------------------------------------------------- Tier A --
   - id: S01

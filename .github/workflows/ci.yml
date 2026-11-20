@@ -55,7 +55,8 @@ jobs:
     # The HTML report in a real browser (#3): offline, inert, interactive.
     # One Python version is enough; the page does not depend on it.
     name: html report in chromium
-    runs-on: ubuntu-latest
+    # The pinned Playwright supports 24.04, not 26.04.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -93,6 +94,20 @@ jobs:
 
       - name: Sample report is in sync
         run: uv run scripts/gen_sample_report.py --check
+
+  call-sites-macos:
+    # macOS git grep -E missed every call site while Linux passed (#66).
+    name: call sites on macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Call-site tests
+        run: uv run --with pytest --with pyyaml --with lizard pytest tests/test_call_sites.py tests/test_signals_citable.py -v
 
   dogfood:
     name: scan this repo with itself

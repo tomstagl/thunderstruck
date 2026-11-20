@@ -53,9 +53,10 @@ REQUIRED_FIELDS = [
 ]
 # Present or absent; never an empty string (#56 AC-6)
 OPTIONAL_TEXT = ("amplifier", "sustaining_effect")
-# The keys an investigator may write. #57 adds "confirmation", written after validation.
+# The keys an investigator may write, plus "confirmation", which validate.py
+# replaces on every run (#57); its value is never read.
 PRECONDITION_KEYS = frozenset({"setting", "default", "default_ref", "needs", "value",
-                               "documented", "doc_ref"})
+                               "documented", "doc_ref", "confirmation"})
 PRECONDITION_FORM = ('{"setting": "API_RETRY_ON_429", "default": "false", '
                      '"default_ref": "src/client/api.ts:1", "needs": "changed", "value": "true", '
                      '"documented": "no", "doc_ref": null}')
@@ -122,6 +123,8 @@ class Validator:
                  deps_index: dict | None = None) -> None:
         self.repo = repo
         self.deps_index = deps_index
+        self.catalog = catalog
+        self.langmap = c.language_map(catalog)
         self.extra_fix = tuple(extra_fix)
         self.valid_ids = c.catalog_ids(catalog)
         self.detector_refs: set[str] = set()
@@ -326,6 +329,42 @@ class Validator:
             errors.append(f"{where} {ref!r} — {range_error(rel, total)}")
             return None
         return rel, *span
+
+    def _cited_text(self, ref: Any, allow_dependency: bool) -> tuple[str, str | None] | None:
+        """The cited lines (joined) and their language, for a ref check_ref resolves.
+        None when it does not resolve or the file is not UTF-8 text. Reads only
+        tracked repository files and snapshot files under .thunderstruck/deps/."""
+        errors: list[str] = []
+        got = self.check_ref(ref, "ref", errors, allow_dependency=allow_dependency)
+        if got is None:
+            return None
+        _, start, end = got
+        text_ref = str(ref).strip()
+        if deps.DEP_REF.match(text_ref):
+            info, _ = deps.resolve_dependency_ref(self.repo, self.deps_index, text_ref)
+            if info is None:
+                return None
+            eco, name = info["id"].split(":", 1)
+            path = deps.snapshot_dir(self.repo, eco, name, info["version"]) / info["path"]
+        else:
+            path = self.repo / got[0]
+        try:
+            text = path.read_text(encoding="utf-8")  # strict: c.read_text replaces bad bytes
+        except (OSError, UnicodeDecodeError):
+            return None
+        lines = text.splitlines()[start - 1:end]
+        return "\n".join(lines) + "\n", c.detect_language(path.name, self.langmap)
+
+    def fallback_read(self, ref: Any, setting: Any, allow_dependency: bool = False) -> bool | None:
+        """Spec §5.2: whether the cited lines read `setting` with a fallback.
+        None when unreadable or the language has no setting_reads patterns."""
+        got = self._cited_text(ref, allow_dependency)
+        return None if got is None else c.reads_with_fallback(got[0], setting, got[1], self.catalog)
+
+    def names_setting(self, ref: Any, setting: Any, allow_dependency: bool = False) -> bool | None:
+        """Spec §4.3: whether the cited lines name the setting (or a 2+ segment suffix)."""
+        got = self._cited_text(ref, allow_dependency)
+        return None if got is None else c.names_setting(got[0], setting, got[1])
 
     def check_verdict_evidence(self, ev: Any, where: str, errors: list[str],
                                finding_files: list[str]) -> str | None:
@@ -722,6 +761,11 @@ def main(argv: list[str] | None = None) -> int:
                 f["catalog_evidence"] = catalog_evidence(f, validator.catalog_edges)
                 f["evidence_hashes"] = evidence_hashes(repo, f)
                 f["history"] = validator.history(f)
+                for p in f.get("preconditions") or []:
+                    if isinstance(p, dict):
+                        call_site = validator.fallback_read(p.get("default_ref"), p.get("setting"))
+                        p["confirmation"] = {**c.confirm(call_site), "call_site": call_site,
+                                             "by": "validator"}
                 if "check" not in f:
                     f["check"] = {"status": "unchecked", "by": None, "reason": None}
             doc["validated_with"] = c.VALIDATION_RULES
