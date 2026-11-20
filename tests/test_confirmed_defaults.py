@@ -360,6 +360,12 @@ def test_the_skeptic_prompt_says_how_to_confirm_a_default(needle):
     assert needle in SKEPTIC
 
 
+def test_the_skeptic_checks_branch_conditions_before_upholding():
+    assert "Before upholding, trace the branch conditions" in SKEPTIC
+    assert "even if the finding names it only as an example or lists no preconditions" in SKEPTIC
+    assert "If you cannot resolve a material default within your read budget, do not uphold" in SKEPTIC
+
+
 # --- Task 5 -----------------------------------------------------------------
 from test_verification import _apply, _entry, _finding, _line, _prepare, _save, _v  # noqa: E402
 

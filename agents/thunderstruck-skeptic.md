@@ -86,6 +86,11 @@ does not say so, is a refuted claim: `"field": "preconditions"`, `"claim":
    `stated_ref` is the finding's own code ref where it locates that default, or null.
    A default that is not what the finding says is also a refuted claim, so a
    `different` item normally comes with a `narrowed` or `refuted` verdict.
+8. **Before upholding, trace the branch conditions** that make the claimed
+   failure possible. For each configuration setting those conditions depend on,
+   check its registered default, even if the finding names it only as an example or lists no preconditions.
+   If that default prevents the branch, say that the failure requires a
+   non-default setting. If you cannot resolve a material default within your read budget, do not uphold.
 
 ## Output
 

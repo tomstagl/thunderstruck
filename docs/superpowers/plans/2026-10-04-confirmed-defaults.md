@@ -2091,6 +2091,8 @@ git commit -m "Confirmed defaults: documentation and release (#57)"
 
 For the deterministic replay of the recorded attempt, first pin scalar normalization in `tests/test_confirmed_defaults.py` and omitted-default scoring in `tests/test_benchmark.py`, then update `verify.resolve_confirmations` and `benchmark.score_defaults` per spec §§6.3 and 13.2. Reapply the unchanged saved responses, export the replay separately, and compare the complete denominators and the two required confirmation states before marking the PR ready.
 
+If a skeptic identifies a configuration-dependent branch but omits its default, review the general pre-uphold check in spec §6.2, pin it in the prompt contract test, and check it on independent synthetic code before taking a new frozen measurement. A prompt change needs new responses, not a replay.
+
 **An agent building this plan stops after Task 14.** This task runs a model against a Celery checkout and is done by the maintainer.
 
 **Satisfies:** AC-6.
