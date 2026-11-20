@@ -55,7 +55,8 @@ jobs:
     # The HTML report in a real browser (#3): offline, inert, interactive.
     # One Python version is enough; the page does not depend on it.
     name: html report in chromium
-    runs-on: ubuntu-latest
+    # The pinned Playwright supports 24.04, not 26.04.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
