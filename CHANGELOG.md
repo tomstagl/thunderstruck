@@ -4,6 +4,17 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.13.1
+
+### Fixed
+
+- **Briefings list call sites on macOS** (#66). The search now uses Git's fixed-string whole-word matching instead of a regex boundary that macOS Git did not recognize.
+
+### Changed
+
+- Briefings distinguish no call sites found from a search that could not finish. The bundle step also names briefings whose search did not finish.
+- Files with newly visible call sites or a new no-callers notice are investigated once more because their briefing hashes changed.
+
 ## 0.13.0
 
 Findings are refuted before they reach the report (#37).

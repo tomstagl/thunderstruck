@@ -93,7 +93,8 @@ cache — a bundle whose content hash is unchanged already has a valid finding.
 Findings validated by an older version of the plugin are re-checked here:
 those that fail today's rules are investigated again, and the line before the
 counts says how many. The last two lines estimate what the investigators will
-consume, and on what assumption.
+consume, and on what assumption. Relay any line ending "call sites not
+searched; its briefing says so": those call sites are unknown, not absent.
 
 **If `--dry-run`: stop here.** Report the ranked hotspots, how many
 investigators would run, the total bundle size, and the two estimate lines
