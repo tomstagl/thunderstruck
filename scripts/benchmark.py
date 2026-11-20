@@ -456,12 +456,11 @@ DEFAULT_OUTCOMES = (EFFECTIVE, LITERAL_ONLY, NEITHER, NOT_STATED)
 def score_defaults(records: dict, label_set: dict) -> dict:
     rows = []
     for k, r in sorted(records.items()):
-        if "preconditions" not in r:
-            continue
+        preconditions = r.get("preconditions") or []
         stated = {str(p.get("setting", "")).strip().casefold(): p["default"]
-                  for p in r["preconditions"] if "default" in p}
+                  for p in preconditions if "default" in p}
         stated_conf = {str(p.get("setting", "")).strip().casefold(): p.get("confirmation")
-                       for p in r["preconditions"] if "default" in p}
+                       for p in preconditions if "default" in p}
         for pc in label_set["_by_key"][k].get("preconditions") or []:
             if pc["kind"] != "setting":
                 continue

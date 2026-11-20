@@ -359,6 +359,18 @@ def test_defaults_effective_literal_neither_and_not_stated():
     assert all(not x["discriminating"] for x in m["rows"] if x["outcome"] == "not stated")
 
 
+def test_an_upheld_finding_without_exported_defaults_does_not_escape_scoring():
+    key = "synthetic"
+    label_set = {"_by_key": {key: {"preconditions": [{
+        "kind": "setting", "setting": "retries",
+        "literal": {"type": "number", "value": 0},
+        "effective": {"type": "number", "value": 5},
+    }]}}}
+    score = b.score_defaults({key: {"verdict": "upheld"}}, label_set)
+    assert score["counts"]["not stated"] == 1
+    assert score["upheld_on_wrong_default"] == [{"key": key, "setting": "retries"}]
+
+
 def test_environment_preconditions_are_not_scored():
     s = _celery()
     m = b.score_defaults({_key("FR-014"): {"preconditions": [{"setting": "result_backend", "default": "x"}]}}, s)

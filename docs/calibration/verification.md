@@ -208,3 +208,35 @@ orchestration (not an isolated measurement of the prompt change):
 |---|---:|---:|---:|---:|
 | #37 Haiku baseline | 1,736 | 160,374 | 4,374,189 | 588,440 |
 | #57 Task 15 | 478 | 201,568 | 5,623,221 | 636,797 |
+
+### Deterministic replay
+
+Reapplied all 21 saved responses unchanged after normalizing JSON scalar
+values and counting omitted defaults. No model was rerun. FR-015 remained
+`refuted`, and both disputed defaults settled as `unconfirmed` with basis
+`contradicted`. The scorer now accounts for all five discriminating settings
+(three match the effective value; two were not stated) and 36 other settings
+(eight match the effective value; 28 were not stated).
+
+```text
+confirmed defaults that are not effective 0/8  (0–32%)  celery/celery@508c112 · n=16 of 21 labelled findings · labels: 16 claude-fable-5-1 (16 executed)
+upheld on a default not stated at its effective value 1/7  (3–51%)  celery/celery@508c112 · n=16 of 21 labelled findings · labels: 16 claude-fable-5-1 (16 executed)
+```
+
+The latter counter now includes FR-002: the skeptic upheld the finding
+without stating the effective `task_acks_on_timeout` default. The previous
+scorer omitted this row along with other rows whose findings had no
+exported defaults. The same-class verdict count remained 10/21. The gate
+is still not met.
+
+For comparison, rescoring the existing Trigger.dev pipeline capture (not a
+new skeptic run, no label reveal) gave the following holdout totals:
+
+```text
+verdict: same                4/15  (11–52%)  triggerdotdev/trigger.dev@8491915 · n=15 findings · labels: 15 claude-opus-5-5 (8 executed, 7 read)
+confidence: exact            10/15  (42–85%)  triggerdotdev/trigger.dev@8491915 · n=15 findings · labels: 15 claude-opus-5-5 (8 executed, 7 read)
+upheld on a default not stated at its effective value 0/11  (0–26%)  triggerdotdev/trigger.dev@8491915 · n=11 of 15 labelled findings · labels: 11 claude-opus-5-5 (4 executed, 7 read)
+```
+
+The holdout capture has no discriminating default rows, so that last zero
+is not evidence that the verifier handles those defaults correctly.

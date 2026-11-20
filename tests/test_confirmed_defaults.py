@@ -511,6 +511,22 @@ def test_refuter_b_cites_the_registry_and_contradicts(tmp_path):
     assert (item["default"], item["confirmation"]["basis"]) == ("False", "contradicted")
 
 
+@pytest.mark.parametrize(("raw", "normalized"), [
+    (False, "False"), (0, "0"), (2.5, "2.5"),
+    (None, None), ([], None), ({}, None), (float("inf"), None), (float("nan"), None),
+])
+def test_default_scalars_are_normalized_before_settlement(tmp_path, raw, normalized):
+    repo = _tiny_repo(tmp_path, CELERYISH)
+    check = _settle(repo, {"verdict": "upheld", "reason": "Read the registry.", "evidence": [],
+                           "confirmations": [_conf015("different", raw, "app/defaults.py:2")]})
+    if normalized is None:
+        assert check["confirmations"] == []
+    else:
+        [item] = check["confirmations"]
+        assert (item["default"], item["confirmation"]["basis"]) == (normalized, "contradicted")
+        assert check["status"] != "upheld"
+
+
 # --- Task 7 -----------------------------------------------------------------
 import report  # noqa: E402
 

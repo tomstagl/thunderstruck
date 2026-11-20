@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import re
 import sys
 from pathlib import Path
@@ -463,10 +464,13 @@ def resolve_confirmations(finding: dict, result: dict, resolver: "Resolver", ign
                 else:
                     ignored.append(f"{where}.stated_ref {sref!r} is not one of the finding's code refs")
         if item["found"] != "not_found":
-            if not isinstance(item.get("default"), str) or not item["default"].strip():
+            value = item.get("default")
+            if isinstance(value, (bool, int)) or (isinstance(value, float) and math.isfinite(value)):
+                value = str(value)
+            if not isinstance(value, str) or not value.strip():
                 ignored.append(f"{where}.default must be the value found")
                 continue
-            out["default"], out["default_ref"] = item["default"], item.get("default_ref")
+            out["default"], out["default_ref"] = value, item.get("default_ref")
             errors: list[str] = []
             if resolver.ref(item.get("default_ref"), f"{where}.default_ref", errors):
                 out["default_names_setting"] = resolver.names_setting(item["default_ref"], setting)

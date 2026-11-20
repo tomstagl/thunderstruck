@@ -2089,6 +2089,8 @@ git commit -m "Confirmed defaults: documentation and release (#57)"
 
 ### Task 15: On #55's frozen set (maintainer, with the plugin installed)
 
+For the deterministic replay of the recorded attempt, first pin scalar normalization in `tests/test_confirmed_defaults.py` and omitted-default scoring in `tests/test_benchmark.py`, then update `verify.resolve_confirmations` and `benchmark.score_defaults` per spec §§6.3 and 13.2. Reapply the unchanged saved responses, export the replay separately, and compare the complete denominators and the two required confirmation states before marking the PR ready.
+
 **An agent building this plan stops after Task 14.** This task runs a model against a Celery checkout and is done by the maintainer.
 
 **Satisfies:** AC-6.

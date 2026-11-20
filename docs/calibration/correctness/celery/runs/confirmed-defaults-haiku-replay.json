@@ -1,0 +1,228 @@
+{
+  "schema": "thunderstruck.benchmark-run/v1",
+  "commit": "508c1129269d2b1baffc516d8f5c05da06273ef0",
+  "produced_by": {
+    "stage": "skeptic",
+    "model": "claude-haiku-4-5",
+    "source": "verify.py export-run over checks/verdicts.json"
+  },
+  "findings": {
+    "25300c62e151": {
+      "verdict": "upheld",
+      "duplicate_of": null
+    },
+    "293417791dc2": {
+      "verdict": "upheld",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "task_publish_retry",
+          "default": "True",
+          "confirmation": "confirmed"
+        }
+      ]
+    },
+    "2b1793902d2d": {
+      "verdict": "narrowed",
+      "duplicate_of": null
+    },
+    "34e3742160f1": {
+      "verdict": "narrowed",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "interval",
+          "default": "0.5",
+          "confirmation": "confirmed"
+        }
+      ]
+    },
+    "39e3d9a88104": {
+      "verdict": "upheld",
+      "duplicate_of": null
+    },
+    "50df890ef774": {
+      "verdict": "narrowed",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "Task.default_retry_delay",
+          "default": "180",
+          "confirmation": "confirmed"
+        },
+        {
+          "setting": "Task.max_retries",
+          "default": "3",
+          "confirmation": "confirmed"
+        }
+      ]
+    },
+    "5fc6c6cb450e": {
+      "verdict": "refuted",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "use_eventloop",
+          "default": "True",
+          "confirmation": "unconfirmed"
+        }
+      ]
+    },
+    "6105880fd01e": {
+      "verdict": "narrowed",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "result_backend_always_retry",
+          "default": "False",
+          "confirmation": "confirmed"
+        },
+        {
+          "setting": "task_acks_late",
+          "default": "False",
+          "confirmation": "confirmed"
+        }
+      ]
+    },
+    "6345778fa223": {
+      "verdict": "refuted",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "result_backend_always_retry",
+          "default": "False",
+          "confirmation": "unconfirmed"
+        },
+        {
+          "setting": "result_backend_max_retries",
+          "default": "inf",
+          "confirmation": "unconfirmed"
+        },
+        {
+          "setting": "result_backend_base_sleep_between_retries_ms",
+          "default": "10",
+          "confirmation": "confirmed"
+        }
+      ]
+    },
+    "6bd1a259060b": {
+      "verdict": "upheld",
+      "duplicate_of": null
+    },
+    "8196e104b15a": {
+      "verdict": "narrowed",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "result_backend_always_retry",
+          "default": "False",
+          "confirmation": "unconfirmed"
+        },
+        {
+          "setting": "result_backend_max_retries",
+          "default": "float('inf')",
+          "confirmation": "unconfirmed"
+        }
+      ]
+    },
+    "8bcddcb49b5d": {
+      "verdict": "upheld",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "result_backend_max_retries",
+          "default": "inf",
+          "confirmation": "confirmed"
+        }
+      ]
+    },
+    "9be5cf13811a": {
+      "verdict": "narrowed",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "task_store_errors_even_if_ignored",
+          "default": "False",
+          "confirmation": "confirmed"
+        },
+        {
+          "setting": "Task.ignore_result",
+          "default": "False",
+          "confirmation": "confirmed"
+        }
+      ]
+    },
+    "a0ba5bc31036": {
+      "verdict": "upheld",
+      "duplicate_of": null
+    },
+    "a4b8d7590c34": {
+      "verdict": "upheld",
+      "duplicate_of": null
+    },
+    "b1af3746845c": {
+      "verdict": "narrowed",
+      "duplicate_of": null
+    },
+    "bb3600c042ef": {
+      "verdict": "narrowed",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "retry_policy",
+          "default": "{'max_retries': 20, 'interval_start': 0, 'interval_step': 1, 'interval_max': 1}",
+          "confirmation": "confirmed"
+        }
+      ]
+    },
+    "c15996fba8db": {
+      "verdict": "upheld",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "buffer_while_offline",
+          "default": "True",
+          "confirmation": "confirmed"
+        }
+      ]
+    },
+    "d710c0302beb": {
+      "verdict": "narrowed",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "task_publish_retry",
+          "default": "True",
+          "confirmation": "confirmed"
+        }
+      ]
+    },
+    "df2cb49b3e2c": {
+      "verdict": "upheld",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "retry_policy.max_retries",
+          "default": "20",
+          "confirmation": "confirmed"
+        }
+      ]
+    },
+    "f62fb0c3468b": {
+      "verdict": "narrowed",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "broker_pool_limit",
+          "default": "10",
+          "confirmation": "confirmed"
+        },
+        {
+          "setting": "result_backend retry_policy max_retries (Redis reconnect bound)",
+          "default": "20",
+          "confirmation": "unconfirmed"
+        }
+      ]
+    }
+  }
+}

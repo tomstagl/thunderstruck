@@ -197,7 +197,7 @@ Parses `ref` with the same `check_ref` that resolved it (#56 §3.1; #37's `allow
 | `claim` | For a setting the finding relies on but does not list: required, and must quote the finding (#37 §8.3's `_quotes` rule over `failure_mode`, `trigger_condition`, `amplifier`, `sustaining_effect`, `blast_radius`, `how_to_verify` and evidence `note`s). `null` for a listed precondition |
 | `stated_ref` | For an unlisted default: optionally, the finding's own code ref where it locates that default; must equal one of the finding's `code` evidence refs after canonicalisation. `null` otherwise |
 | `found` | `same` · `different` · `not_found` (`CONFIRMATION_FOUND`) |
-| `default` | The bare value found (`"False"`, `"120"`, `"None"`); required unless `not_found` |
+| `default` | The bare value found (`"False"`, `"120"`, `"None"`); required unless `not_found`. JSON booleans and finite numbers are accepted and rendered as strings. |
 | `default_ref` | Where it is registered; resolves through `check_ref(..., allow_dependency=True)`; required unless `not_found` |
 | `reason` | One line, inert |
 
@@ -218,7 +218,7 @@ Each item is checked in order; an item that breaks a rule is dropped and named i
 1. An object with only `CONFIRMATION_KEYS`; `setting` a non-empty string; `found` one of the three; one item per setting (the first is kept).
 2. Listed or unlisted: listed when `setting` matches a precondition; otherwise `claim` must quote the finding.
 3. `stated_ref` (unlisted only): kept when it equals a finding code ref; its fallback-read result becomes `stated_call_site`.
-4. `found` `same`/`different`: `default` a non-empty string; `default_ref` resolved by `Resolver.ref`. A failure is not a drop: the item is kept with `default_ref_error` (the first error), because a check that looked and gave a bad location is information (`unresolved`). Otherwise `default_names_setting = Resolver.names_setting(default_ref, setting)` (§4.3) and `default_call_site = Resolver.fallback_read(default_ref, setting)`.
+4. `found` `same`/`different`: `default` a non-empty string, boolean or finite number. Normalize booleans and numbers to strings before storing them; reject null, containers and non-finite numbers. Then resolve `default_ref` resolved by `Resolver.ref`. A failure is not a drop: the item is kept with `default_ref_error` (the first error), because a check that looked and gave a bad location is information (`unresolved`). Otherwise `default_names_setting = Resolver.names_setting(default_ref, setting)` (§4.3) and `default_call_site = Resolver.fallback_read(default_ref, setting)`.
 
 The kept items, with `precondition` (the index of the listed precondition, or `null`), `stated_call_site`, `default_names_setting`, `default_call_site` and `default_ref_error` added, become `check.confirmations`. Then:
 
@@ -371,7 +371,7 @@ AC-6 on the frozen findings depends on the skeptic emitting a confirmation item 
 Both print as figure lines with their basis. The PR records:
 
 - FR-015's settled status (not `upheld`) and the state and basis of its `result_backend_always_retry` and `result_backend_max_retries` items (`unconfirmed`, `contradicted` or `call_site_fallback`): AC-6's first half.
-- `score_defaults`' counts over the discriminating and non-discriminating preconditions: AC-6's second half.
+- `score_defaults`' counts over the discriminating and non-discriminating preconditions: AC-6's second half. For each labelled finding in the run, score every labelled setting even if the export omitted its `preconditions` field; omitted values count as not stated. This also prevents upheld verdicts from escaping the wrong-default count by omission. A frozen replay must cover the entire planned set.
 - `confirmed_not_effective` and `upheld_on_wrong_default`, both expected at 0.
 - #37 AC-12's same-class count on this run, and the findings §7.1 turned from `upheld` into `inconclusive` with their labels, so the rule's effect on AC-12 is visible (§19 q2). Each such finding's `check.reason` names the rule, so the list is read from `verdicts.json`, not reconstructed.
 
