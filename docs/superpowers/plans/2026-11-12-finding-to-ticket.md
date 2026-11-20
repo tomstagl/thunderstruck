@@ -26,7 +26,7 @@ Where a step gives an old text and a new text, the old text occurs exactly once 
 
 ## Global Constraints
 
-- **The output is a pure function** of `report.json`, the blobs at `repo.head`, the optional drafts file and the flags: no clock, environment, locale, absolute path, plugin version or set order (§12). `repo.branch` and `generated_at` are never read; `repo.root` is read only to scrub it (§11).
+- **The output is a pure function** of `report.json`, the blobs at `repo.head`, the optional drafts file and the flags: no clock, environment, locale, absolute path, plugin version or set order (§12). `repo.branch` and `generated_at` are never read; `repo.root`, the home directory, the user name and the host name are read only to be removed from text (§11).
 - **A stop writes nothing and leaves an earlier ticket alone.** Snippets are read from the blob at `repo.head`, only after `check_snapshot` has passed (§7, §8).
 - **Every string a model or the repository wrote** goes through `mdtext.text`, `mdtext.code`, `mdtext.linked` or `mdtext.verbatim`, and always follows a label or a bullet, never the start of a line. The ticket has no table, HTML or image (§11).
 - **Links are never built.** A `url` is taken from `report.json` and accepted only if `safe_url` says so. The guidance documents are linked by `<repository>/blob/main/docs/<name>.md` with `repository` from `plugin.json`, never by a relative path (§9).
@@ -34,7 +34,9 @@ Where a step gives an old text and a new text, the old text occurs exactly once 
 - **Only `Reproduced` is gated,** by `recorded_reproduction`, which returns `None` until #103 records one. Do not invent #103's record format (§10).
 - **The four judgement sections** are a validated proposal or "Not assessed"; a bad drafts file never fails generation (§6).
 - **A's renderers are called, not copied,** and none of A's states or counts is recomputed here (§2).
-- **Scripts write only under `.thunderstruck/`.**
+- **A ticket fits a tracker:** `MAX_TICKET_CHARS` (60,000, below GitHub's 65,536, which is to be verified against the tracker) drops steps from the end, says so, and keeps every reference listed; a ticket still too long without steps is a stop (§7).
+- **A file is written only through a temporary file made with `O_CREAT|O_EXCL|O_NOFOLLOW`** under a fresh name, then replaced atomically (§11). Scripts write only under `.thunderstruck/`.
+- **A new script that starts `git` must be on #102's list** in `tests/test_no_execution.py` (`finding_ticket._git`, Task 3).
 - The two guidance documents are never edited, and the README section `## From a finding to a reviewed fix` keeps its heading. The README must not link either document by an absolute address (a #107 test forbids it).
 - The sample is regenerated once, in Task 8. From Task 3 on, `gen_sample_report.py` is unchanged until Task 8; from Task 8 on `--check` covers three files.
 - Never skip, disable or weaken a test. The one existing test this plan edits is the one the `mdtext` change pins (Task 1).
@@ -46,19 +48,23 @@ Where a step gives an old text and a new text, the old text occurs exactly once 
 
 1. **A snippet whose lines hold backticks, HTML, a link, a heading, a very long line, a lone `\r` and a bidirectional mark** is one code block in both markdown engines, and the document's shape does not depend on the text. Pinned in Task 1 (`test_a_verbatim_block_is_one_code_block_whatever_it_holds`) and Task 7 (`test_hostile_text_in_every_field_the_code_and_the_drafts_stays_inert`).
 2. **A cited file that is untracked, a symlink, a submodule, deleted, edited, staged, committed since, or hidden by assume-unchanged or skip-worktree** stops generation and is named. Pinned in Task 3 (one test per condition).
-3. **The hash check compares working tree to working tree.** `core.autocrlf` alone does not stop, and a file scanned dirty and since reverted does. Pinned in Task 3 (`test_line_ending_conversion_alone_does_not_stop`, `test_a_file_scanned_dirty_and_since_reverted_is_not_what_the_finding_recorded`).
+3. **The hash check compares working tree to working tree.** `core.autocrlf` alone does not stop, and a file scanned dirty and since reverted does, and then only a rescan fixes it, so the message does not offer the checkout. Pinned in Task 3 (`test_line_ending_conversion_alone_does_not_stop`, `test_a_file_scanned_dirty_and_since_reverted_is_not_what_the_finding_recorded`, `test_a_file_the_scan_saw_in_another_state_can_only_be_fixed_by_a_rescan`, `test_when_any_file_needs_a_rescan_the_way_forward_is_the_rescan`).
 4. **A stop writes no ticket, and leaves an earlier one untouched.** Pinned in Task 6 (`test_a_stop_writes_nothing_and_leaves_an_earlier_ticket_alone`).
 5. **A snippet is the commit's text** for LF, CRLF, no final newline, tabs, a lone `\r`, a form feed, bytes that are not UTF-8 and an empty file, and a cut is said outside the fence. Pinned in Task 4.
 6. **A hand-edited `report.json`** cannot plant a link (`javascript:`, a `)` that ends one) or turn a key into a path. Pinned in Task 4 (`test_only_a_plain_web_address_is_a_link`) and Task 7 (`test_a_hand_edited_report_cannot_plant_a_link_or_break_one`, `test_a_hostile_key_never_becomes_a_path`).
 7. **A drafts file** for another finding or scan, too large, not JSON, a symlink, or with a section too long is not used, and the ticket still generates. Pinned in Tasks 5 and 6.
-8. **`Reproduced` is refused** with the message naming #103, before any git call, and no file appears. Pinned in Tasks 2 and 6.
-9. **No machine value:** the scanner's root path written in model text becomes `<repo>`; the branch and the report's clock never appear. Pinned in Tasks 6 and 7.
+8. **`Reproduced` is refused** with the message naming #103, after the report is read and before the cited files are checked (only `git rev-parse` has run, to find the repository), and no file appears. Pinned in Tasks 2 and 6 (`test_reproduced_is_refused_before_the_code_is_checked`).
+9. **No machine value:** the scanner's repository path, home directory, user name and host name written in model text or a draft become `<repo>`, `<home>`, `<user>` and `<host>`; a reference and a snippet are never scrubbed; `root` is not a machine value; the branch and the report's clock never appear. Pinned in Tasks 6 and 7.
 10. **Determinism:** the same inputs give the same bytes, from another directory and from a copy of the repository with a rebuilt `generated_at`. Pinned in Task 6.
-11. **Tracker references in `report.md` change.** A sha, `#12`, `!7` or `ABC-123` in model text is now a code span everywhere. One existing test pinned the old form and is edited in Task 1; neither sample report moved when this was proved.
+11. **Tracker references in `report.md` change.** A sha with a digit and a letter, `#12`, `acme/api#12`, `PR#7`, `!7`, `group/proj!3` or `ABC-123` in model text is now a code span everywhere, and `utf-8`, `sha-256`, `x86-64`, `defaced` and a run of digits are not. One existing test pinned the old form and is edited in Task 1, which also runs `gen_sample_report.py --check` (nothing in the suite compares the samples); neither sample report moved when this was proved.
 12. **Guidance links:** absolute, from `plugin.json`, with a fixed sentence when the manifest is unusable. Pinned in Task 5.
-13. **The real exit code of the full suite.** A task is not done on a green subset.
+13. **A ticket that cannot be filed.** Twelve full steps are about 120,000 characters; the cap drops steps from the end and the references stay listed. Pinned in Task 6 (`test_a_ticket_too_long_for_a_tracker_drops_steps_from_the_end_and_says_so`, `test_a_ticket_that_exactly_fits_keeps_every_step_and_one_over_drops_one`, `test_a_ticket_too_long_even_without_steps_is_a_named_stop_not_a_cut`).
+14. **A link planted where the temporary file goes** is never written through, and a link at the ticket's own name is replaced, not followed. Pinned in Task 6 (`test_a_link_planted_at_the_old_temporary_name_is_not_written_through`, `test_a_link_planted_at_the_temporary_name_is_refused`, `test_a_ticket_file_that_is_a_link_is_replaced_and_never_followed`).
+15. **A cited file stored in Git LFS** is a pointer in the commit: a stop, not a snippet of a pointer. Pinned in Task 4 (`test_a_file_stored_in_git_lfs_is_a_stop_not_a_pointer_shown_as_code`).
+16. **#102's process list.** A new script that starts `git` fails `test_processes_start_only_where_reviewed` until it is listed; Task 3 lists `finding_ticket._git`.
+17. **The real exit code of the full suite.** A task is not done on a green subset.
 
-Proved in a scratch copy while this plan was written: the repository at the commit before #105 and #107 were built, with #105's plan applied (its Tasks 1 to 9, as committed before its review fixes) and #107's plan applied with two stand-in documents; then every task below replayed as its own step, tests first. Each task's tests failed for the stated reason (Task 7 is test-only, and its tests carry their own mutation checks) and then passed; the full suite exited 0 (2510 passed, 19 skipped), with `gen_catalog_docs.py --check`, `gen_sample_report.py --check` and `validate_plugin.py`; the plugin installed into an empty home, enabled, with the skill, the script and both documents in the installed copy. **Not proved:** #105's text after its review fixes (its renderers' names are unchanged, and no test below depends on their wording beyond `**Traced impact**` and `**Inferred impact**`); the real guidance documents; Python 3.11 and 3.12 (the scratch run used 3.13); macOS (CI's `sample-macos` job checks the sample there); how GitHub, GitLab or Bitbucket render the ticket (inferred from cmark-gfm and markdown-it-py); #106.
+Proved in a scratch copy while this plan was written: a fresh clone of `main` at 74805f7 (#102 and #109 included) with the branch's docs, #105's reconciled plan applied task by task (its Tasks 1 to 10) and #107's plan applied with two stand-in documents; then every task below replayed as its own step, tests first. Each task's tests failed for the stated reason (Task 7 is test-only, and its tests carry their own mutation checks) and then passed; the full suite exited 0 (2763 passed, 21 skipped; the baseline without this plan was 2539 and 21), with `gen_catalog_docs.py --check`, `gen_sample_report.py --check` (three files) and `validate_plugin.py`; the plugin installed into an empty home, enabled, with the skill, the script and both documents in the installed copy. **Not proved:** the real guidance documents; Python 3.11 and 3.12 (the scratch run used 3.13); macOS (CI's `sample-macos` job checks the sample there); how GitHub, GitLab or Bitbucket render the ticket, and GitHub's current issue-body limit (inferred from the review; named constants, to verify); #106.
 
 ---
 
@@ -66,40 +72,44 @@ Proved in a scratch copy while this plan was written: the repository at the comm
 
 **Satisfies:** none directly; every later task assumes it.
 
-- [ ] **Step 1: Check #105 and #107 are on `main`, and that the code this plan edits is as it was written against.**
+- [ ] **Step 1: Check #105 and #107 are on `main`, and that the code this plan edits is as it was written against.** A missing prerequisite sets `B`; a moved anchor sets `A`.
 
 ```bash
 git fetch -q origin
-chk() { git show "origin/main:$1" 2>/dev/null | grep -q -- "$2" && echo "ok      $3" || echo "MISSING $3"; }
-chk scripts/_common.py '^VALIDATION_RULES = 5$' "#105: VALIDATION_RULES is 5"
+B=0; A=0
+chk() { git show "origin/main:$1" 2>/dev/null | grep -q -- "$2" && echo "ok      $3" || { echo "MISSING $3"; B=1; }; }
+atleast() { git show "origin/main:$1" 2>/dev/null | python3 -c 'import re, sys; m = re.search(sys.argv[1], sys.stdin.read(), re.M); sys.exit(0 if m and int(m[1]) >= int(sys.argv[2]) else 1)' "$2" "$3"   && echo "ok      $4" || { echo "MISSING $4"; B=1; }; }
+atleast scripts/_common.py '^VALIDATION_RULES = (\d+)$' 5 "#105: VALIDATION_RULES is at least 5"
+atleast scripts/finding_shape.py 'thunderstruck\.finding/v(\d+)' 3 "#105: the finding schema is at least v3"
 chk scripts/_common.py 'IMPACT_SENTENCES' "#105: _common.IMPACT_SENTENCES"
 chk scripts/_common.py 'def guarantee_state' "#105: _common.guarantee_state"
 chk scripts/report.py 'def render_impact' "#105: report.render_impact"
 chk scripts/report.py 'def render_guarantees' "#105: report.render_guarantees"
 chk scripts/report.py 'def render_not_checked' "#105: report.render_not_checked"
-chk scripts/finding_shape.py 'thunderstruck.finding/v3' "#105: finding schema is v3"
 for f in docs/fix-agent-instructions.md docs/review-briefs.md; do
   if git cat-file -e "origin/main:$f" 2>/dev/null && [ -n "$(git show "origin/main:$f" | tr -d '[:space:]' | head -c 1)" ]; then
-    echo "ok      #107: $f"; else echo "MISSING #107: $f"; fi
+    echo "ok      #107: $f"; else echo "MISSING #107: $f"; B=1; fi
 done
 chk tests/guidance_check.py 'PUBLISHED' "#107: tests/guidance_check.py PUBLISHED"
 chk README.md '^## From a finding to a reviewed fix' "#107: the README section"
 chk .claude-plugin/plugin.json '"repository"' "plugin.json names the repository"
 for f in scripts/finding_ticket.py skills/thunderstruck-ticket/SKILL.md tests/test_finding_ticket.py examples/sample-ticket.md; do
-  git cat-file -e "origin/main:$f" 2>/dev/null && echo "EXISTS  $f" || echo "ok      $f is free"
+  if git cat-file -e "origin/main:$f" 2>/dev/null; then echo "EXISTS  $f"; B=1; else echo "ok      $f is free"; fi
 done
-python3 - <<'EOF'
-import subprocess
+python3 - <<'EOF' || A=1
+import subprocess, sys
 ANCHORS = [
     ('scripts/mdtext.py', '_INVISIBLE = re.compile("[\\\\x00-\\\\x08\\\\x0b\\\\x0c\\\\x0e-\\\\x1f\\\\x7f-\\\\x9f\\\\u061c\\\\u200e\\\\u200f\\\\u202a-\\\\u202e\\\\u2066-\\\\u2069]")'),
     ('scripts/mdtext.py', '    r"|:[+-]1:|:100:|:1234:",                    # ...and GitHub\'s letterless ones'),
     ('scripts/mdtext.py', 'def linked(value: Any, url: str | None, cell: bool = False) -> str:'),
     ('tests/test_report_links.py', '    assert re.search(rf"differ from the scanned commit [0-9a-f]{{7}} or are not in it, "'),
     ('scripts/links.py', 'def _chunks(paths: list[str]):'),
+    ('tests/test_no_execution.py', '("_common.py", "find_repo_root"), ("bundle.py", "call_site_hits")}'),
     ('scripts/gen_sample_report.py', '"""Regenerate examples/sample-report.md and sample-report.html from the test fixture.'),
     ('scripts/gen_sample_report.py', 'def generate_all() -> dict[str, str]:'),
     ('scripts/gen_sample_report.py', '        html = report_html.render(report_html.page_data(payload),'),
     ('scripts/gen_sample_report.py', '    return {"sample-report.md": header + report,'),
+    ('README.md', '     ↓        the only model step'),
     ('README.md', '| `index.json` | file → findings, read by the edit guardrail |'),
     ('README.md', 'report_html.py  report.html, from report.json only'),
     ('README.md', 'The plugin does not run either one. Link them by these paths, which do not'),
@@ -112,16 +122,24 @@ ANCHORS = [
     ('CLAUDE.md', 'Every feature has three artefacts. Each answers one question, and nothing is'),
     ('skills/thunderstruck-scan/references/report-format.md', '## Identity: `id` versus `key`'),
 ]
+moved = 0
 for path, line in ANCHORS:
     text = subprocess.run(["git", "show", f"origin/main:{path}"], capture_output=True, text=True).stdout
     n = text.count(line)
-    print(("ok      " if n == 1 else "MISSING ") + f"{path}: {line[:70]!r} occurs {n} time(s)")
+    print(("ok      " if n == 1 else "MOVED   ") + f"{path}: {line[:70]!r} occurs {n} time(s)")
+    moved += n != 1
+sys.exit(1 if moved else 0)
 EOF
+if [ "$B" = 1 ]; then echo "BLOCKED: a prerequisite is missing (Step 2: agent:blocked)"
+elif [ "$A" = 1 ]; then echo "AMENDABLE: an anchor moved (Step 2: step 6a, no agent:blocked)"
+else echo "READY"; fi
 ```
 
-Expected: every line `ok`, and no `EXISTS`.
+Expected: every line `ok`, then `READY`.
 
-- [ ] **Step 2: Stop if anything is missing.** Any `MISSING` or `EXISTS` line ends the run before Task 1: replace `agent:in-progress` with `agent:blocked` on #108, comment "Blocked at Task 0: <the lines>. #105 (the finding fields) or #107 (the guidance documents) is not on main, or main moved under this plan", open no PR. A missing guidance document or a missing #105 name is not amendable. An anchor that moved but whose text is clear is: say so in the comment, so the next run takes step 6a of the skill.
+- [ ] **Step 2: Stop if anything is missing.** The last line says which way.
+  - `BLOCKED` (a `MISSING` or `EXISTS` line): a prerequisite ticket's work is not on `main`, or another change took a name. Replace `agent:in-progress` with `agent:blocked` on #108, comment "Blocked at Task 0: <the lines>. #105 (the finding fields) or #107 (the guidance documents) is not on main", open no PR. A missing guidance document or a missing #105 name is never amendable.
+  - `AMENDABLE` (only `MOVED` lines, so every prerequisite is there and an anchor text changed): this is an amendable gap (`.claude/skills/implement-ticket/SKILL.md` step 6a), not a block. Do not add `agent:blocked`, which would stop the next night's pick. Take step 6a: propose one amendment to this plan and spec that moves the anchor to where the text now is, if one conforming text is clear. If the moved text has more than one reasonable reading, it is not amendable: stop as `BLOCKED` above.
 
 - [ ] **Step 3: Record the baseline.** On a clean `origin/main`, run the full suite (command in the header). Expected `exit=0`. Keep the counts: this plan adds tests, and a changed count that is not an addition is a regression to explain.
 
@@ -218,15 +236,19 @@ def test_verbatim_keeps_every_other_character_as_written():
 
 @pytest.mark.parametrize("token, shown", [
     ("#12", "`#12`"), ("(#12),", "(`#12`),"), ("!7", "`!7`"), ("ABC-123", "`ABC-123`"),
-    ("deadbeef", "`deadbeef`"), ("0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
-                                 "`0a1b2c3d4e5f60718293a4b5c6d7e8f901234567`"),
+    ("acme/api#12", "`acme/api#12`"), ("PR#7", "`PR#7`"), ("group/proj!3", "`group/proj!3`"),
+    ("a1b2c3d", "`a1b2c3d`"), ("0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
+                               "`0a1b2c3d4e5f60718293a4b5c6d7e8f901234567`"),
 ])
 def test_a_tracker_reference_becomes_a_code_span(token, shown):
     assert mdtext.text(f"see {token} now") == f"see {shown} now"
 
 
-@pytest.mark.parametrize("word", ["10:30:45", "C#", "2000000", "decade", "plain", "a-b", "v1.2"])
+@pytest.mark.parametrize("word", ["10:30:45", "C#", "2000000", "1234567", "decade", "defaced", "deadbeef",
+                                  "plain", "a-b", "v1.2", "utf-8", "sha-256", "x86-64", "line-5"])
 def test_ordinary_words_and_numbers_are_left_alone(word):
+    """A key needs capitals (not utf-8), a sha needs a digit and a letter (not a word made of
+    a-f), and a run of digits alone is a number."""
     assert mdtext.text(f"see {word} now") == f"see {word} now"
 ``````
 
@@ -237,7 +259,7 @@ def test_ordinary_words_and_numbers_are_left_alone(word):
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_finding_ticket.py tests/test_report_links.py -q
 ```
 
-Expected: FAIL, 10 failed: `AttributeError: module 'mdtext' has no attribute 'verbatim'` for the fence tests, and the six tracker-reference cases on their assertions (`test_ordinary_words_and_numbers_are_left_alone` passes).
+Expected: FAIL, 13 failed: `AttributeError: module 'mdtext' has no attribute 'verbatim'` for the fence tests, and the nine tracker-reference cases on their assertions (`test_ordinary_words_and_numbers_are_left_alone` passes).
 
 - [ ] **Step 3: Write the implementation.**
 
@@ -269,9 +291,9 @@ with:
 ``````text
     r"|:[+-]1:|:100:|:1234:"                     # ...and GitHub's letterless ones
     # A tracker links these after rendering, and a link into someone's issue notifies it (#108):
-    r"|(?<!\w)[#!][0-9]"                         # an issue or merge request: #12, !12
-    r"|\b[A-Z][A-Z0-9]+-[0-9]"                   # a Jira-style key: ABC-123
-    r"|\b(?=[0-9]*[a-f])[0-9a-f]{7,40}\b",       # a commit sha (a run of digits alone is a number)
+    r"|[#!][0-9]"                                # an issue or merge request, here or in another repository: #12, acme/api#12, PR#7, group/proj!3
+    r"|(?-i:\b[A-Z][A-Z0-9]+-[0-9])"             # a Jira-style key: ABC-123 (capitals only: not utf-8 or sha-256)
+    r"|\b(?=[0-9a-f]*[0-9])(?=[0-9]*[a-f])[0-9a-f]{7,40}\b",  # a commit sha: a digit and a letter (a run of digits alone is a number)
     re.IGNORECASE)
 ``````
 
@@ -320,6 +342,13 @@ with:
     assert re.search(rf"differ from the scanned commit `?[0-9a-f]{{7}}`? or are not in it, "
 ``````
 
+Then check the generated samples, which no suite test compares (CI's `--check` would be the first to notice):
+
+```bash
+uv run scripts/gen_sample_report.py --check; echo "exit=$?"
+```
+
+Expected: `exit=0`, both samples up to date. If it reports a sample stale, regenerate with `uv run scripts/gen_sample_report.py`, read the diff of `examples/` (only tracker-reference spans should differ), add both files to this commit and say so in its body.
 
 - [ ] **Step 4: Run the task's tests, then the full suite.** First:
 
@@ -604,10 +633,13 @@ from __future__ import annotations
 
 import argparse
 import copy
+import getpass
 import hashlib
 import json
 import os
 import re
+import secrets
+import socket
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -754,9 +786,10 @@ git commit -m "Ticket: choose a finding by key, and the status (#108)" \
 - Modify: `scripts/links.py`
 - Modify: `scripts/finding_ticket.py`
 - Modify: `tests/test_finding_ticket.py`
+- Modify: `tests/test_no_execution.py`
 
 **Interfaces:**
-- Produces: `links.stale_paths(repo, sha, paths)`; in `finding_ticket`: `FULL_SHA`, `GIT_TIMEOUT`, `WAY_FORWARD`, `quoted_files(finding)`, `check_snapshot(repo, rep, finding)`.
+- Produces: `links.stale_paths(repo, sha, paths)`; in `finding_ticket`: `FULL_SHA`, `GIT_TIMEOUT`, `WAY_FORWARD`, `WAY_RESCAN`, `SCAN_SAW_OTHER`, `quoted_files(finding)`, `check_snapshot(repo, rep, finding)`.
 
 Every file the ticket quotes must be the scanned commit's, by the rule the links already use, and the file the scan recorded, by the hashes `validate.py` took (§8).
 
@@ -803,6 +836,43 @@ def test_a_staged_edit_stops(tmp_path):
     (repo / "src/api.ts").write_text("export const api = 2;\n")
     git(repo, "add", "src/api.ts")
     _refused(repo, '"src/api.ts": differs from the scanned commit')
+
+
+def test_a_file_the_scan_saw_in_another_state_can_only_be_fixed_by_a_rescan(tmp_path):
+    repo = make_repo(tmp_path)
+    finding = make_finding(repo, content_hash="sha256:" + "0" * 64)     # scanned dirty, now the commit's text
+    make_report(repo, [finding])
+    message = _refused(repo, '"src/releases.ts": changed since the scan recorded it',
+                       "Rescan with /thunderstruck-scan", "cannot fix that")
+    assert "git switch" not in message
+
+
+def test_an_edit_since_the_scan_offers_the_checkout_and_says_when_it_will_not_do(tmp_path):
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    (repo / "src/releases.ts").write_text("edited\n")
+    message = _refused(repo, f"git switch --detach {head_of(repo)}", "only a rescan fixes that")
+    assert "cannot fix that" not in message
+
+
+def test_when_any_file_needs_a_rescan_the_way_forward_is_the_rescan(tmp_path):
+    repo = make_repo(tmp_path)
+    finding = make_finding(repo, content_hash="sha256:" + "0" * 64)
+    make_report(repo, [finding])
+    (repo / "src/api.ts").write_text("edited\n")                      # a plain edit as well
+    message = _refused(repo, '"src/api.ts": differs from the scanned commit',
+                       '"src/releases.ts": changed since the scan recorded it', "cannot fix that")
+    assert "git switch" not in message
+
+
+def test_the_ticket_script_may_start_git_and_nothing_else():
+    """#102's test_no_execution.py reviews where a process may start: finding_ticket.py runs git, in _git."""
+    import ast
+    import test_no_execution as ne
+    tree = ast.parse((ROOT / "scripts" / "finding_ticket.py").read_text(encoding="utf-8"))
+    starters = {fn for fn, call in ne._calls(tree) if ast.unparse(call.func).startswith("subprocess.")}
+    assert starters == {"_git"}
+    assert ("finding_ticket.py", "_git") in ne.GIT_ONLY
 
 
 def test_a_commit_made_since_the_scan_stops(tmp_path):
@@ -954,7 +1024,7 @@ def test_a_git_failure_or_timeout_is_a_named_stop(tmp_path, monkeypatch):
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_finding_ticket.py tests/test_report_links.py -q
 ```
 
-Expected: FAIL, 25 failed: `AttributeError: module 'finding_ticket' has no attribute 'check_snapshot'`.
+Expected: FAIL, 29 failed: `AttributeError: module 'finding_ticket' has no attribute 'check_snapshot'`.
 
 - [ ] **Step 3: Write the implementation.**
 
@@ -986,7 +1056,11 @@ FULL_SHA = re.compile(r"[0-9a-f]{40}\Z")
 GIT_TIMEOUT = 30
 WAY_FORWARD = ("Rescan with /thunderstruck-scan, or check out the scanned commit {sha} "
                "(`git switch --detach {sha}`; stash or commit edits to those files first) "
-               "and run this again.")
+               "and run this again. If it then stops with \"changed since the scan recorded it\", "
+               "the scan saw that file in another state, and only a rescan fixes that.")
+WAY_RESCAN = ("Rescan with /thunderstruck-scan. The scan saw a file above in a state the scanned "
+              "commit does not have, so checking out the commit cannot fix that.")
+SCAN_SAW_OTHER = ("changed since the scan recorded it", "has no hash recorded by the scan")
 
 
 def quoted_files(finding: dict) -> list[str]:
@@ -1074,10 +1148,26 @@ def check_snapshot(repo: Path, rep: dict, finding: dict) -> None:
     if problems:
         rows = [f"{json.dumps(rel)}: {why}" for rel, why in problems.items()]
         more = len(rows) - links.MAX_NAMED
+        way = (WAY_RESCAN if any(why in SCAN_SAW_OTHER for why in problems.values())
+               else WAY_FORWARD.format(sha=sha))
         raise stop(f"no ticket was written for finding {finding.get('key')}: the code it cites is "
                    "not the scan's.\n  " + "\n  ".join(rows[:links.MAX_NAMED])
-                   + (f"\n  … and {more} more" if more > 0 else "")
-                   + "\n" + WAY_FORWARD.format(sha=sha))
+                   + (f"\n  … and {more} more" if more > 0 else "") + "\n" + way)
+``````
+
+Then run `tests/test_no_execution.py`: `test_processes_start_only_where_reviewed[finding_ticket.py]` fails ("starts a process in _git()"), because #102 reviews where a process may start and `_git` runs `git`. This ticket's own `test_the_ticket_script_may_start_git_and_nothing_else` fails for the same reason. Add the function to the reviewed list:
+
+In `tests/test_no_execution.py`, replace this text, which occurs once:
+
+``````text
+("_common.py", "find_repo_root"), ("bundle.py", "call_site_hits")}
+``````
+
+with:
+
+``````text
+("_common.py", "find_repo_root"), ("bundle.py", "call_site_hits"),
+            ("finding_ticket.py", "_git")}
 ``````
 
 
@@ -1092,7 +1182,7 @@ Then the full suite (command in the header). Expected: PASS, `exit=0`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add scripts/links.py scripts/finding_ticket.py tests/test_finding_ticket.py
+git add scripts/links.py scripts/finding_ticket.py tests/test_finding_ticket.py tests/test_no_execution.py
 git commit -m "Ticket: stop when a cited file is not the scanned commit's (#108)" \
   -m "AC-3" -m "Task: 3" -m "red: test_a_tree_that_is_the_scanned_commit_passes failed: AttributeError: module 'finding_ticket' has no attribute 'check_snapshot'"
 ```
@@ -1163,6 +1253,15 @@ def test_a_snippet_is_the_text_of_the_file_at_the_scanned_commit(tmp_path, name)
     steps, extra = _steps(repo, _cite(repo, "src/a.ts", 1, len(expected) if len(expected) > 1 else None))
     assert extra == 0 and len(steps) == 1
     assert steps[0].lines == expected and (steps[0].start, steps[0].end) == (1, len(expected))
+
+
+def test_a_file_stored_in_git_lfs_is_a_stop_not_a_pointer_shown_as_code(tmp_path):
+    pointer = b"version https://git-lfs.github.com/spec/v1\noid sha256:" + b"0" * 64 + b"\nsize 12345\n"
+    repo = make_repo(tmp_path, {"src/big.bin": pointer, "src/api.ts": "x\n"})
+    with pytest.raises(c.ThunderstruckError, match='"src/big.bin" is stored with Git LFS.*pointer, not the code'):
+        _steps(repo, _cite(repo, "src/big.bin", 1))
+    (step,), _ = _steps(repo, _cite(repo, "src/api.ts", 1))               # a file that is not a pointer
+    assert step.lines == ["x"]
 
 
 def test_the_snippet_is_the_commit_not_the_working_tree(tmp_path):
@@ -1295,7 +1394,7 @@ def test_a_step_never_takes_an_unsafe_address(tmp_path):
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_finding_ticket.py tests/test_report_links.py -q
 ```
 
-Expected: FAIL, 40 failed: `AttributeError: module 'finding_ticket' has no attribute 'code_steps'` (and `safe_url`, `clean_urls`).
+Expected: FAIL, 41 failed: `AttributeError: module 'finding_ticket' has no attribute 'code_steps'` (and `safe_url`, `clean_urls`).
 
 - [ ] **Step 3: Write the implementation.**
 
@@ -1347,10 +1446,14 @@ class Step:
 def blob_lines(repo: Path, sha: str, rel: str) -> list[str]:
     """The lines of `rel` at `sha`, counted as validate.py and git blame count them: split
     at \n only, the empty string after a final newline dropped, one trailing \r dropped
-    per line, an empty file one empty line."""
+    per line, an empty file one empty line. A file git stores as an LFS pointer is a stop: the
+    working tree may hold the real content, but the commit holds the pointer."""
     proc = _git(repo, "cat-file", "blob", f"{sha}:{rel}")
     if proc.returncode != 0:
         raise stop(f"{json.dumps(rel)} is not in the scanned commit. Rescan with /thunderstruck-scan.")
+    if proc.stdout.startswith(b"version https://git-lfs.github.com/spec/v1"):
+        raise stop(f"{json.dumps(rel)} is stored with Git LFS at the scanned commit: the commit holds a "
+                   "pointer, not the code, so no snippet can be taken from it.")
     parts = proc.stdout.split(b"\n")
     if parts[-1] == b"":
         parts.pop()
@@ -1772,16 +1875,16 @@ git commit -m "Ticket: links, the guidance documents and the drafted sections (#
 
 ### Task 6: The ticket
 
-**Satisfies:** AC-1 (every section, in order, "Not assessed" with a reason), AC-2, AC-5, AC-7 (impact sections from A's renderers; "not assessed" for an older finding), AC-8 (no machine value), AC-10 (byte-identical).
+**Satisfies:** AC-1 (every section, in order, "Not assessed" with a reason), AC-2, AC-5 (refused before the code is checked), AC-7 (impact sections from A's renderers; "not assessed" for an older finding), AC-8 (nothing about the machine that ran the scan), AC-9 (the temporary file), AC-10 (byte-identical).
 
 **Files:**
 - Modify: `scripts/finding_ticket.py`
 - Modify: `tests/test_finding_ticket.py`
 
 **Interfaces:**
-- Produces: `SECTIONS_HEADINGS`, `MAX_TITLE`, `PROPOSAL`, `DISCLAIMER`, `REASONS`, `title(finding)`, `scrubber(roots)`, `render(...)`, `write_ticket(repo, key, text)`, `main(argv)`.
+- Produces: `SECTIONS_HEADINGS`, `MAX_TITLE`, `PROPOSAL`, `DISCLAIMER`, `REASONS`, `TRACKER_BODY_LIMIT`, `TICKET_MARGIN`, `MAX_TICKET_CHARS`, `GENERIC_ACCOUNTS`, `SCRUB_SKIP`, `title(finding)`, `machine_values()`, `scrubber(roots, machine)`, `render(...)`, `fit_ticket(...)`, `write_ticket(repo, key, text)`, `main(argv)`.
 
-This task assembles the sections of §5, calls A's renderers for the impact sections, and gives the script its `main`: lookup, status, snapshot, snippets, drafts, render, atomic write.
+This task assembles the sections of §5, calls A's renderers for the impact sections, and gives the script its `main`: lookup, status, snapshot, snippets, drafts, render, atomic write. It also holds the three rules about the whole file: the size cap that drops steps (§7), the scrub of the machine that ran the scan (§11) and the temporary file that is never written through (§11).
 
 - [ ] **Step 1: Write the tests.** Append to `tests/test_finding_ticket.py`:
 
@@ -2112,6 +2215,172 @@ def test_the_script_runs_as_a_program(tmp_path):
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.strip() == (f"ticket for {KEY}: .thunderstruck/tickets/{KEY}.md "
                                    "(5 sections not assessed, 0 drafted)")
+
+
+def _wide_finding(repo, n=12):
+    return make_finding(repo, location={"file": "src/f0.ts", "lines": "1-40", "url": None},
+                        evidence=[{"type": "code", "ref": f"src/f{k}.ts:1-40", "note": f"step {k}", "url": None}
+                                  for k in range(n)], blast_items=[], implicit_guarantees=[])
+
+
+def _wide_repo(tmp_path, n=12):
+    rows = "".join("w" * 239 + "\n" for _ in range(40))                   # a step of 9,600 characters
+    return make_repo(tmp_path, {f"src/f{k}.ts": rows for k in range(n)})
+
+
+def test_a_ticket_too_long_for_a_tracker_drops_steps_from_the_end_and_says_so(tmp_path, capsys):
+    repo = _wide_repo(tmp_path)
+    make_report(repo, [_wide_finding(repo)])
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    text = ticket_path(repo).read_text()
+    steps = text.count("### Step ")
+    assert len(text) <= ft.MAX_TICKET_CHARS == 60_000 and 1 <= steps < 12
+    assert text.index("What to notice: step 0") < text.index("### Step 2")           # the first steps are the ones kept
+    assert f"What to notice: step {steps}" not in text
+    dropped = 12 - steps
+    assert (f"{dropped} further steps are left out so that the ticket fits a tracker (at most 60,000 "
+            "characters); the code references are listed under Evidence status.") in section(text, "Mechanism")
+    assert text.count("- _code_ ") == 12                                             # every reference is still listed
+
+
+def test_the_tracker_limit_and_its_margin_are_named_constants():
+    assert ft.TRACKER_BODY_LIMIT == 65_536 and ft.MAX_TICKET_CHARS == ft.TRACKER_BODY_LIMIT - ft.TICKET_MARGIN
+    assert ft.MAX_TICKET_CHARS < ft.TRACKER_BODY_LIMIT
+
+
+def test_a_ticket_that_exactly_fits_keeps_every_step_and_one_over_drops_one(tmp_path, capsys, monkeypatch):
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    full = len(ticket_path(repo).read_text())
+    monkeypatch.setattr(ft, "MAX_TICKET_CHARS", full)
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    assert ticket_path(repo).read_text().count("### Step ") == 2
+    monkeypatch.setattr(ft, "MAX_TICKET_CHARS", full - 1)
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    text = ticket_path(repo).read_text()
+    assert text.count("### Step ") == 1 and "1 further step is left out so that the ticket fits" in text
+
+
+def test_a_ticket_too_long_even_without_steps_is_a_named_stop_not_a_cut(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    make_report(repo, [make_finding(repo, failure_mode="word " * 14_000)])
+    code, out, err = run_main(capsys, repo, "--key", KEY)
+    assert code == 2 and "even without a code step" in err and "60,000" in err and out == ""
+    assert not (repo / ".thunderstruck" / "tickets").exists()
+
+
+def test_a_link_planted_at_the_old_temporary_name_is_not_written_through(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    tickets = repo / ".thunderstruck" / "tickets"
+    tickets.mkdir(parents=True)
+    victim = tmp_path / "victim.txt"
+    victim.write_text("keep me")
+    (tickets / f"{KEY}.md.tmp").symlink_to(victim)
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    assert victim.read_text() == "keep me" and ticket_path(repo).is_file()
+
+
+def test_a_link_planted_at_the_temporary_name_is_refused(tmp_path, capsys, monkeypatch):
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    tickets = repo / ".thunderstruck" / "tickets"
+    tickets.mkdir(parents=True)
+    victim = tmp_path / "victim.txt"
+    victim.write_text("keep me")
+    monkeypatch.setattr(ft.secrets, "token_hex", lambda n: "0" * 16)
+    (tickets / f".{KEY}.{'0' * 16}.tmp").symlink_to(victim)
+    code, _, err = run_main(capsys, repo, "--key", KEY)
+    assert code == 2 and "could not create a temporary file" in err
+    assert victim.read_text() == "keep me" and not ticket_path(repo).exists()
+
+
+def test_a_ticket_file_that_is_a_link_is_replaced_and_never_followed(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    tickets = repo / ".thunderstruck" / "tickets"
+    tickets.mkdir(parents=True)
+    victim = tmp_path / "victim.txt"
+    victim.write_text("keep me")
+    ticket_path(repo).symlink_to(victim)
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    assert victim.read_text() == "keep me" and not ticket_path(repo).is_symlink()
+    assert ticket_path(repo).read_text().startswith("# ")
+    assert [p.name for p in tickets.iterdir()] == [f"{KEY}.md"]                       # no temporary file is left
+
+
+MACHINE = ("/home/alice", "alice", "devbox-17.example.com")
+
+
+def _plain(text):
+    """The ticket's words with the escapes and code-span marks of mdtext taken out."""
+    return __import__("re").sub(r"[`\\]", "", text)
+
+
+def test_the_machine_that_ran_the_scan_is_scrubbed_from_every_text(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(ft, "machine_values", lambda: MACHINE)
+    repo = make_repo(tmp_path)
+    f = make_finding(repo, failure_mode="Reads /home/alice/.npmrc as alice on devbox-17.example.com",
+                     confidence_rationale="alice@devbox-17 saw it; the short name devbox-17 is the same host",
+                     how_to_verify="Run it from /home/alice/work/other")
+    make_report(repo, [f])
+    path = ft.sections_path(repo, KEY)
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({**SECTIONS_OK, "sections": {"fix_options": ["Edit /home/alice/.npmrc"]}}))
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    text = _plain(ticket_path(repo).read_text())
+    assert "<home>/.npmrc as <user> on <host>" in text
+    assert "<user>@<host> saw it; the short name <host> is the same host" in text
+    assert "Run it from <home>/work/other" in text and "- Edit <home>/.npmrc" in text
+    for value in ("/home/alice", "alice", "devbox-17"):
+        assert value not in text, value
+
+
+def test_a_path_that_is_the_repositorys_own_content_stays_verbatim(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(ft, "machine_values", lambda: MACHINE)
+    repo = make_repo(tmp_path, {"src/alice/util.ts": "const cache = '/home/alice/build'; // alice\n",
+                                "src/api.ts": "x\n"})
+    f = make_finding(repo, location={"file": "src/alice/util.ts", "lines": "1", "url": None},
+                     evidence=[{"type": "code", "ref": "src/alice/util.ts:1", "note": "alice's cache", "url": None}],
+                     blast_items=[], implicit_guarantees=[])
+    make_report(repo, [f])
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    text = ticket_path(repo).read_text()
+    assert "const cache = '/home/alice/build'; // alice" in text                       # the snippet
+    assert "[`src/alice/util.ts:1`](" in section(text, "Header")                      # the file's own path
+    assert "What to notice: <user>'s cache" in _plain(text)                           # the model's note
+
+
+def test_a_generic_account_name_is_not_a_machine_value(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(ft, "machine_values", lambda: ("/root", "root", "ci"))
+    repo = make_repo(tmp_path)
+    make_report(repo, [make_finding(repo, failure_mode="The root cause is in /root/.cache, run as root")])
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    assert "The root cause is in <home>/.cache, run as root" in _plain(ticket_path(repo).read_text())
+
+
+def test_the_real_machine_values_are_read_from_the_machine():
+    home, user, host = ft.machine_values()
+    assert home == str(Path.home())
+    assert user is None or isinstance(user, str)
+    import socket
+    assert host == socket.gethostname()
+
+
+def test_reproduced_is_refused_before_the_code_is_checked(tmp_path, capsys, monkeypatch):
+    """The refusal comes once the report is read and the key found, and before anything looks at
+    the cited files: only `git rev-parse` has run (to find the repository)."""
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    (repo / "src/releases.ts").write_text("edited\n")              # a stop, if the code were checked
+
+    def checked(*args, **kwargs):
+        raise AssertionError("the code was checked before the status was refused")
+    monkeypatch.setattr(ft, "check_snapshot", checked)
+    monkeypatch.setattr(links, "stale_paths", checked)
+    code, _, err = run_main(capsys, repo, "--key", KEY, "--status", "Reproduced")
+    assert code == 2 and "Reproduced refused" in err and "the code it cites" not in err
 ``````
 
 
@@ -2121,7 +2390,7 @@ def test_the_script_runs_as_a_program(tmp_path):
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_finding_ticket.py tests/test_report_links.py -q
 ```
 
-Expected: FAIL, 29 failed: `AttributeError: module 'finding_ticket' has no attribute 'title'` (and `main`, `SECTIONS_HEADINGS`).
+Expected: FAIL, 41 failed: `AttributeError: module 'finding_ticket' has no attribute 'title'` (and `main`, `SECTIONS_HEADINGS`, `machine_values`).
 
 - [ ] **Step 3: Write the implementation.**
 
@@ -2134,6 +2403,18 @@ SECTIONS_HEADINGS = ("Header", "Summary", "Trigger", "Mechanism", "Persistence",
                      "Acceptance criteria", "Out of scope", "Rollout and rollback", "Provenance",
                      "Disclaimer")
 MAX_TITLE = 100
+# A ticket is pasted into a tracker. GitHub limits an issue body to 65,536 characters (verify
+# against the tracker's current limit before relying on that figure). The cap keeps a margin
+# below the limit for what it cannot drop: every section but the mechanism steps.
+TRACKER_BODY_LIMIT = 65_536
+TICKET_MARGIN = 5_536
+MAX_TICKET_CHARS = TRACKER_BODY_LIMIT - TICKET_MARGIN
+# An account name that is the same on every machine says nothing about this one.
+GENERIC_ACCOUNTS = frozenset({"root", "admin", "administrator", "user", "runner", "ubuntu", "vscode",
+                              "node", "nobody", "daemon"})
+# Keys whose values are references, links or ids the ticket must keep exactly.
+SCRUB_SKIP = frozenset({"key", "id", "hotspot_id", "type", "ref", "file", "default_ref", "doc_ref", "sha",
+                        "url", "default_url", "doc_url", "history_url", "content_hash", "evidence_hashes"})
 PROPOSAL = "**Proposal, not verified** — drafted by a model from this finding. Nothing checked it."
 DISCLAIMER = ("This ticket was generated by thunderstruck from a scan. The finding is a hypothesis "
               "with a way to prove it wrong, not a confirmed defect, and the code may have changed "
@@ -2162,21 +2443,59 @@ def title(finding: dict) -> str:
     return head.rstrip(" ,;:.") + "…"
 
 
-def scrubber(roots):
-    """A function that replaces the scanner's own root path in any string, list or object
-    with <repo>: model text can name it, and a ticket is shared."""
-    found = sorted({r.rstrip("/") for r in roots if isinstance(r, str) and len(r.rstrip("/")) > 1},
-                   key=len, reverse=True)
+def machine_values() -> tuple[str | None, str | None, str | None]:
+    """The scanning machine's home directory, login name and host name, as far as they can be read."""
+    try:
+        home = str(Path.home())
+    except (RuntimeError, OSError):
+        home = None
+    try:
+        user = getpass.getuser()
+    except (OSError, KeyError, ImportError):
+        user = None
+    try:
+        host = socket.gethostname()
+    except OSError:
+        host = None
+    return home, user, host
 
-    def scrub(value):
-        if isinstance(value, str):
-            for root in found:
-                value = value.replace(root, "<repo>")
+
+def scrubber(roots, machine=(None, None, None)):
+    """A function that removes what names the machine that ran the scan from any string, list or
+    object a model or the repository wrote: the repository's path becomes <repo>, the home
+    directory <home>, the login name <user>, the host name <host>. References, links and ids
+    (SCRUB_SKIP) are left exactly as they are, and so is a snippet, which is the repository's own
+    text. A generic account name (root) is not a machine value and is left alone."""
+    home, user, host = machine
+    found = sorted({r.rstrip("/\\") for r in roots if isinstance(r, str) and len(r.rstrip("/\\")) > 1},
+                   key=len, reverse=True)
+    home = home.rstrip("/\\") if isinstance(home, str) and len(home.rstrip("/\\")) > 1 else None
+    names = []
+    if isinstance(user, str) and len(user) >= 3 and user.lower() not in GENERIC_ACCOUNTS:
+        names.append((user, "<user>"))
+    if isinstance(host, str):
+        names += [(h, "<host>") for h in dict.fromkeys([host, host.split(".")[0]])
+                  if len(h) >= 4 and h.lower() != "localhost"]
+    words = [(re.compile(r"(?<![\w-])" + re.escape(name) + r"(?![\w-])"), shown) for name, shown in names]
+
+    def text(value: str) -> str:
+        for root in found:
+            value = value.replace(root, "<repo>")
+        if home:
+            value = value.replace(home, "<home>")
+        for pattern, shown in words:
+            value = pattern.sub(shown, value)
+        return value
+
+    def scrub(value, key=None):
+        if key in SCRUB_SKIP:
             return value
+        if isinstance(value, str):
+            return text(value)
         if isinstance(value, list):
             return [scrub(item) for item in value]
         if isinstance(value, dict):
-            return {key: scrub(item) for key, item in value.items()}
+            return {k: scrub(item, k) for k, item in value.items()}
         return value
     return scrub
 
@@ -2190,8 +2509,9 @@ def _plural(n: int, one: str, many: str) -> str:
 
 
 def render(rep: dict, f: dict, steps: list[Step], omitted: int, drafts: Drafts, status: str,
-           scrub) -> str:
-    """The ticket as Markdown. `f` is a normalised, scrubbed finding with safe links."""
+           scrub, dropped: int = 0) -> str:
+    """The ticket as Markdown. `f` is a normalised, scrubbed finding with safe links. `dropped`
+    is how many steps the caller left out so that the ticket fits MAX_TICKET_CHARS."""
     built = links_reason(rep) is None
     loc = f.get("location") if isinstance(f.get("location"), dict) else {}
     where = f"{loc.get('file', '?')}" + (f":{loc['lines']}" if loc.get("lines") else "")
@@ -2229,6 +2549,10 @@ def render(rep: dict, f: dict, steps: list[Step], omitted: int, drafts: Drafts, 
     if omitted:
         L += [f"{omitted} further code {_plural(omitted, 'reference is', 'references are')} "
               "listed under Evidence status.", ""]
+    if dropped:
+        L += [f"{dropped} further {_plural(dropped, 'step is', 'steps are')} left out so that the ticket "
+              f"fits a tracker (at most {MAX_TICKET_CHARS:,} characters); the code "
+              f"{_plural(dropped, 'reference is', 'references are')} listed under Evidence status.", ""]
     L += ["## Persistence", "",
           f"**Sustaining effect** — {md.text(f['sustaining_effect'])}" if f.get("sustaining_effect")
           else _not_assessed(REASONS["persistence"]), ""]
@@ -2272,6 +2596,22 @@ def render(rep: dict, f: dict, steps: list[Step], omitted: int, drafts: Drafts, 
     return "\n".join(L) + "\n"
 
 
+def fit_ticket(rep: dict, f: dict, steps: list[Step], omitted: int, drafts: Drafts, status: str,
+               scrub) -> str:
+    """The ticket, with mechanism steps dropped from the end until it fits MAX_TICKET_CHARS, and
+    the note that says so. A ticket that does not fit even without steps is a stop, not a cut."""
+    kept = len(steps)
+    while True:
+        text = render(rep, f, steps[:kept], omitted, drafts, status, scrub, dropped=len(steps) - kept)
+        if len(text) <= MAX_TICKET_CHARS:
+            return text
+        if kept == 0:
+            raise stop(f"no ticket was written for finding {f.get('key')}: it is {len(text):,} characters "
+                       f"even without a code step, more than the {MAX_TICKET_CHARS:,} a tracker takes. "
+                       "A field of the finding is too long.")
+        kept -= 1
+
+
 def write_ticket(repo: Path, key: str, text: str) -> Path:
     """Replace `.thunderstruck/tickets/<key>.md` atomically. Nothing is written outside the
     repository's own output folder: a link in the way is refused, not followed."""
@@ -2282,10 +2622,18 @@ def write_ticket(repo: Path, key: str, text: str) -> Path:
                    "writes only inside the repository's own output folder.")
     tickets.mkdir(parents=True, exist_ok=True)
     dest = tickets / f"{key}.md"
-    tmp = dest.with_suffix(".md.tmp")
+    # a fresh name, created exclusively and without following a link: a link planted at a
+    # name this run could guess is refused, never written through
+    tmp = tickets / f".{key}.{secrets.token_hex(8)}.tmp"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
     try:
-        tmp.write_text(text, encoding="utf-8", newline="")
-        os.replace(tmp, dest)
+        fd = os.open(tmp, flags, 0o666)
+    except OSError:
+        raise stop("could not create a temporary file in .thunderstruck/tickets, so nothing was written.") from None
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(text.encode("utf-8"))
+        os.replace(tmp, dest)      # replaces a link at `dest`, never follows it
     finally:
         tmp.unlink(missing_ok=True)
     return dest
@@ -2308,13 +2656,13 @@ def main(argv: list[str] | None = None) -> int:
             print("\n".join(list_findings(rep)) or "this scan reported no findings")
             return 0
         scrub = scrubber([(rep.get("repo") or {}).get("root") if isinstance(rep.get("repo"), dict) else None,
-                          str(repo)])
+                          str(repo)], machine_values())
         finding = clean_urls(scrub(find_finding(rep, args.key)))
         require_status(args.status, finding)
         check_snapshot(repo, rep, finding)
         steps, omitted = code_steps(repo, rep["repo"]["head"], finding)
         drafts = load_sections(sections_path(repo, finding["key"]), finding["key"], rep.get("scanned_at"))
-        text = render(rep, finding, steps, omitted, drafts, args.status, scrub)
+        text = fit_ticket(rep, finding, steps, omitted, drafts, args.status, scrub)
         dest = write_ticket(repo, finding["key"], text)
     except c.ThunderstruckError as exc:
         c.die(str(exc))
@@ -2369,7 +2717,7 @@ The inert-text test of #28 covers `report.md` only. This one renders the ticket 
 
 from test_inert_report import HOSTILE, _hrefs
 
-STEERING = "/close #12 !7 ABC-123 deadbeef @alice <details>x</details>"
+STEERING = "/close #12 !7 ABC-123 acme/api#12 PR#7 group/proj!3 a1b2c3d @alice <details>x</details>"
 BAD = f"{HOSTILE} {STEERING}"
 STRUCTURE = ("h1", "h2", "h3", "p", "pre", "ul", "li", "a", "img", "table", "tr", "td", "th", "blockquote",
              "hr", "script", "details", "b", "i", "ol", "div", "span")
@@ -2440,7 +2788,7 @@ def _assert_inert(tmp_path, capsys, word=BAD):
     hrefs = _hrefs(text)
     assert hrefs and all(h.startswith(allowed) for h in hrefs), hrefs
     prose = _outside_fences(text)
-    for token in ("#12", "!7", "ABC-123", "deadbeef", "@alice", "evil.example"):
+    for token in ("#12", "!7", "ABC-123", "acme/api#12", "PR#7", "group/proj!3", "a1b2c3d", "@alice", "evil.example"):
         for m in __import__("re").finditer(__import__("re").escape(token), prose):
             before = prose[:m.start()]
             assert before.count("`") % 2 == 1 or before.endswith("("), (token, prose[max(0, m.start() - 40):m.end() + 20])
@@ -2935,6 +3283,7 @@ def test_the_readme_and_claude_md_describe_the_command_and_say_what_a_ticket_is(
     assert "`/thunderstruck-ticket <key>`" in readme and "tickets/<key>.md" in readme
     assert "not one of the GitHub issues used to develop thunderstruck" in readme
     assert "`Reproduced` is refused until a reproduction is recorded" in readme
+    assert "the only model step" not in readme and "↓ the first model step" in readme
     claude = " ".join((ROOT / "CLAUDE.md").read_text(encoding="utf-8").split())
     assert "scripts/finding_ticket.py" in claude and "examples/sample-ticket.md" in claude
     assert "only inference in a scan" in claude and "only inference in the system" not in claude
@@ -2961,6 +3310,18 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 Expected: FAIL, 3 failed: the README lacks `/thunderstruck-ticket <key>`, the format reference lacks `thunderstruck.ticket-sections/v1`, the top CHANGELOG entry is not `(#108)`.
 
 - [ ] **Step 3: Documentation.** Make these edits:
+
+In `README.md`, replace this text, which occurs once:
+
+``````text
+     ↓        the only model step
+``````
+
+with:
+
+``````text
+     ↓        the first model step
+``````
 
 In `README.md`, replace this text, which occurs once:
 
@@ -3124,8 +3485,12 @@ repository's GitHub issues. What keeps it honest:
   repository's address from `plugin.json`, never by a relative path.
 - **Inert, and no machine value.** Model and repository text goes through `mdtext`
   (which also code-spans tracker references such as `#12`), a snippet through
-  `mdtext.verbatim`; `repo.root` is scrubbed from text and `repo.branch` and
-  `generated_at` are never read.
+  `mdtext.verbatim`; the repository's path, the home directory, the user name and the
+  host name of the machine that ran the scan are scrubbed from model text (not from a
+  snippet, which is the repository's own), and `repo.branch` and `generated_at` are
+  never read.
+- **A ticket must fit a tracker.** `MAX_TICKET_CHARS` caps it: mechanism steps are
+  dropped from the end, with a note, and a ticket that still does not fit is a stop.
 - **Only `Reproduced` is gated.** `recorded_reproduction` returns `None` until #103
   records one, and the request is refused.
 - **The four judgement sections are a proposal or "Not assessed".** Output is a pure
@@ -3163,8 +3528,9 @@ with:
 `finding_ticket.py` writes `.thunderstruck/tickets/<key>.md` for one finding. It
 reads, from `report.json`: the finding by `key`, `scanned_at` (the ticket's date),
 `repo.head` (the scanned commit), `links`, `warnings` and `run_warnings` (the reason
-links were not built), `verification.ran` and `schema`. It reads `repo.root` only to
-remove it from text, and never `repo.branch` or `generated_at`.
+links were not built), `verification.ran` and `schema`. It reads `repo.root`, and the
+machine's home directory, user name and host name, only to remove them from text, and
+never `repo.branch` or `generated_at`.
 
 Four sections may come from `.thunderstruck/tickets/<key>.sections.json`, which a model
 may write and the script validates:
@@ -3212,14 +3578,16 @@ A finding becomes a ticket someone can act on (#108).
 ### Added
 
 - **`/thunderstruck-ticket <key>`** writes a ticket for one finding to `.thunderstruck/tickets/<key>.md`, ready to paste into your tracker. A ticket here is the issue you file in your own repository from a finding. It has a fixed set of sections: the claim, the code the finding cites copied from the scanned commit with a permalink to those lines, what is traced and what is inferred, what a fix would remove, what was not checked, and links to the fix instructions and the review briefs. A section with no data says "Not assessed" and why. `scripts/finding_ticket.py --list` shows the keys.
-- **It stops rather than quote the wrong code.** When a cited file differs from the scanned commit, or no longer matches the hash the scan recorded, no ticket is written; the message names the file and says to rescan or to check out the scanned commit.
+- **A ticket fits a tracker.** If it would be longer than 60,000 characters, mechanism steps are dropped from the end and the ticket says so; the code references stay listed under Evidence status. A ticket too long even without steps is a stop.
+- **Nothing about the machine reaches a ticket.** The repository's path, the home directory, the user name and the host name of the machine that ran the scan are replaced in model text by `<repo>`, `<home>`, `<user>` and `<host>`. A path in the repository's own code is shown as it is.
+- **It stops rather than quote the wrong code.** When a cited file differs from the scanned commit, or no longer matches the hash the scan recorded, no ticket is written; the message names the file and says to rescan or to check out the scanned commit (or only to rescan, when the scan saw the file in another state). A file stored in Git LFS is a stop too.
 - **Status.** `--status` takes Hypothesis (the default), Reproduced, Fix proposed or Fix reviewed. Reproduced is refused until a reproduction is recorded (#103).
 - **Four sections may be proposed.** Fix options, acceptance criteria, out of scope, and rollout and rollback are in no finding. The skill can have the session's model draft them into `.thunderstruck/tickets/<key>.sections.json`; the script validates the file like model output and the ticket shows them as "Proposal, not verified". Without the file they read "Not assessed". This is one optional model step after a scan; nothing in a scan, a report or the guardrail reads it.
 - **`examples/sample-ticket.md`**, produced by the real pipeline over the fixture and checked for freshness with the sample report.
 
 ### Changed
 
-- **Tracker references in text are shown as code.** `report.md` and the ticket show `#12`, `!7`, a key such as `ABC-123` and a commit sha in a code span, so a tracker does not turn them into links to its own issues and commits. A commit sha in a warning of `report.md` is now in backticks.
+- **Tracker references in text are shown as code.** `report.md` and the ticket show `#12`, `acme/api#12`, `PR#7`, `!7`, a key such as `ABC-123` and a commit sha (a short sha made only of digits cannot be told from a number) in a code span, so a tracker does not turn them into links to its own issues and commits. A commit sha in a warning of `report.md` is now in backticks.
 
 """
 changelog = open("CHANGELOG.md").read()
@@ -3277,7 +3645,7 @@ git diff --quiet origin/main -- docs/fix-agent-instructions.md docs/review-brief
 
 Expected: both `ok` lines. An `UNEXPECTED` path is reverted unless the plan names it; `CHANGED` is reverted with `git checkout origin/main -- docs/fix-agent-instructions.md docs/review-briefs.md`.
 
-- [ ] **Step 6: Prepare the PR body.** In *Verified locally*, list each command with its exit code and the install check. In *Not verifiable in CI*, write: "How GitHub, GitLab or Bitbucket render the ticket is inferred from cmark-gfm and markdown-it-py, which the tests use. The drafting step (a model writing the four proposal sections) never runs in CI: the sample's proposals are canned text. Tracker references in `report.md` are now code spans (one test edited in Task 1; neither sample report moved)." Add the CLAUDE.md consequence: "The sentence 'The investigator and the skeptic are the only inference in the system' now reads 'in a scan', and records the one optional model step after it (spec §6)."
+- [ ] **Step 6: Prepare the PR body.** In *Verified locally*, list each command with its exit code and the install check. In *Not verifiable in CI*, write: "How GitHub, GitLab or Bitbucket render the ticket is inferred from cmark-gfm and markdown-it-py, which the tests use. The drafting step (a model writing the four proposal sections) never runs in CI: the sample's proposals are canned text. Tracker references in `report.md` are now code spans (one test edited in Task 1; neither sample report moved). GitHub's 65,536-character issue-body limit, from which `MAX_TICKET_CHARS` is derived, was not verified against GitHub." Add the CLAUDE.md consequence: "The sentence 'The investigator and the skeptic are the only inference in the system' now reads 'in a scan', and records the one optional model step after it (spec §6)."
 
 - [ ] **Step 7: Commit**
 
@@ -3291,14 +3659,14 @@ git commit -m "Finding ticket: docs and release note (#108)" \
 
 | AC | Tasks | Tests |
 |---|---|---|
-| AC-1 | 2, 6, 9 | `test_a_finding_is_found_by_its_key`, `test_every_section_is_there_in_the_tickets_order`, `test_each_section_comes_from_its_field`, `test_a_section_with_no_data_says_not_assessed_and_why`, `test_the_title_is_the_failure_mode_on_one_short_line`, `test_the_script_runs_as_a_program`, `test_the_skill_is_discovered_and_runs_the_script_by_its_plugin_path` |
+| AC-1 | 2, 6, 9 | `test_a_finding_is_found_by_its_key`, `test_every_section_is_there_in_the_tickets_order`, `test_each_section_comes_from_its_field`, `test_a_section_with_no_data_says_not_assessed_and_why`, `test_the_title_is_the_failure_mode_on_one_short_line`, `test_the_script_runs_as_a_program`, `test_the_skill_is_discovered_and_runs_the_script_by_its_plugin_path`, `test_a_ticket_too_long_for_a_tracker_drops_steps_from_the_end_and_says_so`, `test_the_tracker_limit_and_its_margin_are_named_constants`, `test_a_ticket_that_exactly_fits_keeps_every_step_and_one_over_drops_one`, `test_a_ticket_too_long_even_without_steps_is_a_named_stop_not_a_cut` |
 | AC-2 | 4, 6 | `test_a_step_shows_its_link_its_code_and_what_to_notice`, `test_a_snippet_is_the_text_of_the_file_at_the_scanned_commit`, `test_only_code_evidence_makes_a_step_and_in_the_findings_order`, `test_a_long_citation_is_cut_and_says_so_outside_the_fence`, `test_each_section_comes_from_its_field`, `test_links_come_from_the_report_and_are_stated_once_in_the_header` |
-| AC-3 | 1, 3, 4, 6 | every Task 3 test (`test_an_edited_cited_file_stops_and_names_the_way_forward`, `test_a_staged_edit_stops`, `test_a_commit_made_since_the_scan_stops`, `test_an_untracked_cited_file_stops`, `test_a_committed_symlink_and_a_submodule_stop`, `test_a_deleted_cited_file_stops`, `test_a_file_git_was_told_to_ignore_cannot_hide_an_edit`, `test_a_file_scanned_dirty_and_since_reverted_is_not_what_the_finding_recorded`, `test_an_unrecorded_hash_is_a_stop_not_a_pass`, `test_a_scan_without_a_full_commit_cannot_be_checked`, `test_a_commit_this_clone_does_not_have_stops_and_names_it`, `test_a_shallow_clone_that_has_the_scanned_commit_passes`, `test_a_dirty_file_nothing_cites_is_not_compared`, `test_line_ending_conversion_alone_does_not_stop`, `test_many_files_are_named_five_at_a_time`, `test_a_cited_path_that_leaves_the_repository_stops`, `test_a_git_failure_or_timeout_is_a_named_stop`), `test_a_range_the_commit_does_not_have_is_a_stop`, `test_the_snippet_is_the_commit_not_the_working_tree`, `test_a_stop_writes_nothing_and_leaves_an_earlier_ticket_alone`, `test_verbatim_keeps_every_other_character_as_written` |
+| AC-3 | 1, 3, 4, 6 | every Task 3 test (`test_an_edited_cited_file_stops_and_names_the_way_forward`, `test_a_staged_edit_stops`, `test_a_commit_made_since_the_scan_stops`, `test_an_untracked_cited_file_stops`, `test_a_committed_symlink_and_a_submodule_stop`, `test_a_deleted_cited_file_stops`, `test_a_file_git_was_told_to_ignore_cannot_hide_an_edit`, `test_a_file_scanned_dirty_and_since_reverted_is_not_what_the_finding_recorded`, `test_an_unrecorded_hash_is_a_stop_not_a_pass`, `test_a_scan_without_a_full_commit_cannot_be_checked`, `test_a_commit_this_clone_does_not_have_stops_and_names_it`, `test_a_shallow_clone_that_has_the_scanned_commit_passes`, `test_a_dirty_file_nothing_cites_is_not_compared`, `test_line_ending_conversion_alone_does_not_stop`, `test_many_files_are_named_five_at_a_time`, `test_a_cited_path_that_leaves_the_repository_stops`, `test_a_git_failure_or_timeout_is_a_named_stop`), `test_a_range_the_commit_does_not_have_is_a_stop`, `test_the_snippet_is_the_commit_not_the_working_tree`, `test_a_stop_writes_nothing_and_leaves_an_earlier_ticket_alone`, `test_verbatim_keeps_every_other_character_as_written`, `test_a_file_stored_in_git_lfs_is_a_stop_not_a_pointer_shown_as_code`, `test_a_file_the_scan_saw_in_another_state_can_only_be_fixed_by_a_rescan`, `test_an_edit_since_the_scan_offers_the_checkout_and_says_when_it_will_not_do`, `test_when_any_file_needs_a_rescan_the_way_forward_is_the_rescan`, `test_the_ticket_script_may_start_git_and_nothing_else` |
 | AC-4 | 4, 5, 6, 7 | `test_only_a_plain_web_address_is_a_link`, `test_every_unsafe_link_field_is_dropped_at_any_depth_and_the_rest_kept`, `test_a_step_never_takes_an_unsafe_address`, `test_links_built_have_no_reason_and_links_not_built_give_the_one_the_report_recorded`, `test_a_reference_is_linked_or_labelled_never_bare`, `test_without_links_the_ticket_says_why_with_the_reason_the_report_recorded`, `test_a_disabled_link_setting_has_a_reason_too`, `test_a_hand_edited_report_cannot_plant_a_link_or_break_one` |
-| AC-5 | 2, 6 | `test_nothing_records_a_reproduction_yet`, `test_a_status_is_one_of_the_four`, `test_any_other_status_is_refused`, `test_the_status_flag_is_the_status_and_hypothesis_is_the_default`, `test_reproduced_is_refused_and_writes_nothing` |
+| AC-5 | 2, 6 | `test_nothing_records_a_reproduction_yet`, `test_a_status_is_one_of_the_four`, `test_any_other_status_is_refused`, `test_the_status_flag_is_the_status_and_hypothesis_is_the_default`, `test_reproduced_is_refused_and_writes_nothing`, `test_reproduced_is_refused_before_the_code_is_checked` |
 | AC-6 | 5, 6 | `test_the_guidance_paths_are_the_ones_the_guidance_ticket_published`, `test_the_guidance_line_links_the_plugin_repository_not_a_relative_path`, `test_without_a_usable_repository_the_guidance_line_says_so_and_never_fails`, `test_a_fork_that_names_its_own_repository_links_there`, `test_the_guidance_is_linked_under_fix_options_and_acceptance_criteria_only` |
 | AC-7 | 6, 8 | `test_a_finding_without_the_impact_fields_reads_not_assessed`, `test_each_section_comes_from_its_field` (blast radius, guarantees, not-checked), `test_the_sample_ticket_has_every_section_in_order_and_a_proposal` |
-| AC-8 | 6, 7, 8 | `test_nothing_machine_specific_reaches_the_ticket`, `test_the_ticket_names_no_machine_value_on_the_real_fixture_either`, `test_the_sample_ticket_is_the_ticket_for_the_first_sample_finding_and_names_no_machine` |
-| AC-9 | 1, 5, 7 | `test_a_verbatim_block_is_one_code_block_whatever_it_holds`, `test_verbatim_fence_is_longer_than_any_backtick_run_inside`, `test_a_tracker_reference_becomes_a_code_span`, `test_an_unknown_section_is_ignored_and_named_as_text`, `test_hostile_text_in_every_field_the_code_and_the_drafts_stays_inert`, `test_every_defence_is_needed_the_hostile_test_fails_without_it`, `test_a_hostile_key_never_becomes_a_path` |
+| AC-8 | 6, 7, 8 | `test_nothing_machine_specific_reaches_the_ticket`, `test_the_ticket_names_no_machine_value_on_the_real_fixture_either`, `test_the_sample_ticket_is_the_ticket_for_the_first_sample_finding_and_names_no_machine`, `test_the_machine_that_ran_the_scan_is_scrubbed_from_every_text`, `test_a_path_that_is_the_repositorys_own_content_stays_verbatim`, `test_a_generic_account_name_is_not_a_machine_value`, `test_the_real_machine_values_are_read_from_the_machine` |
+| AC-9 | 1, 5, 7 | `test_a_verbatim_block_is_one_code_block_whatever_it_holds`, `test_verbatim_fence_is_longer_than_any_backtick_run_inside`, `test_a_tracker_reference_becomes_a_code_span`, `test_an_unknown_section_is_ignored_and_named_as_text`, `test_hostile_text_in_every_field_the_code_and_the_drafts_stays_inert`, `test_every_defence_is_needed_the_hostile_test_fails_without_it`, `test_a_hostile_key_never_becomes_a_path`, `test_a_link_planted_at_the_old_temporary_name_is_not_written_through`, `test_a_link_planted_at_the_temporary_name_is_refused`, `test_a_ticket_file_that_is_a_link_is_replaced_and_never_followed` |
 | AC-10 | 5, 6, 9 | `test_generating_twice_is_byte_identical_from_anywhere`, `test_a_bad_drafts_file_never_fails_the_ticket`, `test_drafted_sections_appear_labelled_and_in_provenance`, `test_no_drafts_file_is_silent`, `test_a_file_that_does_not_belong_is_not_used_at_all`, `test_one_bad_section_is_not_used_and_the_others_stand`, `test_the_skill_states_the_contract_the_script_validates` |
 | AC-11 | 8, 10 | `test_the_sample_ticket_matches_a_fresh_generation`, `test_the_sample_ticket_has_every_section_in_order_and_a_proposal`, `test_the_readme_and_claude_md_describe_the_command_and_say_what_a_ticket_is`, `test_the_format_reference_documents_the_drafts_file`, `test_the_top_changelog_entry_is_this_ticket`, `test_versions_agree`, and Task 10 Step 5's commands |
