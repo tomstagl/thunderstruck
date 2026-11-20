@@ -2,7 +2,7 @@
 
 **Requirements:** [#105](https://github.com/tomstagl/thunderstruck/issues/105), part of [#104](https://github.com/tomstagl/thunderstruck/issues/104). The problem, stories, scope, acceptance criteria (AC-n) and product decisions are in the ticket and are not repeated here.
 **Plan:** `docs/superpowers/plans/2026-11-12-fix-impact-in-findings.md`.
-**Builds on:** [`2026-10-03-checked-confidence-design.md`](2026-10-03-checked-confidence-design.md) (`#56 §n`) and [`2026-10-03-finding-verification-design.md`](2026-10-03-finding-verification-design.md) (`#37 §n`); bare `§n` is this document. §5 amends `#37 §6.1`, `§6.2`, `§8.1` and `§9`; those documents are not edited, they record decisions at their date.
+**Builds on:** [`2026-10-03-checked-confidence-design.md`](2026-10-03-checked-confidence-design.md) (`#56 §n`), [`2026-10-03-finding-verification-design.md`](2026-10-03-finding-verification-design.md) (`#37 §n`) and [`2026-10-04-confirmed-defaults-design.md`](2026-10-04-confirmed-defaults-design.md) (`#57 §n`, shipped as #102); bare `§n` is this document. §5 amends `#37 §6.1`, `§6.2`, `§8.1` and `§9`, and §5.5 says how that sits beside `#57`'s own amendments; those documents are not edited, they record decisions at their date.
 **Evidence:** the ticket's reproduction of the bundle offset; `docs/calibration/correctness/celery/scan/bundles/` (frozen, unnumbered); #99 (every investigator named something unread, in prose a skeptic never sees).
 
 This ticket owns the finding fields that the ticket generator (#108) renders. §16 gives their exact names and shapes.
@@ -16,7 +16,7 @@ validate.py      checks  shapes, the gate on the catalog's fix_touches, position
 verify.py        prepare: the brief carries the claims, never confidence_rationale                 (§5.1)
 skeptic          ← MODEL →  guarantees · no_guarantees_reason · not_checked                        (§5.2)
 verify.py        apply: resolves them through the evidence resolver, writes check.guarantees,
-                 check.not_checked; never touches check.status                                     (§5.3)
+                 check.not_checked; neither changes check.status (#57's rule still may)            (§5.3, §5.5)
 report.py        renders md · json (counts.not_checked) · index                                    (§6)
 report_html.py   renders report.json as delivered
 guardrail.py     reads index.json: states guarantees and open items as the investigator's          (§6.4)
@@ -46,7 +46,7 @@ An item says what the current code provides by accident (`guarantee`), the kind 
 
 `removed_by` is free text, not a vocabulary (Decision 3). No "fix class" exists in the catalog or the code (`classify_commit`'s kinds are commit kinds), the requirement comes from one case, and a taxonomy invented from one case misleads when an investigator picks the nearest member. A closed set can be added later as a tightening with a rules bump, once the evaluation under #104 shows which kinds occur.
 
-**The gate.** The catalog marks the patterns whose findings must state guarantees. AC-2 scopes the rule to lock, retry and cache patterns, and this is the ticket's list:
+**The gate.** (This is a validator rule about what a finding must state; `#57`'s `finding_gate`, which orders findings by the setting they need, is a different thing, §5.5.) The catalog marks the patterns whose findings must state guarantees. AC-2 scopes the rule to lock, retry and cache patterns, and this is the ticket's list:
 
 | Pattern | `fix_touches` |
 |---|---|
@@ -108,15 +108,15 @@ AC-7 splits three ways, and the tests follow it: a `report.json` loads and its n
 
 ## 5. The skeptic
 
-This only acts on `--verify` scans (`VERIFY_BY_DEFAULT = False`, `_common.py:588`). Without verification every finding is `unchecked` and the new fields are shown as the investigator's claims (AC-6).
+This only acts on `--verify` scans (`VERIFY_BY_DEFAULT = False`, `_common.py:590`). Without verification every finding is `unchecked` and the new fields are shown as the investigator's claims (AC-6).
 
 ### 5.1 The brief (AC-4)
 
-`render_brief` is an allowlist (`verify.py:160`). After `preconditions` it adds, only when present and non-empty, fenced blocks under headings that say whose words they are: `blast_items` (as written), `implicit_guarantees` and `not_checked` (each item with an `index`, the position a verdict answers by), and `no_guarantees_reason`. They are claims, so they belong with the claim; none reads `confidence`, `confidence_rationale`, `notes`, `history` or `check`, which stay withheld (`test_the_brief_holds_the_claim_and_evidence_only`). The positions in `blast_items` and `implicit_guarantees` refer to the brief's own `evidence[i]` blocks. The blocks are `json.dumps` of the finding's own lists, so the brief stays byte-identical for an unchanged finding. A finding without the fields (the frozen scan) gets no block.
+`render_brief` is an allowlist (`verify.py:186`). After `preconditions` it adds, only when present and non-empty, fenced blocks under headings that say whose words they are: `blast_items` (as written), `implicit_guarantees` and `not_checked` (each item with an `index`, the position a verdict answers by), and `no_guarantees_reason`. They are claims, so they belong with the claim; none reads `confidence`, `confidence_rationale`, `notes`, `history` or `check`, which stay withheld (`test_the_brief_holds_the_claim_and_evidence_only`). The positions in `blast_items` and `implicit_guarantees` refer to the brief's own `evidence[i]` blocks. The blocks are `json.dumps` of the finding's own lists, so the brief stays byte-identical for an unchanged finding. A finding without the fields (the frozen scan) gets no block.
 
 ### 5.2 The verdict contract, amended (`#37 §8.1`)
 
-`VERDICT_KEYS` gains `guarantees`, `no_guarantees_reason` and `not_checked`, after `duplicate_of`: eleven keys. They are optional exactly as `holds` is: omitted, `null` or empty are accepted, and an unknown top-level key is still a contract error that leaves the finding `unchecked` (the exact-keys rule is deliberate and untouched).
+`VERDICT_KEYS` gains `guarantees`, `no_guarantees_reason` and `not_checked`, after `duplicate_of` and before `confirmations`: twelve keys, `confirmations` still last (a `#57` test pins `VERDICT_KEYS[-1]`, §5.5). They are optional exactly as `holds` and `confirmations` are: omitted, `null` or empty are accepted, and an unknown top-level key is still a contract error that leaves the finding `unchecked` (the exact-keys rule is deliberate and untouched).
 
 ```json
 "guarantees": [
@@ -132,23 +132,43 @@ This only acts on `--verify` scans (`VERIFY_BY_DEFAULT = False`, `_common.py:588
 - `no_guarantees_reason`: a non-empty string when the skeptic found none and named none; otherwise `null`.
 - `not_checked` item: `item` is the `index`; `state` is `resolved` (needs resolved evidence of type `code`, `commit` or `dependency`) or `unresolved`; `note` is non-empty (what the reading showed, or why it could not resolve the item).
 
-`_contract_problem` is unchanged except that `VERDICT_KEYS` is longer: a wrong type for a new key is not a contract error (below). The prompt (`agents/thunderstruck-skeptic.md`) gains a "Guarantees and what was not checked" section, rule 6 for the two item shapes (the old rule 6, never invent evidence, becomes 7), the three keys in rule 1 and in the example (`test_the_example_output_follows_the_contract` pins the example's key set to `VERDICT_KEYS`), and a note that for `blast_radius` the quoted words may be the summary's or one item's, and that a traced item's cited lines are only checked to exist, so whether they connect is the skeptic's to test.
+`_contract_problem` is unchanged except that `VERDICT_KEYS` is longer: a wrong type for a new key is not a contract error (below). The prompt (`agents/thunderstruck-skeptic.md`) gains a "Guarantees and what was not checked" section, a rule for the two item shapes, the three keys in rule 1 and in the example (`test_the_example_output_follows_the_contract` pins the example's key set to `VERDICT_KEYS`), and a note that for `blast_radius` the quoted words may be the summary's or one item's, and that a traced item's cited lines are only checked to exist, so whether they connect is the skeptic's to test. The new rule is numbered after `#57`'s rules 7 and 8 (§5.5), so those keep their numbers.
 
 ### 5.3 Settling (`#37 §9`)
 
-`_decide` resolves the verdict's evidence as today (`Resolver.evidence`, `verify.py:407-413`), then two new functions read the resolved positions, so a guarantee or an answer can only cite what resolved:
+`_decide` resolves the verdict's evidence as today (`Resolver.evidence`, `verify.py:544`) and the refuted claims, and resolves `#57`'s `confirmations` (`resolve_confirmations`); then two new functions read the resolved positions, so a guarantee or an answer can only cite what resolved:
 
 - `settle_guarantees` returns `check.guarantees = {state, reason, items}`: `named` when at least one item survives, `none_found` when a reason is given and none survive, else `not_addressed` with a fixed reason. Dropped items and a reason given beside items are named under "Ignored".
 - `settle_not_checked` returns `check.not_checked`: **exactly one entry per item of the finding, in order**. An item the skeptic did not answer, or answered badly (unknown index, repeated, no note, `resolved` without resolving evidence), is `unresolved` with `_common.NOT_ADDRESSED` and the cause under "Ignored". So no item disappears (AC-5), and an unresolved item stays open on the reported finding.
-- Evidence positions are renumbered with `refuted_claims`' (`verify.py:475`), so they index `check.evidence`.
+- Evidence positions are renumbered with `refuted_claims`' (`verify.py:615`), so they index `check.evidence`.
 
 A wrong type for `guarantees` or `not_checked` (say a string) is ignored with a note, and every item is then unresolved. It never costs the verdict (Decision 8): the two are secondary duties, and losing a refutation to a malformed secondary field would make verification worse than before this change.
 
-**Neither changes a status.** `settle`'s table (`#37 §9`) is untouched and runs on the same inputs; the new results are written beside the status. A skeptic cannot raise confidence by resolving everything: `effective_confidence` reads `check.status` only. The ledger and reuse copy `check` whole (`verify.py:383, 522`), so resolutions are remembered with the verdict, and any change to a guarantee, blast item or not-checked item changes `claim_hash` (`verify.py:76` hashes every non-owned key) and forces a new check.
+**Neither changes a status.** `_decide`'s table (`#37 §9`) is untouched and runs on the same inputs; the new results are written beside the status, next to `check.confirmations`. A skeptic cannot raise confidence by resolving everything: `effective_confidence` reads `check.status` only. The one rule that can still move a status after the table is `#57`'s, not this ticket's (§5.5). The ledger and reuse copy `check` whole (`verify.py:518, 666`), so resolutions are remembered with the verdict, and any change to a guarantee, blast item or not-checked item changes `claim_hash` (`verify.py:78` hashes every non-owned key, bar `preconditions[].confirmation`, §5.5) and forces a new check.
 
 ### 5.4 The read cap and resolving N items (AC-5)
 
-The skeptic's 10-file cap (`skeptic.md:22`) and the haiku default stay: raising the cap raises the cost of `--verify`, whose ceiling was measured (`VERIFY_MEASURED_COST`) and is not re-measured here. Instead the work is bounded and the shortfall is a state. The finding carries at most 5 guarantees and 5 not-checked items. The prompt says refuting the claim comes first, that the reads are shared, and that items not reached are marked `unresolved` with the reason (for example "read limit"), which alone never makes a verdict `inconclusive`. At the haiku default resolution will often be partial; that share is the #104 success measure, and `counts.not_checked` reports it. Whether to raise the cap is the evaluation's question (Open design questions).
+The skeptic's 10-file cap (`skeptic.md:22`) and the haiku default stay: raising the cap raises the cost of `--verify`, whose ceiling was measured (`VERIFY_MEASURED_COST`) and is not re-measured here. Instead the work is bounded and the shortfall is a state. The finding carries at most 5 guarantees and 5 not-checked items. The prompt says refuting the claim comes first, that the reads are shared, and that items not reached are marked `unresolved` with the reason (for example "read limit"). Unresolved not-checked items alone never make a verdict `inconclusive`; a material default the skeptic could not resolve still keeps the claim from being upheld, by `#57`'s rule (§5.5), and its reads come first. At the haiku default resolution will often be partial; that share is the #104 success measure, and `counts.not_checked` reports it. Whether to raise the cap is the evaluation's question (Open design questions).
+
+### 5.5 Beside #57 (confirmed defaults, shipped as #102)
+
+`#57` changed the same stage after this design's first reading, and the two are independent: this ticket records what an investigator or skeptic said about a fix's impact, `#57` confirms the settings a claim defaults to. Nothing of `#57` is replaced; what each piece does with the other:
+
+| Piece (owner) | Interaction |
+|---|---|
+| `VERDICT_KEYS` (`verify.py:43`) | Twelve keys; `confirmations` stays last because `test_the_contract_carries_confirmations` asserts `VERDICT_KEYS[-1] == "confirmations"`. The new test pins the order of this ticket's three keys before it. `_contract_problem` needs no change |
+| `settle` | `settle(...) = no_upheld_on_unconfirmed(finding, _decide(...))`. This ticket's functions run inside `_decide`, so a finding that `#57`'s rule turns from `upheld` into `inconclusive` still shows its guarantees and resolved items: they are what the skeptic found, whatever the claim's fate. "Neither changes a status" (§5.3) is about this ticket's results; `#57`'s rule is the only later step that does |
+| Skeptic prompt | `#57`'s rules 7 and 8 (confirm every default; do not uphold what rests on an unresolved one) keep their numbers; the new item-shape rule is added after them. When reads run out, defaults come before not-checked items |
+| `check` keys | `check.confirmations` (`#57`) and `check.guarantees`, `check.not_checked` (this ticket) are separate keys. `confirmations[].confirmation.basis == "not_checked"` means no check looked for where a default is registered; it is unrelated to `not_checked`, the investigator's list of unread things (§2.4) |
+| `claim_hash` (`verify.py:78`) | Covers this ticket's fields (they are not in `OWNED`); `#57` removes `preconditions[].confirmation`, a validator-written key, and nothing else. The two hold independently: a changed guarantee forces a new check, a rewritten confirmation does not |
+| `OWNED_FINDING_KEYS` | Unchanged: `confirmation` stays validator-written and stripped from model output by `finding_shape.shape()`; the impact fields are model-written (§3) |
+| `_quotes` | The `blast_radius` rule (summary or one item, §2.3) also serves an unlisted default's `claim`, which `#57` requires to quote the finding |
+| `GATES`, `GATE_ORDER` (guardrail), `GATE_MARKERS` (template), the `index.json` precondition `confirmation` | Untouched. A finding's gate (`none`, `unconfirmed_default`, `non_default_setting`) is `#57`'s and orders the report; this ticket's gate (§2.2) is a validator rule over `missing_patterns`, and `IMPACT_SENTENCES` is a separate constant from `GATE_MARKERS` |
+| `index.json` | Gains `implicit_guarantees` and `not_checked` per finding (§6.3); `#57`'s `confirmation` entries on preconditions are untouched |
+| `report.json` counts | `counts.not_checked` (§6.2) beside `#57`'s `counts.defaults` |
+| Brief | `#57`'s **Defaults to confirm** section comes after *The claim*; this ticket's blocks are claims, so they sit inside *The claim*, after `preconditions` and before **Defaults to confirm**. Neither reads `confirmation` |
+
+`#109` (portable call-site search) touches `section_related` in `bundle.py` and nothing in `section_source`, so §7 is unaffected.
 
 ## 6. Outputs
 
@@ -187,7 +207,7 @@ Empty or absent: `**Traced impact** — none: no item cites code it followed.`, 
 
 ### 6.2 `report.json`
 
-Findings carry the investigator's fields as written, and `check.guarantees` and `check.not_checked` as §5.3 writes them. `counts.not_checked` is `{listed, resolved, unresolved, open}` over the reported findings (`open` counts items with no check entry); `listed == resolved + unresolved + open`. Nothing else is added and the schema stays `thunderstruck.report/v2`.
+Findings carry the investigator's fields as written, and `check.guarantees` and `check.not_checked` as §5.3 writes them. `counts.not_checked` is `{listed, resolved, unresolved, open}` over the reported findings, beside `#57`'s `counts.defaults` (`open` counts items with no check entry); `listed == resolved + unresolved + open`. Nothing else is added and the schema stays `thunderstruck.report/v2`.
 
 ### 6.3 `index.json`
 
@@ -208,7 +228,7 @@ At most 3 each, each flattened to one line and clipped (200 and 160 characters).
 
 ## 7. Bundle numbering (AC-8, AC-9)
 
-`section_source` (`bundle.py:207`) emitted raw text, so counting from the top of an excerpt (which starts at the function's line minus 15) is off by the excerpt's start line. It now numbers.
+`section_source` (`bundle.py:208`) emitted raw text, so counting from the top of an excerpt (which starts at the function's line minus 15) is off by the excerpt's start line. It now numbers.
 
 - **Format.** `f"{n:>{w}} | {text}"` for line `n` (1-based), `w` the digit count of the file's last line number, constant for the file. Blank lines keep the trailing space. A source line cannot end the fence: its prefix keeps "```" from starting a line.
 - **Lines.** `source_lines(path)` reads bytes, decodes UTF-8 with replacement, splits at `\n` only, drops the empty string after a final newline, drops one trailing `\r` per line (CRLF), and shows any other `\r` as `␍` (U+240D). That is how `validate.py`'s `_count_lines` and `git blame` count; `c.read_text` (universal newlines) and `splitlines()` (form feed, lone `\r`) are not, and are no longer used for this block. The shown text therefore differs from the file's in three ways only: the CRLF's `\r` is dropped, a lone `\r` is `␍`, invalid UTF-8 is replaced. A lone `\r` is not a line break to git, so raw it would put `b = 2` after `a = 1` on a row with no number (`1 | a = 1\rb = 2`); `␍` keeps one numbered row per file line. A form feed is shown as is: it breaks no row.
@@ -234,12 +254,13 @@ New tests in `tests/test_fix_impact.py`, appended per task. Existing tests that 
 | `test_benchmark.py::test_bundle_parser_matches_what_bundle_py_renders` | its body regex gets the number prefix, and the parser must now be exact |
 | builders: `test_pipeline._valid_finding`, `test_validate_paths._doc`, `test_context_pipeline._catalog_finding`, `test_dormant` (D01 finding), `test_checked_confidence._second_hotspot_finding` | gain the new required keys, and the gate's statement where they use `S02` |
 
-Unchanged and still passing: `test_the_prompt_example_is_a_complete_valid_shape` (reads `REQUIRED_FIELDS`), the skeptic contract tests (they read `VERDICT_KEYS`), `test_refutable_fields_are_finding_fields`, `test_the_brief_holds_the_claim_and_evidence_only`, `test_prepare_is_deterministic`, `test_bundles_are_within_budget_and_deterministic`, every benchmark baseline test, `test_labels_never_reach_the_pipeline`.
+Unchanged and still passing: `test_the_prompt_example_is_a_complete_valid_shape` (reads `REQUIRED_FIELDS`), the skeptic contract tests (they read `VERDICT_KEYS`), `#57`'s `test_the_contract_carries_confirmations` (`VERDICT_KEYS[-1]`, which is why the new keys go before `confirmations`) and its settle, reuse, gate and report tests, `test_refutable_fields_are_finding_fields`, `test_the_brief_holds_the_claim_and_evidence_only`, `test_prepare_is_deterministic`, `test_bundles_are_within_budget_and_deterministic`, every benchmark baseline test, `test_labels_never_reach_the_pipeline`.
 
 - **Validator.** Every §2 rule with its message; the gate over each marked pattern and over `S05`, `S01`, `S12`, `OTHER`; a quote spanning two blast items; "not both"; a traced item pointing at a catalog item; the broken-evidence case.
+- **Beside #57.** The new keys come before `confirmations` and `VERDICT_KEYS[-1]` is still `confirmations`; a verdict with both `confirmations` and the new keys settles both; a finding `#57`'s rule turns from `upheld` into `inconclusive` still carries `check.guarantees` and `check.not_checked`; the brief puts the impact blocks before **Defaults to confirm**; `claim_hash` changes with a guarantee and not with a precondition's `confirmation`.
 - **Settling.** `settle_guarantees` and `settle_not_checked` as pure functions over every malformed form; end to end through `verify.py save`/`apply`: named guarantees, items resolved and open, a verdict saying nothing, malformed keys, an unknown key (still a contract error), the ledger and reuse, a quoted blast item; resolving everything never changes status or reported confidence.
 - **Outputs.** An unverified finding shows claims as the investigator's; a verified one shows confirmed, added, resolved and open; every listed item appears once in `report.md`; `counts.not_checked` adds up; links come from evidence; old, empty and not-stated findings read as §6.1 says; the HTML in a real browser (rows, an old report, hostile text).
-- **Inert text.** Dedicated tests, because the lists in `test_inert_report.py:24` and `test_report_html.py:235` set top-level strings and `no_guarantees_reason` cannot sit beside guarantees: hostile text in every new field (including `no_guarantees_reason`, `removed_by`, `how_to_check`, the check's `reason` and a guarantee the check added), in `report.md` (no added heading or table row), in the HTML data block and in the browser (each in both forms of the guarantees statement), and in the guardrail line (newlines flattened).
+- **Inert text.** Dedicated tests, because the lists in `test_inert_report.py:23` and `test_report_html.py:237` set top-level strings and `no_guarantees_reason` cannot sit beside guarantees: hostile text in every new field (including `no_guarantees_reason`, `removed_by`, `how_to_check`, the check's `reason` and a guarantee the check added), in `report.md` (no added heading or table row), in the HTML data block and in the browser (each in both forms of the guarantees statement), and in the guardrail line (newlines flattened).
 - **Numbering.** The number before each line equals the file's line for LF, no-final-newline, CRLF, lone `\r` and form-feed files, a lone `\r` is shown as `␍` and no row is unnumbered, for whole, excerpt, trimmed and clipped blocks; the marker's range plus the shown lines equals the note's range; the reproduction (function at line 76); the note counts equal `_count_lines`; the numbers count against the budget; an over-long line is named as omitted; determinism; every fixture bundle numbered; `shown_lines` exact on numbered blocks and unchanged on a legacy one.
 - **Prompts and sample.** The investigator example validates; the prompt states the rules; the catalog brief marks exactly the six patterns; the sample shows every state.
 
@@ -251,10 +272,10 @@ Unchanged and still passing: `test_the_prompt_example_is_a_complete_valid_shape`
 | Detector hits are leads | Untouched |
 | Every evidence ref resolved mechanically | The new fields add no ref; positions are checked for range and type; skeptic evidence goes through `Resolver.evidence`. The limit that steps connect is judgment (§2.3) |
 | `id` vs `key` | Nothing matches on `id`; `claim_hash` covers the new fields |
-| Confidence capped by check status | `effective_confidence` untouched; resolutions never change `check.status` |
+| Confidence capped by check status | `effective_confidence` untouched; resolutions never change `check.status`; `#57`'s no-`upheld`-on-an-unconfirmed-default rule still runs last, on every path |
 | Verdicts resolved like findings | Guarantees and answers resolve through the same evidence list, and an unresolved answer is stated, not trusted |
 | `run.json` decides whether verification ran | Untouched; an unverified scan has no `check.guarantees` |
-| Briefs deterministic, withhold the rationale | Held (§5.1) |
+| Briefs deterministic, withhold the rationale | Held (§5.1); the blocks sit before `#57`'s **Defaults to confirm** and add no volatile value |
 | The plugin must not exhibit the patterns it hunts | No new subagent, retry or loop; the cap of four and the 10 reads are unchanged |
 | The benchmark measures, never feeds | `shown_lines` only reads; no label, verdict or run file is edited |
 | Guardrail: stdlib, exit 0, under 100 ms, facts | Two helper functions over at most 3 short strings; phrasing test extended |
@@ -275,6 +296,7 @@ New model-written strings are rendered inert everywhere (§6). Positions are int
 | A finding from before | "Not assessed" in every new section; counted nowhere in `counts.not_checked` |
 | An evidence position out of range in a hand-edited file | Not linked; the item's text is still shown |
 | A file whose lines cannot be read | An empty numbered block with `whole file, 0 lines`, as before |
+| `#57`'s rule turns an `upheld` verdict into `inconclusive` | `check.guarantees` and `check.not_checked` are kept as the skeptic resolved them; only the status and its reason change (§5.5) |
 | An investigator that cannot satisfy the new rules after the one repair round | Its hotspot is Incomplete, as for any rule, and the report says so; nothing is retried |
 
 ## 13. Consumption
@@ -297,6 +319,7 @@ No model call is added. An investigator writes more fields per finding (not meas
 12. **The guardrail states both lists.** §6.4.
 13. **Numbers are the file's, counted as `validate.py` counts, and count against the budget.** §7.
 14. **One regeneration.** The samples change once, in one task.
+15. **Coexist with #57 by adding keys, never by reordering or reusing its.** The new verdict keys go before `confirmations`, `check` gains two keys beside `confirmations`, the brief blocks sit before **Defaults to confirm**, and no gate, marker or constant of `#57` is touched. Cost: a skeptic's output has a longer key list, and two features each say "not checked" about different things, which §5.5 and §16 name.
 
 ## 15. Extension points and open design questions
 
@@ -344,7 +367,7 @@ Positions are 0-based indexes into the same finding's `evidence` array. In `repo
 "not_checked": [{"item": int, "state": "resolved" | "unresolved", "note": string, "evidence": [int, …]}]
 ```
 
-`guarantees.items[].of` is the position in the finding's own `implicit_guarantees` that the check confirms, or `null` for a guarantee the check added; `evidence` here indexes `check.evidence`, not the finding's. `check.not_checked` has one entry per item of the finding's `not_checked`, in order, `item` its 0-based position; an absent list, or an absent entry, means open: "no check has looked at it". `state` `unresolved` means still open after a check. A guarantee is confirmed only by `check.guarantees` (`state` `named` and an item whose `of` equals its position); until then it is the investigator's claim.
+`guarantees.items[].of` is the position in the finding's own `implicit_guarantees` that the check confirms, or `null` for a guarantee the check added; `evidence` here indexes `check.evidence`, not the finding's. `check.not_checked` has one entry per item of the finding's `not_checked`, in order, `item` its 0-based position; an absent list, or an absent entry, means open: "no check has looked at it". `state` `unresolved` means still open after a check. A guarantee is confirmed only by `check.guarantees` (`state` `named` and an item whose `of` equals its position); until then it is the investigator's claim. `check` also carries `#57`'s `confirmations`, a separate key with its own contract; its `confirmation.basis` value `"not_checked"` (no check looked for where a default is registered) has nothing to do with `check.not_checked` or a finding's `not_checked`, and nothing here reads or writes it.
 
 **`report.json` top level:** `counts.not_checked` = `{"listed": int, "resolved": int, "unresolved": int, "open": int}`. Schemas stay `thunderstruck.report/v2` and `thunderstruck.index/v1`. **`index.json`**, per finding: optional `implicit_guarantees` = `[{"guarantee", "removed_by"}]` and `not_checked` = `[string]` (the `item` texts not resolved).
 
