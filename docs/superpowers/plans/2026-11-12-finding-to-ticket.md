@@ -34,7 +34,7 @@ Where a step gives an old text and a new text, the old text occurs exactly once 
 - **Only `Reproduced` is gated,** by `recorded_reproduction`, which returns `None` until #103 records one. Do not invent #103's record format (§10).
 - **The four judgement sections** are a validated proposal or "Not assessed"; a bad drafts file never fails generation (§6).
 - **A's renderers are called, not copied,** and none of A's states or counts is recomputed here (§2).
-- **A ticket fits a tracker:** `MAX_TICKET_CHARS` (60,000, below GitHub's 65,536, which is to be verified against the tracker) drops steps from the end, says so, and keeps every reference listed; a ticket still too long without steps is a stop (§7).
+- **A ticket fits a tracker:** `MAX_TICKET_BYTES` (60,000 UTF-8 bytes, below the 65,536 reported for GitHub, whose figure and unit are unconfirmed and to be verified against the tracker) drops steps from the end, says so, and keeps every reference listed; a ticket still too long without steps is a stop (§7).
 - **A file is written only through a temporary file made with `O_CREAT|O_EXCL|O_NOFOLLOW`** under a fresh name, then replaced atomically (§11). Scripts write only under `.thunderstruck/`.
 - **A new script that starts `git` must be on #102's list** in `tests/test_no_execution.py` (`finding_ticket._git`, Task 3).
 - The two guidance documents are never edited, and the README section `## From a finding to a reviewed fix` keeps its heading. The README must not link either document by an absolute address (a #107 test forbids it).
@@ -58,7 +58,7 @@ Where a step gives an old text and a new text, the old text occurs exactly once 
 10. **Determinism:** the same inputs give the same bytes, from another directory and from a copy of the repository with a rebuilt `generated_at`. Pinned in Task 6.
 11. **Tracker references in `report.md` change.** A sha with a digit and a letter, `#12`, `acme/api#12`, `PR#7`, `!7`, `group/proj!3` or `ABC-123` in model text is now a code span everywhere, and `utf-8`, `sha-256`, `x86-64`, `defaced` and a run of digits are not. One existing test pinned the old form and is edited in Task 1, which also runs `gen_sample_report.py --check` (nothing in the suite compares the samples); neither sample report moved when this was proved.
 12. **Guidance links:** absolute, from `plugin.json`, with a fixed sentence when the manifest is unusable. Pinned in Task 5.
-13. **A ticket that cannot be filed.** Twelve full steps are about 120,000 characters; the cap drops steps from the end and the references stay listed. Pinned in Task 6 (`test_a_ticket_too_long_for_a_tracker_drops_steps_from_the_end_and_says_so`, `test_a_ticket_that_exactly_fits_keeps_every_step_and_one_over_drops_one`, `test_a_ticket_too_long_even_without_steps_is_a_named_stop_not_a_cut`).
+13. **A ticket that cannot be filed.** Twelve full steps are about 120,000 characters; the cap is in bytes, drops steps from the end and keeps the references listed. Pinned in Task 6 (`test_a_ticket_too_long_for_a_tracker_drops_steps_from_the_end_and_says_so`, `test_the_cap_counts_bytes_so_multibyte_text_drops_steps_a_character_count_would_keep`, `test_a_ticket_that_exactly_fits_keeps_every_step_and_one_over_drops_one`, `test_a_ticket_too_long_even_without_steps_is_a_named_stop_not_a_cut`).
 14. **A link planted where the temporary file goes** is never written through, and a link at the ticket's own name is replaced, not followed. Pinned in Task 6 (`test_a_link_planted_at_the_old_temporary_name_is_not_written_through`, `test_a_link_planted_at_the_temporary_name_is_refused`, `test_a_ticket_file_that_is_a_link_is_replaced_and_never_followed`).
 15. **A cited file stored in Git LFS** is a pointer in the commit: a stop, not a snippet of a pointer. Pinned in Task 4 (`test_a_file_stored_in_git_lfs_is_a_stop_not_a_pointer_shown_as_code`).
 16. **#102's process list.** A new script that starts `git` fails `test_processes_start_only_where_reviewed` until it is listed; Task 3 lists `finding_ticket._git`.
@@ -1875,14 +1875,14 @@ git commit -m "Ticket: links, the guidance documents and the drafted sections (#
 
 ### Task 6: The ticket
 
-**Satisfies:** AC-1 (every section, in order, "Not assessed" with a reason), AC-2, AC-5 (refused before the code is checked), AC-7 (impact sections from A's renderers; "not assessed" for an older finding), AC-8 (nothing about the machine that ran the scan), AC-9 (the temporary file), AC-10 (byte-identical).
+**Satisfies:** AC-1 (every section, in order, "Not assessed" with a reason; the settings the failure needs under Trigger, each default confirmed or unconfirmed; a ticket over 60,000 bytes drops steps from the end and says so), AC-2, AC-5 (refused before the code is checked), AC-7 (impact sections from A's renderers; "not assessed" for an older finding), AC-8 (nothing about the machine that ran the scan), AC-9 (the temporary file), AC-10 (byte-identical).
 
 **Files:**
 - Modify: `scripts/finding_ticket.py`
 - Modify: `tests/test_finding_ticket.py`
 
 **Interfaces:**
-- Produces: `SECTIONS_HEADINGS`, `MAX_TITLE`, `PROPOSAL`, `DISCLAIMER`, `REASONS`, `TRACKER_BODY_LIMIT`, `TICKET_MARGIN`, `MAX_TICKET_CHARS`, `GENERIC_ACCOUNTS`, `SCRUB_SKIP`, `title(finding)`, `machine_values()`, `scrubber(roots, machine)`, `render(...)`, `fit_ticket(...)`, `write_ticket(repo, key, text)`, `main(argv)`.
+- Produces: `SECTIONS_HEADINGS`, `MAX_TITLE`, `PROPOSAL`, `DISCLAIMER`, `REASONS`, `TRACKER_BODY_LIMIT`, `TICKET_MARGIN`, `MAX_TICKET_BYTES`, `GENERIC_ACCOUNTS`, `SCRUB_SKIP`, `title(finding)`, `machine_values()`, `scrubber(roots, machine)`, `render(...)`, `fit_ticket(...)`, `write_ticket(repo, key, text)`, `main(argv)`.
 
 This task assembles the sections of §5, calls A's renderers for the impact sections, and gives the script its `main`: lookup, status, snapshot, snippets, drafts, render, atomic write. It also holds the three rules about the whole file: the size cap that drops steps (§7), the scrub of the machine that ran the scan (§11) and the temporary file that is never written through (§11).
 
@@ -2232,31 +2232,31 @@ def test_a_ticket_too_long_for_a_tracker_drops_steps_from_the_end_and_says_so(tm
     repo = _wide_repo(tmp_path)
     make_report(repo, [_wide_finding(repo)])
     assert run_main(capsys, repo, "--key", KEY)[0] == 0
-    text = ticket_path(repo).read_text()
+    text = ticket_path(repo).read_text(encoding="utf-8")
     steps = text.count("### Step ")
-    assert len(text) <= ft.MAX_TICKET_CHARS == 60_000 and 1 <= steps < 12
+    assert len(text.encode("utf-8")) <= ft.MAX_TICKET_BYTES == 60_000 and 1 <= steps < 12
     assert text.index("What to notice: step 0") < text.index("### Step 2")           # the first steps are the ones kept
     assert f"What to notice: step {steps}" not in text
     dropped = 12 - steps
     assert (f"{dropped} further steps are left out so that the ticket fits a tracker (at most 60,000 "
-            "characters); the code references are listed under Evidence status.") in section(text, "Mechanism")
+            "bytes); the code references are listed under Evidence status.") in section(text, "Mechanism")
     assert text.count("- _code_ ") == 12                                             # every reference is still listed
 
 
 def test_the_tracker_limit_and_its_margin_are_named_constants():
-    assert ft.TRACKER_BODY_LIMIT == 65_536 and ft.MAX_TICKET_CHARS == ft.TRACKER_BODY_LIMIT - ft.TICKET_MARGIN
-    assert ft.MAX_TICKET_CHARS < ft.TRACKER_BODY_LIMIT
+    assert ft.TRACKER_BODY_LIMIT == 65_536 and ft.MAX_TICKET_BYTES == ft.TRACKER_BODY_LIMIT - ft.TICKET_MARGIN
+    assert ft.MAX_TICKET_BYTES < ft.TRACKER_BODY_LIMIT
 
 
 def test_a_ticket_that_exactly_fits_keeps_every_step_and_one_over_drops_one(tmp_path, capsys, monkeypatch):
     repo = make_repo(tmp_path)
     make_report(repo)
     assert run_main(capsys, repo, "--key", KEY)[0] == 0
-    full = len(ticket_path(repo).read_text())
-    monkeypatch.setattr(ft, "MAX_TICKET_CHARS", full)
+    full = len(ticket_path(repo).read_bytes())
+    monkeypatch.setattr(ft, "MAX_TICKET_BYTES", full)
     assert run_main(capsys, repo, "--key", KEY)[0] == 0
     assert ticket_path(repo).read_text().count("### Step ") == 2
-    monkeypatch.setattr(ft, "MAX_TICKET_CHARS", full - 1)
+    monkeypatch.setattr(ft, "MAX_TICKET_BYTES", full - 1)
     assert run_main(capsys, repo, "--key", KEY)[0] == 0
     text = ticket_path(repo).read_text()
     assert text.count("### Step ") == 1 and "1 further step is left out so that the ticket fits" in text
@@ -2266,8 +2266,24 @@ def test_a_ticket_too_long_even_without_steps_is_a_named_stop_not_a_cut(tmp_path
     repo = make_repo(tmp_path)
     make_report(repo, [make_finding(repo, failure_mode="word " * 14_000)])
     code, out, err = run_main(capsys, repo, "--key", KEY)
-    assert code == 2 and "even without a code step" in err and "60,000" in err and out == ""
+    assert code == 2 and "even without a code step" in err and "60,000 bytes" in err and out == ""
     assert not (repo / ".thunderstruck" / "tickets").exists()
+
+
+def test_the_cap_counts_bytes_so_multibyte_text_drops_steps_a_character_count_would_keep(tmp_path, capsys, monkeypatch):
+    rows = "".join("\u20ac" * 45 + "\U0001d11e" * 45 + "\n" for _ in range(40))    # 3- and 4-byte characters
+    repo = make_repo(tmp_path, {f"src/f{k}.ts": rows for k in range(12)})
+    make_report(repo, [_wide_finding(repo)])
+    with monkeypatch.context() as patch:                              # the whole ticket, with no cap
+        patch.setattr(ft, "MAX_TICKET_BYTES", 10 ** 9)
+        assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    full = ticket_path(repo).read_text(encoding="utf-8")
+    assert len(full) < ft.MAX_TICKET_BYTES < len(full.encode("utf-8"))        # under by characters, over by bytes
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    text = ticket_path(repo).read_text(encoding="utf-8")
+    steps = text.count("### Step ")
+    assert 1 <= steps < 12 and len(text.encode("utf-8")) <= ft.MAX_TICKET_BYTES
+    assert f"{12 - steps} further steps are left out" in section(text, "Mechanism")
 
 
 def test_a_link_planted_at_the_old_temporary_name_is_not_written_through(tmp_path, capsys):
@@ -2381,6 +2397,23 @@ def test_reproduced_is_refused_before_the_code_is_checked(tmp_path, capsys, monk
     monkeypatch.setattr(links, "stale_paths", checked)
     code, _, err = run_main(capsys, repo, "--key", KEY, "--status", "Reproduced")
     assert code == 2 and "Reproduced refused" in err and "the code it cites" not in err
+
+
+def test_the_settings_the_failure_needs_appear_under_trigger_each_confirmed_or_unconfirmed(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    needs = {"default_ref": "src/api.ts:1", "documented": "no", "default_url": None, "doc_url": None}
+    preconditions = [
+        {"setting": "API_RETRY_ON_429", "default": "false", "needs": "changed", "value": "true", **needs,
+         "confirmation": c.confirm(None, {"found": "same"})},
+        {"setting": "sync.pageSize", "default": "100", "needs": "default", **needs,
+         "confirmation": c.confirm(None, {"found": "different"})}]
+    make_report(repo, [make_finding(repo, preconditions=preconditions, gate="unconfirmed_default")])
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    trigger = section(ticket_path(repo).read_text(), "Trigger")
+    assert "This failure relies on a doubtful default." in trigger
+    assert "`API_RETRY_ON_429` set to `true`; default `false`" in trigger and "`sync.pageSize` left at its default `100`" in trigger
+    assert "**Confirmed**: a check found this default registered, and it agrees" in trigger
+    assert "**Unconfirmed**: a check found a different default registered" in trigger
 ``````
 
 
@@ -2403,12 +2436,14 @@ SECTIONS_HEADINGS = ("Header", "Summary", "Trigger", "Mechanism", "Persistence",
                      "Acceptance criteria", "Out of scope", "Rollout and rollback", "Provenance",
                      "Disclaimer")
 MAX_TITLE = 100
-# A ticket is pasted into a tracker. GitHub limits an issue body to 65,536 characters (verify
-# against the tracker's current limit before relying on that figure). The cap keeps a margin
-# below the limit for what it cannot drop: every section but the mechanism steps.
+# A ticket is pasted into a tracker. GitHub is widely reported to limit an issue body to 65,536
+# but does not document it, and whether the unit is characters or bytes is unconfirmed: verify
+# against the tracker's current limit before relying on the figure. Bytes are never fewer than
+# characters, so the cap is in UTF-8 bytes and holds under either reading. The margin below the
+# limit is for what the cap cannot drop: every section but the mechanism steps.
 TRACKER_BODY_LIMIT = 65_536
 TICKET_MARGIN = 5_536
-MAX_TICKET_CHARS = TRACKER_BODY_LIMIT - TICKET_MARGIN
+MAX_TICKET_BYTES = TRACKER_BODY_LIMIT - TICKET_MARGIN
 # An account name that is the same on every machine says nothing about this one.
 GENERIC_ACCOUNTS = frozenset({"root", "admin", "administrator", "user", "runner", "ubuntu", "vscode",
                               "node", "nobody", "daemon"})
@@ -2511,7 +2546,7 @@ def _plural(n: int, one: str, many: str) -> str:
 def render(rep: dict, f: dict, steps: list[Step], omitted: int, drafts: Drafts, status: str,
            scrub, dropped: int = 0) -> str:
     """The ticket as Markdown. `f` is a normalised, scrubbed finding with safe links. `dropped`
-    is how many steps the caller left out so that the ticket fits MAX_TICKET_CHARS."""
+    is how many steps the caller left out so that the ticket fits MAX_TICKET_BYTES."""
     built = links_reason(rep) is None
     loc = f.get("location") if isinstance(f.get("location"), dict) else {}
     where = f"{loc.get('file', '?')}" + (f":{loc['lines']}" if loc.get("lines") else "")
@@ -2551,7 +2586,7 @@ def render(rep: dict, f: dict, steps: list[Step], omitted: int, drafts: Drafts, 
               "listed under Evidence status.", ""]
     if dropped:
         L += [f"{dropped} further {_plural(dropped, 'step is', 'steps are')} left out so that the ticket "
-              f"fits a tracker (at most {MAX_TICKET_CHARS:,} characters); the code "
+              f"fits a tracker (at most {MAX_TICKET_BYTES:,} bytes); the code "
               f"{_plural(dropped, 'reference is', 'references are')} listed under Evidence status.", ""]
     L += ["## Persistence", "",
           f"**Sustaining effect** — {md.text(f['sustaining_effect'])}" if f.get("sustaining_effect")
@@ -2598,16 +2633,18 @@ def render(rep: dict, f: dict, steps: list[Step], omitted: int, drafts: Drafts, 
 
 def fit_ticket(rep: dict, f: dict, steps: list[Step], omitted: int, drafts: Drafts, status: str,
                scrub) -> str:
-    """The ticket, with mechanism steps dropped from the end until it fits MAX_TICKET_CHARS, and
-    the note that says so. A ticket that does not fit even without steps is a stop, not a cut."""
+    """The ticket, with mechanism steps dropped from the end until it fits MAX_TICKET_BYTES (UTF-8
+    bytes), and the note that says so. A ticket that does not fit even without steps is a stop,
+    not a cut."""
     kept = len(steps)
     while True:
         text = render(rep, f, steps[:kept], omitted, drafts, status, scrub, dropped=len(steps) - kept)
-        if len(text) <= MAX_TICKET_CHARS:
+        size = len(text.encode("utf-8"))
+        if size <= MAX_TICKET_BYTES:
             return text
         if kept == 0:
-            raise stop(f"no ticket was written for finding {f.get('key')}: it is {len(text):,} characters "
-                       f"even without a code step, more than the {MAX_TICKET_CHARS:,} a tracker takes. "
+            raise stop(f"no ticket was written for finding {f.get('key')}: it is {size:,} bytes "
+                       f"even without a code step, more than the {MAX_TICKET_BYTES:,} bytes a tracker takes. "
                        "A field of the finding is too long.")
         kept -= 1
 
@@ -3489,7 +3526,7 @@ repository's GitHub issues. What keeps it honest:
   host name of the machine that ran the scan are scrubbed from model text (not from a
   snippet, which is the repository's own), and `repo.branch` and `generated_at` are
   never read.
-- **A ticket must fit a tracker.** `MAX_TICKET_CHARS` caps it: mechanism steps are
+- **A ticket must fit a tracker.** `MAX_TICKET_BYTES` caps it: mechanism steps are
   dropped from the end, with a note, and a ticket that still does not fit is a stop.
 - **Only `Reproduced` is gated.** `recorded_reproduction` returns `None` until #103
   records one, and the request is refused.
@@ -3578,7 +3615,7 @@ A finding becomes a ticket someone can act on (#108).
 ### Added
 
 - **`/thunderstruck-ticket <key>`** writes a ticket for one finding to `.thunderstruck/tickets/<key>.md`, ready to paste into your tracker. A ticket here is the issue you file in your own repository from a finding. It has a fixed set of sections: the claim, the code the finding cites copied from the scanned commit with a permalink to those lines, what is traced and what is inferred, what a fix would remove, what was not checked, and links to the fix instructions and the review briefs. A section with no data says "Not assessed" and why. `scripts/finding_ticket.py --list` shows the keys.
-- **A ticket fits a tracker.** If it would be longer than 60,000 characters, mechanism steps are dropped from the end and the ticket says so; the code references stay listed under Evidence status. A ticket too long even without steps is a stop.
+- **A ticket fits a tracker.** If it would be longer than 60,000 bytes, mechanism steps are dropped from the end and the ticket says so; the code references stay listed under Evidence status. A ticket too long even without steps is a stop.
 - **Nothing about the machine reaches a ticket.** The repository's path, the home directory, the user name and the host name of the machine that ran the scan are replaced in model text by `<repo>`, `<home>`, `<user>` and `<host>`. A path in the repository's own code is shown as it is.
 - **It stops rather than quote the wrong code.** When a cited file differs from the scanned commit, or no longer matches the hash the scan recorded, no ticket is written; the message names the file and says to rescan or to check out the scanned commit (or only to rescan, when the scan saw the file in another state). A file stored in Git LFS is a stop too.
 - **Status.** `--status` takes Hypothesis (the default), Reproduced, Fix proposed or Fix reviewed. Reproduced is refused until a reproduction is recorded (#103).
@@ -3645,7 +3682,7 @@ git diff --quiet origin/main -- docs/fix-agent-instructions.md docs/review-brief
 
 Expected: both `ok` lines. An `UNEXPECTED` path is reverted unless the plan names it; `CHANGED` is reverted with `git checkout origin/main -- docs/fix-agent-instructions.md docs/review-briefs.md`.
 
-- [ ] **Step 6: Prepare the PR body.** In *Verified locally*, list each command with its exit code and the install check. In *Not verifiable in CI*, write: "How GitHub, GitLab or Bitbucket render the ticket is inferred from cmark-gfm and markdown-it-py, which the tests use. The drafting step (a model writing the four proposal sections) never runs in CI: the sample's proposals are canned text. Tracker references in `report.md` are now code spans (one test edited in Task 1; neither sample report moved). GitHub's 65,536-character issue-body limit, from which `MAX_TICKET_CHARS` is derived, was not verified against GitHub." Add the CLAUDE.md consequence: "The sentence 'The investigator and the skeptic are the only inference in the system' now reads 'in a scan', and records the one optional model step after it (spec §6)."
+- [ ] **Step 6: Prepare the PR body.** In *Verified locally*, list each command with its exit code and the install check. In *Not verifiable in CI*, write: "How GitHub, GitLab or Bitbucket render the ticket is inferred from cmark-gfm and markdown-it-py, which the tests use. The drafting step (a model writing the four proposal sections) never runs in CI: the sample's proposals are canned text. Tracker references in `report.md` are now code spans (one test edited in Task 1; neither sample report moved). GitHub's issue-body limit (65,536 as reported; the unit, characters or bytes, is unconfirmed), from which `MAX_TICKET_BYTES` is derived, was not verified against GitHub." Add the CLAUDE.md consequence: "The sentence 'The investigator and the skeptic are the only inference in the system' now reads 'in a scan', and records the one optional model step after it (spec §6)."
 
 - [ ] **Step 7: Commit**
 
@@ -3659,7 +3696,7 @@ git commit -m "Finding ticket: docs and release note (#108)" \
 
 | AC | Tasks | Tests |
 |---|---|---|
-| AC-1 | 2, 6, 9 | `test_a_finding_is_found_by_its_key`, `test_every_section_is_there_in_the_tickets_order`, `test_each_section_comes_from_its_field`, `test_a_section_with_no_data_says_not_assessed_and_why`, `test_the_title_is_the_failure_mode_on_one_short_line`, `test_the_script_runs_as_a_program`, `test_the_skill_is_discovered_and_runs_the_script_by_its_plugin_path`, `test_a_ticket_too_long_for_a_tracker_drops_steps_from_the_end_and_says_so`, `test_the_tracker_limit_and_its_margin_are_named_constants`, `test_a_ticket_that_exactly_fits_keeps_every_step_and_one_over_drops_one`, `test_a_ticket_too_long_even_without_steps_is_a_named_stop_not_a_cut` |
+| AC-1 | 2, 6, 9 | `test_a_finding_is_found_by_its_key`, `test_every_section_is_there_in_the_tickets_order`, `test_each_section_comes_from_its_field`, `test_the_settings_the_failure_needs_appear_under_trigger_each_confirmed_or_unconfirmed`, `test_a_section_with_no_data_says_not_assessed_and_why`, `test_the_title_is_the_failure_mode_on_one_short_line`, `test_the_script_runs_as_a_program`, `test_the_skill_is_discovered_and_runs_the_script_by_its_plugin_path`, `test_a_ticket_too_long_for_a_tracker_drops_steps_from_the_end_and_says_so`, `test_the_tracker_limit_and_its_margin_are_named_constants`, `test_a_ticket_that_exactly_fits_keeps_every_step_and_one_over_drops_one`, `test_a_ticket_too_long_even_without_steps_is_a_named_stop_not_a_cut`, `test_the_cap_counts_bytes_so_multibyte_text_drops_steps_a_character_count_would_keep` |
 | AC-2 | 4, 6 | `test_a_step_shows_its_link_its_code_and_what_to_notice`, `test_a_snippet_is_the_text_of_the_file_at_the_scanned_commit`, `test_only_code_evidence_makes_a_step_and_in_the_findings_order`, `test_a_long_citation_is_cut_and_says_so_outside_the_fence`, `test_each_section_comes_from_its_field`, `test_links_come_from_the_report_and_are_stated_once_in_the_header` |
 | AC-3 | 1, 3, 4, 6 | every Task 3 test (`test_an_edited_cited_file_stops_and_names_the_way_forward`, `test_a_staged_edit_stops`, `test_a_commit_made_since_the_scan_stops`, `test_an_untracked_cited_file_stops`, `test_a_committed_symlink_and_a_submodule_stop`, `test_a_deleted_cited_file_stops`, `test_a_file_git_was_told_to_ignore_cannot_hide_an_edit`, `test_a_file_scanned_dirty_and_since_reverted_is_not_what_the_finding_recorded`, `test_an_unrecorded_hash_is_a_stop_not_a_pass`, `test_a_scan_without_a_full_commit_cannot_be_checked`, `test_a_commit_this_clone_does_not_have_stops_and_names_it`, `test_a_shallow_clone_that_has_the_scanned_commit_passes`, `test_a_dirty_file_nothing_cites_is_not_compared`, `test_line_ending_conversion_alone_does_not_stop`, `test_many_files_are_named_five_at_a_time`, `test_a_cited_path_that_leaves_the_repository_stops`, `test_a_git_failure_or_timeout_is_a_named_stop`), `test_a_range_the_commit_does_not_have_is_a_stop`, `test_the_snippet_is_the_commit_not_the_working_tree`, `test_a_stop_writes_nothing_and_leaves_an_earlier_ticket_alone`, `test_verbatim_keeps_every_other_character_as_written`, `test_a_file_stored_in_git_lfs_is_a_stop_not_a_pointer_shown_as_code`, `test_a_file_the_scan_saw_in_another_state_can_only_be_fixed_by_a_rescan`, `test_an_edit_since_the_scan_offers_the_checkout_and_says_when_it_will_not_do`, `test_when_any_file_needs_a_rescan_the_way_forward_is_the_rescan`, `test_the_ticket_script_may_start_git_and_nothing_else` |
 | AC-4 | 4, 5, 6, 7 | `test_only_a_plain_web_address_is_a_link`, `test_every_unsafe_link_field_is_dropped_at_any_depth_and_the_rest_kept`, `test_a_step_never_takes_an_unsafe_address`, `test_links_built_have_no_reason_and_links_not_built_give_the_one_the_report_recorded`, `test_a_reference_is_linked_or_labelled_never_bare`, `test_without_links_the_ticket_says_why_with_the_reason_the_report_recorded`, `test_a_disabled_link_setting_has_a_reason_too`, `test_a_hand_edited_report_cannot_plant_a_link_or_break_one` |
