@@ -30,7 +30,7 @@ FORBIDDEN_OS = {"system", "popen", "execv", "execve", "execvp", "execvpe", "exec
 # `claude plugin validate` for a maintainer, never during a scan.
 GIT_ONLY = {("_common.py", "git"), ("_common.py", "git_paths"), ("_common.py", "commit_touches"),
             ("_common.py", "commit_exists"), ("_common.py", "tracked_index"),
-            ("_common.py", "find_repo_root")}
+            ("_common.py", "find_repo_root"), ("bundle.py", "call_site_hits")}
 OTHER_ALLOWED = {("context.py", "run_command")}
 NOT_A_STAGE = {"gen_sample_report.py", "gen_catalog_docs.py", "validate_plugin.py"}
 

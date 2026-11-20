@@ -19,6 +19,17 @@ Defaults a finding relies on are confirmed or flagged, never assumed (#57).
   is marked "default unconfirmed" and keeps its place.
 - A test proves no scan stage runs, imports or builds the scanned project.
 
+## 0.13.1
+
+### Fixed
+
+- **Briefings list call sites on macOS** (#66). The search now uses Git's fixed-string whole-word matching instead of a regex boundary that macOS Git did not recognize.
+
+### Changed
+
+- Briefings distinguish no call sites found from a search that could not finish. The bundle step also names briefings whose search did not finish.
+- Files with newly visible call sites or a new no-callers notice are investigated once more because their briefing hashes changed.
+
 ## 0.13.0
 
 Findings are refuted before they reach the report (#37).
