@@ -448,7 +448,8 @@ def _set_urls(findings: list[dict], result: "links.LinkResult | None", repo: Pat
             s["default_url"] = _ref_url(ctx, s.get("default_ref"))
         for it in check.get("confirmations") or []:
             if isinstance(it, dict):
-                it["default_url"] = _ref_url(ctx, it.get("default_ref"))
+                it["default_url"] = (None if it.get("default_ref_error")  # the tool links only what resolved
+                                     else _ref_url(ctx, it.get("default_ref")))
                 it["stated_url"] = _ref_url(ctx, it.get("stated_ref"))
         for at in f.get("also_at") or []:
             at["url"] = _location_url(ctx, at["location"], repo) if ctx else None
@@ -773,7 +774,8 @@ def render_preconditions(f: dict) -> list[str]:
     if items and f.get("gate") in ("none", "unconfirmed_default"):
         L += ["The failure happens on default settings and rests on these defaults:", ""]
     by_index = {it.get("precondition"): it for it in confirmations if isinstance(it.get("precondition"), int)}
-    L += [_precondition_line(p, by_index.get(j)) for j, p in enumerate(items)]
+    L += [_precondition_line(p, by_index.get(j))  # index the stored list, as apply does
+          for j, p in enumerate(f.get("preconditions") or []) if isinstance(p, dict)]
     if unlisted:
         if items:
             L.append("")

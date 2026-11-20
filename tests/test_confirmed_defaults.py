@@ -680,3 +680,40 @@ def test_export_run_carries_the_checks_defaults(validated_repo, validated_env, t
     assert run["findings"][e["key"]]["preconditions"] == [
         {"setting": "sync.pageSize", "default": "500", "confirmation": "unconfirmed"}]
     assert "verdict" not in run["findings"][e["key"]]  # inconclusive carries none (#37)
+
+
+# --- Review round -----------------------------------------------------------
+def test_a_confirmations_value_that_is_not_a_list_leaves_the_finding_unchecked(validated_repo, validated_env, tmp_path):
+    plan, e = _collection(validated_repo, validated_env)
+    _save(validated_repo, validated_env, tmp_path, _v(e["key"], "upheld", confirmations=1))
+    check = _apply(validated_repo, validated_env)[e["key"]]
+    assert check["status"] == "unchecked" and "confirmations is not a list" in check["reason"]
+
+
+def test_an_unresolved_default_ref_is_neither_in_the_ledger_nor_linked(validated_repo, validated_env, tmp_path):
+    plan, e = _collection(validated_repo, validated_env)
+    _save(validated_repo, validated_env, tmp_path, _v(e["key"], "inconclusive", confirmations=[
+        _conf(found="different", default="500", default_ref="src/config/nowhere.ts:3")]))
+    _apply(validated_repo, validated_env)
+    ledger = json.loads((validated_repo / ".thunderstruck" / "checks" / "ledger.json").read_text())["entries"]
+    assert "src/config/nowhere.ts" not in ledger[e["key"]]["files"]
+    assert _entry(_prepare(validated_repo, validated_env), "collection.ts")["action"] == "reuse"
+    data = _report(validated_repo, validated_env)
+    [item] = next(f for f in data["findings"] if f["key"] == e["key"])["check"]["confirmations"]
+    assert item["default_ref_error"] and item["default_url"] is None
+
+
+
+
+
+def test_report_md_pairs_items_with_the_precondition_they_index():
+    import report as r
+    f = {"gate": "none", "preconditions": ["junk", {
+        "setting": "s", "default": "1", "default_ref": "a.ts:1", "needs": "default",
+        "documented": "no", "confirmation": {"state": "confirmed", "basis": "registered",
+                                             "reason": c.CONFIRMATION_REASONS["registered"]}}],
+         "check": {"confirmations": [{"setting": "s", "precondition": 1, "default": "1",
+                                      "default_ref": "b.ts:2", "default_url": None, "reason": "",
+                                      "confirmation": {"state": "confirmed"}}]}}
+    text = "\n".join(r.render_preconditions(f))
+    assert "b.ts:2" in text
