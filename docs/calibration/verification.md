@@ -240,3 +240,42 @@ upheld on a default not stated at its effective value 0/11  (0–26%)  triggerdo
 
 The holdout capture has no discriminating default rows, so that last zero
 is not evidence that the verifier handles those defaults correctly.
+
+### Fresh measurement with the branch-condition check
+
+After a read-only synthetic test confirmed that the skeptic traced a
+configuration-gated branch to its registered default, ran all 21 frozen
+Celery findings with plugin 0.14.0 at `06a2f59`. Same pinned checkout and
+four dependency snapshots as before, one fresh headless session per finding,
+up to four concurrent, no re-spawns. Every skeptic ran as `claude-haiku-5-5`;
+the export still uses the stale alias table (#100). Results: 6 upheld, 13
+narrowed, 1 refuted, 1 inconclusive, 0 unchecked.
+
+**Task 15 passed.** FR-015 remained refuted; both disputed defaults settled
+as `unconfirmed` (`contradicted`). FR-002 was narrowed after the skeptic
+identified the effective `task_acks_on_timeout` default. All five
+discriminating settings were counted: four matched and one was not stated.
+Of the 36 non-discriminating settings, 13 matched and 23 were not stated.
+Neither wrong-default counter was nonzero. FR-006 (label: `partially_correct`)
+was the one proposed uphold settled as inconclusive because its retry-policy
+default reference did not resolve.
+
+```text
+verdict: same                11/20  (34–74%)  celery/celery@508c112 · n=20 of 21 labelled findings · labels: 20 claude-fable-5-1 (19 executed, 1 read)
+default matches effective    4/5  (38–96%)  celery/celery@508c112 · n=16 of 21 labelled findings · labels: 16 claude-fable-5-1 (16 executed)
+default matches literal only 0/5  (0–43%)  celery/celery@508c112 · n=16 of 21 labelled findings · labels: 16 claude-fable-5-1 (16 executed)
+default matches neither      0/5  (0–43%)  celery/celery@508c112 · n=16 of 21 labelled findings · labels: 16 claude-fable-5-1 (16 executed)
+default not stated           1/5  (4–62%)  celery/celery@508c112 · n=16 of 21 labelled findings · labels: 16 claude-fable-5-1 (16 executed)
+confirmed defaults that are not effective 0/8  (0–32%)  celery/celery@508c112 · n=16 of 21 labelled findings · labels: 16 claude-fable-5-1 (16 executed)
+upheld on a default not stated at its effective value 0/4  (0–49%)  celery/celery@508c112 · n=16 of 21 labelled findings · labels: 16 claude-fable-5-1 (16 executed)
+```
+
+The verdict scorer excludes the inconclusive result; counted against the
+whole frozen set the same-class count is 11/21. The existing Trigger.dev
+holdout totals above are a rescore of the captured run, not a measurement of
+the changed skeptic prompt.
+
+| Run | Input | Output | Cache read | Cache write |
+|---|---:|---:|---:|---:|
+| #37 Haiku baseline | 1,736 | 160,374 | 4,374,189 | 588,440 |
+| #57 with branch-condition check | 446 | 207,426 | 5,498,841 | 598,863 |
