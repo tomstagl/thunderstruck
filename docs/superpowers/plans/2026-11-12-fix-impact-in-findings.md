@@ -2228,7 +2228,7 @@ The three blocks go after **Check** and before **Preconditions**, which is where
 - Consumes: `c.IMPACT_SENTENCES`, `c.guarantee_state`, `c.not_checked_states` (Task 1); `check.guarantees`, `check.not_checked` (Task 5).
 - Produces: `report.render_impact(f)`, `report.render_guarantees(f)`, `report.render_not_checked(f)` (each returns lines); `report.not_checked_counts(findings)`; `report.json` `counts.not_checked`; `index.json` `implicit_guarantees` and `not_checked`.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_fix_impact.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_fix_impact.py`:
 
 ````python
 # --- Task 6 -----------------------------------------------------------------
@@ -2460,12 +2460,12 @@ def test_hostile_none_found_reasons_stay_inert(linked_copy, plugin_root):
     assert html.tags.count("h3") == 1 and "fake heading" in "".join(html.text)
 ````
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_fix_impact.py -q`
 Expected: FAIL, 12 failed: `AttributeError: module 'report' has no attribute 'render_guarantees'` for the direct renderer cases; `IndexError: list index out of range` and `AssertionError` for the end-to-end ones, which find no impact block in `report.md`.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 ````diff
 --- a/scripts/report.py
@@ -2632,9 +2632,9 @@ Expected: FAIL, 12 failed: `AttributeError: module 'report' has no attribute 're
              item["holds"] = f["check"]["holds"]
 ````
 
-- [ ] **Step 4: Run the tests to verify they pass.** Run Step 2's command, then `tests/test_inert_report.py tests/test_report_links.py tests/test_report_json_fields.py tests/test_confirmed_defaults.py` with the same `--with` set, then the full suite (header). Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests to verify they pass.** Run Step 2's command, then `tests/test_inert_report.py tests/test_report_links.py tests/test_report_json_fields.py tests/test_confirmed_defaults.py` with the same `--with` set, then the full suite (header). Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/report.py tests/test_fix_impact.py

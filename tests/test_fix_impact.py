@@ -785,3 +785,232 @@ def test_the_skeptic_shares_its_read_budget_and_unresolved_items_do_not_force_in
     assert "a material default you could not resolve still keeps the claim from being upheld (rule 8)" in flat
     assert "An unresolved item stays open on the finding" in flat
     assert "You never reword the investigator's" in flat
+
+
+# --- Task 6 -----------------------------------------------------------------
+import report  # noqa: E402
+from test_pipeline import _hotspots, _valid_finding, _validate, _write_finding  # noqa: E402
+
+
+def _report(repo: Path, env: dict | None = None) -> tuple[str, dict, dict]:
+    proc = subprocess.run([sys.executable, str(ROOT / "scripts" / "report.py"), "--repo", str(repo)],
+                          capture_output=True, text=True, env=env)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    out = repo / ".thunderstruck"
+    return ((out / "report.md").read_text(), json.loads((out / "report.json").read_text()),
+            json.loads((out / "index.json").read_text()))
+
+
+def _section(markdown: str, finding_title: str) -> str:
+    """One finding's part of report.md."""
+    return markdown.split(finding_title, 1)[1].split("\n---\n", 1)[0]
+
+
+def _releases(markdown: str, payload: dict) -> tuple[dict, str]:
+    f = next(x for x in payload["findings"] if x["location"]["file"].endswith("releases.ts"))
+    return f, _section(markdown, f"### {f['id']} ·")
+
+
+def test_an_unverified_finding_shows_its_impact_claims_as_the_investigators(validated_repo, validated_env):
+    """AC-3, AC-4, AC-6: traced and inferred apart, the items listed and open, nothing confirmed."""
+    markdown, payload, _ = _report(validated_repo)
+    f, part = _releases(markdown, payload)
+    assert "**Traced impact** — each item cites the code the investigator says it followed to reach it; each cited line is checked to exist, not to connect to the next." in part
+    traced = part.split("**Traced impact**", 1)[1].split("**Inferred impact**", 1)[0]
+    assert "— cites: [`src/client/releases.ts:" in traced and "web-frontend" not in traced
+    assert "→" not in part, "no arrow: nothing checks that the cited lines connect"
+    inferred = part.split("**Inferred impact**", 1)[1].split("**Implicit guarantees**", 1)[0]
+    assert "rests on the catalog: `dependencyOf component:default/web-frontend`" in inferred
+    assert ("**Implicit guarantees** — what this code provides without saying so, as the investigator "
+            "stated it. No check has confirmed this.") in part
+    assert "removed by: removing either retry layer" in part
+    assert "confirmed by the check" not in part
+    notes = part.split("**Not checked**", 1)[1].split("**Preconditions**", 1)[0]
+    assert notes.count("open: no check has looked at it") == 2
+    assert "how to check: Grep the callers of fetchRelease" in notes
+
+
+def test_report_json_carries_the_fields_and_counts_every_item(validated_repo, validated_env):
+    _, payload, _ = _report(validated_repo)
+    assert payload["schema"] == "thunderstruck.report/v2"            # additive: no bump (spec §7)
+    listed = sum(len(f["not_checked"]) for f in payload["findings"])
+    assert listed >= 4
+    assert payload["counts"]["not_checked"] == {"listed": listed, "resolved": 0, "unresolved": 0, "open": listed}
+    for f in payload["findings"]:
+        assert f["blast_items"] and isinstance(f["not_checked"], list)
+        assert all(0 <= i < len(f["evidence"]) for b in f["blast_items"] for i in b.get("evidence", []))
+
+
+def test_a_verified_finding_shows_what_the_check_confirmed_and_what_stays_open(validated_repo, validated_env, tmp_path):
+    """AC-5: resolved with evidence, or open with a reason; a guarantee the check added; none dropped."""
+    plan = _prepare(validated_repo, validated_env)
+    e = _entry(plan, "releases.ts")
+    _save(validated_repo, validated_env, tmp_path, _verdict_for_releases(
+        validated_repo, e["key"],
+        guarantees=[{"of": 0, "evidence": [0]},
+                    {"of": None, "guarantee": "Callers share one queue slot",
+                     "removed_by": "running lookups outside the queue", "evidence": [1]}],
+        not_checked=[{"item": 0, "state": "resolved", "note": "Both call it once.", "evidence": [1]}]))
+    _apply(validated_repo, validated_env)
+    markdown, payload, index = _report(validated_repo)
+    f, part = _releases(markdown, payload)
+    assert "No check has confirmed this." not in part.split("**Implicit guarantees**", 1)[1].split("**Not checked**", 1)[0]
+    assert "— confirmed by the check: [`src/client/releases.ts:" in part
+    assert "Added by the check:" in part and "Callers share one queue slot — removed by: running lookups" in part
+    assert "resolved by a check: Both call it once. — evidence: [`src/sync/scheduler.ts:" in part
+    assert "still open after a check: The skeptic did not address this item." in part
+    assert [n["state"] for n in f["check"]["not_checked"]] == ["resolved", "unresolved"]
+    counts = payload["counts"]["not_checked"]
+    assert counts["resolved"] == 1 and counts["unresolved"] == 1
+    assert counts["listed"] == counts["resolved"] + counts["unresolved"] + counts["open"]
+    entry = next(i for e_ in index["files"].values() for i in e_["findings"] if i["key"] == f["key"] and "via" not in i)
+    assert entry["not_checked"] == [f["not_checked"][1]["item"]], "a resolved item leaves the index"
+    assert entry["implicit_guarantees"] == [{k: f["implicit_guarantees"][0][k] for k in ("guarantee", "removed_by")}]
+
+
+def test_a_guarantee_the_check_added_is_shown_when_the_investigator_listed_none(validated_repo, validated_env, tmp_path):
+    """AC-5: the skeptic may add a guarantee the investigator missed; it must not vanish."""
+    plan = _prepare(validated_repo, validated_env)
+    e = _entry(plan, "scheduler.ts")
+    queue = _line(validated_repo, "src/sync/scheduler.ts", "const queue:")
+    _save(validated_repo, validated_env, tmp_path, _v(
+        e["key"], "upheld", evidence=[{"type": "code", "ref": f"src/sync/scheduler.ts:{queue}", "note": "n"}],
+        guarantees=[{"of": None, "guarantee": "Jobs run one at a time, in order",
+                     "removed_by": "running lookups on a second queue", "evidence": [0]}]))
+    _apply(validated_repo, validated_env)
+    markdown, payload, _ = _report(validated_repo)
+    f = next(x for x in payload["findings"] if x["location"]["file"].endswith("scheduler.ts"))
+    part = _section(markdown, f"### {f['id']} ·")
+    assert "none stated by the investigator, who was not required to for these patterns." in part
+    assert "Added by the check:" in part
+    assert "Jobs run one at a time, in order — removed by: running lookups on a second queue — evidence: [`src/sync/scheduler.ts:" in part
+
+
+def test_every_listed_item_appears_once_in_the_markdown(validated_repo, validated_env, tmp_path):
+    plan = _prepare(validated_repo, validated_env)
+    e = _entry(plan, "releases.ts")
+    _save(validated_repo, validated_env, tmp_path, _verdict_for_releases(
+        validated_repo, e["key"], not_checked=[{"item": 1, "state": "unresolved", "note": "read limit"}]))
+    _apply(validated_repo, validated_env)
+    markdown, payload, _ = _report(validated_repo)
+    for f in payload["findings"]:
+        part = _section(markdown, f"### {f['id']} ·")
+        block = part.split("**Not checked**", 1)[1].split("**Preconditions**", 1)[0]
+        bullets = [ln for ln in block.splitlines() if ln.startswith("- ")]
+        assert len(bullets) == len(f["not_checked"]), f["id"]
+
+
+def test_the_index_of_an_unverified_scan_lists_every_item_as_open(validated_repo, validated_env):
+    _, payload, index = _report(validated_repo)
+    by_key = {f["key"]: f for f in payload["findings"]}
+    entries = [i for e in index["files"].values() for i in e["findings"] if "via" not in i]
+    assert entries
+    for entry in entries:
+        f = by_key[entry["key"]]
+        assert entry.get("not_checked", []) == [i["item"] for i in f["not_checked"]]
+        assert entry.get("implicit_guarantees", []) == [
+            {k: g[k] for k in ("guarantee", "removed_by")} for g in f.get("implicit_guarantees", [])]
+
+
+@pytest.mark.parametrize("finding, guarantees, impact, not_checked", [
+    ({}, "not assessed: this finding was written before it was recorded.",
+     "not assessed: this finding was written before it was recorded.",
+     "not assessed: this finding was written before it was recorded."),
+    ({"blast_items": [], "not_checked": []},
+     "none stated by the investigator, who was not required to for these patterns.",
+     "**Traced impact** — none: no item cites code it followed.",
+     "none listed by the investigator."),
+    ({"blast_items": [{"claim": "all callers", "basis": "assumption"}], "not_checked": [],
+      "no_guarantees_reason": "the lock guards a counter only"},
+     "none found, per the investigator: the lock guards a counter only No check has confirmed this.",
+     "all callers — an assumption", "none listed by the investigator."),
+])
+def test_old_and_empty_findings_say_what_they_do_not_state(finding, guarantees, impact, not_checked):
+    f = {**finding, "check": {"status": "unchecked", "by": None, "reason": None}}
+    assert guarantees in "\n".join(report.render_guarantees(f))
+    assert impact in "\n".join(report.render_impact(f))
+    assert not_checked in "\n".join(report.render_not_checked(f))
+
+
+def test_paths_are_linked_by_the_tool_from_the_cited_evidence(linked_copy, plugin_root):
+    hid, doc = _valid_finding(linked_copy, _hotspots(linked_copy))
+    _write_finding(linked_copy, hid, doc)
+    assert _validate(linked_copy, plugin_root).returncode == 0
+    markdown, payload, _ = _report(linked_copy)
+    ref = payload["findings"][0]["evidence"][0]["ref"]
+    assert f"— cites: [`{ref}`](https://github.com/acme/fixture/blob/" in markdown
+    assert f"— provided by [`{ref}`](https://github.com/acme/fixture/blob/" in markdown
+
+
+def test_the_report_html_renderer_still_reads_a_report_from_before_this_change():
+    import report_html
+    celery = ROOT / "docs" / "calibration" / "correctness" / "celery" / "scan" / "report.json"
+    page = report_html.page_data(json.loads(celery.read_text()))
+    assert page["findings"] and not any("blast_items" in f for f in page["findings"])
+    html = report_html.render(page, report_html.TEMPLATE.read_text(encoding="utf-8"))
+    assert "thunderstruck-report" in html
+
+
+HOSTILE = ("x](https://evil.example) ![](https://tracker.example/p.png) <img src=x> "
+           "| broken | row | \n# fake heading\n- fake item :smile: $x$ ~~s~~ www.evil.example")
+
+
+def test_hostile_text_in_the_new_fields_stays_inert(linked_copy, plugin_root):
+    """Every new value a model writes reaches report.md as inert text, in no more rows or headings."""
+    from test_inert_report import _assert_inert, _verification_ran
+    from test_mdtext import render
+    hid, doc = _valid_finding(linked_copy, _hotspots(linked_copy))
+    f = doc["findings"][0]
+    f["implicit_guarantees"][0].update(guarantee=f"guarantee: {HOSTILE}", removed_by=f"removed: {HOSTILE}")
+    f["blast_items"] = [{"claim": f"traced: {HOSTILE}", "basis": "traced", "evidence": [0]},
+                        {"claim": f"assumed: {HOSTILE}", "basis": "assumption"}]
+    f["not_checked"] = [{"item": f"item: {HOSTILE}", "how_to_check": f"how: {HOSTILE}"}]
+    _write_finding(linked_copy, hid, doc)
+    assert _validate(linked_copy, plugin_root).returncode == 0
+    path = linked_copy / ".thunderstruck" / "findings" / f"{hid}.json"
+    saved = json.loads(path.read_text())
+    ref = saved["findings"][0]["evidence"][0]["ref"]
+    saved["findings"][0]["check"] = {
+        "status": "upheld", "by": "skeptic", "reason": f"check reason: {HOSTILE}", "model": "claude-haiku-4-5",
+        "duplicate_of": None, "refuted_claims": [], "evidence": [{"type": "code", "ref": ref, "note": "n"}],
+        "guarantees": {"state": "named", "reason": None, "items": [
+            {"of": 0, "guarantee": "g", "removed_by": "r", "evidence": [0]},
+            {"of": None, "guarantee": f"added: {HOSTILE}", "removed_by": f"added removed: {HOSTILE}", "evidence": [0]}]},
+        "not_checked": [{"item": 0, "state": "resolved", "note": f"note: {HOSTILE}", "evidence": [0]}]}
+    path.write_text(json.dumps(saved))
+    _verification_ran(linked_copy)
+    markdown, _, _ = _report(linked_copy)
+    for needle in ("guarantee: ", "removed: ", "traced: ", "assumed: ", "item: ", "how: ", "added: ", "note: ",
+                   "check reason: "):
+        assert needle in markdown, needle
+    _assert_inert(markdown)
+    html = render(markdown)
+    assert html.tags.count("h3") == 1, "a field must not add a heading"
+    assert "fake heading" in "".join(html.text) and "fake item" in "".join(html.text)
+    table = markdown.split("### FR-001", 1)[1].split("**Evidence**", 1)[0]
+    assert render(table).tags.count("tr") == 6, "no field adds a row to the finding's table"
+
+
+def test_hostile_none_found_reasons_stay_inert(linked_copy, plugin_root):
+    """The investigator's reason and the check's, both free text."""
+    from test_inert_report import _assert_inert, _verification_ran
+    from test_mdtext import render
+    hid, doc = _valid_finding(linked_copy, _hotspots(linked_copy))
+    f = doc["findings"][0]
+    del f["implicit_guarantees"]
+    f["no_guarantees_reason"] = f"reason: {HOSTILE}"
+    _write_finding(linked_copy, hid, doc)
+    assert _validate(linked_copy, plugin_root).returncode == 0
+    path = linked_copy / ".thunderstruck" / "findings" / f"{hid}.json"
+    saved = json.loads(path.read_text())
+    saved["findings"][0]["check"] = {
+        "status": "upheld", "by": "skeptic", "reason": "r", "model": "claude-haiku-4-5", "duplicate_of": None,
+        "refuted_claims": [], "evidence": [],
+        "guarantees": {"state": "none_found", "reason": f"check: {HOSTILE}", "items": []}, "not_checked": []}
+    path.write_text(json.dumps(saved))
+    _verification_ran(linked_copy)
+    markdown, _, _ = _report(linked_copy)
+    assert "reason: " in markdown and "check: " in markdown
+    _assert_inert(markdown)
+    html = render(markdown)
+    assert html.tags.count("h3") == 1 and "fake heading" in "".join(html.text)
