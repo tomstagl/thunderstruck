@@ -452,3 +452,35 @@ def test_the_readme_links_no_installed_copy_and_no_pinned_branch():
         links = re.findall(r"\]\(([^)\s]*" + re.escape(path) + r"[^)\s]*)\)", README)
         assert links and all(link == path for link in links), (path, links)
     assert not re.search(r"plugins/cache|/\d+\.\d+\.\d+/docs/", README)
+
+
+# --- Task 6: a scan does not read the documents --------------------------------
+
+def _scan(plugin: Path, repo: Path) -> dict[str, bytes]:
+    """Rank and bundle `repo` with the scripts of `plugin`; the bytes of every
+    Markdown file the scan wrote."""
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PLUGIN_ROOT"}
+    for script, extra in (("signals.py", ["--top", "10", "--since", "24m"]), ("bundle.py", [])):
+        proc = subprocess.run(
+            [sys.executable, str(plugin / "scripts" / script), "--repo", str(repo), *extra],
+            capture_output=True, text=True, cwd=str(repo), env=env)
+        assert proc.returncode == 0, proc.stderr
+    out = repo / ".thunderstruck"
+    return {str(p.relative_to(out)): p.read_bytes() for p in sorted(out.rglob("*.md"))}
+
+
+def test_a_scan_writes_the_same_bundles_with_and_without_the_documents(fixture_repo, tmp_path):
+    """Nothing in a scan reads either document (spec section 5): the plugin tree
+    without docs/ and the real tree, with them, bundle one repository identically."""
+    bare = tmp_path / "bare"
+    for part in ("scripts", "catalog"):
+        shutil.copytree(ROOT / part, bare / part, ignore=shutil.ignore_patterns("__pycache__"))
+    assert not (bare / "docs").exists()
+    assert all((ROOT / p).is_file() for p in g.PUBLISHED.values()), "the real tree must hold the documents"
+    runs = []
+    for n, plugin in enumerate((bare, ROOT)):
+        repo = tmp_path / f"repo{n}"
+        shutil.copytree(fixture_repo, repo, symlinks=True, ignore=shutil.ignore_patterns(".thunderstruck"))
+        runs.append(_scan(plugin, repo))
+    assert any(name.startswith("bundles/") for name in runs[0]), sorted(runs[0])
+    assert runs[0] == runs[1]

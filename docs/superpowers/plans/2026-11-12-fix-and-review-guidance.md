@@ -1528,7 +1528,7 @@ git commit -m "README: link the fix instructions and the review briefs (#107)" \
 
 This is a test-only task: the behaviour already holds, so the test passes on its first run, and `.claude/skills/implement-ticket/SKILL.md` step 5 has the commit body say so in place of a red run; step 6's stop for "a test can't fail first" does not apply. Step 3 shows it can fail.
 
-- [ ] **Step 1: Write the test.** Append to `tests/test_fix_guidance.py`:
+- [x] **Step 1: Write the test.** Append to `tests/test_fix_guidance.py`:
 
 ````python
 # --- Task 6: a scan does not read the documents --------------------------------
@@ -1563,12 +1563,12 @@ def test_a_scan_writes_the_same_bundles_with_and_without_the_documents(fixture_r
     assert runs[0] == runs[1]
 ````
 
-- [ ] **Step 2: Run it**
+- [x] **Step 2: Run it**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_fix_guidance.py -q -k scan_writes`
 Expected: PASS.
 
-- [ ] **Step 3: Show it can fail.** Make a scan script read a document, run the test, and restore the script:
+- [x] **Step 3: Show it can fail.** Make a scan script read a document, run the test, and restore the script:
 
 ```bash
 python3 - <<'EOF'
@@ -1587,9 +1587,9 @@ git status --short scripts
 
 Expected: the test FAILS (`runs[0] == runs[1]`), `exit=1`, and `git status --short scripts` prints nothing. If it prints anything, restore with `git checkout -- scripts` before going on: no change under `scripts/` may be committed.
 
-- [ ] **Step 4: Run the full suite** (header command). Expected: `exit=0`.
+- [x] **Step 4: Run the full suite** (header command). Expected: `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/superpowers/plans/2026-11-12-fix-and-review-guidance.md tests/test_fix_guidance.py
