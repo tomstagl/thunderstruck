@@ -854,3 +854,530 @@ def test_a_reference_is_linked_or_labelled_never_bare(ev, linked, fragment):
         assert "not linked" not in line and "](https://h.example/a#L1)" in line
     else:
         assert f"({fragment})" in line and "](" not in line
+
+
+# --- Task 6: the ticket -----------------------------------------------------
+
+HEADINGS = ["Header", "Summary", "Trigger", "Mechanism", "Persistence", "Blast radius",
+            "Implicit guarantees at risk", "Evidence status", "Assumptions and open questions",
+            "Reproduce", "Detection", "Fix options", "Acceptance criteria", "Out of scope",
+            "Rollout and rollback", "Provenance", "Disclaimer"]
+
+
+def run_main(capsys, repo, *args):
+    try:
+        code = ft.main(["--repo", str(repo), *args])
+    except SystemExit as stopped:
+        code = stopped.code
+    out = capsys.readouterr()
+    return code, out.out, out.err
+
+
+def ticket_path(repo, key=KEY):
+    return repo / ".thunderstruck" / "tickets" / f"{key}.md"
+
+
+def made(tmp_path, capsys, *args, finding=None, **report):
+    """A repository, its report, and the ticket made from it."""
+    repo = make_repo(tmp_path)
+    make_report(repo, [finding or make_finding(repo)], **report)
+    code, out, err = run_main(capsys, repo, "--key", KEY, *args)
+    assert code == 0, err
+    return repo, ticket_path(repo).read_text()
+
+
+def section(text, heading):
+    return text.split(f"\n## {heading}\n", 1)[1].split("\n## ", 1)[0]
+
+
+@pytest.mark.parametrize("failure, title", [
+    ("Retries stack", "Retries stack"),
+    ("  two\nlines  and   gaps ", "two lines and gaps"),
+    ("word " * 40, ("word " * 19).rstrip() + " word…"),
+    ("x" * 150, "x" * 100 + "…"),
+    ("", "(no failure mode)"), (None, "(no failure mode)")])
+def test_the_title_is_the_failure_mode_on_one_short_line(failure, title):
+    assert ft.title({"failure_mode": failure}) == title
+    assert len(ft.title({"failure_mode": failure})) <= 101
+
+
+def test_every_section_is_there_in_the_tickets_order(tmp_path, capsys):
+    _, text = made(tmp_path, capsys)
+    assert text.startswith("# Retries stack and one blip becomes a storm\n")
+    assert [l[3:] for l in text.splitlines() if l.startswith("## ")] == HEADINGS
+    assert ft.SECTIONS_HEADINGS == tuple(HEADINGS)
+    assert text.endswith("\n") and not text.endswith("\n\n") and "\r" not in text
+
+
+def test_each_section_comes_from_its_field(tmp_path, capsys):
+    repo, text = made(tmp_path, capsys)
+    header = section(text, "Header")
+    assert "- **Location** — [`src/releases.ts:3-5`](" in header and "`fetchRelease`" in header
+    assert "- **Confidence** — medium (claimed high)" in header
+    assert "- **Check status** — unchecked" in header and "- **Status** — Hypothesis" in header
+    assert f"- **Key** — `{KEY}`" in header and "- **Scan date** — 2025-01-06" in header
+    assert "- **Links** — built from the repository's link settings" in header
+    assert "**Failure mode** — Retries stack and one blip becomes a storm" in section(text, "Summary")
+    assert "**Prediction** — The next incident is a retry storm" in section(text, "Summary")
+    assert "**Trigger** — The upstream answers 503 for more than two seconds" in section(text, "Trigger")
+    assert "**Preconditions** — none: the failure happens on default settings." in section(text, "Trigger")
+    mechanism = section(text, "Mechanism")
+    assert "**Amplifier** — Two layers retry" in mechanism
+    assert mechanism.count("### Step ") == 2 and "What to notice: the loop" in mechanism
+    assert "**Sustaining effect** — Every client waits the same time" in section(text, "Persistence")
+    blast = section(text, "Blast radius")
+    assert "**Summary** — Every release lookup" in blast and "**Traced impact**" in blast
+    assert "**Inferred impact**" in blast and "Lookups wait on the loop" in blast
+    assert "One blip never reaches the caller" in section(text, "Implicit guarantees at risk")
+    assert "**Check** — unchecked." in section(text, "Evidence status")
+    assert "Whether callers retry again — how to check: Read the callers" in section(text, "Assumptions and open questions")
+    assert "**Why this confidence** — Both layers are visible" in section(text, "Assumptions and open questions")
+    assert "**Verify** — Stub a 503 and count the requests" in section(text, "Reproduce")
+    assert "No reproduction is recorded for this finding." in section(text, "Reproduce")
+
+
+def test_a_section_with_no_data_says_not_assessed_and_why(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    f = make_finding(repo)
+    for field in ("amplifier", "sustaining_effect", "prediction"):
+        del f[field]
+    make_report(repo, [f])
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    text = ticket_path(repo).read_text()
+    assert "**Amplifier** — not stated." in section(text, "Mechanism")
+    assert ("Not assessed: the finding states no sustaining effect; it is given only when the code "
+            "shows one.") in section(text, "Persistence")
+    assert "Prediction" not in section(text, "Summary")
+    assert ("Not assessed: a finding records no detection signal (the log line, metric or alert "
+            "that would show the failure).") in section(text, "Detection")
+    for heading in ("Fix options", "Acceptance criteria", "Out of scope", "Rollout and rollback"):
+        assert ("Not assessed: no proposal was drafted for this section; a finding records none and "
+                "the plugin proposes none.") in section(text, heading)
+
+
+def test_a_finding_without_the_impact_fields_reads_not_assessed(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    f = make_finding(repo)
+    for field in ("blast_items", "not_checked", "implicit_guarantees"):
+        del f[field]
+    make_report(repo, [f])
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    text = ticket_path(repo).read_text()
+    sentence = c.IMPACT_SENTENCES["not_assessed"]
+    assert sentence in section(text, "Blast radius")
+    assert sentence in section(text, "Implicit guarantees at risk")
+    assert sentence in section(text, "Assumptions and open questions")
+
+
+def test_a_code_free_finding_has_no_steps_and_says_so(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    f = make_finding(repo, evidence=[{"type": "catalog", "ref": "dependencyOf x", "note": "k", "url": None}],
+                     blast_items=[], implicit_guarantees=[])
+    make_report(repo, [f])
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    assert "Not assessed: the finding cites no code." in section(ticket_path(repo).read_text(), "Mechanism")
+
+
+def test_steps_beyond_the_cap_are_counted_in_the_mechanism(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    evidence = [{"type": "code", "ref": f"src/releases.ts:{n}", "note": str(n), "url": None} for n in range(1, 15)]
+    make_report(repo, [make_finding(repo, evidence=evidence, blast_items=[], implicit_guarantees=[])])
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    mechanism = section(ticket_path(repo).read_text(), "Mechanism")
+    assert mechanism.count("### Step ") == 12
+    assert "2 further code references are listed under Evidence status." in mechanism
+
+
+def test_the_status_flag_is_the_status_and_hypothesis_is_the_default(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    assert "- **Status** — Hypothesis" in ticket_path(repo).read_text()
+    assert run_main(capsys, repo, "--key", KEY, "--status", "fix-proposed")[0] == 0
+    assert "- **Status** — Fix proposed" in ticket_path(repo).read_text()
+
+
+def test_reproduced_is_refused_and_writes_nothing(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    code, out, err = run_main(capsys, repo, "--key", KEY, "--status", "Reproduced")
+    assert code == 2 and "Reproduced refused" in err and "#103" in err and out == ""
+    assert not (repo / ".thunderstruck" / "tickets").exists()
+
+
+def test_a_stop_writes_nothing_and_leaves_an_earlier_ticket_alone(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    before = ticket_path(repo).read_bytes()
+    (repo / "src/releases.ts").write_text("edited\n")
+    code, out, err = run_main(capsys, repo, "--key", KEY)
+    assert code == 2 and "src/releases.ts" in err and "differs from the scanned commit" in err
+    assert "git switch --detach" in err and out == ""
+    assert ticket_path(repo).read_bytes() == before
+    fresh = tmp_path / "fresh"
+    fresh_repo = make_repo(fresh)
+    make_report(fresh_repo)
+    (fresh_repo / "src/api.ts").write_text("edited\n")
+    assert run_main(capsys, fresh_repo, "--key", KEY)[0] == 2
+    assert not (fresh_repo / ".thunderstruck" / "tickets").exists()
+
+
+def test_a_wrong_key_and_a_missing_report_are_named_stops(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    code, _, err = run_main(capsys, repo, "--key", KEY)
+    assert code == 2 and "no report.json" in err
+    make_report(repo)
+    code, _, err = run_main(capsys, repo, "--key", "0" * 12)
+    assert code == 2 and "no finding with key" in err and KEY in err
+    code, _, err = run_main(capsys, repo, "--key", "../../x")
+    assert code == 2 and "12 lowercase hex" in err
+    assert not (repo / ".thunderstruck" / "tickets").exists()
+
+
+def test_the_list_prints_every_finding_and_writes_nothing(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    code, out, _ = run_main(capsys, repo, "--list")
+    assert code == 0 and out.startswith(f"{KEY} · FR-001 · src/releases.ts:3-5 · Retries stack")
+    assert not (repo / ".thunderstruck" / "tickets").exists()
+
+
+def test_exactly_one_of_key_and_list(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    for args in ([], ["--key", KEY, "--list"]):
+        with pytest.raises(SystemExit) as stopped:
+            ft.main(["--repo", str(repo), *args])
+        assert stopped.value.code == 2
+    capsys.readouterr()
+
+
+def test_generating_twice_is_byte_identical_from_anywhere(tmp_path, capsys, monkeypatch):
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    first = ticket_path(repo).read_bytes()
+    monkeypatch.chdir(tmp_path)
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    assert ticket_path(repo).read_bytes() == first
+    other = tmp_path / "copy"
+    import shutil
+    shutil.copytree(repo, other, symlinks=True)
+    rep = json.loads((other / ".thunderstruck" / "report.json").read_text())
+    rep["generated_at"] = "2000-01-01T00:00:00+00:00"          # a rebuild of the same scan
+    rep["repo"]["root"] = str(other)
+    (other / ".thunderstruck" / "report.json").write_text(json.dumps(rep))
+    assert run_main(capsys, other, "--key", KEY)[0] == 0
+    assert ticket_path(other).read_bytes() == first
+
+
+def test_drafted_sections_appear_labelled_and_in_provenance(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    path = repo / ".thunderstruck" / "tickets" / f"{KEY}.sections.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(SECTIONS_OK))
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    text = ticket_path(repo).read_text()
+    label = "**Proposal, not verified** — drafted by a model from this finding. Nothing checked it."
+    fix = section(text, "Fix options")
+    assert label in fix and "- Cap the loop at one attempt." in fix
+    assert "- A 503 is retried at most twice." in section(text, "Acceptance criteria")
+    assert "Not assessed: no proposal was drafted" in section(text, "Out of scope")
+    provenance = section(text, "Provenance")
+    assert "Proposals: Fix options, Acceptance criteria drafted by a model" in provenance
+    assert hashlib.sha256(path.read_bytes()).hexdigest() in provenance
+
+
+def test_a_bad_drafts_file_never_fails_the_ticket(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    path = repo / ".thunderstruck" / "tickets" / f"{KEY}.sections.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({**SECTIONS_OK, "scanned_at": "2020-01-01T00:00:00+00:00"}))
+    code, _, err = run_main(capsys, repo, "--key", KEY)
+    assert code == 0 and err == ""
+    text = ticket_path(repo).read_text()
+    assert ("Not assessed: the draft for this section was not used: it was written for another "
+            "finding or an earlier scan.") in section(text, "Fix options")
+    assert "The drafts file was not used: it was written for another finding or an earlier scan." in section(text, "Provenance")
+    assert "Proposal, not verified" not in text and "Proposals: none drafted." in text
+
+
+def test_the_guidance_is_linked_under_fix_options_and_acceptance_criteria_only(tmp_path, capsys):
+    _, text = made(tmp_path, capsys)
+    line = ft.guidance_line()
+    assert line in section(text, "Fix options") and line in section(text, "Acceptance criteria")
+    assert text.count(line) == 2                        # nowhere else
+
+
+def test_links_come_from_the_report_and_are_stated_once_in_the_header(tmp_path, capsys):
+    repo, text = made(tmp_path, capsys)
+    sha = head_of(repo)
+    assert f"({BASE}/blob/{sha}/src/releases.ts#L3-L5)" in text
+    assert f"({BASE}/blob/{sha}/src/api.ts#L1)" in text
+    assert "(not linked: catalog data has no source location)" in text
+    assert "Links** — not built" not in text
+
+
+def test_without_links_the_ticket_says_why_with_the_reason_the_report_recorded(tmp_path, capsys):
+    reason = "references are not linked: host git.example.com is not recognised; set provider"
+    repo = make_repo(tmp_path)
+    f = make_finding(repo)
+    make_report(repo, [f], links=False, run_warnings=[reason], warnings=[reason])
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    text = ticket_path(repo).read_text()
+    assert "- **Links** — Not built. The report records: references are not linked: host `git.example.com`" in section(text, "Header")
+    assert "](https://github.example.com" not in text.split("## Disclaimer")[0].replace(ft.guidance_line(), "")
+    assert "(not linked: links could not be built (see Header))" in text
+    assert "[`src/releases.ts:3-5`]" not in text and "`src/releases.ts:3-5`" in text
+
+
+def test_a_disabled_link_setting_has_a_reason_too(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    make_report(repo, [make_finding(repo)], links=False)
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    assert "disabled in the repository's link settings (enabled = false)" in ticket_path(repo).read_text()
+
+
+def test_nothing_machine_specific_reaches_the_ticket(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    f = make_finding(repo, failure_mode=f"Fails in {repo}/src/releases.ts and {repo}",
+                     confidence_rationale=f"Read {repo}/src/api.ts")
+    make_report(repo, [f])
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    text = ticket_path(repo).read_text()
+    assert "<repo>/src/releases.ts" in text and "<repo>/src/api.ts" in text
+    for value in (str(repo), str(tmp_path), "alice/feature", "2099-01-01"):
+        assert value not in text, value
+
+
+def test_the_provenance_and_the_disclaimer(tmp_path, capsys):
+    repo, text = made(tmp_path, capsys)
+    provenance = section(text, "Provenance")
+    assert f"- Generated by thunderstruck from a scan of commit `{head_of(repo)}` at `{SCANNED_AT}`." in provenance
+    assert f"- Finding `{KEY}` · hotspot H01 · report schema `thunderstruck.report/v2`." in provenance
+    assert "- Verification did not run for this scan." in provenance
+    assert "- Proposals: none drafted." in provenance
+    disclaimer = section(text, "Disclaimer")
+    assert "hypothesis" in disclaimer and "not a confirmed defect" in disclaimer and "not verified" in disclaimer
+
+
+def test_a_symlinked_output_folder_is_refused(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (repo / ".thunderstruck" / "tickets").symlink_to(outside)
+    code, _, err = run_main(capsys, repo, "--key", KEY)
+    assert code == 2 and "symbolic link" in err and list(outside.iterdir()) == []
+
+
+def test_the_script_runs_as_a_program(tmp_path):
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    proc = subprocess.run([sys.executable, str(ROOT / "scripts" / "finding_ticket.py"), "--repo", str(repo),
+                           "--key", KEY], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip() == (f"ticket for {KEY}: .thunderstruck/tickets/{KEY}.md "
+                                   "(5 sections not assessed, 0 drafted)")
+
+
+def _wide_finding(repo, n=12):
+    return make_finding(repo, location={"file": "src/f0.ts", "lines": "1-40", "url": None},
+                        evidence=[{"type": "code", "ref": f"src/f{k}.ts:1-40", "note": f"step {k}", "url": None}
+                                  for k in range(n)], blast_items=[], implicit_guarantees=[])
+
+
+def _wide_repo(tmp_path, n=12):
+    rows = "".join("w" * 239 + "\n" for _ in range(40))                   # a step of 9,600 characters
+    return make_repo(tmp_path, {f"src/f{k}.ts": rows for k in range(n)})
+
+
+def test_a_ticket_too_long_for_a_tracker_drops_steps_from_the_end_and_says_so(tmp_path, capsys):
+    repo = _wide_repo(tmp_path)
+    make_report(repo, [_wide_finding(repo)])
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    text = ticket_path(repo).read_text(encoding="utf-8")
+    steps = text.count("### Step ")
+    assert len(text.encode("utf-8")) <= ft.MAX_TICKET_BYTES == 60_000 and 1 <= steps < 12
+    assert text.index("What to notice: step 0") < text.index("### Step 2")           # the first steps are the ones kept
+    assert f"What to notice: step {steps}" not in text
+    dropped = 12 - steps
+    assert (f"{dropped} further steps are left out so that the ticket fits a tracker (at most 60,000 "
+            "bytes); the code references are listed under Evidence status.") in section(text, "Mechanism")
+    assert text.count("- _code_ ") == 12                                             # every reference is still listed
+
+
+def test_the_tracker_limit_and_its_margin_are_named_constants():
+    assert ft.TRACKER_BODY_LIMIT == 65_536 and ft.MAX_TICKET_BYTES == ft.TRACKER_BODY_LIMIT - ft.TICKET_MARGIN
+    assert ft.MAX_TICKET_BYTES < ft.TRACKER_BODY_LIMIT
+
+
+def test_a_ticket_that_exactly_fits_keeps_every_step_and_one_over_drops_one(tmp_path, capsys, monkeypatch):
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    full = len(ticket_path(repo).read_bytes())
+    monkeypatch.setattr(ft, "MAX_TICKET_BYTES", full)
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    assert ticket_path(repo).read_text().count("### Step ") == 2
+    monkeypatch.setattr(ft, "MAX_TICKET_BYTES", full - 1)
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    text = ticket_path(repo).read_text()
+    assert text.count("### Step ") == 1 and "1 further step is left out so that the ticket fits" in text
+
+
+def test_a_ticket_too_long_even_without_steps_is_a_named_stop_not_a_cut(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    make_report(repo, [make_finding(repo, failure_mode="word " * 14_000)])
+    code, out, err = run_main(capsys, repo, "--key", KEY)
+    assert code == 2 and "even without a code step" in err and "60,000 bytes" in err and out == ""
+    assert not (repo / ".thunderstruck" / "tickets").exists()
+
+
+def test_the_cap_counts_bytes_so_multibyte_text_drops_steps_a_character_count_would_keep(tmp_path, capsys, monkeypatch):
+    rows = "".join("\u20ac" * 45 + "\U0001d11e" * 45 + "\n" for _ in range(40))    # 3- and 4-byte characters
+    repo = make_repo(tmp_path, {f"src/f{k}.ts": rows for k in range(12)})
+    make_report(repo, [_wide_finding(repo)])
+    with monkeypatch.context() as patch:                              # the whole ticket, with no cap
+        patch.setattr(ft, "MAX_TICKET_BYTES", 10 ** 9)
+        assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    full = ticket_path(repo).read_text(encoding="utf-8")
+    assert len(full) < ft.MAX_TICKET_BYTES < len(full.encode("utf-8"))        # under by characters, over by bytes
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    text = ticket_path(repo).read_text(encoding="utf-8")
+    steps = text.count("### Step ")
+    assert 1 <= steps < 12 and len(text.encode("utf-8")) <= ft.MAX_TICKET_BYTES
+    assert f"{12 - steps} further steps are left out" in section(text, "Mechanism")
+
+
+def test_a_link_planted_at_the_old_temporary_name_is_not_written_through(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    tickets = repo / ".thunderstruck" / "tickets"
+    tickets.mkdir(parents=True)
+    victim = tmp_path / "victim.txt"
+    victim.write_text("keep me")
+    (tickets / f"{KEY}.md.tmp").symlink_to(victim)
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    assert victim.read_text() == "keep me" and ticket_path(repo).is_file()
+
+
+def test_a_link_planted_at_the_temporary_name_is_refused(tmp_path, capsys, monkeypatch):
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    tickets = repo / ".thunderstruck" / "tickets"
+    tickets.mkdir(parents=True)
+    victim = tmp_path / "victim.txt"
+    victim.write_text("keep me")
+    monkeypatch.setattr(ft.secrets, "token_hex", lambda n: "0" * 16)
+    (tickets / f".{KEY}.{'0' * 16}.tmp").symlink_to(victim)
+    code, _, err = run_main(capsys, repo, "--key", KEY)
+    assert code == 2 and "could not create a temporary file" in err
+    assert victim.read_text() == "keep me" and not ticket_path(repo).exists()
+
+
+def test_a_ticket_file_that_is_a_link_is_replaced_and_never_followed(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    tickets = repo / ".thunderstruck" / "tickets"
+    tickets.mkdir(parents=True)
+    victim = tmp_path / "victim.txt"
+    victim.write_text("keep me")
+    ticket_path(repo).symlink_to(victim)
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    assert victim.read_text() == "keep me" and not ticket_path(repo).is_symlink()
+    assert ticket_path(repo).read_text().startswith("# ")
+    assert [p.name for p in tickets.iterdir()] == [f"{KEY}.md"]                       # no temporary file is left
+
+
+MACHINE = ("/home/alice", "alice", "devbox-17.example.com")
+
+
+def _plain(text):
+    """The ticket's words with the escapes and code-span marks of mdtext taken out."""
+    return __import__("re").sub(r"[`\\]", "", text)
+
+
+def test_the_machine_that_ran_the_scan_is_scrubbed_from_every_text(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(ft, "machine_values", lambda: MACHINE)
+    repo = make_repo(tmp_path)
+    f = make_finding(repo, failure_mode="Reads /home/alice/.npmrc as alice on devbox-17.example.com",
+                     confidence_rationale="alice@devbox-17 saw it; the short name devbox-17 is the same host",
+                     how_to_verify="Run it from /home/alice/work/other")
+    make_report(repo, [f])
+    path = ft.sections_path(repo, KEY)
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({**SECTIONS_OK, "sections": {"fix_options": ["Edit /home/alice/.npmrc"]}}))
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    text = _plain(ticket_path(repo).read_text())
+    assert "<home>/.npmrc as <user> on <host>" in text
+    assert "<user>@<host> saw it; the short name <host> is the same host" in text
+    assert "Run it from <home>/work/other" in text and "- Edit <home>/.npmrc" in text
+    for value in ("/home/alice", "alice", "devbox-17"):
+        assert value not in text, value
+
+
+def test_a_path_that_is_the_repositorys_own_content_stays_verbatim(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(ft, "machine_values", lambda: MACHINE)
+    repo = make_repo(tmp_path, {"src/alice/util.ts": "const cache = '/home/alice/build'; // alice\n",
+                                "src/api.ts": "x\n"})
+    f = make_finding(repo, location={"file": "src/alice/util.ts", "lines": "1", "url": None},
+                     evidence=[{"type": "code", "ref": "src/alice/util.ts:1", "note": "alice's cache", "url": None}],
+                     blast_items=[], implicit_guarantees=[])
+    make_report(repo, [f])
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    text = ticket_path(repo).read_text()
+    assert "const cache = '/home/alice/build'; // alice" in text                       # the snippet
+    assert "[`src/alice/util.ts:1`](" in section(text, "Header")                      # the file's own path
+    assert "What to notice: <user>'s cache" in _plain(text)                           # the model's note
+
+
+def test_a_generic_account_name_is_not_a_machine_value(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(ft, "machine_values", lambda: ("/root", "root", "ci"))
+    repo = make_repo(tmp_path)
+    make_report(repo, [make_finding(repo, failure_mode="The root cause is in /root/.cache, run as root")])
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    assert "The root cause is in <home>/.cache, run as root" in _plain(ticket_path(repo).read_text())
+
+
+def test_the_real_machine_values_are_read_from_the_machine():
+    home, user, host = ft.machine_values()
+    assert home == str(Path.home())
+    assert user is None or isinstance(user, str)
+    import socket
+    assert host == socket.gethostname()
+
+
+def test_reproduced_is_refused_before_the_code_is_checked(tmp_path, capsys, monkeypatch):
+    """The refusal comes once the report is read and the key found, and before anything looks at
+    the cited files: only `git rev-parse` has run (to find the repository)."""
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    (repo / "src/releases.ts").write_text("edited\n")              # a stop, if the code were checked
+
+    def checked(*args, **kwargs):
+        raise AssertionError("the code was checked before the status was refused")
+    monkeypatch.setattr(ft, "check_snapshot", checked)
+    monkeypatch.setattr(links, "stale_paths", checked)
+    code, _, err = run_main(capsys, repo, "--key", KEY, "--status", "Reproduced")
+    assert code == 2 and "Reproduced refused" in err and "the code it cites" not in err
+
+
+def test_the_settings_the_failure_needs_appear_under_trigger_each_confirmed_or_unconfirmed(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    needs = {"default_ref": "src/api.ts:1", "documented": "no", "default_url": None, "doc_url": None}
+    preconditions = [
+        {"setting": "API_RETRY_ON_429", "default": "false", "needs": "changed", "value": "true", **needs,
+         "confirmation": c.confirm(None, {"found": "same"})},
+        {"setting": "sync.pageSize", "default": "100", "needs": "default", **needs,
+         "confirmation": c.confirm(None, {"found": "different"})}]
+    make_report(repo, [make_finding(repo, preconditions=preconditions, gate="unconfirmed_default")])
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    trigger = section(ticket_path(repo).read_text(), "Trigger")
+    assert "This failure relies on a doubtful default." in trigger
+    assert "`API_RETRY_ON_429` set to `true`; default `false`" in trigger and "`sync.pageSize` left at its default `100`" in trigger
+    assert "**Confirmed**: a check found this default registered, and it agrees" in trigger
+    assert "**Unconfirmed**: a check found a different default registered" in trigger

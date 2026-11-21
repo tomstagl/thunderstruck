@@ -1886,7 +1886,7 @@ git commit -m "Ticket: links, the guidance documents and the drafted sections (#
 
 This task assembles the sections of §5, calls A's renderers for the impact sections, and gives the script its `main`: lookup, status, snapshot, snippets, drafts, render, atomic write. It also holds the three rules about the whole file: the size cap that drops steps (§7), the scrub of the machine that ran the scan (§11) and the temporary file that is never written through (§11).
 
-- [ ] **Step 1: Write the tests.** Append to `tests/test_finding_ticket.py`:
+- [x] **Step 1: Write the tests.** Append to `tests/test_finding_ticket.py`:
 
 ``````python
 # --- Task 6: the ticket -----------------------------------------------------
@@ -2417,7 +2417,7 @@ def test_the_settings_the_failure_needs_appear_under_trigger_each_confirmed_or_u
 ``````
 
 
-- [ ] **Step 2: Run them.**
+- [x] **Step 2: Run them.**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_finding_ticket.py tests/test_report_links.py -q
@@ -2425,7 +2425,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: FAIL, 41 failed: `AttributeError: module 'finding_ticket' has no attribute 'title'` (and `main`, `SECTIONS_HEADINGS`, `machine_values`).
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 Append to `scripts/finding_ticket.py` (it is the last block of the file):
 
@@ -2719,7 +2719,7 @@ if __name__ == "__main__":
 ``````
 
 
-- [ ] **Step 4: Run the task's tests, then the full suite.** First:
+- [x] **Step 4: Run the task's tests, then the full suite.** First:
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_finding_ticket.py tests/test_report_links.py -q
@@ -2727,7 +2727,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Then the full suite (command in the header). Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/finding_ticket.py tests/test_finding_ticket.py
