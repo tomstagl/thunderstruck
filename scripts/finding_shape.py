@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-FINDING_SCHEMA_VERSION = "thunderstruck.finding/v2"
+FINDING_SCHEMA_VERSION = "thunderstruck.finding/v3"
 
 # "path:42" or "path:42-118"; anything else stays a bare path
 _PATH_LINES = re.compile(r"^(?P<file>.+?):(?P<lines>[0-9]+(?:-[0-9]+)?)\Z")

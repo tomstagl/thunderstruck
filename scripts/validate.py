@@ -48,9 +48,11 @@ EVIDENCE_TYPES = {"code", "commit", "detector", "catalog"}
 
 REQUIRED_FIELDS = [
     "location", "missing_patterns", "failure_mode", "trigger_condition",
-    "blast_radius", "evidence", "preconditions",
+    "blast_radius", "blast_items", "evidence", "preconditions", "not_checked",
     "confidence", "confidence_rationale", "how_to_verify",
 ]
+# May be [], but the key must be present, whatever it holds
+LIST_MAY_BE_EMPTY = ("preconditions", "not_checked")
 # Present or absent; never an empty string (#56 AC-6)
 OPTIONAL_TEXT = ("amplifier", "sustaining_effect")
 # The keys an investigator may write, plus "confirmation", which validate.py
@@ -127,6 +129,9 @@ class Validator:
         self.langmap = c.language_map(catalog)
         self.extra_fix = tuple(extra_fix)
         self.valid_ids = c.catalog_ids(catalog)
+        # pattern id -> lock | retry | cache, from the catalog's `fix_touches`
+        self.fix_touches = {pid: p["fix_touches"] for pid, p in catalog["_by_id"].items()
+                            if isinstance(p, dict) and p.get("fix_touches") in c.FIX_TOUCHES}
         self.detector_refs: set[str] = set()
         for hs in hotspots.get("hotspots", []) + (hotspots.get("dormant") or []):
             for hit in hs.get("detector_hits", []):
@@ -441,6 +446,115 @@ class Validator:
             elif p.get("doc_ref") is not None:
                 errors.append(f'{pw}.doc_ref is only given when documented is "yes"')
 
+    # ---------------------------------------- impact: guarantees, blast, not checked
+
+    @staticmethod
+    def _evidence_indexes(idx: Any, where: str, errors: list[str], evidence: list | None,
+                          types: list | None, allowed: tuple[str, ...], why: str) -> None:
+        """`idx` must be a non-empty list of positions in the finding's evidence list,
+        each of a type in `allowed`. Refs live in `evidence`, where they are resolved;
+        these fields only point at them, so no ref is resolved by a second path."""
+        if not isinstance(idx, list) or not idx:
+            errors.append(f"{where}.evidence must be a non-empty list of positions in the "
+                          f"finding's evidence list (counting from 0); got {shown(idx)}")
+            return
+        if evidence is None or types is None:
+            return  # the evidence list itself is invalid and already reported
+        for n, k in enumerate(idx):
+            if isinstance(k, bool) or not isinstance(k, int) or not 0 <= k < len(evidence):
+                errors.append(f"{where}.evidence[{n}] is {shown(k)}, which is not a position in "
+                              f"the finding's {len(evidence)} evidence items (counting from 0)")
+            elif types[k] is not None and types[k] not in allowed:
+                errors.append(f"{where}.evidence[{n}] points at evidence[{k}], which is "
+                              f"{types[k]!r} evidence; {why}")
+
+    @staticmethod
+    def _items(f: dict, key: str, where: str, errors: list[str], cap: int,
+               keys: tuple[str, ...], texts: tuple[str, ...]) -> list[tuple[int, dict]]:
+        """The well-formed object items of f[key]: a list of at most `cap` objects with
+        exactly `keys`, each of `texts` a non-empty string. Problems are reported."""
+        items = f.get(key)
+        if items is None:
+            return []
+        if not isinstance(items, list):
+            errors.append(f"{where}.{key} must be a list; got {shown(items)}")
+            return []
+        if len(items) > cap:
+            errors.append(f"{where}.{key} has {len(items)} items; the maximum is {cap}. Keep "
+                          f"the ones that matter most.")
+        out = []
+        for j, item in enumerate(items[:cap]):
+            iw = f"{where}.{key}[{j}]"
+            if not isinstance(item, dict):
+                errors.append(f"{iw} is not an object: got {shown(item)}; its keys are {list(keys)}")
+                continue
+            unknown = sorted(set(item) - set(keys))
+            if unknown:
+                errors.append(f"{iw} has unknown key(s) {unknown}; the keys are {list(keys)}")
+            bad = [t for t in texts if not isinstance(item.get(t), str) or not item[t].strip()]
+            for t in bad:
+                errors.append(f"{iw}.{t} must be a non-empty string; got {shown(item.get(t))}")
+            if not bad and not unknown:
+                out.append((j, item))
+        return out
+
+    def check_impact(self, f: dict, where: str, errors: list[str],
+                     evidence: list | None, types: list | None) -> None:
+        """implicit_guarantees, no_guarantees_reason, blast_items and not_checked.
+        `evidence` and `types` are None when the evidence list is itself invalid."""
+        # --- what a fix would remove
+        for j, item in self._items(f, "implicit_guarantees", where, errors, c.MAX_GUARANTEES,
+                                   c.GUARANTEE_KEYS, ("guarantee", "removed_by")):
+            self._evidence_indexes(
+                item.get("evidence"), f"{where}.implicit_guarantees[{j}]", errors, evidence, types,
+                ("code",), "a guarantee is shown by the code that provides it; cite that code as "
+                           "`code` evidence and point at it")
+        reason = f.get("no_guarantees_reason")
+        stated = isinstance(f.get("implicit_guarantees"), list) and bool(f["implicit_guarantees"])
+        if reason is not None and (not isinstance(reason, str) or not reason.strip()):
+            errors.append(f"{where}.no_guarantees_reason must be a non-empty string when present; "
+                          f"leave it out otherwise (got {shown(reason)})")
+        elif reason is not None and stated:
+            errors.append(f"{where}.no_guarantees_reason is given beside implicit_guarantees; "
+                          f"state guarantees or say you found none, not both")
+        pats = f.get("missing_patterns")
+        touched = {p: self.fix_touches[p] for p in (pats if isinstance(pats, list) else [])
+                   if isinstance(p, str) and p in self.fix_touches}
+        if touched and not stated and not (isinstance(reason, str) and reason.strip()):
+            named = ", ".join(f"{p} ({kind})" for p, kind in touched.items())
+            errors.append(f"{where}: missing_patterns includes {named}, where a fix changes a "
+                          f"lock, retry or cache. State what the current code guarantees by "
+                          f"accident in implicit_guarantees, or say you found none and why in "
+                          f"no_guarantees_reason")
+        # --- what was traced, what was inferred
+        if isinstance(f.get("blast_items"), list) and not f["blast_items"]:
+            errors.append(f"{where}.blast_items must be a non-empty list; a blast radius you "
+                          f"could not trace is one item with basis \"assumption\"")
+        for j, item in self._items(f, "blast_items", where, errors, c.MAX_BLAST_ITEMS,
+                                   c.BLAST_KEYS, ("claim",)):
+            iw, basis = f"{where}.blast_items[{j}]", item.get("basis")
+            if basis not in c.BLAST_BASES:
+                errors.append(f"{iw}.basis {basis!r} is not one of {list(c.BLAST_BASES)}: "
+                              f"traced = it cites the code you followed to reach it; catalog = it "
+                              f"rests on a catalog edge; assumption = neither")
+            elif basis == "assumption":
+                if item.get("evidence"):
+                    errors.append(f'{iw}.evidence is only given when basis is "traced" or '
+                                  f'"catalog"; an assumption rests on nothing')
+            elif basis == "traced":
+                self._evidence_indexes(
+                    item.get("evidence"), iw, errors, evidence, types, ("code",),
+                    'a traced item cites the code you followed to reach it. An item that rests on '
+                    'a catalog edge has basis "catalog"')
+            else:
+                self._evidence_indexes(
+                    item.get("evidence"), iw, errors, evidence, types, ("catalog",),
+                    'a catalog item rests on a catalog edge. An item that cites code has '
+                    'basis "traced"')
+        # --- what was not checked
+        self._items(f, "not_checked", where, errors, c.MAX_NOT_CHECKED, c.NOT_CHECKED_KEYS,
+                    c.NOT_CHECKED_KEYS)
+
     def _written(self, evidence: list) -> set[str]:
         """Full SHAs that wrote any line of any cited code range (git blame)."""
         out: set[str] = set()
@@ -497,7 +611,7 @@ class Validator:
             if key not in f:
                 errors.append(f"{where}.{key} is missing"
                               + (" (it may be [], but the key must be present)"
-                                 if key == "preconditions" else ""))
+                                 if key in LIST_MAY_BE_EMPTY else ""))
 
         loc = f.get("location")
         if not isinstance(loc, dict) or not loc.get("file"):
@@ -559,9 +673,11 @@ class Validator:
             errors.append(f"{where}.evidence must be a non-empty list of "
                           f'{{"type", "ref", "note"}} objects'
                           + (f"; got {shown(evidence)}" if "evidence" in f else ""))
+            self.check_impact(f, where, errors, None, None)
             return
         types = [self.check_evidence(ev, f"{where}.evidence[{i}]", errors)
                  for i, ev in enumerate(evidence)]
+        self.check_impact(f, where, errors, evidence, types)
         touching = self.check_commits_touch(f, evidence, types, where, errors)
         if "code" not in types:
             errors.append(

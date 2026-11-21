@@ -418,6 +418,10 @@ def _history(f: dict) -> list[dict]:
     return [h for h in (f.get("history") or []) if isinstance(h, dict)]
 
 
+def _dicts(value) -> list[dict]:
+    return [i for i in value if isinstance(i, dict)] if isinstance(value, list) else []
+
+
 def order_key(f: dict) -> tuple:
     """Default-path findings first (#56 AC-5); inside a gate, today's order."""
     return (c.GATES.index(f.get("gate", "none")) if f.get("gate", "none") in c.GATES else len(c.GATES),
@@ -801,6 +805,113 @@ def render_history(f: dict) -> list[str]:
     return L + [""]
 
 
+def _cited(evidence: list[dict], idx, sep: str) -> str:
+    """The refs at these positions of an evidence list, linked by the tool."""
+    out = []
+    for i in idx if isinstance(idx, list) else []:
+        if isinstance(i, int) and not isinstance(i, bool) and 0 <= i < len(evidence):
+            out.append(_linked(str(evidence[i].get("ref")), evidence[i].get("url")))
+    return sep.join(out)
+
+
+def render_impact(f: dict) -> list[str]:
+    """Blast radius split into what was traced and what was inferred (#105 AC-3)."""
+    if "blast_items" not in f:
+        return [f"**Traced and inferred impact** — {c.IMPACT_SENTENCES['not_assessed']}.", ""]
+    evidence = _evidence(f)
+    items = _dicts(f.get("blast_items"))
+    L: list[str] = []
+    for heading, key, group in (
+            ("Traced impact", "traced", [i for i in items if i.get("basis") == "traced"]),
+            ("Inferred impact", "inferred", [i for i in items if i.get("basis") != "traced"])):
+        if not group:
+            L += [f"**{heading}** — {c.IMPACT_SENTENCES[key + '_none']}.", ""]
+            continue
+        L += [f"**{heading}** — {c.IMPACT_SENTENCES[key]}.", ""]
+        for item in group:
+            line = md.text(item.get("claim"))
+            if item.get("basis") == "traced":
+                line += f" — cites: {_cited(evidence, item.get('evidence'), ', ')}"
+            elif item.get("basis") == "catalog":
+                line += f" — rests on the catalog: {_cited(evidence, item.get('evidence'), '; ')}"
+            else:
+                line += " — an assumption"
+            L.append(f"- {line}")
+        L.append("")
+    return L
+
+
+def render_guarantees(f: dict) -> list[str]:
+    """What a fix would remove, as the investigator stated it. Only what a check
+    confirmed is shown as confirmed (#105 AC-1, AC-5, AC-6)."""
+    state = c.guarantee_state(f)
+    mine = f["check"].get("guarantees") if isinstance(f["check"].get("guarantees"), dict) else {}
+    if state in ("not_assessed", "not_stated"):
+        sentence = c.IMPACT_SENTENCES["not_assessed" if state == "not_assessed" else "guarantees_not_stated"]
+        return [f"**Implicit guarantees** — {sentence}.", "", *_check_guarantee_lines(f, mine)]
+    named = mine.get("state") == "named"
+    unverified = "" if mine else f" {c.IMPACT_SENTENCES['unverified']}"
+    if state == "none_found":
+        return [f"**Implicit guarantees** — {c.IMPACT_SENTENCES['guarantees_none']}: "
+                f"{md.text(f.get('no_guarantees_reason'))}{unverified}", "",
+                *_check_guarantee_lines(f, mine)]
+    confirmed = {g.get("of"): g for g in _dicts(mine.get("items")) if isinstance(g.get("of"), int)}
+    evidence, check_evidence = _evidence(f), _check_evidence(f["check"])
+    L = [f"**Implicit guarantees** — {c.IMPACT_SENTENCES['guarantees']}."
+         + ("" if named else f" {c.IMPACT_SENTENCES['unverified']}"), ""]
+    for n, g in enumerate(_dicts(f.get("implicit_guarantees"))):
+        line = (f"{md.text(g.get('guarantee'))} — provided by {_cited(evidence, g.get('evidence'), ', ')}"
+                f" — removed by: {md.text(g.get('removed_by'))}")
+        if named:
+            seen = confirmed.get(n)
+            line += (f" — confirmed by the check: {_cited(check_evidence, seen.get('evidence'), '; ')}"
+                     if seen else " — not confirmed by the check")
+        L.append(f"- {line}")
+    return L + ["", *_check_guarantee_lines(f, mine)]
+
+
+def _check_guarantee_lines(f: dict, mine: dict) -> list[str]:
+    """What the check said beyond confirming the investigator's guarantees."""
+    if not mine:
+        return []
+    state = mine.get("state")
+    if state == "none_found":
+        return [f"The check found none: {md.text(mine.get('reason'))}", ""]
+    if state != "named":
+        return [md.text(mine.get("reason")), ""]
+    added = [g for g in _dicts(mine.get("items")) if g.get("of") is None]
+    if not added:
+        return []
+    check_evidence = _check_evidence(f["check"])
+    return ["Added by the check:", "",
+            *[f"- {md.text(g.get('guarantee'))} — removed by: {md.text(g.get('removed_by'))} — "
+              f"evidence: {_cited(check_evidence, g.get('evidence'), '; ')}" for g in added], ""]
+
+
+def render_not_checked(f: dict) -> list[str]:
+    """Every item the investigator listed, each open, resolved or unresolved. None
+    is dropped (#105 AC-4, AC-5)."""
+    if "not_checked" not in f:
+        return [f"**Not checked** — {c.IMPACT_SENTENCES['not_assessed']}.", ""]
+    items = _dicts(f.get("not_checked"))
+    if not items:
+        return [f"**Not checked** — {c.IMPACT_SENTENCES['not_checked_none']}.", ""]
+    entries = {e["item"]: e for e in _dicts(f["check"].get("not_checked")) if isinstance(e.get("item"), int)}
+    check_evidence = _check_evidence(f["check"])
+    L = [f"**Not checked** — {c.IMPACT_SENTENCES['not_checked']}.", ""]
+    for n, (item, state) in enumerate(zip(items, c.not_checked_states(f))):
+        line = f"{md.text(item.get('item'))} — how to check: {md.text(item.get('how_to_check'))}"
+        entry = entries.get(n) or {}
+        if state == "open":
+            line += " — open: no check has looked at it"
+        else:
+            refs = _cited(check_evidence, entry.get("evidence"), "; ")
+            line += (f" — {'resolved by a check' if state == 'resolved' else 'still open after a check'}: "
+                     f"{md.text(entry.get('note'))}" + (f" — evidence: {refs}" if refs else ""))
+        L.append(f"- {line}")
+    return L + [""]
+
+
 def render_dormant(data: dict) -> list[str]:
     """Untouched files that carry integration-point leads (#19 AC-7)."""
     rows = data["hotspots"].get("dormant") or []
@@ -1108,7 +1219,8 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
             for ev in f.get("evidence") or []:
                 note = f" — {md.text(ev['note'])}" if ev.get("note") else ""
                 L.append(f"- _{md.text(ev.get('type'))}_ {_evidence_ref(ev)}{note}")
-            L += ["", *render_check(f), *render_preconditions(f), *render_history(f),
+            L += ["", *render_check(f), *render_impact(f), *render_guarantees(f),
+                  *render_not_checked(f), *render_preconditions(f), *render_history(f),
                   f"**Verify** — {md.text(f.get('how_to_verify', '—'))}  ",
                   f"**Why this confidence** — {md.text(f.get('confidence_rationale', '—'))}  "]
             if f.get("prediction"):
@@ -1185,6 +1297,13 @@ def defaults_counts(findings: list[dict]) -> dict:
             "basis": basis}
 
 
+def not_checked_counts(findings: list[dict]) -> dict[str, int]:
+    """Items listed on the reported findings, and where each stands (#105 §6.2)."""
+    states = [s for f in findings for s in c.not_checked_states(f)]
+    return {"listed": len(states), "resolved": states.count("resolved"),
+            "unresolved": states.count("unresolved"), "open": states.count("open")}
+
+
 def render_json(data: dict) -> dict:
     hs = data["hotspots"]
     cited_by = clean_cited_by(data["findings"])
@@ -1208,6 +1327,7 @@ def render_json(data: dict) -> dict:
             "duplicates_merged": data["duplicates_merged"],
             "gate": {g: sum(1 for f in data["findings"] if f["gate"] == g) for g in c.GATES},
             "defaults": defaults_counts(data["findings"]),
+            "not_checked": not_checked_counts(data["findings"]),
         },
         "warnings": list(hs.get("warnings") or []) + list(data.get("link_warnings") or []),
         "run_warnings": run_warnings(data),
@@ -1270,6 +1390,14 @@ def render_index(data: dict) -> dict:
             "history": [{k: h.get(k) for k in ("sha", "class", "wrote_cited_line")}
                         for h in _history(f)],
         }
+        guarantees = [{k: g.get(k) for k in ("guarantee", "removed_by")}
+                      for g in _dicts(f.get("implicit_guarantees"))]
+        if guarantees:
+            item["implicit_guarantees"] = guarantees
+        open_items = [i.get("item") for i, s in zip(_dicts(f.get("not_checked")), c.not_checked_states(f))
+                      if s != "resolved"]
+        if open_items:
+            item["not_checked"] = open_items
         if f["check"]["status"] == "narrowed" and f["check"].get("holds"):
             item["holds"] = f["check"]["holds"]
         if f.get("sustaining_effect"):

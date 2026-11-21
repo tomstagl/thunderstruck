@@ -105,7 +105,7 @@ No commit: this task changes nothing.
 **Interfaces:**
 - Produces, in `_common`: `FIX_TOUCHES`, `GUARANTEE_KEYS`, `BLAST_BASES`, `BLAST_KEYS`, `NOT_CHECKED_KEYS`, `RESOLUTION_STATES`, `MAX_GUARANTEES`, `MAX_BLAST_ITEMS`, `MAX_NOT_CHECKED`, `NOT_ADDRESSED`, `IMPACT_SENTENCES: dict[str, str]`; `guarantee_state(finding) -> str`; `not_checked_states(finding) -> list[str]`.
 
-- [ ] **Step 1: Write the failing tests.** Create `tests/test_fix_impact.py`:
+- [x] **Step 1: Write the failing tests.** Create `tests/test_fix_impact.py`:
 
 ````python
 """#105: what a fix would remove, what was traced and what was inferred, what was
@@ -175,12 +175,12 @@ def test_not_checked_states_keep_every_item(finding, states):
     assert c.not_checked_states(finding) == states
 ````
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_fix_impact.py -q`
 Expected: FAIL, 18 failed: `AttributeError: module '_common' has no attribute 'FIX_TOUCHES'` (and `guarantee_state`, `not_checked_states`), and `assert {} == {'S02': 'retry', …}` for the catalog.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 ````diff
 --- a/scripts/_common.py
@@ -306,9 +306,9 @@ Expected: FAIL, 18 failed: `AttributeError: module '_common' has no attribute 'F
        A lock held across a slow call, or a wait with no bound, lets one
 ````
 
-- [ ] **Step 4: Run the tests to verify they pass** (Step 2's command), then the full suite (header). Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests to verify they pass** (Step 2's command), then the full suite (header). Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/_common.py catalog/stability.yaml tests/test_fix_impact.py
@@ -331,7 +331,7 @@ This task and Task 3 are one change in two commits so that each stays green: the
 **Interfaces:**
 - Consumes: `c.FIX_TOUCHES` (Task 1).
 
-- [ ] **Step 1: Update the test data to the new contract.** Every finding a test builds by hand gains `blast_items` (at least one) and `not_checked`, and, where it uses a gated pattern (`S02`), `implicit_guarantees` or `no_guarantees_reason`. Find the builders with `grep -n '"how_to_verify"' tests/*.py`; the hits to change are exactly these (the others are field-name lists):
+- [x] **Step 1: Update the test data to the new contract.** Every finding a test builds by hand gains `blast_items` (at least one) and `not_checked`, and, where it uses a gated pattern (`S02`), `implicit_guarantees` or `no_guarantees_reason`. Find the builders with `grep -n '"how_to_verify"' tests/*.py`; the hits to change are exactly these (the others are field-name lists):
 
 ````diff
 --- a/tests/test_pipeline.py
@@ -405,7 +405,7 @@ This task and Task 3 are one change in two commits so that each stays green: the
 
 Run the full suite now (header): it passes, because nothing requires the new keys yet.
 
-- [ ] **Step 2: Write the failing tests.** Append to `tests/test_fix_impact.py`:
+- [x] **Step 2: Write the failing tests.** Append to `tests/test_fix_impact.py`:
 
 ````python
 # --- Task 2 -----------------------------------------------------------------
@@ -450,12 +450,12 @@ def test_the_prompt_example_has_a_traced_item_citing_two_lines():
         "a single cited line would read as a traced path"
 ````
 
-- [ ] **Step 3: Run them to verify they fail**
+- [x] **Step 3: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_fix_impact.py -q`
 Expected: FAIL, 4 failed (counts at the time of writing): `assert ('all twelve required keys' in …` for the investigator prompt and again for the scan skill's repair text, `assert set() == {'S02', 'S03', …}` for the catalog brief, and `KeyError: 'blast_items'` for the prompt example.
 
-- [ ] **Step 4: Write the implementation.** In `scripts/gen_sample_report.py` the canned findings gain what rules 5 will require. Evidence positions are written by name and resolved when the finding is built (`"code"` is the cited line, `"also:N"` the N-th `also_cite` item, `"catalog:N"` the N-th catalog edge):
+- [x] **Step 4: Write the implementation.** In `scripts/gen_sample_report.py` the canned findings gain what rules 5 will require. Evidence positions are written by name and resolved when the finding is built (`"code"` is the cited line, `"also:N"` the N-th `also_cite` item, `"catalog:N"` the N-th catalog edge):
 
 ````diff
 --- a/scripts/gen_sample_report.py
@@ -732,9 +732,9 @@ The scan skill's repair text:
  > exactly as the bundle shows them — relative to the repository root, no `./`,
 ````
 
-- [ ] **Step 5: Run the tests to verify they pass.** Step 3's command, then `tests/test_investigator_contract.py tests/test_validate_paths.py tests/test_pipeline.py tests/test_checked_confidence.py` with the same `--with` set as the full suite, then the full suite (header). Expected: PASS, `exit=0`.
+- [x] **Step 5: Run the tests to verify they pass.** Step 3's command, then `tests/test_investigator_contract.py tests/test_validate_paths.py tests/test_pipeline.py tests/test_checked_confidence.py` with the same `--with` set as the full suite, then the full suite (header). Expected: PASS, `exit=0`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/gen_sample_report.py scripts/bundle.py agents/thunderstruck-investigator.md skills/thunderstruck-scan/SKILL.md tests/
@@ -756,7 +756,7 @@ git commit -m "Investigator: say what a fix would remove, trace or infer impact,
 - Consumes: `c.FIX_TOUCHES`, `c.GUARANTEE_KEYS`, `c.BLAST_BASES`, `c.BLAST_KEYS`, `c.NOT_CHECKED_KEYS`, the `MAX_*` caps (Task 1).
 - Produces: `validate.LIST_MAY_BE_EMPTY`; `Validator.fix_touches: dict[str, str]`; `Validator.check_impact(f, where, errors, evidence, types) -> None`.
 
-- [ ] **Step 1: Update the two pinned tests.** `test_validation_writes_check_and_history` pins `VALIDATION_RULES == 4` and `test_the_capture_hook_strips_what_a_model_must_not_set` pins `finding/v2`:
+- [x] **Step 1: Update the two pinned tests.** `test_validation_writes_check_and_history` pins `VALIDATION_RULES == 4` and `test_the_capture_hook_strips_what_a_model_must_not_set` pins `finding/v2`:
 
 ````diff
 --- a/tests/test_checked_confidence.py
@@ -779,7 +779,7 @@ git commit -m "Investigator: say what a fix would remove, trace or infer impact,
 
 Both fail until Step 4 (`assert 4 == 5`, and `'thunderstruck.finding/v2' == 'thunderstruck.finding/v3'`) and nothing else does.
 
-- [ ] **Step 2: Write the failing tests.** Append to `tests/test_fix_impact.py`:
+- [x] **Step 2: Write the failing tests.** Append to `tests/test_fix_impact.py`:
 
 ````python
 # --- Task 3 -----------------------------------------------------------------
@@ -993,12 +993,12 @@ def test_the_validator_requires_the_keys_the_prompt_names():
     assert len(REQUIRED_FIELDS) == 12 and all(f"`{key}`" in flat for key in REQUIRED_FIELDS)
 ````
 
-- [ ] **Step 3: Run them to verify they fail**
+- [x] **Step 3: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_fix_impact.py -q`
 Expected: FAIL, 44 failed: the rule tests fail with `AssertionError: []` or `assert False` because `validate.py` reports nothing for the new keys; `AttributeError: 'Validator' object has no attribute 'check_impact'` for the investigator example; `assert (10 == 12)` for the key count; `assert 4 == 5` and `assert 'thunderstruck.finding/v2' == 'thunderstruck.finding/v3'` for the two pinned tests.
 
-- [ ] **Step 4: Write the implementation.**
+- [x] **Step 4: Write the implementation.**
 
 ````diff
 --- a/scripts/validate.py
@@ -1179,12 +1179,12 @@ Expected: FAIL, 44 failed: the rule tests fail with `AssertionError: []` or `ass
  # "path:42" or "path:42-118"; anything else stays a bare path
 ````
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: Step 3's command with `tests/test_validate_paths.py tests/test_investigator_contract.py tests/test_pipeline.py tests/test_checked_confidence.py` added.
 Expected: PASS. Then the full suite (header); expected `exit=0`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/validate.py scripts/_common.py scripts/finding_shape.py tests/
@@ -1205,7 +1205,7 @@ git commit -m "Validator: guarantees, traced and inferred impact, not-checked it
 **Interfaces:**
 - Produces: `bundle.source_lines(path) -> list[str]`; `bundle._clip_lines(rows, token_budget) -> str`; `benchmark._numbered_ranges(body) -> list[tuple[int, int]] | None`.
 
-- [ ] **Step 1: Update the one renderer-coupled test.** `test_bundle_parser_matches_what_bundle_py_renders` renders `section_source` and parses the body with a regex that cannot survive numbering. It is not a baseline test (it reads no frozen file); the baseline tests (`test_today_bundles_baseline`, the labels, verdicts and runs) are not touched:
+- [x] **Step 1: Update the one renderer-coupled test.** `test_bundle_parser_matches_what_bundle_py_renders` renders `section_source` and parses the body with a regex that cannot survive numbering. It is not a baseline test (it reads no frozen file); the baseline tests (`test_today_bundles_baseline`, the labels, verdicts and runs) are not touched:
 
 ````diff
 --- a/tests/test_benchmark.py
@@ -1223,7 +1223,7 @@ git commit -m "Validator: guarantees, traced and inferred impact, not-checked it
  
 ````
 
-- [ ] **Step 2: Write the failing tests.** Append to `tests/test_fix_impact.py`:
+- [x] **Step 2: Write the failing tests.** Append to `tests/test_fix_impact.py`:
 
 ````python
 # --- Task 4 -----------------------------------------------------------------
@@ -1413,12 +1413,12 @@ def test_every_bundle_of_the_fixture_numbers_its_source(scanned_repo):
         assert re.search(r"```\w*\n *\d+ \| ", path.read_text()), path.name
 ````
 
-- [ ] **Step 3: Run them to verify they fail**
+- [x] **Step 3: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_fix_impact.py tests/test_benchmark.py -q`
 Expected: FAIL, 51 failed: the rows are not numbered (`AssertionError: x_0001 = 1`, `x_0085 = 85`), `bundle.source_lines` does not exist, the note-range cases cannot find a numbered block, and the updated benchmark test fails the same way (`assert {1, 2, 3, …} == set()`).
 
-- [ ] **Step 4: Write the implementation.**
+- [x] **Step 4: Write the implementation.**
 
 ````diff
 --- a/scripts/bundle.py
@@ -1583,9 +1583,9 @@ The investigator's instructions say what the numbers are:
  to **9** additional files with Read/Grep/Glob to confirm or reject a lead;
 ````
 
-- [ ] **Step 5: Run the tests to verify they pass.** Run Step 3's command, then `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_pipeline.py tests/test_benchmark.py tests/test_benchmark_second_set.py -q` (the budget and determinism test and every baseline), then the full suite (header). Expected: PASS, `exit=0`. Then check no baseline input moved: `git diff --stat origin/main -- docs/calibration` prints nothing.
+- [x] **Step 5: Run the tests to verify they pass.** Run Step 3's command, then `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_pipeline.py tests/test_benchmark.py tests/test_benchmark_second_set.py -q` (the budget and determinism test and every baseline), then the full suite (header). Expected: PASS, `exit=0`. Then check no baseline input moved: `git diff --stat origin/main -- docs/calibration` prints nothing.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/bundle.py scripts/benchmark.py agents/thunderstruck-investigator.md tests/test_benchmark.py tests/test_fix_impact.py
@@ -1608,7 +1608,7 @@ This is where the change meets #102 (§5.5): the new verdict keys go before `con
 - Consumes: `c.RESOLUTION_STATES`, `c.NOT_ADDRESSED` (Task 1); `Resolver.evidence` (unchanged).
 - Produces: `verify.VERDICT_GUARANTEE_KEYS`, `verify.VERDICT_NOT_CHECKED_KEYS`; `verify.settle_guarantees(finding, result, resolved, ignored) -> dict`; `verify.settle_not_checked(finding, result, resolved, ignored) -> list[dict]`; `check.guarantees` and `check.not_checked` as in the spec's §16.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_fix_impact.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_fix_impact.py`:
 
 ````python
 # --- Task 5 -----------------------------------------------------------------
@@ -1893,12 +1893,12 @@ def test_the_skeptic_shares_its_read_budget_and_unresolved_items_do_not_force_in
     assert "You never reword the investigator's" in flat
 ````
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_fix_impact.py -q`
 Expected: FAIL, 40 failed: `AttributeError: module 'verify' has no attribute 'settle_guarantees'` (and `settle_not_checked`) for the pure cases; `AssertionError: assert 'unchecked' == 'upheld'` for the end-to-end verdicts (today's contract calls the three new keys unknown); `KeyError: 'guarantees'`; the prompt tests on the missing section; the quote test on the missing item branch; and the two #102 coexistence tests (the brief has no impact blocks before `## Defaults to confirm`; a finding #102's rule demotes has no `check.guarantees`).
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 ````diff
 --- a/scripts/verify.py
@@ -2205,9 +2205,9 @@ The sample generator's canned verdicts show every state (a confirmed guarantee w
                            "reason": "Whether batchSync and userLookup run in one process depends on "
 ````
 
-- [ ] **Step 4: Run the tests to verify they pass.** Run Step 2's command, then `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_verification.py tests/test_skeptic_contract.py tests/test_confirmed_defaults.py -q` (the brief, contract, reuse and #102's tests), then the full suite (header). Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests to verify they pass.** Run Step 2's command, then `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_verification.py tests/test_skeptic_contract.py tests/test_confirmed_defaults.py -q` (the brief, contract, reuse and #102's tests), then the full suite (header). Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/verify.py agents/thunderstruck-skeptic.md scripts/gen_sample_report.py tests/test_fix_impact.py
@@ -2228,7 +2228,7 @@ The three blocks go after **Check** and before **Preconditions**, which is where
 - Consumes: `c.IMPACT_SENTENCES`, `c.guarantee_state`, `c.not_checked_states` (Task 1); `check.guarantees`, `check.not_checked` (Task 5).
 - Produces: `report.render_impact(f)`, `report.render_guarantees(f)`, `report.render_not_checked(f)` (each returns lines); `report.not_checked_counts(findings)`; `report.json` `counts.not_checked`; `index.json` `implicit_guarantees` and `not_checked`.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_fix_impact.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_fix_impact.py`:
 
 ````python
 # --- Task 6 -----------------------------------------------------------------
@@ -2460,12 +2460,12 @@ def test_hostile_none_found_reasons_stay_inert(linked_copy, plugin_root):
     assert html.tags.count("h3") == 1 and "fake heading" in "".join(html.text)
 ````
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_fix_impact.py -q`
 Expected: FAIL, 12 failed: `AttributeError: module 'report' has no attribute 'render_guarantees'` for the direct renderer cases; `IndexError: list index out of range` and `AssertionError` for the end-to-end ones, which find no impact block in `report.md`.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 ````diff
 --- a/scripts/report.py
@@ -2632,9 +2632,9 @@ Expected: FAIL, 12 failed: `AttributeError: module 'report' has no attribute 're
              item["holds"] = f["check"]["holds"]
 ````
 
-- [ ] **Step 4: Run the tests to verify they pass.** Run Step 2's command, then `tests/test_inert_report.py tests/test_report_links.py tests/test_report_json_fields.py tests/test_confirmed_defaults.py` with the same `--with` set, then the full suite (header). Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests to verify they pass.** Run Step 2's command, then `tests/test_inert_report.py tests/test_report_links.py tests/test_report_json_fields.py tests/test_confirmed_defaults.py` with the same `--with` set, then the full suite (header). Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/report.py tests/test_fix_impact.py
@@ -2654,7 +2654,7 @@ git commit -m "Report: traced and inferred impact, guarantees and not-checked it
 - Consumes: `report.json` as Task 6 leaves it.
 - Produces: the template's `IMPACT_SENTENCES` object, equal to `_common.IMPACT_SENTENCES` (a test compares them, as it does for `CHECK_SENTENCES`).
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_fix_impact.py` (the template checks and the data-block test; the browser tests are in Step 2):
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_fix_impact.py` (the template checks and the data-block test; the browser tests are in Step 2):
 
 ````python
 # --- Task 7 -----------------------------------------------------------------
@@ -2723,7 +2723,7 @@ def test_hostile_text_in_the_new_fields_stays_inside_the_data_block(scanned_copy
         assert got["check"]["guarantees"]["reason"] == f"check none: {H}"
 ````
 
-- [ ] **Step 2: Write the browser tests.** Append to `tests/test_report_html_browser.py`:
+- [x] **Step 2: Write the browser tests.** Append to `tests/test_report_html_browser.py`:
 
 ````diff
 --- a/tests/test_report_html_browser.py
@@ -2835,12 +2835,12 @@ def test_hostile_text_in_the_new_fields_stays_inside_the_data_block(scanned_copy
 +    assert "Added by the check: callers share a slot — removed by: a second pool" in body
 ````
 
-- [ ] **Step 3: Run them to verify they fail**
+- [x] **Step 3: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_fix_impact.py -q -k "template or data_block"` and `THUNDERSTRUCK_REQUIRE_BROWSER=1 uv run --with pytest --with pyyaml --with lizard --with playwright==1.56.0 pytest tests/test_report_html_browser.py -q -k "impact or not_shown_as_confirmed or guarantee_the_check_added"`
 Expected: the two template tests fail: `AssertionError: IMPACT_SENTENCES` (the template has no such object) and `assert (0 == 1)` (no `impactRows`). The six browser tests fail on missing text (`AssertionError: assert ('Traced impact' in 'FR-001hotspot H01 …`, `assert 'as the investigator stated it. No check has confirmed this.' in …`, `assert 0 == 3`, `AssertionError: claim …`, `assert 'None stated by the investigator, who was not required to for these patterns.' in …`): the dossier has no such rows.
 
-- [ ] **Step 4: Write the implementation.** In `templates/report.html`:
+- [x] **Step 4: Write the implementation.** In `templates/report.html`:
 
 ````diff
 --- a/templates/report.html
@@ -2935,9 +2935,9 @@ Expected: the two template tests fail: `AssertionError: IMPACT_SENTENCES` (the t
 
 The `IMPACT_SENTENCES` line is `json.dumps(_common.IMPACT_SENTENCES, ensure_ascii=False)`; regenerate it, rather than copy it, if Task 1's sentences changed.
 
-- [ ] **Step 5: Run the tests to verify they pass.** Run Step 3's commands (the browser ones need the Playwright-pinned Chromium: `THUNDERSTRUCK_REQUIRE_BROWSER=1`, `playwright==1.56.0`, as `CLAUDE.md` says), then `tests/test_report_html.py`, then the full suite (header). Expected: PASS, `exit=0`.
+- [x] **Step 5: Run the tests to verify they pass.** Run Step 3's commands (the browser ones need the Playwright-pinned Chromium: `THUNDERSTRUCK_REQUIRE_BROWSER=1`, `playwright==1.56.0`, as `CLAUDE.md` says), then `tests/test_report_html.py`, then the full suite (header). Expected: PASS, `exit=0`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add templates/report.html tests/test_report_html_browser.py tests/test_fix_impact.py
@@ -2955,7 +2955,7 @@ git commit -m "HTML report: traced and inferred impact, guarantees and not-check
 **Interfaces:**
 - Consumes: `index.json` as Task 6 leaves it.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_fix_impact.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_fix_impact.py`:
 
 ````python
 # --- Task 8 -----------------------------------------------------------------
@@ -3004,12 +3004,12 @@ def test_the_new_lines_are_statements_of_fact(project):
         assert imperative not in lowered
 ````
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_fix_impact.py -q -k "guardrail or index_from_before or new_lines"`
 Expected: the first two fail with `AssertionError` (the lines are not in the context); the other two pass already.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 ````diff
 --- a/scripts/guardrail.py
@@ -3052,9 +3052,9 @@ Expected: the first two fail with `AssertionError` (the lines are not in the con
                  lines.append(fact if fact.startswith("  ") else f"  {fact}")
 ````
 
-- [ ] **Step 4: Run the tests to verify they pass.** Run Step 2's command, then `tests/test_guardrail.py` (the 100 ms budget and the stdlib-only checks), then the full suite (header). Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests to verify they pass.** Run Step 2's command, then `tests/test_guardrail.py` (the 100 ms budget and the stdlib-only checks), then the full suite (header). Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/guardrail.py tests/test_fix_impact.py
@@ -3069,7 +3069,7 @@ git commit -m "Guardrail: state guarantees and open not-checked items as the inv
 - Regenerate: `examples/sample-report.md`, `examples/sample-report.html`
 - Test: `tests/test_fix_impact.py`
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_fix_impact.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_fix_impact.py`:
 
 ````python
 # --- Task 9 -----------------------------------------------------------------
@@ -3099,12 +3099,12 @@ def test_the_html_sample_carries_the_impact_fields_of_every_finding():
     assert any(f["check"].get("guarantees", {}).get("state") == "named" for f in page["findings"])
 ````
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_fix_impact.py -q -k "the_sample or html_sample"`
 Expected: FAIL with `AssertionError` (the committed samples are from before).
 
-- [ ] **Step 3: Regenerate, then read the result.**
+- [x] **Step 3: Regenerate, then read the result.**
 
 ```bash
 uv run scripts/gen_sample_report.py
@@ -3113,9 +3113,9 @@ uv run scripts/gen_sample_report.py --check; echo "exit=$?"
 
 Read `examples/sample-report.md` in full before committing: FR-001 shows a traced item (a path of two links), a catalog item, a guarantee confirmed by the check, one resolved and one open not-checked item; the `api.ts` finding says none found, with the check's statement beside it; the other findings say "none stated by the investigator, who was not required to for these patterns" and carry the not-addressed reason; no sentence says "not assessed".
 
-- [ ] **Step 4: Run the tests to verify they pass.** Step 2's command, then the full suite (header). Expected: PASS, `exit=0`; `--check` prints both samples up to date.
+- [x] **Step 4: Run the tests to verify they pass.** Step 2's command, then the full suite (header). Expected: PASS, `exit=0`; `--check` prints both samples up to date.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add examples/sample-report.md examples/sample-report.html tests/test_fix_impact.py
@@ -3129,7 +3129,7 @@ git commit -m "Sample: impact, guarantees and not-checked items in every state (
 **Files:**
 - Modify: `README.md`, `CLAUDE.md`, `skills/thunderstruck-scan/references/report-format.md`, `skills/thunderstruck-scan/references/orchestration.md`, `CHANGELOG.md`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `pyproject.toml`
 
-- [ ] **Step 1: README.** Findings are falsifiable (three bullets), the verification section (the skeptic's statements), the guardrail section, and the `bundles/` row:
+- [x] **Step 1: README.** Findings are falsifiable (three bullets), the verification section (the skeptic's statements), the guardrail section, and the `bundles/` row:
 
 ````diff
 --- a/README.md
@@ -3181,7 +3181,7 @@ git commit -m "Sample: impact, guarantees and not-checked items in every state (
  the other location. A settled verdict is remembered and reused on the next
 ````
 
-- [ ] **Step 2: `CLAUDE.md`.** The evidence-ref paragraph, the numbered-source paragraph, the verdict sentence and the `fix_touches` note:
+- [x] **Step 2: `CLAUDE.md`.** The evidence-ref paragraph, the numbered-source paragraph, the verdict sentence and the `fix_touches` note:
 
 ````diff
 --- a/CLAUDE.md
@@ -3221,7 +3221,7 @@ git commit -m "Sample: impact, guarantees and not-checked items in every state (
  `file_absent` (anchor present *and* absent-regex matching nowhere, optionally
 ````
 
-- [ ] **Step 3: The references.**
+- [x] **Step 3: The references.**
 
 ````diff
 --- a/skills/thunderstruck-scan/references/report-format.md
@@ -3291,7 +3291,7 @@ git commit -m "Sample: impact, guarantees and not-checked items in every state (
  force every finding to be checked again, delete `.thunderstruck/checks/`.
 ````
 
-- [ ] **Step 4: Version and `CHANGELOG`.** Read the current version from `origin/main`, never from this plan, and bump the minor in all four places:
+- [x] **Step 4: Version and `CHANGELOG`.** Read the current version from `origin/main`, never from this plan, and bump the minor in all four places:
 
 ```bash
 CUR=$(git show origin/main:pyproject.toml | python3 -c 'import sys, tomllib; print(tomllib.loads(sys.stdin.read())["project"]["version"])')
@@ -3332,7 +3332,7 @@ Add this entry directly above the previous top entry of `CHANGELOG.md`, with `##
  
 ````
 
-- [ ] **Step 5: Run the full suite and the generated-file and plugin checks**
+- [x] **Step 5: Run the full suite and the generated-file and plugin checks**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/ -q; echo "exit=$?"
@@ -3346,7 +3346,7 @@ claude plugin marketplace add "$PWD" && claude plugin install thunderstruck@thun
 
 Expected: every `exit=0` (exit 2 from `validate_plugin.py` means `claude` is not on `PATH`: not run, never passed); `test_versions_agree` passes; the `docs/calibration` diff prints nothing; `claude plugin list` shows thunderstruck `enabled`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add README.md CLAUDE.md skills/thunderstruck-scan/references/report-format.md skills/thunderstruck-scan/references/orchestration.md CHANGELOG.md .claude-plugin/plugin.json .claude-plugin/marketplace.json pyproject.toml

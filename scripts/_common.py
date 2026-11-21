@@ -756,6 +756,69 @@ def doubtful_defaults(finding: dict) -> list[dict]:
             if isinstance(d.get("confirmation"), dict) and d["confirmation"].get("basis") in DOUBTFUL_BASES]
 
 
+# --------------------------------------------------------------------------
+# what a fix would remove, what was traced, what was not checked
+# (spec 2026-11-12-fix-impact-in-findings-design.md)
+# --------------------------------------------------------------------------
+
+# A catalog pattern's `fix_touches`: the mechanism a fix for it changes. A finding
+# whose missing patterns include one must state implicit guarantees or say it found none.
+FIX_TOUCHES = ("lock", "retry", "cache")
+GUARANTEE_KEYS = ("guarantee", "removed_by", "evidence")
+BLAST_BASES = ("traced", "catalog", "assumption")
+BLAST_KEYS = ("claim", "basis", "evidence")
+NOT_CHECKED_KEYS = ("item", "how_to_check")
+RESOLUTION_STATES = ("resolved", "unresolved")   # a check's state for one item; no entry means open
+MAX_GUARANTEES = 5
+MAX_BLAST_ITEMS = 8
+MAX_NOT_CHECKED = 5
+NOT_ADDRESSED = "The skeptic did not address this item."
+# Sentences shared by report.md and the HTML report (a test pins the template's copy).
+IMPACT_SENTENCES = {
+    "not_assessed": "not assessed: this finding was written before it was recorded",
+    "traced": ("each item cites the code the investigator says it followed to reach it; each cited "
+               "line is checked to exist, not to connect to the next"),
+    "traced_none": "none: no item cites code it followed",
+    "inferred": "each item rests on a catalog edge or an assumption, not on cited code",
+    "inferred_none": "none",
+    "guarantees": "what this code provides without saying so, as the investigator stated it",
+    "guarantees_none": "none found, per the investigator",
+    "guarantees_not_stated": "none stated by the investigator, who was not required to for these patterns",
+    "not_checked": "what the investigator did not read or test, and how to check it",
+    "not_checked_none": "none listed by the investigator",
+    "unverified": "No check has confirmed this.",
+}
+
+
+def guarantee_state(finding: dict) -> str:
+    """stated, none_found, not_stated or not_assessed: what the investigator said about
+    the guarantees a fix would remove. A finding written before the impact fields existed
+    (it has no `blast_items`, which the validator requires since) is not_assessed; a newer
+    one that says nothing, which only a finding outside the lock, retry and cache
+    patterns may do, is not_stated."""
+    if not isinstance(finding, dict):
+        return "not_assessed"
+    items = finding.get("implicit_guarantees")
+    if isinstance(items, list) and items:
+        return "stated"
+    reason = finding.get("no_guarantees_reason")
+    if isinstance(reason, str) and reason.strip():
+        return "none_found"
+    return "not_stated" if "blast_items" in finding else "not_assessed"
+
+
+def not_checked_states(finding: dict) -> list[str]:
+    """Per not_checked item, in order: resolved, unresolved or open (no check
+    entry for it). Every item of the finding is in the result: none disappears."""
+    items = finding.get("not_checked") if isinstance(finding, dict) else None
+    check = finding.get("check") if isinstance(finding, dict) else None
+    entries = check.get("not_checked") if isinstance(check, dict) else None
+    by_item = {e["item"]: e for e in entries if isinstance(e, dict) and isinstance(e.get("item"), int)
+               and not isinstance(e["item"], bool)} if isinstance(entries, list) else {}
+    return [by_item[i]["state"] if i in by_item and by_item[i].get("state") in RESOLUTION_STATES
+            else "open" for i in range(len(items) if isinstance(items, list) else 0)]
+
+
 def path_glob_to_re(glob: str) -> re.Pattern:
     """A repo-relative path glob: `*` and `?` stay inside one directory,
     `**` crosses directories (`src/**/batch/*.java` matches `src/batch/X.java`
@@ -833,7 +896,7 @@ def load_suppressions(profile: dict[str, Any]) -> tuple[list[Suppression], list[
 # Bumped whenever validate.py's rules tighten. A findings file carries the
 # version that validated it; older ones are re-checked before they are reused
 # (bundle.py) and never reported unchecked (report.py).
-VALIDATION_RULES = 4
+VALIDATION_RULES = 5
 
 
 def ref_path(path: Any) -> str:

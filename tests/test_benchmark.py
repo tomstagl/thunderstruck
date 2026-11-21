@@ -304,10 +304,9 @@ def test_bundle_parser_matches_what_bundle_py_renders(tmp_path, n, budget, top):
     assert file == "m.py"
     body = text.split("```python\n", 1)[1].rsplit("\n```", 1)[0]
     whole = {int(m.group(1)) for line in body.split("\n")
-             if (m := re.fullmatch(r"x_\d{4} = \d+  # line (\d+)", line))}
+             if (m := re.fullmatch(r" *\d+ \| x_\d{4} = \d+  # line (\d+)", line))}
     claimed = {i for lo, hi in ranges for i in range(lo, hi + 1)}
-    assert claimed <= whole
-    assert len(whole - claimed) <= 2
+    assert claimed == whole   # numbered bundles (#105): the parser reads the numbers, so it is exact
 
 
 def test_an_unparsable_source_block_is_unreadable_never_not_shown(tmp_path):

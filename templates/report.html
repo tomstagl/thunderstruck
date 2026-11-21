@@ -157,6 +157,7 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
   var CONFIRMATION_REASONS = {"registered": "a check found this default registered, and it agrees", "contradicted": "a check found a different default registered", "call_site_fallback": "the default is stated where the setting is read, as a fallback; the value in effect may be registered elsewhere", "not_found": "a check found no place that registers this default", "unresolved": "the place a check gave for this default does not resolve", "not_checked": "no check looked for where this default is registered"};
   var GATE_RAIL = {"unconfirmed_default": "default", "non_default_setting": "setting"};
   var BASIS_PHRASE = {"call_site_fallback": "stated where the setting is read", "contradicted": "contradicted by a check", "not_found": "not found by a check", "unresolved": "with a location that did not resolve", "not_checked": "not checked"};
+  var IMPACT_SENTENCES = {"not_assessed": "not assessed: this finding was written before it was recorded", "traced": "each item cites the code the investigator says it followed to reach it; each cited line is checked to exist, not to connect to the next", "traced_none": "none: no item cites code it followed", "inferred": "each item rests on a catalog edge or an assumption, not on cited code", "inferred_none": "none", "guarantees": "what this code provides without saying so, as the investigator stated it", "guarantees_none": "none found, per the investigator", "guarantees_not_stated": "none stated by the investigator, who was not required to for these patterns", "not_checked": "what the investigator did not read or test, and how to check it", "not_checked_none": "none listed by the investigator", "unverified": "No check has confirmed this."};
   var FIELD_LABELS = {"failure_mode": "Failure mode", "trigger_condition": "Trigger", "amplifier": "Amplifier", "sustaining_effect": "Sustaining effect", "blast_radius": "Blast radius", "how_to_verify": "Verify", "prediction": "Prediction", "preconditions": "Preconditions"};
 
   function h(tag, attrs, kids) {
@@ -469,6 +470,75 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
     function confirmationItems(f) {
       return ((f.check || {}).confirmations || []).filter(function (it) { return it && typeof it === "object"; });
     }
+    function sentence(text) { return text.charAt(0).toUpperCase() + text.slice(1) + (/[.:]$/.test(text) ? "" : "."); }
+    function evLinks(evs, idx, sep) {
+      var out = [];
+      (Array.isArray(idx) ? idx : []).forEach(function (i) {
+        var ev = (evs || [])[i]; if (!ev) return;
+        if (out.length) out.push(sep);
+        out.push(link(String(ev.ref || ""), ev.type === "dependency" ? null : ev.url, "mono"));
+      });
+      return out;
+    }
+    function impactRows(f) {
+      var S = IMPACT_SENTENCES, ev = f.evidence || [], ck = f.check || {}, rows = [];
+      var notAssessed = sentence(S.not_assessed);
+      if (!("blast_items" in f)) rows.push(row("Traced and inferred impact", notAssessed));
+      else {
+        var items = f.blast_items || [];
+        [["Traced impact", "traced", items.filter(function (i) { return i.basis === "traced"; })],
+         ["Inferred impact", "inferred", items.filter(function (i) { return i.basis !== "traced"; })]]
+          .forEach(function (g) {
+            if (!g[2].length) { rows.push(row(g[0], sentence(S[g[1] + "_none"]))); return; }
+            rows.push(row(g[0], h("div", { class: "ev" }, [h("div", { class: "small", text: sentence(S[g[1]]) })]
+              .concat(g[2].map(function (i) {
+                var tail = i.basis === "traced" ? [" — cites: "].concat(evLinks(ev, i.evidence, ", "))
+                  : i.basis === "catalog" ? [" — rests on the catalog: "].concat(evLinks(ev, i.evidence, "; "))
+                  : [" — an assumption"];
+                return h("div", null, [String(i.claim || "")].concat(tail));
+              })))));
+          });
+      }
+      var gs = ck.guarantees && typeof ck.guarantees === "object" ? ck.guarantees : null;
+      var named = !!gs && gs.state === "named", mine = f.implicit_guarantees || [];
+      var checkEv = ck.evidence || [], kids = [];
+      var reason = typeof f.no_guarantees_reason === "string" && f.no_guarantees_reason.trim() ? f.no_guarantees_reason : null;
+      if (mine.length) {
+        kids.push(h("div", { class: "small", text: sentence(S.guarantees) + (named ? "" : " " + S.unverified) }));
+        var seen = {};
+        ((gs && gs.items) || []).forEach(function (g) { if (typeof g.of === "number") seen[g.of] = g; });
+        mine.forEach(function (g, n) {
+          var line = [String(g.guarantee || "") + " — provided by "].concat(evLinks(f.evidence, g.evidence, ", "),
+            [" — removed by: " + (g.removed_by || "")]);
+          if (named) line = line.concat(seen[n] ? [" — confirmed by the check: "].concat(evLinks(checkEv, seen[n].evidence, "; "), [])
+            : [" — not confirmed by the check"]);
+          kids.push(h("div", null, line));
+        });
+      } else if (reason) kids.push(h("div", null, [sentence(S.guarantees_none) + " " + reason + (gs ? "" : " " + S.unverified)]));
+      else kids.push(h("div", null, [sentence("blast_items" in f ? S.guarantees_not_stated : S.not_assessed)]));
+      if (gs && gs.state === "none_found") kids.push(h("div", null, ["The check found none: " + (gs.reason || "")]));
+      else if (gs && gs.state !== "named") kids.push(h("div", null, [gs.reason || ""]));
+      else if (gs) ((gs.items || []).filter(function (g) { return g.of == null; })).forEach(function (g) {
+        kids.push(h("div", null, ["Added by the check: " + (g.guarantee || "") + " — removed by: " + (g.removed_by || "") +
+          " — evidence: "].concat(evLinks(checkEv, g.evidence, "; "))));
+      });
+      rows.push(row("Implicit guarantees", h("div", { class: "ev" }, kids)));
+      if (!("not_checked" in f)) rows.push(row("Not checked", notAssessed));
+      else if (!(f.not_checked || []).length) rows.push(row("Not checked", sentence(S.not_checked_none)));
+      else {
+        var entries = {};
+        (ck.not_checked || []).forEach(function (e) { if (typeof e.item === "number") entries[e.item] = e; });
+        rows.push(row("Not checked", h("div", { class: "ev" }, [h("div", { class: "small", text: sentence(S.not_checked) })]
+          .concat(f.not_checked.map(function (it, n) {
+            var e = entries[n], line = [String(it.item || "") + " — how to check: " + (it.how_to_check || "")];
+            if (!e || (e.state !== "resolved" && e.state !== "unresolved")) line.push(" — open: no check has looked at it");
+            else line = line.concat([(e.state === "resolved" ? " — resolved by a check: " : " — still open after a check: ") + (e.note || "")],
+              (e.evidence || []).length ? [" — evidence: "].concat(evLinks(checkEv, e.evidence, "; ")) : []);
+            return h("div", null, line);
+          })))));
+      }
+      return rows;
+    }
     function preconditionList(f) {
       var ps = f.preconditions || [];
       var items = confirmationItems(f);
@@ -573,6 +643,7 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
       }
       if ((f.evidence || []).length) rows.appendChild(row("Evidence", evidenceList(f.evidence)));
       checkRows(f).forEach(function (r) { rows.appendChild(r); });
+      impactRows(f).forEach(function (r) { rows.appendChild(r); });
       rows.appendChild(row("Preconditions", preconditionList(f)));
       rows.appendChild(row("History", historyList(f)));
       rows.appendChild(row("Why " + conf, f.confidence_rationale || "—", { cls: "small" }));

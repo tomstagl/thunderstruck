@@ -84,7 +84,7 @@ Written to `.thunderstruck/` in the scanned repository:
 | `report.json` | Stable versioned schema, for diffing runs over time |
 | `index.json` | file → findings, read by the edit guardrail |
 | `hotspots.json` | The deterministic layer's output, inspectable |
-| `bundles/` | Exactly what each investigator was shown |
+| `bundles/` | Exactly what each investigator was shown; source lines carry their own file line numbers |
 | `findings/` | Per-hotspot results, keyed by bundle hash |
 
 The scan offers to add `.thunderstruck/` to your `.gitignore` on the first
@@ -127,7 +127,9 @@ your way, that is a bug.
 
 If the file has changed since the scan, the warning says so rather than
 pretending the line numbers still hold. A finding also warns on every other
-file it cites as code evidence, marked "cited as evidence".
+file it cites as code evidence, marked "cited as evidence". When a finding has
+implicit guarantees or open not-checked items, the warning states them as the
+investigator's.
 
 ## How it works
 
@@ -188,6 +190,20 @@ A finding is a hypothesis, and it has to earn its place:
   that does not resolve) the finding is listed after default-path findings
   and marked *relies on a doubtful default*; when it was merely not checked,
   the finding keeps its place and is marked *default unconfirmed*.
+- **A finding says what its fix would remove.** A finding for a lock, retry or
+  cache states its *implicit guarantees*: what the code provides without
+  saying so (a lock that also keeps a second caller out), the kind of change
+  that would remove it, and the code that provides it, or says it found none
+  and why. Releasing the lock to cure the failure is a different change once
+  you know that.
+- **Traced and inferred are kept apart.** Each blast-radius item is `traced`
+  (it cites the code the investigator followed to reach it; each cited line
+  is checked to exist, not to connect to the next), `catalog` (it rests on a
+  catalog edge) or an `assumption`. A catalog edge never makes an item traced.
+- **What was not checked is data.** Each finding lists what its investigator
+  did not read or test, with how to check it, in every output. When a skeptic
+  runs it resolves each item with evidence or says why it could not; an item
+  it could not resolve stays open, and none disappears.
 - **Nothing is filled in.** `amplifier` and `sustaining_effect` are given
   only when the code shows them; otherwise the report says *not stated*.
 - **Validation proves the citations, not the claim.** A commit cited as
@@ -216,6 +232,11 @@ Its verdict is resolved like a finding (every `code`, `commit` and
 - **`inconclusive`**: the skeptic could not decide, or its evidence did not
   resolve. A refutation whose evidence does not resolve is never a refutation.
 - **`unchecked`**: no skeptic ran, or it returned nothing usable.
+
+The skeptic also names the guarantees a fix would put at risk, citing code, or
+says it found none, and answers each not-checked item. Neither changes a
+verdict or a finding's confidence. A finding nobody has checked shows both as
+the investigator's claims, never as confirmed.
 
 Two findings a skeptic shows to be one defect are merged: the survivor lists
 the other location. A settled verdict is remembered and reused on the next

@@ -82,6 +82,19 @@ does not reach the report.
   `changed`, and no other evidence type has one. A commit cited as
   `introduced` must have written at least one line of a cited `code` range,
   per `git blame`.
+- **`blast_items` is required, 1 to 8 objects** `{claim, basis, evidence}`.
+  `basis` is `traced` (`evidence` points at the `code` items of the finding's own
+  `evidence` list that the investigator followed; each is checked to exist, not
+  to connect to the next), `catalog` (at `catalog` items)
+  or `assumption` (no `evidence`). `blast_radius` stays one required string.
+- **`not_checked` is required and may be `[]`**: at most 5 `{item,
+  how_to_check}` objects.
+- **`implicit_guarantees` is optional**: at most 5 `{guarantee, removed_by,
+  evidence}` objects, `evidence` pointing at `code` items. A finding whose
+  `missing_patterns` include a pattern with a `fix_touches` in the catalog
+  (`S02`, `S03`, `S04`, `S10` retry; `S09` cache; `S28` lock) must state at
+  least one, or give `no_guarantees_reason` (a non-empty string, never beside
+  guarantees). A position in `evidence` is counted from 0 and must be in range.
 - **`amplifier` and `sustaining_effect` are optional**, and never an empty
   string when present. An absent one is reported as *not stated*.
 - **`confidence` is the investigator's claim** (`low`, `medium` or `high`).
@@ -128,6 +141,19 @@ Reserved for #37 (verification), under `check`: `by`, `reason`, `holds`,
 `report.json` passes `check` through whole. #37 also extends `finding_gate` so
 that a `narrowed` verdict naming a missing setting gates the finding.
 
+## Impact: guarantees, traced and inferred, not checked
+
+`report.json` passes `implicit_guarantees`, `no_guarantees_reason`,
+`blast_items` and `not_checked` through as the investigator wrote them; their
+positions index the same finding's `evidence`, whose items carry `url`. A
+finding from before they existed lacks the keys, and every output then says
+*not assessed*. `counts.not_checked` is `{listed, resolved, unresolved,
+open}` over the reported findings. `index.json` gives a finding
+`implicit_guarantees` (`guarantee`, `removed_by`) when it has any and
+`not_checked` (the texts of the items not resolved) when any remain. The
+schemas stay `thunderstruck.report/v2` and `thunderstruck.index/v1`: the
+additions are optional.
+
 ## Verification
 
 Step 4b (`verify.py`) gives each validated finding to one read-only skeptic
@@ -152,10 +178,13 @@ Keys under `check`, all written by `verify.py apply`:
 | `reused_from` | `null`, or `{scan, head}` of the scan whose skeptic produced a reused verdict |
 | `duplicate_of` | `null`, or the key of another finding in this scan |
 | `confirmations` | The skeptic's resolved confirmation items (see *Confirmed defaults*) |
+| `guarantees` | `{state, reason, items}`: `state` is `named`, `none_found` or `not_addressed`; `items` are `{of, guarantee, removed_by, evidence}`, `of` the position of the finding's own guarantee it confirms or `null` for one it added, `evidence` indexing `check.evidence` |
+| `not_checked` | One `{item, state, note, evidence}` per item of the finding's `not_checked`, in order: `state` is `resolved` (with evidence) or `unresolved`; an item the skeptic did not answer is `unresolved` with a fixed note |
 
 The skeptic returns exactly one JSON object with the top-level keys `key`,
 `verdict`, `reason`, `holds`, `refuted_claims`, `evidence`,
-`dependencies_read`, `duplicate_of` and `confirmations`; an unknown key, a `verdict` outside
+`dependencies_read`, `duplicate_of`, `guarantees`, `no_guarantees_reason`,
+`not_checked` and `confirmations`; an unknown key, a `verdict` outside
 the four, or a `key` it was not given leaves the finding `unchecked` with the
 reason. A `refuted` or `narrowed` verdict with no resolving evidence is
 `inconclusive`.

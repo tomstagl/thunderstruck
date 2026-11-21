@@ -205,30 +205,80 @@ def section_detectors(hs: dict, catalog: dict) -> str:
     return "\n".join(out)
 
 
+def source_lines(path: Path) -> list[str]:
+    """The file's lines, counted the way validate.py and git count them: split at
+    "\\n" only, so a final newline ends the last line instead of starting another, and
+    a lone "\\r" or a form feed is not a line break. One trailing "\\r" (CRLF) is
+    dropped from each line, and any other "\\r" is shown as "\u240d" (U+240D) so it cannot
+    pass for the start of a row. Invalid UTF-8 is replaced, as c.read_text does."""
+    try:
+        text = Path(path).read_bytes().decode("utf-8", errors="replace")
+    except OSError:
+        return []
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    return [(line[:-1] if line.endswith("\r") else line).replace("\r", "\u240d") for line in lines]
+
+
+def _numbered(lines: list[str], first: int, last: int, width: int) -> list[tuple[int, str]]:
+    """Lines first..last (1-based, inclusive), each prefixed with its number in the file."""
+    return [(n, f"{n:>{width}} | {lines[n - 1]}") for n in range(first, last + 1)]
+
+
+def _clip_lines(rows: list[tuple[int, str]], token_budget: int) -> str:
+    """The rows in order, within the token budget, counting the numbers. Over it,
+    whole lines are kept from the start (70% of the budget) and from the end (25%),
+    and one marker names the numbers of the lines left out between them."""
+    limit = max(0, token_budget) * 4
+    if sum(len(text) + 1 for _, text in rows) - 1 <= limit:
+        return "\n".join(text for _, text in rows)
+    head: list[tuple[int, str]] = []
+    used = 0
+    for row in rows:
+        if used + len(row[1]) + 1 > int(limit * 0.7):
+            break
+        head.append(row)
+        used += len(row[1]) + 1
+    tail: list[tuple[int, str]] = []
+    used = 0
+    for row in reversed(rows[len(head):]):
+        if used + len(row[1]) + 1 > int(limit * 0.25):
+            break
+        tail.append(row)
+        used += len(row[1]) + 1
+    tail.reverse()
+    gap = rows[len(head):len(rows) - len(tail)]   # never empty: the rows did not fit
+    marker = f"... [trimmed: lines {gap[0][0]}-{gap[-1][0]} omitted] ..."
+    return "\n".join([*(t for _, t in head), marker, *(t for _, t in tail)])
+
+
 def section_source(repo: Path, hs: dict, budget: int) -> str:
+    """The hotspot file with every line numbered as the file numbers it. What is not
+    shown is named: an excerpt says which lines it covers, a clipped one which it
+    leaves out. The numbers count against the budget."""
     rel = hs["file"]
-    text = c.read_text(repo / rel) or ""
+    lines = source_lines(repo / rel)
+    n = len(lines)
+    width = len(str(max(n, 1)))
     lang = _fence(hs.get("language"))
-    total = c.estimate_tokens(text)
-    if total <= budget:
-        body = text
-        note = f"whole file, {len(text.splitlines())} lines"
+    whole = _numbered(lines, 1, n, width)
+    if c.estimate_tokens("\n".join(text for _, text in whole)) <= budget:
+        body = "\n".join(text for _, text in whole)
+        note = f"whole file, {n} lines"
     else:
-        cx = hs.get("complexity") or {}
-        top = cx.get("top_function")
-        lines = text.split("\n")
+        top = (hs.get("complexity") or {}).get("top_function")
         if top and "-" in str(top.get("lines", "")):
             start, end = (int(x) for x in str(top["lines"]).split("-")[:2])
             pad = 15
-            lo, hi = max(0, start - 1 - pad), min(len(lines), end + pad)
-            excerpt = "\n".join(lines[lo:hi])
-            body = _clip(excerpt, budget)
-            note = (f"lines {lo + 1}-{hi} — the most complex function "
+            first, last = min(max(1, start - pad), n), min(n, end + pad)
+            body = _clip_lines(_numbered(lines, first, last, width), budget)
+            note = (f"lines {first}-{last} — the most complex function "
                     f"`{top['name']}` with {pad} lines of context; the file is "
-                    f"{len(lines)} lines and did not fit the budget")
+                    f"{n} lines and did not fit the budget")
         else:
-            body = _clip(text, budget)
-            note = f"file trimmed to fit the budget; {len(lines)} lines total"
+            body = _clip_lines(whole, budget)
+            note = f"file trimmed to fit the budget; {n} lines total"
     return f"## Source — `{rel}`\n\n_{note}_\n\n```{lang}\n{body}\n```\n\n"
 
 
@@ -473,6 +523,10 @@ def write_catalog_brief(dest: Path, catalog: dict, profile: dict) -> Path:
             role = p.get("metastable_role")
             if role:
                 out.append(f"Typical role in a metastable failure: **{role}**.")
+            if p.get("fix_touches") in c.FIX_TOUCHES:
+                out.append(f"A finding for this pattern (kind: {p['fix_touches']}) states "
+                           f"`implicit_guarantees`, or says in `no_guarantees_reason` that "
+                           f"you found none, and why.")
             refs = p.get("references") or []
             if refs:
                 out.append("References: " + "; ".join(str(r) for r in refs))

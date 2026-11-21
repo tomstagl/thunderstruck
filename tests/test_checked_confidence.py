@@ -240,7 +240,7 @@ def test_validation_writes_check_and_history(scanned_copy, plugin_root):
     assert _check(scanned_copy, plugin_root, hid, doc).returncode == 0
     saved = json.loads((scanned_copy / ".thunderstruck" / "findings" / f"{hid}.json").read_text())
     f = saved["findings"][0]
-    assert saved["validated_with"] == c.VALIDATION_RULES == 4
+    assert saved["validated_with"] == c.VALIDATION_RULES == 5
     assert f["check"] == {"status": "unchecked", "by": None, "reason": None}
     assert f["confidence"] == "high"                      # the claim is kept as written
     assert f["history"] == [
@@ -288,7 +288,7 @@ def test_the_capture_hook_strips_what_a_model_must_not_set(scanned_copy, plugin_
     assert proc.returncode == 0
     saved = json.loads((scanned_copy / ".thunderstruck" / "findings" / f"{hid}.json").read_text())
     assert not {"check", "history", "confidence_claimed"} & set(saved["findings"][0])
-    assert saved["schema"] == "thunderstruck.finding/v2"
+    assert saved["schema"] == "thunderstruck.finding/v3"
 
 
 def test_findings_validated_under_rules_3_are_investigated_again(scanned_copy, plugin_root):
@@ -318,6 +318,7 @@ def _second_hotspot_finding(repo: Path, confidence: str, preconditions: list) ->
     return hs["id"], {"hotspot_id": hs["id"], "file": hs["file"], "findings": [{
         "location": {"file": hs["file"], "lines": "1"}, "missing_patterns": ["S01"],
         "failure_mode": "A second failure", "trigger_condition": "t", "blast_radius": "b",
+        "blast_items": [{"claim": "b", "basis": "assumption"}], "not_checked": [],
         "evidence": [{"type": "code", "ref": f"{hs['file']}:1", "note": "n"}],
         "preconditions": preconditions, "confidence": confidence,
         "confidence_rationale": "r", "how_to_verify": "v"}]}
