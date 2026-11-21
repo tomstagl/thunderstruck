@@ -1214,7 +1214,7 @@ git commit -m "Guidance checks: quotes, inputs first, lens briefs, links, the ta
 
 This is a test-only task, and the tests pass on their first run by design: Task 0 proved the documents exist. Their teeth are the two mutation tests, which append each rule's positive sample and a front-matter block to the real text and require the check to catch them. `.claude/skills/implement-ticket/SKILL.md` step 5 allows exactly this: for a test-only task the commit body says so in place of a red run, so step 6's stop for "a test can't fail first" does not apply here.
 
-- [ ] **Step 1: Write the tests.** Append to `tests/test_fix_guidance.py`:
+- [x] **Step 1: Write the tests.** Append to `tests/test_fix_guidance.py`:
 
 ````python
 # --- Task 3: the two documents are in place, plain, neutral and linked ---------
@@ -1273,14 +1273,14 @@ def test_front_matter_added_to_a_real_document_is_caught(doc):
     assert g.has_front_matter("---\nname: x\n---\n" + _text(doc))
 ````
 
-- [ ] **Step 2: Run them**
+- [x] **Step 2: Run them**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_fix_guidance.py -q`
 Expected: PASS. A failure is a finding about a document, not about the plan. Do not edit the document, the rule or the test. Stop as `agent:blocked` (Global Constraints): comment with Task 3, the document path, and the lines the failure printed (`path:line [rule] excerpt`); the decision that unblocks is the maintainer's, to reword the document or to narrow the rule with a negative sample in spec §3.
 
-- [ ] **Step 3: Run the full suite** (header command). Expected: `exit=0`.
+- [x] **Step 3: Run the full suite** (header command). Expected: `exit=0`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add docs/superpowers/plans/2026-11-12-fix-and-review-guidance.md tests/test_fix_guidance.py

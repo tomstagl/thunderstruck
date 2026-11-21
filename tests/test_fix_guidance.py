@@ -308,3 +308,57 @@ def test_the_table_shows_the_text_the_line_and_what_is_missing():
     assert r"`` no such \| text with `ticks` in it ``" in lines["fix-07-smallest-change"]
     assert "MISSING" in lines["fix-01-stop-and-ask"]
     assert len(lines) == len(g.REQUIRED)
+# --- Task 3: the two documents are in place, plain, neutral and linked ---------
+
+DOCS = {doc: ROOT / path for doc, path in g.PUBLISHED.items()}
+
+NOT_THE_AGENTS = (
+    "\nThe document is the maintainer's and is never edited by a ticket. A hit is a gap in the document, "
+    "or a rule too strict for a legitimate sentence; either is for the maintainer. "
+    "The ticket agent stops as agent:blocked and quotes the lines above.")
+
+
+def _text(doc: str) -> str:
+    return DOCS[doc].read_text(encoding="utf-8")
+
+
+def test_the_documents_are_at_their_published_paths():
+    missing = [p for p in g.PUBLISHED.values() if not (ROOT / p).is_file()]
+    assert not missing, (
+        f"missing: {missing}. These two paths are linked from the README and from tickets; "
+        f"moving one breaks them (spec §2).")
+
+
+@pytest.mark.parametrize("doc", sorted(DOCS))
+def test_a_document_is_plain_utf8_text_without_front_matter(doc):
+    raw = DOCS[doc].read_bytes()
+    assert raw.strip(), f"{g.PUBLISHED[doc]} is empty"
+    text = raw.decode("utf-8")
+    assert not g.has_front_matter(text), (
+        f"{g.PUBLISHED[doc]} starts with a front-matter block, which makes it a skill or agent file")
+
+
+@pytest.mark.parametrize("doc", sorted(DOCS))
+def test_a_document_is_harness_neutral(doc):
+    hits = g.lint(_text(doc), RULES)
+    lines = [f"{g.PUBLISHED[doc]}:{h.line}: [{h.rule} {h.name}] {h.excerpt}" for h in hits]
+    assert not hits, "\n".join(lines) + NOT_THE_AGENTS
+
+
+@pytest.mark.parametrize("doc", sorted(DOCS))
+def test_the_links_in_a_document_resolve(doc):
+    problems = g.link_problems(_text(doc), DOCS[doc].parent)
+    assert not problems, f"{g.PUBLISHED[doc]}: " + "; ".join(problems) + NOT_THE_AGENTS
+
+
+@pytest.mark.parametrize("doc", sorted(DOCS))
+@pytest.mark.parametrize("rule", RULES, ids=lambda r: r.id)
+def test_a_violation_added_to_a_real_document_is_caught(doc, rule):
+    """The check has teeth on the real text, whatever its Markdown looks like."""
+    mutated = _text(doc) + "\n\n" + rule.positive[0] + "\n"
+    assert rule.id in {h.rule for h in g.lint(mutated, RULES)}
+
+
+@pytest.mark.parametrize("doc", sorted(DOCS))
+def test_front_matter_added_to_a_real_document_is_caught(doc):
+    assert g.has_front_matter("---\nname: x\n---\n" + _text(doc))
