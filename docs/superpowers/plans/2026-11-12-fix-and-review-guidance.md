@@ -1441,7 +1441,7 @@ git commit -m "Guidance checks: the behaviours each document states (#107)" \
 - Modify: `tests/test_fix_guidance.py`
 - Modify: `README.md`
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_fix_guidance.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_fix_guidance.py`:
 
 ````python
 # --- Task 5: reachable from the README, at paths that do not change -------------
@@ -1480,12 +1480,12 @@ def test_the_readme_links_no_installed_copy_and_no_pinned_branch():
     assert not re.search(r"plugins/cache|/\d+\.\d+\.\d+/docs/", README)
 ````
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_fix_guidance.py -q`
 Expected: three FAIL: `test_the_readme_links_each_document_by_its_published_path[fix]` and `[review]` ("README.md needs exactly one '## From a finding to a reviewed fix' section") and `test_the_readme_links_no_installed_copy_and_no_pinned_branch`. `test_the_published_paths_are_the_ones_tickets_link` passes.
 
-- [ ] **Step 3: Write the README section.** In `README.md`, insert before the line `## The catalog` (it occurs once):
+- [x] **Step 3: Write the README section.** In `README.md`, insert before the line `## The catalog` (it occurs once):
 
 ```markdown
 ## From a finding to a reviewed fix
@@ -1506,12 +1506,12 @@ change between releases.
 
 (a blank line follows the section, then `## The catalog`).
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_fix_guidance.py tests/test_docs_in_sync.py -q`, then the full suite.
 Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/superpowers/plans/2026-11-12-fix-and-review-guidance.md tests/test_fix_guidance.py README.md

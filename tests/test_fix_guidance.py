@@ -416,3 +416,39 @@ def test_the_table_prints_for_the_pull_request():
     rows = proc.stdout.strip().splitlines()[2:]
     assert [r.split("|")[1].strip("` ") for r in rows] == list(g.REQUIRED)
     assert not any("MISSING" in r or "NOT FOUND" in r for r in rows), proc.stdout
+
+
+# --- Task 5: reachable from the README, at paths that do not change -------------
+
+README = (ROOT / "README.md").read_text(encoding="utf-8")
+SECTION = "From a finding to a reviewed fix"
+
+
+def test_the_published_paths_are_the_ones_tickets_link():
+    assert g.PUBLISHED == {"fix": "docs/fix-agent-instructions.md", "review": "docs/review-briefs.md"}, (
+        "These two paths are linked from the README and from tickets that are already filed. "
+        "Changing one is a change to every one of those links first (spec §2).")
+
+
+def _readme_section() -> str:
+    parts = [s for s in README.split("\n## ") if s.startswith(SECTION + "\n")]
+    assert len(parts) == 1, f"README.md needs exactly one '## {SECTION}' section"
+    return parts[0]
+
+
+@pytest.mark.parametrize("doc", sorted(DOCS))
+def test_the_readme_links_each_document_by_its_published_path(doc):
+    path = g.PUBLISHED[doc]
+    targets = re.findall(r"\]\(([^)\s]+)\)", _readme_section())
+    assert path in targets, f"the '{SECTION}' section of README.md does not link {path}"
+    assert (ROOT / path).is_file()
+
+
+def test_the_readme_links_no_installed_copy_and_no_pinned_branch():
+    """An installed copy lives under a folder named for the version, so its path
+    changes with every update; a URL pinned to a branch or a commit is not the
+    file's own path. The relative link is the one that does not change."""
+    for path in g.PUBLISHED.values():
+        links = re.findall(r"\]\(([^)\s]*" + re.escape(path) + r"[^)\s]*)\)", README)
+        assert links and all(link == path for link in links), (path, links)
+    assert not re.search(r"plugins/cache|/\d+\.\d+\.\d+/docs/", README)
