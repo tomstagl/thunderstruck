@@ -756,7 +756,7 @@ git commit -m "Investigator: say what a fix would remove, trace or infer impact,
 - Consumes: `c.FIX_TOUCHES`, `c.GUARANTEE_KEYS`, `c.BLAST_BASES`, `c.BLAST_KEYS`, `c.NOT_CHECKED_KEYS`, the `MAX_*` caps (Task 1).
 - Produces: `validate.LIST_MAY_BE_EMPTY`; `Validator.fix_touches: dict[str, str]`; `Validator.check_impact(f, where, errors, evidence, types) -> None`.
 
-- [ ] **Step 1: Update the two pinned tests.** `test_validation_writes_check_and_history` pins `VALIDATION_RULES == 4` and `test_the_capture_hook_strips_what_a_model_must_not_set` pins `finding/v2`:
+- [x] **Step 1: Update the two pinned tests.** `test_validation_writes_check_and_history` pins `VALIDATION_RULES == 4` and `test_the_capture_hook_strips_what_a_model_must_not_set` pins `finding/v2`:
 
 ````diff
 --- a/tests/test_checked_confidence.py
@@ -779,7 +779,7 @@ git commit -m "Investigator: say what a fix would remove, trace or infer impact,
 
 Both fail until Step 4 (`assert 4 == 5`, and `'thunderstruck.finding/v2' == 'thunderstruck.finding/v3'`) and nothing else does.
 
-- [ ] **Step 2: Write the failing tests.** Append to `tests/test_fix_impact.py`:
+- [x] **Step 2: Write the failing tests.** Append to `tests/test_fix_impact.py`:
 
 ````python
 # --- Task 3 -----------------------------------------------------------------
@@ -993,12 +993,12 @@ def test_the_validator_requires_the_keys_the_prompt_names():
     assert len(REQUIRED_FIELDS) == 12 and all(f"`{key}`" in flat for key in REQUIRED_FIELDS)
 ````
 
-- [ ] **Step 3: Run them to verify they fail**
+- [x] **Step 3: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_fix_impact.py -q`
 Expected: FAIL, 44 failed: the rule tests fail with `AssertionError: []` or `assert False` because `validate.py` reports nothing for the new keys; `AttributeError: 'Validator' object has no attribute 'check_impact'` for the investigator example; `assert (10 == 12)` for the key count; `assert 4 == 5` and `assert 'thunderstruck.finding/v2' == 'thunderstruck.finding/v3'` for the two pinned tests.
 
-- [ ] **Step 4: Write the implementation.**
+- [x] **Step 4: Write the implementation.**
 
 ````diff
 --- a/scripts/validate.py
@@ -1179,12 +1179,12 @@ Expected: FAIL, 44 failed: the rule tests fail with `AssertionError: []` or `ass
  # "path:42" or "path:42-118"; anything else stays a bare path
 ````
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: Step 3's command with `tests/test_validate_paths.py tests/test_investigator_contract.py tests/test_pipeline.py tests/test_checked_confidence.py` added.
 Expected: PASS. Then the full suite (header); expected `exit=0`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/validate.py scripts/_common.py scripts/finding_shape.py tests/
