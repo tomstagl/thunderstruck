@@ -2745,7 +2745,7 @@ git commit -m "Ticket: every section, written to .thunderstruck/tickets (#108)" 
 
 The inert-text test of #28 covers `report.md` only. This one renders the ticket through the same two markdown engines, with `pre` allowed and nothing else a text could add. It is test-only: the behaviour exists after Task 6, so the tests pass on their first run, and the mutation test inside them is what shows they can fail. `.claude/skills/implement-ticket/SKILL.md` step 5 has the commit body say so.
 
-- [ ] **Step 1: Write the tests (test-only task).** Append to `tests/test_finding_ticket.py`:
+- [x] **Step 1: Write the tests (test-only task).** Append to `tests/test_finding_ticket.py`:
 
 ``````python
 # --- Task 7: hostile text stays inert ---------------------------------------
@@ -2887,7 +2887,7 @@ def test_the_ticket_names_no_machine_value_on_the_real_fixture_either(tmp_path, 
 ``````
 
 
-- [ ] **Step 2: Run them.**
+- [x] **Step 2: Run them.**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_finding_ticket.py tests/test_report_links.py -q
@@ -2895,11 +2895,11 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: PASS on the first run (all of the file). Step 3 shows the tests can fail.
 
-- [ ] **Step 3: Show the tests have teeth.**
+- [x] **Step 3: Show the tests have teeth.**
 
 The test `test_every_defence_is_needed_the_hostile_test_fails_without_it` already removes, one at a time, the fence primitive, `mdtext.text` and the tracker-reference pattern, and requires the hostile check to fail each time. Check by hand once, so the commit records it: in `scripts/finding_ticket.py` change `render_step` to build its block as ``"```\n" + "\n".join(step.lines) + "\n```"``, run `test_hostile_text_in_every_field_the_code_and_the_drafts_stays_inert`, see it fail, and revert with `git checkout scripts/finding_ticket.py`. No other file changes in this task.
 
-- [ ] **Step 4: Run the task's tests, then the full suite.** First:
+- [x] **Step 4: Run the task's tests, then the full suite.** First:
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_finding_ticket.py tests/test_report_links.py -q
@@ -2907,7 +2907,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Then the full suite (command in the header). Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tests/test_finding_ticket.py

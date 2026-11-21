@@ -1381,3 +1381,141 @@ def test_the_settings_the_failure_needs_appear_under_trigger_each_confirmed_or_u
     assert "`API_RETRY_ON_429` set to `true`; default `false`" in trigger and "`sync.pageSize` left at its default `100`" in trigger
     assert "**Confirmed**: a check found this default registered, and it agrees" in trigger
     assert "**Unconfirmed**: a check found a different default registered" in trigger
+
+
+# --- Task 7: hostile text stays inert ---------------------------------------
+# The inert-text test of #28 covers report.md only, so the ticket has its own: the same two
+# engines, with `pre` allowed for a snippet and no other block or link the text could add.
+
+from test_inert_report import HOSTILE, _hrefs
+
+STEERING = "/close #12 !7 ABC-123 acme/api#12 PR#7 group/proj!3 a1b2c3d @alice <details>x</details>"
+BAD = f"{HOSTILE} {STEERING}"
+STRUCTURE = ("h1", "h2", "h3", "p", "pre", "ul", "li", "a", "img", "table", "tr", "td", "th", "blockquote",
+             "hr", "script", "details", "b", "i", "ol", "div", "span")
+
+
+def _structure(markdown, renderer):
+    return [t for t in renderer(markdown).tags if t in STRUCTURE or t not in ("code", "strong", "em", "br", "sub")]
+
+
+def _outside_fences(text):
+    keep, inside = [], False
+    for line in text.split("\n"):
+        if line.startswith("```"):
+            inside = not inside
+        elif not inside:
+            keep.append(line)
+    return "\n".join(keep)
+
+
+def _model_fields(word):
+    return dict(
+        failure_mode=f"failure {word}", trigger_condition=f"trigger {word}", amplifier=f"amplifier {word}",
+        sustaining_effect=f"sustaining {word}", blast_radius=f"blast {word}",
+        blast_items=[{"claim": f"claim {word}", "basis": "traced", "evidence": [0]},
+                     {"claim": f"inferred {word}", "basis": "assumption"}],
+        not_checked=[{"item": f"item {word}", "how_to_check": f"how {word}"}],
+        implicit_guarantees=[{"guarantee": f"guarantee {word}", "removed_by": f"removed {word}",
+                              "evidence": [0]}],
+        confidence_rationale=f"rationale {word}", how_to_verify=f"verify {word}", prediction=f"prediction {word}",
+        preconditions=[{"setting": f"S {word}", "default": f"D {word}", "default_ref": "src/api.ts:1", "needs": "changed",
+                        "value": f"V {word}", "documented": "no", "default_url": None, "doc_url": None}],
+        check={"status": "narrowed", "by": "skeptic", "reason": f"reason {word}", "holds": f"holds {word}"})
+
+
+def _hostile_ticket(tmp_path, capsys, word):
+    """(markdown, benign markdown) for one repository whose code, model fields and drafts say `word`."""
+    results = []
+    for label, text in (("hostile", word), ("benign", "plain words")):
+        # the benign file has the same shape (a long line, a control character): the same notes
+        lines = HOSTILE_LINES if label == "hostile" else ["plain" if len(l) < 99 else "p" * 5000 for l in HOSTILE_LINES[:-1]] + ["a \x1b b"]
+        repo = make_repo(tmp_path / label, {"src/releases.ts": "\n".join(lines) + "\n",
+                                           "src/api.ts": "export const api = 1;\n"})
+        finding = make_finding(repo, location={"file": "src/releases.ts", "symbol": f"sym {text}", "lines": "1-10", "url": None},
+                               evidence=[{"type": "code", "ref": f"src/releases.ts:1-{len(HOSTILE_LINES)}",
+                                          "note": f"note {text}", "url": None},
+                                         {"type": "code", "ref": "src/api.ts:1", "note": f"note {text}", "url": None}],
+                               **_model_fields(text))
+        make_report(repo, [finding])
+        drafts = {"schema": "thunderstruck.ticket-sections/v1", "key": KEY, "scanned_at": SCANNED_AT,
+                  "sections": {sid: [f"draft {text}", f"another {text}"] for sid, _ in ft.JUDGEMENT}}
+        path = ft.sections_path(repo, KEY)
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps(drafts))
+        assert run_main(capsys, repo, "--key", KEY)[0] == 0
+        results.append(ticket_path(repo).read_text())
+    return results
+
+
+def _assert_inert(tmp_path, capsys, word=BAD):
+    text, benign = _hostile_ticket(tmp_path, capsys, word)
+    for renderer in RENDERERS:
+        assert _structure(text, renderer) == _structure(benign, renderer), renderer.__name__
+        html = renderer(text)
+        assert "img" not in html.tags and "script" not in html.tags and "details" not in html.tags
+        assert html.tags.count("h1") == 1 and html.tags.count("h2") == len(HEADINGS)
+        assert html.tags.count("pre") == 2
+    allowed = (BASE + "/", ft.plugin_repository() + "/")
+    hrefs = _hrefs(text)
+    assert hrefs and all(h.startswith(allowed) for h in hrefs), hrefs
+    prose = _outside_fences(text)
+    for token in ("#12", "!7", "ABC-123", "acme/api#12", "PR#7", "group/proj!3", "a1b2c3d", "@alice", "evil.example"):
+        for m in __import__("re").finditer(__import__("re").escape(token), prose):
+            before = prose[:m.start()]
+            assert before.count("`") % 2 == 1 or before.endswith("("), (token, prose[max(0, m.start() - 40):m.end() + 20])
+    assert not [l for l in prose.split("\n") if l[:1] in ("/", "@", "!", ">", "|")], "a line starts like a command or a quote"
+    return text
+
+
+def test_hostile_text_in_every_field_the_code_and_the_drafts_stays_inert(tmp_path, capsys):
+    text = _assert_inert(tmp_path, capsys)
+    assert "fake heading" in text and "fake item" in text
+
+
+def test_every_defence_is_needed_the_hostile_test_fails_without_it(tmp_path, capsys, monkeypatch):
+    import re
+    defences = {
+        "the fence is longer than any run inside": ("verbatim", lambda lines: ("```\n" + "\n".join(lines) + "\n```", 0)),
+        "model text goes through mdtext.text": ("text", lambda value, cell=False, heading=False: str(value)),
+    }
+    for name, (attr, naive) in defences.items():
+        with monkeypatch.context() as patch:
+            patch.setattr(mdtext, attr, naive)
+            with pytest.raises(AssertionError):
+                _assert_inert(tmp_path / re.sub(r"\W", "", name), capsys)
+    with monkeypatch.context() as patch:           # tracker references: the pattern before #108
+        patch.setattr(mdtext, "_LINKISH", re.compile(r"://|//|www\.|mailto:|xmpp:|@|\.[^\W\d_]{2}", re.I))
+        with pytest.raises(AssertionError):
+            _assert_inert(tmp_path / "refs", capsys)
+
+
+def test_a_hand_edited_report_cannot_plant_a_link_or_break_one(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    f = make_finding(repo)
+    f["location"]["url"] = "javascript:alert(1)"
+    f["evidence"][0]["url"] = "https://x.example/a) [click](https://evil.example"
+    f["evidence"][1]["url"] = "https://x.example/ok"
+    make_report(repo, [f])
+    assert run_main(capsys, repo, "--key", KEY)[0] == 0
+    text = ticket_path(repo).read_text()
+    assert "javascript:" not in text and "evil.example" not in text
+    assert "[`src/api.ts:1`](https://x.example/ok)" in text
+    assert all(h.startswith(("https://x.example/ok", ft.plugin_repository())) for h in _hrefs(text))
+
+
+def test_a_hostile_key_never_becomes_a_path(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    make_report(repo, [make_finding(repo, key="../../escape")])
+    code, _, err = run_main(capsys, repo, "--key", "../../escape")
+    assert code == 2 and "12 lowercase hex" in err
+    assert not (repo / ".thunderstruck" / "tickets").exists() and not (tmp_path / "escape.md").exists()
+
+
+def test_the_ticket_names_no_machine_value_on_the_real_fixture_either(tmp_path, capsys):
+    import getpass
+    import re
+    _, text = made(tmp_path, capsys)
+    for value in (str(tmp_path), str(Path.home()), getpass.getuser() + "/"):
+        assert value not in text, value
+    assert not re.search(r"(?<![\w.:/-])/(?:tmp|home|Users|root|var)/", text)
