@@ -51,7 +51,7 @@ REQUIRED_FIELDS = [
     "blast_radius", "blast_items", "evidence", "preconditions", "not_checked",
     "confidence", "confidence_rationale", "how_to_verify",
 ]
-# May be [] (or absent): the key must be present, whatever it holds
+# May be [], but the key must be present, whatever it holds
 LIST_MAY_BE_EMPTY = ("preconditions", "not_checked")
 # Present or absent; never an empty string (#56 AC-6)
 OPTIONAL_TEXT = ("amplifier", "sustaining_effect")
