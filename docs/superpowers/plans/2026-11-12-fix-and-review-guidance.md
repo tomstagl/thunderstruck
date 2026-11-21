@@ -536,7 +536,7 @@ def has_front_matter(text: str) -> bool:
 # --- Neutrality (spec §3) -----------------------------------------------------
 
 PLUGIN_DIRS = ("scripts", "catalog", "hooks", "templates", "examples",
-               "agents", "skills", ".claude", ".claude-plugin")
+               "agents", "skills", "planes", ".claude", ".claude-plugin")
 
 
 @dataclass(frozen=True)

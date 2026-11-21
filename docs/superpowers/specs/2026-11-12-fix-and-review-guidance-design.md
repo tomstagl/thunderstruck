@@ -61,7 +61,7 @@ The check forbids things by *form*, never by plain word. "Tool", "agent", "plugi
 | N08 | a harness feature: subagent, sub-agent, slash command, plan mode, agent team, permission mode | "a separate session, by a person or an agent", "the last slash" |
 | N09 | the built-in commands `/plugin` and `/compact` | `GET /health`, `/etc/hosts`, `docs/plugin.md`, `/plugins` |
 | N20 | a skill or agent name read from the tree (`thunderstruck-scan`, `thunderstruck-skeptic`, `stability-catalog`, `implement-ticket`, …), alone or as `/name` | "a scan of the repository", "stability catalog" |
-| N21 | a file the plugin ships, as `<plugin dir>/…/<name>` or, for a name that is not also an ordinary one, alone in a code span: names read from `scripts/`, `catalog/`, `hooks/`, `templates/`, `examples/`, `agents/`, `skills/`, `.claude/`, `.claude-plugin/` | `src/report.py`, `scripts/deploy.sh`, `README.md`, `report.md`, `report.json`, `validate.py` alone |
+| N21 | a file the plugin ships, as `<plugin dir>/…/<name>` or, for a name that is not also an ordinary one, alone in a code span: names read from `scripts/`, `catalog/`, `hooks/`, `templates/`, `examples/`, `agents/`, `skills/`, `planes/`, `.claude/`, `.claude-plugin/` | `src/report.py`, `scripts/deploy.sh`, `README.md`, `report.md`, `report.json`, `validate.py` alone |
 
 Against AC-3: tool names are N04 to N06, plugin paths N01, N02, N21, scripts N21, skill names and slash commands N20, N09 and N08, harness features N02, N03, N04, N08. A document that opens with a front-matter block fails too: it is a skill or agent file, not a plain document.
 
