@@ -124,7 +124,7 @@ No commit: this task changes nothing.
 **Interfaces:**
 - Produces, in `guidance_check`: `PUBLISHED: dict[str, str]`, `Block`, `blocks(text)`, `has_front_matter(text)`, `Rule`, `Hit`, `load_rules(root=ROOT) -> list[Rule]`, `load_legitimate() -> list[str]`, `load_bare_ok() -> set[str]`, `plugin_components(root)`, `plugin_files(root, skip)`, `lint(text, rules) -> list[Hit]`. A `Block` carries `kind`, `line`, `end`, `text` and `level`.
 
-- [ ] **Step 1: Write the failing tests.** Create `tests/test_fix_guidance.py`. Its imports are the file's final set; later tasks use the rest.
+- [x] **Step 1: Write the failing tests.** Create `tests/test_fix_guidance.py`. Its imports are the file's final set; later tasks use the rest.
 
 ````python
 """#107: the fix instructions and the review briefs are the maintainer's.
@@ -238,12 +238,12 @@ def test_front_matter_makes_a_file_not_a_plain_document():
     assert not g.has_front_matter("---\nno closing line\n")
 ````
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_fix_guidance.py -q`
 Expected: `ERROR tests/test_fix_guidance.py` while collecting, `ModuleNotFoundError: No module named 'guidance_check'`.
 
-- [ ] **Step 3: Write the rules.** Create `tests/guidance/neutrality.yaml`:
+- [x] **Step 3: Write the rules.** Create `tests/guidance/neutrality.yaml`:
 
 ```yaml
 # Harness-neutrality rules for the fix instructions and the review briefs (#107).
@@ -423,7 +423,7 @@ legitimate:
   - "Never push."
 ```
 
-- [ ] **Step 4: Write the checker.** Create `tests/guidance_check.py`:
+- [x] **Step 4: Write the checker.** Create `tests/guidance_check.py`:
 
 ````python
 """Checks for the fix instructions and the review briefs (#107).
@@ -646,12 +646,12 @@ def lint(text: str, rules: list[Rule]) -> list[Hit]:
     return hits
 ````
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_fix_guidance.py -q`, then the full suite (header command).
 Expected: PASS, `exit=0`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add docs/superpowers/plans/2026-11-12-fix-and-review-guidance.md tests/guidance_check.py tests/guidance/neutrality.yaml tests/test_fix_guidance.py
