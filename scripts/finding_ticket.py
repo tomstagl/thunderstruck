@@ -253,3 +253,121 @@ def check_snapshot(repo: Path, rep: dict, finding: dict) -> None:
         raise stop(f"no ticket was written for finding {finding.get('key')}: the code it cites is "
                    "not the scan's.\n  " + "\n  ".join(rows[:links.MAX_NAMED])
                    + (f"\n  … and {more} more" if more > 0 else "") + "\n" + way)
+
+
+URL_KEYS = frozenset({"url", "default_url", "doc_url", "history_url"})
+_URL_OK = re.compile(r"https?://[^\s<>()\[\]\"'\\`]+\Z")
+
+
+def safe_url(url) -> bool:
+    """A plain web address that cannot end a Markdown link or open another one. The
+    tool made every `url` in report.json; this also holds against a hand-edited file."""
+    return isinstance(url, str) and _URL_OK.match(url) is not None
+
+
+def clean_urls(value):
+    """Set every link field that is not a safe address to None, in place, at any depth."""
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key in URL_KEYS:
+                if item is not None and not safe_url(item):
+                    value[key] = None
+            else:
+                clean_urls(item)
+    elif isinstance(value, list):
+        for item in value:
+            clean_urls(item)
+    return value
+
+
+MAX_STEPS = 12
+MAX_SNIPPET_LINES = 40
+MAX_LINE_CHARS = 240
+
+
+@dataclass(frozen=True)
+class Step:
+    label: str          # path:start or path:start-end, rebuilt from the numbers, never copied
+    start: int
+    end: int
+    lines: list[str]    # as cut: at most MAX_SNIPPET_LINES lines of at most MAX_LINE_CHARS
+    hidden: int         # lines of the citation not shown
+    shortened: int      # shown lines cut to MAX_LINE_CHARS
+    url: str | None
+    note: str
+
+
+def blob_lines(repo: Path, sha: str, rel: str) -> list[str]:
+    """The lines of `rel` at `sha`, counted as validate.py and git blame count them: split
+    at \n only, the empty string after a final newline dropped, one trailing \r dropped
+    per line, an empty file one empty line. A file git stores as an LFS pointer is a stop: the
+    working tree may hold the real content, but the commit holds the pointer."""
+    proc = _git(repo, "cat-file", "blob", f"{sha}:{rel}")
+    if proc.returncode != 0:
+        raise stop(f"{json.dumps(rel)} is not in the scanned commit. Rescan with /thunderstruck-scan.")
+    if proc.stdout.startswith(b"version https://git-lfs.github.com/spec/v1"):
+        raise stop(f"{json.dumps(rel)} is stored with Git LFS at the scanned commit: the commit holds a "
+                   "pointer, not the code, so no snippet can be taken from it.")
+    parts = proc.stdout.split(b"\n")
+    if parts[-1] == b"":
+        parts.pop()
+    return [(p[:-1] if p.endswith(b"\r") else p).decode("utf-8", "replace") for p in parts] or [""]
+
+
+def code_steps(repo: Path, sha: str, finding: dict) -> tuple[list[Step], int]:
+    """One step per `code` evidence item, in the finding's order: the cited lines of the
+    file at the scanned commit, cut to the caps. Also how many items the cap left out."""
+    files: dict[str, list[str]] = {}
+    steps: list[Step] = []
+    omitted = 0
+    for ev in finding.get("evidence") or []:
+        if not (isinstance(ev, dict) and ev.get("type") == "code"):
+            continue
+        m = CODE_REF.match(str(ev.get("ref") or "").strip())
+        if not m:
+            continue
+        rel = c.ref_path(m["path"])
+        start = int(m["start"])
+        end = int(m["end"] or m["start"])
+        if rel not in files:
+            files[rel] = blob_lines(repo, sha, rel)
+        total = len(files[rel])
+        if not 1 <= start <= end <= total:
+            raise stop(f"the finding cites {json.dumps(rel)} lines {start}-{end}, but the file at the "
+                       f"scanned commit has {total} lines. Rescan with /thunderstruck-scan.")
+        if len(steps) >= MAX_STEPS:
+            omitted += 1
+            continue
+        taken = files[rel][start - 1:end]
+        shown = taken[:MAX_SNIPPET_LINES]
+        steps.append(Step(label=f"{rel}:{start}" + (f"-{end}" if end != start else ""),
+                          start=start, end=end,
+                          lines=[line[:MAX_LINE_CHARS] for line in shown],
+                          hidden=len(taken) - len(shown),
+                          shortened=sum(1 for line in shown if len(line) > MAX_LINE_CHARS),
+                          url=ev.get("url") if safe_url(ev.get("url")) else None,
+                          note=str(ev.get("note") or "")))
+    return steps, omitted
+
+
+def render_step(n: int, step: Step) -> list[str]:
+    """`### Step n`, the link, the code in a fence, what to notice. Whatever was cut or
+    shown as an escape is said after the fence, so the fence holds only the file's text."""
+    block, escaped = md.verbatim(step.lines)
+    notes = []
+    if step.hidden:
+        first = step.start + len(step.lines)
+        where = f"Line {first}" if first == step.end else f"Lines {first}-{step.end}"
+        notes.append(f"{where} ({step.hidden} line{'s' if step.hidden != 1 else ''}) not shown: "
+                     "open the link or the file.")
+    if step.shortened:
+        notes.append(f"{step.shortened} {'line was' if step.shortened == 1 else 'lines were'} "
+                     f"shortened to {MAX_LINE_CHARS} characters.")
+    if escaped:
+        notes.append(f"{escaped} control or bidirectional "
+                     f"{'character is' if escaped == 1 else 'characters are'} shown as \\uXXXX.")
+    L = [f"### Step {n}", "", md.linked(step.label, step.url), "", block, ""]
+    if notes:
+        L += [" ".join(notes), ""]
+    note = md.text(step.note) if step.note.strip() else "not stated."
+    return L + [f"What to notice: {note}", ""]

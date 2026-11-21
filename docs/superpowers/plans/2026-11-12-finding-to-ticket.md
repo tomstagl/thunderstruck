@@ -1201,7 +1201,7 @@ git commit -m "Ticket: stop when a cited file is not the scanned commit's (#108)
 
 A step is a `code` evidence item: the lines the finding cites, read from the blob, cut to stated caps, in a fence (§7).
 
-- [ ] **Step 1: Write the tests.** Append to `tests/test_finding_ticket.py`:
+- [x] **Step 1: Write the tests.** Append to `tests/test_finding_ticket.py`:
 
 ``````python
 # --- Task 4: snippets from the scanned commit -------------------------------
@@ -1388,7 +1388,7 @@ def test_a_step_never_takes_an_unsafe_address(tmp_path):
 ``````
 
 
-- [ ] **Step 2: Run them.**
+- [x] **Step 2: Run them.**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_finding_ticket.py tests/test_report_links.py -q
@@ -1396,7 +1396,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: FAIL, 41 failed: `AttributeError: module 'finding_ticket' has no attribute 'code_steps'` (and `safe_url`, `clean_urls`).
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 Append to `scripts/finding_ticket.py`:
 
@@ -1520,7 +1520,7 @@ def render_step(n: int, step: Step) -> list[str]:
 ``````
 
 
-- [ ] **Step 4: Run the task's tests, then the full suite.** First:
+- [x] **Step 4: Run the task's tests, then the full suite.** First:
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_finding_ticket.py tests/test_report_links.py -q
@@ -1528,7 +1528,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Then the full suite (command in the header). Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/finding_ticket.py tests/test_finding_ticket.py

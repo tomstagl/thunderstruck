@@ -515,3 +515,186 @@ def test_a_git_failure_or_timeout_is_a_named_stop(tmp_path, monkeypatch):
     _refused(repo, "git did not answer")
     monkeypatch.setattr(links, "stale_paths", failure)
     assert "/secret/path" not in _refused(repo, "git failed while comparing")
+
+
+# --- Task 4: snippets from the scanned commit -------------------------------
+
+from validate import _count_lines
+
+
+def _cite(repo, rel, a, b=None, note="the code", url=None):
+    ref = f"{rel}:{a}" + (f"-{b}" if b else "")
+    return make_finding(repo, evidence=[{"type": "code", "ref": ref, "note": note, "url": url}],
+                        blast_items=[], implicit_guarantees=[])
+
+
+def _steps(repo, finding):
+    return ft.code_steps(repo, head_of(repo), finding)
+
+
+def _independent_lines(repo, rel):
+    """The file at HEAD the way `git blame` and validate.py count it, written out again."""
+    data = subprocess.run(["git", "-C", str(repo), "show", f"HEAD:{rel}"], check=True,
+                          capture_output=True, env=GIT_ENV).stdout
+    text = data.decode("utf-8", "replace")
+    parts = text.split("\n")
+    if parts[-1] == "":
+        parts.pop()
+    return [p[:-1] if p.endswith("\r") else p for p in parts] or [""]
+
+
+CONTENTS = {
+    "lf": b"one\ntwo\nthree\n",
+    "no final newline": b"one\ntwo\nthree",
+    "crlf": b"one\r\ntwo\r\nthree\r\n",
+    "tabs and trailing spaces": b"\tone  \n\t\ttwo \nthree\t\n",
+    "a lone carriage return": b"one\rstill one\ntwo\nthree\n",
+    "a form feed": b"one\n\x0c\ntwo\nthree\n",
+    "unicode": "naïve — ünïcode ✓\n日本語\nthree\n".encode(),
+    "bytes that are not utf-8": b"caf\xe9\nbad \xff\xfe\nthree\n",
+    "blank lines": b"\n\none\n\n",
+    "one line": b"only\n",
+    "empty": b"",
+}
+
+
+@pytest.mark.parametrize("name", sorted(CONTENTS))
+def test_a_snippet_is_the_text_of_the_file_at_the_scanned_commit(tmp_path, name):
+    repo = make_repo(tmp_path, {"src/a.ts": CONTENTS[name]})
+    expected = _independent_lines(repo, "src/a.ts")
+    assert len(expected) == _count_lines(repo / "src/a.ts")        # validate.py counts the same lines
+    steps, extra = _steps(repo, _cite(repo, "src/a.ts", 1, len(expected) if len(expected) > 1 else None))
+    assert extra == 0 and len(steps) == 1
+    assert steps[0].lines == expected and (steps[0].start, steps[0].end) == (1, len(expected))
+
+
+def test_a_file_stored_in_git_lfs_is_a_stop_not_a_pointer_shown_as_code(tmp_path):
+    pointer = b"version https://git-lfs.github.com/spec/v1\noid sha256:" + b"0" * 64 + b"\nsize 12345\n"
+    repo = make_repo(tmp_path, {"src/big.bin": pointer, "src/api.ts": "x\n"})
+    with pytest.raises(c.ThunderstruckError, match='"src/big.bin" is stored with Git LFS.*pointer, not the code'):
+        _steps(repo, _cite(repo, "src/big.bin", 1))
+    (step,), _ = _steps(repo, _cite(repo, "src/api.ts", 1))               # a file that is not a pointer
+    assert step.lines == ["x"]
+
+
+def test_the_snippet_is_the_commit_not_the_working_tree(tmp_path):
+    repo = make_repo(tmp_path)
+    (repo / "src/releases.ts").write_bytes(RELEASES.replace("\n", "\r\n").encode())
+    git(repo, "config", "core.autocrlf", "true")
+    (step,), _ = _steps(repo, _cite(repo, "src/releases.ts", 3, 5))
+    assert step.lines == ["line 3", "line 4", "line 5"]
+
+
+def test_a_single_line_and_a_range_are_rebuilt_from_the_numbers(tmp_path):
+    repo = make_repo(tmp_path)
+    (one,), _ = _steps(repo, _cite(repo, "src/releases.ts", 7))
+    (many,), _ = _steps(repo, _cite(repo, "src/releases.ts", 7, 9))
+    assert (one.label, one.lines) == ("src/releases.ts:7", ["line 7"])
+    assert (many.label, many.lines) == ("src/releases.ts:7-9", ["line 7", "line 8", "line 9"])
+
+
+@pytest.mark.parametrize("a, b", [(25, 99), (31, None), (0, 2), (5, 3)])
+def test_a_range_the_commit_does_not_have_is_a_stop(tmp_path, a, b):
+    repo = make_repo(tmp_path)
+    with pytest.raises(c.ThunderstruckError, match="src/releases.ts.*at the scanned commit has 30 lines"):
+        _steps(repo, _cite(repo, "src/releases.ts", a, b))
+
+
+def test_only_code_evidence_makes_a_step_and_in_the_findings_order(tmp_path):
+    repo = make_repo(tmp_path)
+    finding = make_finding(repo, evidence=[
+        {"type": "commit", "ref": "abc1234", "note": "c", "url": None},
+        {"type": "code", "ref": "src/api.ts:1", "note": "second file first", "url": "https://x.example/a"},
+        {"type": "catalog", "ref": "dependencyOf component:default/web", "note": "k", "url": None},
+        {"type": "code", "ref": "src/releases.ts:2", "note": "then this", "url": None},
+        {"type": "code", "ref": "not a ref", "note": "skipped", "url": None}],
+        blast_items=[], implicit_guarantees=[])
+    steps, _ = _steps(repo, finding)
+    assert [s.label for s in steps] == ["src/api.ts:1", "src/releases.ts:2"]
+    assert [s.note for s in steps] == ["second file first", "then this"]
+    assert [s.url for s in steps] == ["https://x.example/a", None]
+
+
+def test_a_long_citation_is_cut_and_says_so_outside_the_fence(tmp_path):
+    repo = make_repo(tmp_path, {"src/big.ts": "".join(f"row {n}\n" for n in range(1, 101))})
+    (step,), _ = _steps(repo, _cite(repo, "src/big.ts", 1, 100))
+    assert len(step.lines) == ft.MAX_SNIPPET_LINES == 40 and step.hidden == 60
+    text = "\n".join(ft.render_step(1, step))
+    assert "Lines 41-100 (60 lines) not shown: open the link or the file." in text
+    fenced = text.split("```")[1]
+    assert "not shown" not in fenced and fenced.strip("\n").splitlines()[-1] == "row 40"
+
+
+def test_a_very_long_line_is_shortened_and_says_so(tmp_path):
+    repo = make_repo(tmp_path, {"src/min.js": "short\n" + "x" * 5000 + "\n" + "y" * 241 + "\n"})
+    (step,), _ = _steps(repo, _cite(repo, "src/min.js", 1, 3))
+    assert [len(line) for line in step.lines] == [5, 240, 240] and step.shortened == 2
+    assert "2 lines were shortened to 240 characters." in "\n".join(ft.render_step(1, step))
+
+
+def test_a_citation_of_exactly_the_caps_is_not_called_cut(tmp_path):
+    repo = make_repo(tmp_path, {"src/e.ts": "".join("z" * 240 + "\n" for _ in range(40))})
+    (step,), _ = _steps(repo, _cite(repo, "src/e.ts", 1, 40))
+    text = "\n".join(ft.render_step(1, step))
+    assert step.hidden == 0 and step.shortened == 0 and "not shown" not in text and "shortened" not in text
+
+
+def test_at_most_twelve_steps_and_the_rest_are_counted(tmp_path):
+    repo = make_repo(tmp_path)
+    finding = make_finding(repo, evidence=[{"type": "code", "ref": f"src/releases.ts:{n}", "note": str(n),
+                                            "url": None} for n in range(1, 15)],
+                           blast_items=[], implicit_guarantees=[])
+    steps, extra = _steps(repo, finding)
+    assert len(steps) == ft.MAX_STEPS == 12 and extra == 2
+
+
+def test_a_step_shows_its_link_its_code_and_what_to_notice(tmp_path):
+    repo = make_repo(tmp_path)
+    url = f"{BASE}/blob/{head_of(repo)}/src/releases.ts#L3-L4"
+    (step,), _ = _steps(repo, _cite(repo, "src/releases.ts", 3, 4, note="the retry loop", url=url))
+    assert ft.render_step(2, step) == [
+        "### Step 2", "", f"[`src/releases.ts:3-4`]({url})", "", "```\nline 3\nline 4\n```", "",
+        "What to notice: the retry loop", ""]
+
+
+def test_a_step_without_a_link_or_a_note_still_reads_whole(tmp_path):
+    repo = make_repo(tmp_path)
+    (step,), _ = _steps(repo, _cite(repo, "src/releases.ts", 3, note="  "))
+    rows = ft.render_step(1, step)
+    assert rows[2] == "`src/releases.ts:3`" and rows[-2] == "What to notice: not stated."
+
+
+def test_hidden_characters_in_the_code_are_shown_and_counted(tmp_path):
+    repo = make_repo(tmp_path, {"src/h.ts": "a‮b\nc\x1bd\n"})
+    (step,), _ = _steps(repo, _cite(repo, "src/h.ts", 1, 2))
+    text = "\n".join(ft.render_step(1, step))
+    assert "a\\u202eb" in text and "c\\u001bd" in text and "‮" not in text
+    assert "2 control or bidirectional characters are shown as \\uXXXX." in text
+
+
+@pytest.mark.parametrize("url, ok", [
+    ("https://github.example.com/acme/scanned/blob/abc/src/x.ts#L3-L4", True), ("http://h.example/x", True),
+    ("javascript:alert(1)", False), ("https://x.example/a) [b](c", False), ("https://x.example/a b", False),
+    ("https://x.example/<b>", False), ("https://x.example/`", False), ("https://x.example/\\x", False),
+    ("//x.example/a", False), ("https://", False), ("", False), (None, False), (7, False)])
+def test_only_a_plain_web_address_is_a_link(url, ok):
+    assert ft.safe_url(url) is ok
+
+
+def test_every_unsafe_link_field_is_dropped_at_any_depth_and_the_rest_kept():
+    value = {"url": "javascript:x", "location": {"url": "https://ok.example/a"},
+             "evidence": [{"url": "https://x.example/) [y](z", "ref": "keep"}],
+             "preconditions": [{"default_url": "<b>", "doc_url": "https://ok.example/d"}],
+             "check": {"evidence": [{"url": None}]}, "history": [{"url": "ftp://x.example"}]}
+    out = ft.clean_urls(value)
+    assert out is value
+    assert value["url"] is None and value["location"]["url"] == "https://ok.example/a"
+    assert value["evidence"][0] == {"url": None, "ref": "keep"}
+    assert value["preconditions"][0] == {"default_url": None, "doc_url": "https://ok.example/d"}
+    assert value["history"][0]["url"] is None
+
+
+def test_a_step_never_takes_an_unsafe_address(tmp_path):
+    repo = make_repo(tmp_path)
+    (step,), _ = _steps(repo, _cite(repo, "src/releases.ts", 3, url="https://x.example/a) [b](c"))
+    assert step.url is None
