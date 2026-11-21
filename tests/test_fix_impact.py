@@ -503,3 +503,285 @@ def test_every_bundle_of_the_fixture_numbers_its_source(scanned_repo):
         file, ranges = b.shown_lines(path.read_text())
         assert ranges and ranges[0][0] >= 1, path.name
         assert re.search(r"```\w*\n *\d+ \| ", path.read_text()), path.name
+
+
+# --- Task 5 -----------------------------------------------------------------
+import verify  # noqa: E402
+from test_verification import _apply, _entry, _finding, _line, _prepare, _save, _v  # noqa: E402
+
+
+def test_the_verdict_contract_gains_exactly_the_three_keys():
+    assert verify.VERDICT_KEYS == ("key", "verdict", "reason", "holds", "refuted_claims", "evidence",
+                                   "dependencies_read", "duplicate_of",
+                                   "guarantees", "no_guarantees_reason", "not_checked", "confirmations")
+    assert verify.VERDICT_KEYS[-1] == "confirmations", "#57's pin on the last key stands"
+    assert verify.VERDICT_GUARANTEE_KEYS == ("of", "guarantee", "removed_by", "evidence")
+    assert verify.VERDICT_NOT_CHECKED_KEYS == ("item", "state", "note", "evidence")
+
+
+def test_the_prompt_example_shows_both_item_shapes():
+    import re as _re
+    text = (ROOT / "agents" / "thunderstruck-skeptic.md").read_text()
+    example = json.loads(_re.search(r"```json\n(\{.*?\})\n```", text, _re.S)[1])
+    assert example["guarantees"] and example["not_checked"]
+    assert all(set(g) <= set(verify.VERDICT_GUARANTEE_KEYS) for g in example["guarantees"])
+    assert any(g["of"] is None for g in example["guarantees"]) and any(g["of"] == 0 for g in example["guarantees"])
+    assert all(set(n) <= set(verify.VERDICT_NOT_CHECKED_KEYS) for n in example["not_checked"])
+    assert {n["state"] for n in example["not_checked"]} == set(c.RESOLUTION_STATES)
+
+
+def test_the_brief_carries_the_impact_claims_and_still_withholds_the_rationale(validated_repo, validated_env):
+    plan = _prepare(validated_repo, validated_env)
+    e = _entry(plan, "releases.ts")
+    brief = (validated_repo / e["brief"]).read_text()
+    f = _finding(validated_repo, e["key"])
+    for field in ("blast_items", "implicit_guarantees", "not_checked"):
+        assert f"### {field}" in brief, field
+    assert f["implicit_guarantees"][0]["guarantee"] in brief
+    assert f["not_checked"][1]["how_to_check"] in brief and '"index": 1' in brief
+    assert f["confidence_rationale"] not in brief and "confidence_rationale" not in brief
+    api = (validated_repo / _entry(plan, "api.ts")["brief"]).read_text()
+    assert "### no_guarantees_reason" in api and "### implicit_guarantees" not in api
+
+
+def test_a_finding_from_before_the_impact_fields_gets_a_brief_without_them():
+    old = {"key": "k" * 12, "location": {"file": "a.py"}, "missing_patterns": ["S02"], "failure_mode": "f",
+           "trigger_condition": "t", "blast_radius": "b", "how_to_verify": "v", "evidence": [], "preconditions": []}
+    brief = verify.render_brief(old, [], None, [])
+    for field in ("blast_items", "implicit_guarantees", "not_checked", "no_guarantees_reason"):
+        assert f"### {field}" not in brief
+
+
+RESOLVED = {0: {"type": "code", "ref": "a.py:1"}, 1: {"type": "commit", "ref": "abc1234"},
+            2: {"type": "dependency", "ref": "pypi:x@1:y.py:1"}}
+MINE = {"implicit_guarantees": [{"guarantee": "g0", "removed_by": "r0", "evidence": [0]},
+                                {"guarantee": "g1", "removed_by": "r1", "evidence": [0]}],
+        "not_checked": [{"item": "i0", "how_to_check": "h0"}, {"item": "i1", "how_to_check": "h1"}]}
+
+
+@pytest.mark.parametrize("result, state, items, ignored", [
+    ({"guarantees": [{"of": 1, "evidence": [0]}]}, "named",
+     [{"of": 1, "guarantee": "g1", "removed_by": "r1", "evidence": [0]}], []),
+    ({"guarantees": [{"of": 0, "guarantee": "reworded", "removed_by": "x", "evidence": [0, 2]}]}, "named",
+     [{"of": 0, "guarantee": "g0", "removed_by": "r0", "evidence": [0, 2]}], []),
+    ({"guarantees": [{"of": None, "guarantee": "new", "removed_by": "r", "evidence": [2]}]}, "named",
+     [{"of": None, "guarantee": "new", "removed_by": "r", "evidence": [2]}], []),
+    ({"guarantees": [{"of": 0, "evidence": [1]}]}, "not_addressed", [], ["has no code evidence that resolved"]),
+    ({"guarantees": [{"of": 0, "evidence": [9]}]}, "not_addressed", [], ["has no code evidence that resolved"]),
+    ({"guarantees": [{"of": 5, "evidence": [0]}]}, "not_addressed", [], ["is not a position in the finding's"]),
+    ({"guarantees": [{"of": True, "evidence": [0]}]}, "not_addressed", [], ["is not a position in the finding's"]),
+    ({"guarantees": [{"of": None, "evidence": [0]}]}, "not_addressed", [], ["without its guarantee and removed_by"]),
+    ({"guarantees": [{"of": 0, "evidence": [0]}, {"of": 0, "evidence": [0]}]}, "named",
+     [{"of": 0, "guarantee": "g0", "removed_by": "r0", "evidence": [0]}], ["repeats guarantee 0"]),
+    ({"guarantees": [{"of": 0, "evidence": [0], "extra": 1}]}, "not_addressed", [], ["is not an object with the keys"]),
+    ({"guarantees": "none"}, "not_addressed", [], ["guarantees is not a list"]),
+    ({"guarantees": [], "no_guarantees_reason": "The lock guards a counter only."}, "none_found", [], []),
+    ({"no_guarantees_reason": "  "}, "not_addressed", [], []),
+    ({}, "not_addressed", [], []),
+    ({"guarantees": [{"of": 0, "evidence": [0]}], "no_guarantees_reason": "none"}, "named",
+     [{"of": 0, "guarantee": "g0", "removed_by": "r0", "evidence": [0]}], ["no_guarantees_reason is given beside"]),
+])
+def test_settle_guarantees(result, state, items, ignored):
+    notes: list[str] = []
+    out = verify.settle_guarantees(MINE, result, RESOLVED, notes)
+    assert out["state"] == state and out["items"] == items
+    assert all(any(want in n for n in notes) for want in ignored), notes
+    assert (out["reason"] is None) == (state == "named")
+
+
+@pytest.mark.parametrize("result, expected, ignored", [
+    ({"not_checked": [{"item": 0, "state": "resolved", "note": "read it", "evidence": [0, 1]}]},
+     [("resolved", [0, 1]), ("unresolved", [])], []),
+    ({"not_checked": [{"item": 1, "state": "unresolved", "note": "read limit", "evidence": [0]}]},
+     [("unresolved", []), ("unresolved", [0])], []),
+    ({"not_checked": [{"item": 0, "state": "resolved", "note": "read it"}]},
+     [("unresolved", []), ("unresolved", [])], ["says resolved but has no evidence that resolved"]),
+    ({"not_checked": [{"item": 0, "state": "resolved", "note": "read it", "evidence": [9]}]},
+     [("unresolved", []), ("unresolved", [])], ["says resolved but has no evidence that resolved"]),
+    ({"not_checked": [{"item": 0, "state": "done", "note": "x"}]},
+     [("unresolved", []), ("unresolved", [])], ["needs a state of"]),
+    ({"not_checked": [{"item": 0, "state": "unresolved", "note": ""}]},
+     [("unresolved", []), ("unresolved", [])], ["needs a state of"]),
+    ({"not_checked": [{"item": 2, "state": "unresolved", "note": "x"}]},
+     [("unresolved", []), ("unresolved", [])], ["is not a position in the finding's not_checked"]),
+    ({"not_checked": [{"item": False, "state": "unresolved", "note": "x"}]},
+     [("unresolved", []), ("unresolved", [])], ["is not a position in the finding's not_checked"]),
+    ({"not_checked": [{"item": 0, "state": "resolved", "note": "a", "evidence": [0]},
+                      {"item": 0, "state": "unresolved", "note": "b"}]},
+     [("resolved", [0]), ("unresolved", [])], ["repeats item 0"]),
+    ({"not_checked": [{"item": 0, "state": "unresolved", "note": "x", "why": "y"}]},
+     [("unresolved", []), ("unresolved", [])], ["is not an object with the keys"]),
+    ({"not_checked": "all of them"}, [("unresolved", []), ("unresolved", [])], ["not_checked is not a list"]),
+    ({}, [("unresolved", []), ("unresolved", [])], []),
+])
+def test_settle_not_checked_keeps_every_item(result, expected, ignored):
+    notes: list[str] = []
+    out = verify.settle_not_checked(MINE, result, RESOLVED, notes)
+    assert [(e["state"], e["evidence"]) for e in out] == expected
+    assert [e["item"] for e in out] == [0, 1], "one entry per listed item, in order: none disappears"
+    assert all(any(want in n for n in notes) for want in ignored), notes
+    assert all(e["note"] for e in out)
+    unanswered = [e for e in out if e["note"] == c.NOT_ADDRESSED]
+    assert all(e["state"] == "unresolved" for e in unanswered)
+
+
+def _verdict_for_releases(repo: Path, key: str, verdict: str = "upheld", **over) -> dict:
+    loop = _line(repo, "src/client/releases.ts", "setTimeout(resolve, SLEEP_MS)")
+    sched = _line(repo, "src/sync/scheduler.ts", "return submit(() => fetchRelease(id));")
+    return _v(key, verdict, evidence=[
+        {"type": "code", "ref": f"src/client/releases.ts:{loop}", "note": "the loop"},
+        {"type": "code", "ref": f"src/sync/scheduler.ts:{sched}", "note": "one call"}], **over)
+
+
+def test_a_verdict_names_guarantees_and_resolves_items_inside_check(validated_repo, validated_env, tmp_path):
+    plan = _prepare(validated_repo, validated_env)
+    e = _entry(plan, "releases.ts")
+    _save(validated_repo, validated_env, tmp_path, _verdict_for_releases(
+        validated_repo, e["key"],
+        guarantees=[{"of": 0, "evidence": [0]},
+                    {"of": None, "guarantee": "Callers share one queue slot",
+                     "removed_by": "running lookups outside the queue", "evidence": [1]}],
+        not_checked=[{"item": 0, "state": "resolved", "note": "Both call it once.", "evidence": [1]}]))
+    check = _apply(validated_repo, validated_env)[e["key"]]
+    mine = _finding(validated_repo, e["key"])["implicit_guarantees"][0]
+    assert check["status"] == "upheld"
+    assert check["guarantees"]["state"] == "named" and check["guarantees"]["reason"] is None
+    assert check["guarantees"]["items"] == [
+        {"of": 0, "guarantee": mine["guarantee"], "removed_by": mine["removed_by"], "evidence": [0]},
+        {"of": None, "guarantee": "Callers share one queue slot",
+         "removed_by": "running lookups outside the queue", "evidence": [1]}]
+    assert [(n["item"], n["state"]) for n in check["not_checked"]] == [(0, "resolved"), (1, "unresolved")]
+    assert check["not_checked"][1]["note"] == c.NOT_ADDRESSED
+    assert len(check["evidence"]) == 2
+    assert _finding(validated_repo, e["key"])["check"]["guarantees"]["state"] == "named"
+
+
+def test_a_verdict_that_says_nothing_new_keeps_its_status_and_every_item(validated_repo, validated_env, tmp_path):
+    plan = _prepare(validated_repo, validated_env)
+    e = _entry(plan, "releases.ts")
+    _save(validated_repo, validated_env, tmp_path, _v(e["key"], "inconclusive", reason="could not settle it"))
+    check = _apply(validated_repo, validated_env)[e["key"]]
+    assert check["status"] == "inconclusive" and check["reason"] == "could not settle it"
+    assert check["guarantees"]["state"] == "not_addressed"
+    assert [n["state"] for n in check["not_checked"]] == ["unresolved", "unresolved"]
+    f = _finding(validated_repo, e["key"])
+    assert len(check["not_checked"]) == len(f["not_checked"]) == 2
+
+
+def test_resolving_every_item_never_changes_status_or_confidence(validated_repo, validated_env, tmp_path):
+    plan = _prepare(validated_repo, validated_env)
+    e = _entry(plan, "releases.ts")
+    _save(validated_repo, validated_env, tmp_path, _verdict_for_releases(
+        validated_repo, e["key"], "inconclusive", reason="r",
+        guarantees=[{"of": 0, "evidence": [0]}],
+        not_checked=[{"item": 0, "state": "resolved", "note": "n", "evidence": [1]},
+                     {"item": 1, "state": "resolved", "note": "n", "evidence": [0]}]))
+    check = _apply(validated_repo, validated_env)[e["key"]]
+    assert check["status"] == "inconclusive"
+    assert all(n["state"] == "resolved" for n in check["not_checked"])
+    claimed = _finding(validated_repo, e["key"])["confidence"]
+    assert c.effective_confidence(claimed, check["status"]) == "medium"   # claimed high, never raised
+
+
+def test_malformed_new_keys_never_cost_the_verdict(validated_repo, validated_env, tmp_path):
+    plan = _prepare(validated_repo, validated_env)
+    e = _entry(plan, "releases.ts")
+    _save(validated_repo, validated_env, tmp_path,
+          _v(e["key"], "upheld", guarantees="none", not_checked={"0": "done"}))
+    check = _apply(validated_repo, validated_env)[e["key"]]
+    assert check["status"] == "upheld"
+    assert "Ignored: guarantees is not a list; not_checked is not a list" in check["reason"]
+    assert [n["state"] for n in check["not_checked"]] == ["unresolved", "unresolved"]
+
+
+def test_an_unknown_verdict_key_is_still_a_contract_error(validated_repo, validated_env, tmp_path):
+    plan = _prepare(validated_repo, validated_env)
+    e = _entry(plan, "releases.ts")
+    _save(validated_repo, validated_env, tmp_path, _v(e["key"], "upheld", guarantee_notes="free text"))
+    check = _apply(validated_repo, validated_env)[e["key"]]
+    assert check["status"] == "unchecked"
+    assert "unknown key(s) ['guarantee_notes']" in check["reason"] and "guarantees" not in check
+
+
+def test_the_resolutions_survive_the_ledger_and_reuse(validated_repo, validated_env, tmp_path):
+    plan = _prepare(validated_repo, validated_env)
+    e = _entry(plan, "releases.ts")
+    _save(validated_repo, validated_env, tmp_path, _verdict_for_releases(
+        validated_repo, e["key"], guarantees=[{"of": 0, "evidence": [0]}],
+        not_checked=[{"item": 0, "state": "resolved", "note": "n", "evidence": [1]}]))
+    first = _apply(validated_repo, validated_env)[e["key"]]
+    again = _prepare(validated_repo, validated_env)
+    assert _entry(again, "releases.ts")["action"] == "reuse"
+    second = _apply(validated_repo, validated_env)[e["key"]]
+    assert second["guarantees"] == first["guarantees"] and second["not_checked"] == first["not_checked"]
+    assert second["reused_from"]["scan"] == plan["generated_at"]
+
+
+def test_a_skeptic_may_quote_a_blast_item_as_the_blast_radius(validated_repo, validated_env, tmp_path):
+    plan = _prepare(validated_repo, validated_env)
+    e = _entry(plan, "releases.ts")
+    quote = _finding(validated_repo, e["key"])["blast_items"][0]["claim"][10:60]
+    _save(validated_repo, validated_env, tmp_path, _verdict_for_releases(
+        validated_repo, e["key"], "narrowed", holds="The loop does absorb one failure.",
+        refuted_claims=[{"field": "blast_radius", "claim": quote, "fact": "x", "evidence": [0]}]))
+    check = _apply(validated_repo, validated_env)[e["key"]]
+    assert check["status"] == "narrowed" and check["refuted_claims"][0]["claim"] == quote
+
+
+
+def test_a_quote_may_not_span_two_blast_items():
+    """`_quotes` matches the summary or one item's claim, never words joined across them."""
+    f = {"blast_radius": "All callers", "blast_items": [{"claim": "wait forever", "basis": "assumption"},
+                                                         {"claim": "and then fail", "basis": "assumption"}]}
+    assert verify._quotes(f, "blast_radius", "All callers")
+    assert verify._quotes(f, "blast_radius", "wait forever")
+    assert verify._quotes(f, "blast_radius", "  AND then   FAIL ")
+    assert not verify._quotes(f, "blast_radius", "callers wait")
+    assert not verify._quotes(f, "blast_radius", "forever and then")
+    assert not verify._quotes({"blast_radius": "x"}, "blast_radius", "")
+
+
+def test_the_brief_keeps_the_impact_claims_inside_the_claim_and_before_the_defaults(validated_repo, validated_env):
+    """#57 adds a `## Defaults to confirm` section after the preconditions; the impact blocks are claims."""
+    plan = _prepare(validated_repo, validated_env)
+    brief = (validated_repo / _entry(plan, "releases.ts")["brief"]).read_text()
+    claim, evidence = brief.index("## The claim"), brief.index("## Evidence as cited")
+    for heading in ("### blast_items", "### implicit_guarantees", "### not_checked"):
+        assert claim < brief.index(heading) < evidence, heading
+    assert brief.index("### not_checked") < brief.index("## Defaults to confirm") < evidence
+
+
+def test_a_finding_downgraded_for_an_unconfirmed_default_keeps_its_guarantees_and_items(
+        validated_repo, validated_env, tmp_path):
+    """#57's rule may turn `upheld` into `inconclusive` after settling; the check still carries what this
+    ticket's functions wrote, and nothing here caused or prevented the downgrade."""
+    plan = _prepare(validated_repo, validated_env)
+    e = _entry(plan, "collection.ts")
+    queue = _line(validated_repo, "src/sync/collection.ts", "let page = 1")
+    _save(validated_repo, validated_env, tmp_path, _v(
+        e["key"], "upheld", evidence=[{"type": "code", "ref": f"src/sync/collection.ts:{queue}", "note": "n"}],
+        guarantees=[{"of": None, "guarantee": "Pages are fetched in order", "removed_by": "fetching pages in parallel",
+                     "evidence": [0]}]))
+    check = _apply(validated_repo, validated_env)[e["key"]]
+    assert check["status"] == "inconclusive" and "rests on a default no one confirmed" in check["reason"]
+    assert check["guarantees"]["state"] == "named" and check["not_checked"] == []
+    assert "confirmations" in check
+
+
+def test_the_claim_hash_covers_the_impact_fields_and_still_ignores_confirmations():
+    f = {"failure_mode": "f", "preconditions": [{"setting": "S", "confirmation": {"state": "confirmed"}}],
+         "not_checked": [{"item": "a", "how_to_check": "b"}], "blast_items": [{"claim": "c", "basis": "assumption"}]}
+    base = verify.claim_hash(f)
+    assert verify.claim_hash({**f, "preconditions": [{"setting": "S", "confirmation": {"state": "unconfirmed"}}]}) == base
+    assert verify.claim_hash({**f, "not_checked": [{"item": "a", "how_to_check": "other"}]}) != base
+    assert verify.claim_hash({**f, "blast_items": [{"claim": "c2", "basis": "assumption"}]}) != base
+    assert verify.claim_hash({**f, "implicit_guarantees": []}) != base
+
+
+def test_the_skeptic_shares_its_read_budget_and_unresolved_items_do_not_force_inconclusive():
+    flat = " ".join((ROOT / "agents" / "thunderstruck-skeptic.md").read_text().split())
+    assert "up to 10 files beyond the brief" in flat
+    assert "Unresolved not-checked items alone never make a verdict `inconclusive`" in flat
+    assert "a material default you could not resolve still keeps the claim from being upheld (rule 8)" in flat
+    assert "An unresolved item stays open on the finding" in flat
+    assert "You never reword the investigator's" in flat

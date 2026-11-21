@@ -287,7 +287,15 @@ CANNED_VERDICTS: dict[str, dict] = {
                            "evidence": [("src/client/releases.ts", "setTimeout(resolve, SLEEP_MS)",
                                          "the loop that absorbs the failure"),
                                         ("src/sync/scheduler.ts", "return submit(() => fetchRelease(id));",
-                                         "userLookup calls fetchRelease once")]},
+                                         "userLookup calls fetchRelease once")],
+                           "guarantees": [{"of": 0, "evidence": [0]}],
+                           "not_checked": [
+                               {"item": 0, "state": "resolved", "evidence": [1],
+                                "note": "Both callers, batchSync and userLookup, call fetchRelease "
+                                        "once through submit and neither retries."},
+                               {"item": 1, "state": "unresolved",
+                                "note": "The repository sets no per-try timeout on the route; the "
+                                        "mesh default is not readable from here."}]},
     "client/api.ts": {"verdict": "narrowed",
                       "reason": "Each retry waits the fixed 5 s before recursing.",
                       "holds": "With API_RETRY_ON_429 set, a 429 is retried after a fixed 5 s "
@@ -299,7 +307,12 @@ CANNED_VERDICTS: dict[str, dict] = {
                       "confirmations": [{"setting": "API_RETRY_ON_429", "claim": None, "stated_ref": None,
                                          "found": "same", "default": "false (unset)",
                                          "default_ref": ("src/client/api.ts", "const RETRY_ON_429"),
-                                         "reason": "Unset means false; nothing else registers it."}]},
+                                         "reason": "Unset means false; nothing else registers it."}],
+                      "no_guarantees_reason": "The retry only runs with API_RETRY_ON_429 set, so no "
+                                              "caller depends on it by default.",
+                      "not_checked": [{"item": 0, "state": "unresolved",
+                                       "note": "The services that call callApi, and their manifests, "
+                                               "are not in this repository."}]},
     "sync/scheduler.ts": {"verdict": "inconclusive",
                           "reason": "Whether batchSync and userLookup run in one process depends on "
                                     "the deployment, which the repository does not show."},

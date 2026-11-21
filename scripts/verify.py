@@ -41,9 +41,14 @@ WITHHELD = ("confidence", "confidence_rationale", "notes", "history", "check")
 MAX_MESSAGES = 12
 MAX_MESSAGE_CHARS = 2000
 VERDICT_KEYS = ("key", "verdict", "reason", "holds", "refuted_claims", "evidence",
-                "dependencies_read", "duplicate_of", "confirmations")
+                "dependencies_read", "duplicate_of",
+                "guarantees", "no_guarantees_reason", "not_checked",
+                "confirmations")
 CONFIRMATION_KEYS = ("setting", "claim", "stated_ref", "found", "default", "default_ref", "reason")
 REFUTED_CLAIM_KEYS = ("field", "claim", "fact", "evidence", "setting")
+# #105 §5: the skeptic's items. Both point into the verdict's own `evidence` list.
+VERDICT_GUARANTEE_KEYS = ("of", "guarantee", "removed_by", "evidence")
+VERDICT_NOT_CHECKED_KEYS = ("item", "state", "note", "evidence")
 SETTING_KEYS = ("setting", "default", "default_ref", "value")
 CODE_REF = re.compile(r"^(?P<path>[^:]+):(?P<start>[0-9]+)(?:-(?P<end>[0-9]+))?\Z")
 
@@ -203,6 +208,15 @@ def render_brief(finding: dict, others: list[dict], deps_index: dict | None,
     shown = [{k: v for k, v in p.items() if k != "confirmation"} if isinstance(p, dict) else p
              for p in finding.get("preconditions") or []]
     L += _block("preconditions", json.dumps(shown, indent=2, ensure_ascii=False))
+    # #105: claims the investigator made; indexes are the ones a verdict answers by.
+    # Absent on a finding written before them, and then not shown at all.
+    for field in ("blast_items", "implicit_guarantees", "not_checked"):
+        items = [i for i in finding.get(field) or [] if isinstance(i, dict)]
+        if items:
+            payload = items if field == "blast_items" else [{"index": n, **i} for n, i in enumerate(items)]
+            L += _block(field, json.dumps(payload, indent=2, ensure_ascii=False))
+    if isinstance(finding.get("no_guarantees_reason"), str) and finding["no_guarantees_reason"].strip():
+        L += _block("no_guarantees_reason", finding["no_guarantees_reason"])
     L += defaults_section(finding)
     L += ["## Evidence as cited (the investigator's)", ""]
     for i, ev in enumerate(finding.get("evidence") or []):
@@ -368,10 +382,14 @@ def _quotes(finding: dict, field: str, claim) -> bool:
     if not isinstance(claim, str) or not claim.strip():
         return False
     if field == "preconditions":
-        source = json.dumps(finding.get("preconditions") or [], ensure_ascii=False) + " " + c.MISSING_GATE_PHRASE
+        sources = [json.dumps(finding.get("preconditions") or [], ensure_ascii=False) + " " + c.MISSING_GATE_PHRASE]
+    elif field == "blast_radius":
+        # the summary, or the words of one item, never words spanning two (#105 §5.3)
+        sources = [str(finding.get("blast_radius") or "")] + [
+            str(i.get("claim") or "") for i in finding.get("blast_items") or [] if isinstance(i, dict)]
     else:
-        source = finding.get(field) or ""
-    return _norm(claim) in _norm(source)
+        sources = [finding.get(field) or ""]
+    return any(_norm(claim) in _norm(source) for source in sources)
 
 
 def _ranges(evidence) -> list[tuple[str, int, int]]:
@@ -501,6 +519,95 @@ def no_upheld_on_unconfirmed(finding: dict, check: dict) -> dict:
                        f"{first.get('setting')} ({c.CONFIRMATION_REASONS[basis]}){more}.")}
 
 
+def _positions(raw, resolved: dict[int, dict], allowed: tuple[str, ...]) -> list[int]:
+    """The positions in a verdict's evidence that resolved and are of an allowed type."""
+    return [k for k in (raw if isinstance(raw, list) else [])
+            if isinstance(k, int) and not isinstance(k, bool) and k in resolved
+            and resolved[k].get("type") in allowed]
+
+
+def _text(value) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def settle_guarantees(finding: dict, result: dict, resolved: dict[int, dict], ignored: list[str]) -> dict:
+    """What the skeptic said about the guarantees a fix would remove (#105 §5.2). Never
+    changes a status. Every outcome is a state: named, none_found or not_addressed."""
+    mine = [g for g in finding.get("implicit_guarantees") or [] if isinstance(g, dict)]
+    raw = result.get("guarantees")
+    if raw is not None and not isinstance(raw, list):
+        ignored.append("guarantees is not a list")
+        raw = []
+    kept: list[dict] = []
+    confirmed: set[int] = set()
+    for j, g in enumerate(raw or []):
+        where = f"guarantees[{j}]"
+        if not isinstance(g, dict) or set(g) - set(VERDICT_GUARANTEE_KEYS):
+            ignored.append(f"{where} is not an object with the keys {list(VERDICT_GUARANTEE_KEYS)}")
+            continue
+        idx = _positions(g.get("evidence"), resolved, ("code", "dependency"))
+        if not idx:
+            ignored.append(f"{where} has no code evidence that resolved")
+            continue
+        of = g.get("of")
+        if of is None:
+            text, removed = g.get("guarantee"), g.get("removed_by")
+            if not (_text(text) and _text(removed)):
+                ignored.append(f"{where} adds a guarantee without its guarantee and removed_by text")
+                continue
+        elif isinstance(of, bool) or not isinstance(of, int) or not 0 <= of < len(mine):
+            ignored.append(f"{where}.of {of!r} is not a position in the finding's implicit_guarantees")
+            continue
+        elif of in confirmed:
+            ignored.append(f"{where} repeats guarantee {of}")
+            continue
+        else:
+            confirmed.add(of)
+            text, removed = mine[of]["guarantee"], mine[of]["removed_by"]   # the skeptic never rewords it
+        kept.append({"of": of, "guarantee": text.strip(), "removed_by": removed.strip(), "evidence": idx})
+    reason = result.get("no_guarantees_reason")
+    if kept:
+        if reason is not None:
+            ignored.append("no_guarantees_reason is given beside guarantees")
+        return {"state": "named", "reason": None, "items": kept}
+    if _text(reason):
+        return {"state": "none_found", "reason": reason.strip(), "items": []}
+    return {"state": "not_addressed", "items": [],
+            "reason": "The skeptic named no guarantee and did not say it found none."}
+
+
+def settle_not_checked(finding: dict, result: dict, resolved: dict[int, dict], ignored: list[str]) -> list[dict]:
+    """One entry per not_checked item of the finding, in order: resolved with evidence, or
+    unresolved with a note. An item the skeptic left out, or answered badly, is
+    unresolved; none disappears (#105 §5.2)."""
+    count = len([i for i in finding.get("not_checked") or []])
+    raw = result.get("not_checked")
+    if raw is not None and not isinstance(raw, list):
+        ignored.append("not_checked is not a list")
+        raw = []
+    entries: dict[int, dict] = {}
+    for j, e in enumerate(raw or []):
+        where = f"not_checked[{j}]"
+        if not isinstance(e, dict) or set(e) - set(VERDICT_NOT_CHECKED_KEYS):
+            ignored.append(f"{where} is not an object with the keys {list(VERDICT_NOT_CHECKED_KEYS)}")
+            continue
+        i = e.get("item")
+        if isinstance(i, bool) or not isinstance(i, int) or not 0 <= i < count:
+            ignored.append(f"{where}.item {i!r} is not a position in the finding's not_checked")
+        elif i in entries:
+            ignored.append(f"{where} repeats item {i}")
+        elif e.get("state") not in c.RESOLUTION_STATES or not _text(e.get("note")):
+            ignored.append(f"{where} needs a state of {list(c.RESOLUTION_STATES)} and a note")
+        else:
+            idx = _positions(e.get("evidence"), resolved, ("code", "commit", "dependency"))
+            if e["state"] == "resolved" and not idx:
+                ignored.append(f"{where} says resolved but has no evidence that resolved")
+            else:
+                entries[i] = {"item": i, "state": e["state"], "note": e["note"].strip(), "evidence": idx}
+    return [entries.get(i) or {"item": i, "state": "unresolved", "note": c.NOT_ADDRESSED, "evidence": []}
+            for i in range(count)]
+
+
 UNCHECKED_NO_RESULT = "No verdict reached disk: the skeptic failed, stopped or its result was not saved."
 
 
@@ -576,6 +683,9 @@ def _decide(finding: dict, entry: dict, result: dict | None, resolver: Resolver,
         claims.append(kept)
     items = resolve_confirmations(finding, result, resolver, ignored)
 
+    guarantees = settle_guarantees(finding, result, resolved, ignored)
+    not_checked = settle_not_checked(finding, result, resolved, ignored)
+
     status, reason = verdict, str(result.get("reason") or "")
     if verdict in ("refuted", "narrowed") and not claims:
         status = "inconclusive"
@@ -616,13 +726,16 @@ def _decide(finding: dict, entry: dict, result: dict | None, resolver: Resolver,
     renumber = {old: new for new, old in enumerate(sorted(resolved))}
     for rc in claims:
         rc["evidence"] = [renumber[k] for k in rc["evidence"]]
+    for item in [*guarantees["items"], *not_checked]:
+        item["evidence"] = [renumber[k] for k in item["evidence"]]
     return {"status": status, "by": "skeptic", "reason": reason,
             "holds": result.get("holds") if status in ("narrowed", "upheld") else None,
             "refuted_claims": claims if status in ("narrowed", "refuted") else [],
             "evidence": [resolved[i] for i in sorted(resolved)],
             "model": c.MODEL_ALIASES.get(plan["model"], plan["model"]),
             "dependency_versions": dict(sorted(read.items())),
-            "reused_from": None, "duplicate_of": duplicate, "confirmations": items}
+            "reused_from": None, "duplicate_of": duplicate, "confirmations": items,
+            "guarantees": guarantees, "not_checked": not_checked}
 
 
 def apply(repo: Path) -> dict:

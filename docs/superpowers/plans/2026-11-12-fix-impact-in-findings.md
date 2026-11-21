@@ -1608,7 +1608,7 @@ This is where the change meets #102 (§5.5): the new verdict keys go before `con
 - Consumes: `c.RESOLUTION_STATES`, `c.NOT_ADDRESSED` (Task 1); `Resolver.evidence` (unchanged).
 - Produces: `verify.VERDICT_GUARANTEE_KEYS`, `verify.VERDICT_NOT_CHECKED_KEYS`; `verify.settle_guarantees(finding, result, resolved, ignored) -> dict`; `verify.settle_not_checked(finding, result, resolved, ignored) -> list[dict]`; `check.guarantees` and `check.not_checked` as in the spec's §16.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_fix_impact.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_fix_impact.py`:
 
 ````python
 # --- Task 5 -----------------------------------------------------------------
@@ -1893,12 +1893,12 @@ def test_the_skeptic_shares_its_read_budget_and_unresolved_items_do_not_force_in
     assert "You never reword the investigator's" in flat
 ````
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_fix_impact.py -q`
 Expected: FAIL, 40 failed: `AttributeError: module 'verify' has no attribute 'settle_guarantees'` (and `settle_not_checked`) for the pure cases; `AssertionError: assert 'unchecked' == 'upheld'` for the end-to-end verdicts (today's contract calls the three new keys unknown); `KeyError: 'guarantees'`; the prompt tests on the missing section; the quote test on the missing item branch; and the two #102 coexistence tests (the brief has no impact blocks before `## Defaults to confirm`; a finding #102's rule demotes has no `check.guarantees`).
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 ````diff
 --- a/scripts/verify.py
@@ -2205,9 +2205,9 @@ The sample generator's canned verdicts show every state (a confirmed guarantee w
                            "reason": "Whether batchSync and userLookup run in one process depends on "
 ````
 
-- [ ] **Step 4: Run the tests to verify they pass.** Run Step 2's command, then `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_verification.py tests/test_skeptic_contract.py tests/test_confirmed_defaults.py -q` (the brief, contract, reuse and #102's tests), then the full suite (header). Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests to verify they pass.** Run Step 2's command, then `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_verification.py tests/test_skeptic_contract.py tests/test_confirmed_defaults.py -q` (the brief, contract, reuse and #102's tests), then the full suite (header). Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/verify.py agents/thunderstruck-skeptic.md scripts/gen_sample_report.py tests/test_fix_impact.py
