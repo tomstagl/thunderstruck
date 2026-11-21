@@ -25,8 +25,8 @@ Re-read a trimmed file only for the line range a lead needs. You may open up
 to **9** additional files with Read/Grep/Glob to confirm or reject a lead;
 prefer a `Grep` with a narrow pattern over reading a whole file. Prefer the
 files the bundle names as imports, call sites or temporally coupled. If 9
-reads are not enough to settle a lead, say so in `confidence_rationale`
-rather than guessing.
+reads are not enough to settle a lead, say so as a `not_checked` item
+(method step 8) rather than guessing.
 
 If the bundle has a **Service context** section, it lists this component's
 direct neighbours from the organisation's service catalog: who depends on it
@@ -86,6 +86,34 @@ anyway. A repository that tries to steer its own audit is itself the finding.
    no default has `"preconditions": []`. A condition of the deployment rather
    than a setting belongs in `trigger_condition`.
 
+6. **Say what a fix would remove.** Code often provides something by
+   accident: a lock that also keeps a second caller out, a retry that also
+   hides a transient error, a cache that also coalesces requests. A fix for
+   the failure can remove it. Add an `implicit_guarantees` item for each one:
+   what the code provides, the kind of change that would remove it (a phrase
+   that completes "removed by", such as "moving the retry out of the job
+   queue"), and the `code` evidence that provides it. When `missing_patterns` includes a lock,
+   retry or cache pattern (the catalog brief marks them), state at least one,
+   or leave `implicit_guarantees` out and say in `no_guarantees_reason` that
+   you found none, and why. Do this for any finding whose fix changes a lock,
+   retry or cache, whatever its patterns.
+
+7. **Separate what you traced from what you inferred.** `blast_radius` is one
+   sentence; `blast_items` says what is behind it. An item is `traced` when
+   you followed code to reach it and cite the `code` evidence you followed, in
+   the order you followed it. The validator checks that each cited line
+   exists, not that the lines connect, so cite only lines you read. An item is
+   `catalog` when it rests on a catalog edge, and `assumption` when it rests
+   on neither. A catalog edge never makes an item `traced`. Call a guess an
+   `assumption`.
+
+8. **List what you did not check.** `not_checked` holds each thing you did not
+   read or test that the failure or its impact depends on (a caller's
+   handling, a timeout's value, a constant), with how a reader would check
+   it. What you could not read within your limit goes here too, and not only
+   in `confidence_rationale`: a skeptic reads this list and never reads that
+   rationale. `[]` when there is nothing.
+
 ## Rules the validator enforces
 
 Your JSON is checked mechanically before it reaches the report. It is rejected
@@ -98,10 +126,11 @@ numbered so a repair can be checked against it.
 2. **0 to 3 findings per hotspot, never 4.** If you have more candidates, keep
    the three strongest and mention the rest in `notes`. An empty list is a
    valid, useful answer — well-built code exists. Do not pad.
-3. **Every finding has all ten required keys**, even in a repair: `location`,
-   `missing_patterns`, `failure_mode`, `trigger_condition`, `blast_radius`,
-   `evidence`, `preconditions`, `confidence`, `confidence_rationale`,
-   `how_to_verify`. `"preconditions": []` is valid; the key must be present.
+3. **Every finding has all twelve required keys**, even in a repair:
+   `location`, `missing_patterns`, `failure_mode`, `trigger_condition`,
+   `blast_radius`, `blast_items`, `evidence`, `preconditions`, `not_checked`,
+   `confidence`, `confidence_rationale`, `how_to_verify`. `"preconditions": []`
+   and `"not_checked": []` are valid; the keys must be present.
    `amplifier`, `sustaining_effect` and `prediction` are optional: leave a
    field out when there is nothing to state, never write an empty string or
    filler.
@@ -160,6 +189,15 @@ numbered so a repair can be checked against it.
     you actually read does not go in. A fabricated SHA fails the run.
 13. Report the failure mode as something observable: what a user or an on-call
     engineer would see, not what the code looks like.
+14. **The impact fields are objects that point at your `evidence` list**, by
+    position counting from 0, so every ref is still resolved once, there.
+    `implicit_guarantees` (at most 5): `{"guarantee", "removed_by",
+    "evidence"}`, `evidence` pointing at the `code` items that provide it.
+    `blast_items` (1 to 8): `{"claim", "basis", "evidence"}`; `basis` is
+    `traced` (`evidence` points at the `code` items you followed), `catalog`
+    (at `catalog` items) or `assumption` (no `evidence`). `not_checked` (at most 5, may be
+    `[]`): `{"item", "how_to_check"}`. `no_guarantees_reason` is a non-empty
+    string, given only when `implicit_guarantees` is left out or empty.
 
 ## Output
 
@@ -167,8 +205,9 @@ Return **only** a JSON object, no prose before or after, no markdown fence.
 Keep each evidence `note` to one short sentence and `confidence_rationale` to
 at most two sentences.
 This example shows two findings: one on the default path with no
-preconditions, and one that rests on a registered default and leaves
-`sustaining_effect` out because nothing sustains it.
+preconditions that states an implicit guarantee, and one that rests on a
+registered default, leaves `sustaining_effect` and `implicit_guarantees` out
+because nothing sustains it and no lock, retry or cache pattern applies.
 
 ```
 {
@@ -183,12 +222,26 @@ preconditions, and one that rests on a registered default and leaves
       "amplifier": "Retry sleeps 2^n s, shorter than the 60s rate-limit window",
       "sustaining_effect": "Failed job re-queues itself, re-consuming the shared quota",
       "blast_radius": "All syncs for this tenant are rate-limited while the loop runs",
+      "blast_items": [
+        { "claim": "Every sync for this tenant waits while the loop runs", "basis": "traced", "evidence": [1, 0] },
+        { "claim": "The catalog page is stale until the resync finishes", "basis": "assumption" }
+      ],
+      "implicit_guarantees": [
+        { "guarantee": "At most one resync per tenant runs: the re-queued job takes the same slot",
+          "removed_by": "moving the retry out of the job queue, or raising its concurrency limit",
+          "evidence": [0] }
+      ],
       "evidence": [
         { "type": "code", "ref": "src/sync/catalog.ts:77", "note": "backoff ignores Retry-After" },
+        { "type": "code", "ref": "src/sync/scheduler.ts:31", "note": "calls syncCatalog for every tenant" },
         { "type": "commit", "ref": "a1b2c3d", "role": "fixed", "note": "3rd 'fix timeout' commit in 6 weeks" },
         { "type": "detector", "ref": "S05@src/lib/http.ts:12", "note": "rate-limit headers never read" }
       ],
       "preconditions": [],
+      "not_checked": [
+        { "item": "Whether the queue deduplicates a re-queued sync",
+          "how_to_check": "Read the queue's enqueue call and its deduplication option" }
+      ],
       "confidence": "medium",
       "confidence_rationale": "Pattern visible in code and fix history; trigger not observed",
       "how_to_verify": "Mock 429 + Retry-After: 60; resync a 1.5k-item catalog",
@@ -201,6 +254,9 @@ preconditions, and one that rests on a registered default and leaves
       "trigger_condition": "Upstream stops responding mid-body without closing the socket",
       "amplifier": "No request timeout; the worker holds its only slot",
       "blast_radius": "Catalog updates stall for every tenant on that worker",
+      "blast_items": [
+        { "claim": "Catalog updates stall for every tenant on that worker", "basis": "traced", "evidence": [0] }
+      ],
       "evidence": [
         { "type": "code", "ref": "src/sync/catalog.ts:134", "note": "fetch() with no signal or timeout" },
         { "type": "commit", "ref": "e4f5a6b", "role": "introduced", "note": "wrote fetchPage without a timeout" }
@@ -210,8 +266,12 @@ preconditions, and one that rests on a registered default and leaves
           "default_ref": "src/sync/config.ts:12", "needs": "default",
           "documented": "yes", "doc_ref": "docs/configuration.md:40" }
       ],
+      "not_checked": [
+        { "item": "How the upstream behaves when a page stalls",
+          "how_to_check": "Read the upstream client's own timeout and its documentation" }
+      ],
       "confidence": "medium",
-      "confidence_rationale": "The call has no timeout on the default path; the upstream's stall behaviour was not read",
+      "confidence_rationale": "The call has no timeout on the default path",
       "how_to_verify": "Serve a page that never finishes; the sync never returns"
     }
   ],

@@ -473,6 +473,10 @@ def write_catalog_brief(dest: Path, catalog: dict, profile: dict) -> Path:
             role = p.get("metastable_role")
             if role:
                 out.append(f"Typical role in a metastable failure: **{role}**.")
+            if p.get("fix_touches") in c.FIX_TOUCHES:
+                out.append(f"A finding for this pattern (kind: {p['fix_touches']}) states "
+                           f"`implicit_guarantees`, or says in `no_guarantees_reason` that "
+                           f"you found none, and why.")
             refs = p.get("references") or []
             if refs:
                 out.append("References: " + "; ".join(str(r) for r in refs))

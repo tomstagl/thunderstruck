@@ -184,6 +184,7 @@ def test_lead_precision_counts_what_was_read(tmp_path):
         "missing_patterns": ["S01"], "failure_mode": "A hung upstream holds the worker",
         "trigger_condition": "legacy host stalls", "amplifier": "no bound",
         "sustaining_effect": None, "blast_radius": "every caller",
+        "blast_items": [{"claim": "every caller", "basis": "assumption"}], "not_checked": [],
         "evidence": [{"type": "code", "ref": f"{LEGACY}:4", "note": "no timeout"},
                      {"type": "commit", "ref": sha, "role": "changed", "note": "added"},
                      {"type": "detector", "ref": hit["ref"], "note": "lead"}],

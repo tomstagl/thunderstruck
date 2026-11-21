@@ -179,9 +179,10 @@ its errors to the task:
 > Your previous output for `<ID>` failed validation:
 > <the errors verbatim>
 > Fix these problems and return the **complete** corrected JSON object: the
-> top-level `findings` list with every finding you keep, each with all ten
-> required keys from your system prompt (`preconditions` may be `[]` but must be present;
-> leave `amplifier` and `sustaining_effect` out when there is nothing to state),
+> top-level `findings` list with every finding you keep, each with all twelve required keys
+> from your system prompt (`preconditions` may be `[]` but must be present, as may `not_checked`;
+> leave `amplifier` and `sustaining_effect` out when there is nothing to state; a lock, retry
+> or cache finding states `implicit_guarantees` or `no_guarantees_reason`),
 > and every commit item with its `role`, not only the parts that changed. At most 3 findings. Paths are copied
 > exactly as the bundle shows them — relative to the repository root, no `./`,
 > no `..`, a file git tracks — and a line range is `"42"` or `"42-118"` with

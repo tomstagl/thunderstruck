@@ -331,7 +331,7 @@ This task and Task 3 are one change in two commits so that each stays green: the
 **Interfaces:**
 - Consumes: `c.FIX_TOUCHES` (Task 1).
 
-- [ ] **Step 1: Update the test data to the new contract.** Every finding a test builds by hand gains `blast_items` (at least one) and `not_checked`, and, where it uses a gated pattern (`S02`), `implicit_guarantees` or `no_guarantees_reason`. Find the builders with `grep -n '"how_to_verify"' tests/*.py`; the hits to change are exactly these (the others are field-name lists):
+- [x] **Step 1: Update the test data to the new contract.** Every finding a test builds by hand gains `blast_items` (at least one) and `not_checked`, and, where it uses a gated pattern (`S02`), `implicit_guarantees` or `no_guarantees_reason`. Find the builders with `grep -n '"how_to_verify"' tests/*.py`; the hits to change are exactly these (the others are field-name lists):
 
 ````diff
 --- a/tests/test_pipeline.py
@@ -405,7 +405,7 @@ This task and Task 3 are one change in two commits so that each stays green: the
 
 Run the full suite now (header): it passes, because nothing requires the new keys yet.
 
-- [ ] **Step 2: Write the failing tests.** Append to `tests/test_fix_impact.py`:
+- [x] **Step 2: Write the failing tests.** Append to `tests/test_fix_impact.py`:
 
 ````python
 # --- Task 2 -----------------------------------------------------------------
@@ -450,12 +450,12 @@ def test_the_prompt_example_has_a_traced_item_citing_two_lines():
         "a single cited line would read as a traced path"
 ````
 
-- [ ] **Step 3: Run them to verify they fail**
+- [x] **Step 3: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_fix_impact.py -q`
 Expected: FAIL, 4 failed (counts at the time of writing): `assert ('all twelve required keys' in …` for the investigator prompt and again for the scan skill's repair text, `assert set() == {'S02', 'S03', …}` for the catalog brief, and `KeyError: 'blast_items'` for the prompt example.
 
-- [ ] **Step 4: Write the implementation.** In `scripts/gen_sample_report.py` the canned findings gain what rules 5 will require. Evidence positions are written by name and resolved when the finding is built (`"code"` is the cited line, `"also:N"` the N-th `also_cite` item, `"catalog:N"` the N-th catalog edge):
+- [x] **Step 4: Write the implementation.** In `scripts/gen_sample_report.py` the canned findings gain what rules 5 will require. Evidence positions are written by name and resolved when the finding is built (`"code"` is the cited line, `"also:N"` the N-th `also_cite` item, `"catalog:N"` the N-th catalog edge):
 
 ````diff
 --- a/scripts/gen_sample_report.py
@@ -732,9 +732,9 @@ The scan skill's repair text:
  > exactly as the bundle shows them — relative to the repository root, no `./`,
 ````
 
-- [ ] **Step 5: Run the tests to verify they pass.** Step 3's command, then `tests/test_investigator_contract.py tests/test_validate_paths.py tests/test_pipeline.py tests/test_checked_confidence.py` with the same `--with` set as the full suite, then the full suite (header). Expected: PASS, `exit=0`.
+- [x] **Step 5: Run the tests to verify they pass.** Step 3's command, then `tests/test_investigator_contract.py tests/test_validate_paths.py tests/test_pipeline.py tests/test_checked_confidence.py` with the same `--with` set as the full suite, then the full suite (header). Expected: PASS, `exit=0`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/gen_sample_report.py scripts/bundle.py agents/thunderstruck-investigator.md skills/thunderstruck-scan/SKILL.md tests/

@@ -54,6 +54,9 @@ def _doc(file: str, lines=None, code_ref: str | None = None) -> dict:
         "blast_radius": "b", "confidence": "medium", "confidence_rationale": "r",
         "how_to_verify": "v",
         "evidence": [{"type": "code", "ref": code_ref or f"{file}:1", "note": "n"}],
+        "blast_items": [{"claim": "b", "basis": "assumption"}],
+        "no_guarantees_reason": "nothing else depends on the retry",
+        "not_checked": [],
         "preconditions": []}]}
 
 

@@ -318,6 +318,7 @@ def _second_hotspot_finding(repo: Path, confidence: str, preconditions: list) ->
     return hs["id"], {"hotspot_id": hs["id"], "file": hs["file"], "findings": [{
         "location": {"file": hs["file"], "lines": "1"}, "missing_patterns": ["S01"],
         "failure_mode": "A second failure", "trigger_condition": "t", "blast_radius": "b",
+        "blast_items": [{"claim": "b", "basis": "assumption"}], "not_checked": [],
         "evidence": [{"type": "code", "ref": f"{hs['file']}:1", "note": "n"}],
         "preconditions": preconditions, "confidence": confidence,
         "confidence_rationale": "r", "how_to_verify": "v"}]}

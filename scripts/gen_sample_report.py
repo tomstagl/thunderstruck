@@ -105,6 +105,25 @@ CANNED: dict[str, list[dict]] = {
                         "user-facing lookups; the catalog lists web-frontend "
                         "as depending on this component",
         "catalog": ["dependencyOf component:default/web-frontend"],
+        # evidence positions are named, not counted: "code" is the cited line, "also:N" the
+        # N-th also_cite item and "catalog:N" the N-th catalog edge
+        "implicit_guarantees": [{
+            "guarantee": "A single transient 5xx or timeout never reaches the caller: the loop "
+                         "absorbs it and the caller gets a result",
+            "removed_by": "removing either retry layer, or capping the loop at one attempt",
+            "evidence": ["code"]}],
+        "blast_items": [
+            {"claim": "Every feature that resolves a release waits on this loop, and on the "
+                      "inner retry layer under it", "basis": "traced",
+             "evidence": ["code", "also:0"]},
+            {"claim": "web-frontend depends on this component, so its release lookups are "
+                      "affected", "basis": "catalog", "evidence": ["catalog:0"]}],
+        "not_checked": [
+            {"item": "Whether any caller of fetchRelease retries again above it",
+             "how_to_check": "Grep the callers of fetchRelease and read what each does on failure"},
+            {"item": "How long one mesh attempt may take before it is retried",
+             "how_to_check": "Read the route's per-try timeout in "
+                             "deploy/releases-virtualservice.yaml, or the mesh default"}],
         # the inner retry layer lives in another file; citing it files FR-001
         # under that file too (#19 AC-4)
         "also_cite": [("src/client/retry-wrapper.ts", "export async function withRetry",
@@ -139,6 +158,13 @@ CANNED: dict[str, list[dict]] = {
                              "caused it",
         "blast_radius": "All calls through this helper for the duration of the "
                         "throttle",
+        "no_guarantees_reason": "With API_RETRY_ON_429 unset the recursion never runs and "
+                                "callers receive the 429 response itself, so nothing depends "
+                                "on the retry",
+        "blast_items": [{"claim": "Every call through callApi waits the fixed 5 s while the "
+                                  "API is throttling", "basis": "traced", "evidence": ["code"]}],
+        "not_checked": [{"item": "Whether any service that calls callApi sets API_RETRY_ON_429",
+                         "how_to_check": "Read the deployment manifests of those services"}],
         "preconditions": [{"setting": "API_RETRY_ON_429", "default": "false (unset)",
                            "anchor": "const RETRY_ON_429", "needs": "changed", "value": "true",
                            "documented": "no"}],
@@ -167,6 +193,9 @@ CANNED: dict[str, list[dict]] = {
         "preconditions": [{"setting": "sync.pageSize", "default": "100",
                            "anchor": "sync.pageSize", "needs": "default", "value": None,
                            "documented": "no", "doc_ref": None}],
+        "blast_items": [{"claim": "The user's collection gains duplicate rows on every "
+                                  "attempt", "basis": "traced", "evidence": ["code"]}],
+        "not_checked": [],
         "confidence": "high",
         "confidence_rationale": "The loop has no persisted cursor and db.create "
                                 "is not an upsert; three commits in the window "
@@ -188,6 +217,11 @@ CANNED: dict[str, list[dict]] = {
         "amplifier": "The queue runs one job at a time, so latency is the full "
                      "depth of the batch ahead of the request",
         "blast_radius": "Every interactive lookup for the duration of a batch run",
+        "blast_items": [{"claim": "Every interactive lookup waits behind the batch while it runs",
+                         "basis": "assumption"}],
+        "not_checked": [{"item": "Whether batchSync and userLookup run in one process",
+                         "how_to_check": "Read the deployment that starts the scheduler and "
+                                         "the lookup handler"}],
         "confidence": "medium",
         "confidence_rationale": "The shared queue is plain in the code; no "
                                 "production latency data is available here",
@@ -208,6 +242,9 @@ CANNED: dict[str, list[dict]] = {
                      "team, which is exactly the framing a naive reviewer trusts",
         "blast_radius": "Any credential reachable by a tool that complies, and "
                         "the integrity of every audit of this repository",
+        "blast_items": [{"claim": "Any credential reachable by a tool that complies with "
+                                  "the comment", "basis": "assumption"}],
+        "not_checked": [],
         "confidence": "high",
         "confidence_rationale": "The instruction is present verbatim in the "
                                 "source and was introduced by a commit in the "
@@ -228,6 +265,9 @@ CANNED: dict[str, list[dict]] = {
                         "caller until the process is restarted",
         "trigger_condition": "The labels API accepts the connection and never answers",
         "blast_radius": "Every page that shows a label waits on the hung request",
+        "blast_items": [{"claim": "Every page that shows a label waits on the hung request",
+                         "basis": "assumption"}],
+        "not_checked": [],
         "confidence": "medium",
         "confidence_rationale": "The fetch call passes no signal of its own, and a fix "
                                 "commit in the window mentions a hang",
@@ -242,7 +282,12 @@ CANNED: dict[str, list[dict]] = {
 CANNED_VERDICTS: dict[str, dict] = {
     "client/releases.ts": {"verdict": "upheld",
                            "reason": "The loop and the mesh retries are both on the 5xx path and "
-                                     "neither caps the attempts of the other."},
+                                     "neither caps the attempts of the other.",
+                           # evidence positions here count the verdict's own evidence list
+                           "evidence": [("src/client/releases.ts", "setTimeout(resolve, SLEEP_MS)",
+                                         "the loop that absorbs the failure"),
+                                        ("src/sync/scheduler.ts", "return submit(() => fetchRelease(id));",
+                                         "userLookup calls fetchRelease once")]},
     "client/api.ts": {"verdict": "narrowed",
                       "reason": "Each retry waits the fixed 5 s before recursing.",
                       "holds": "With API_RETRY_ON_429 set, a 429 is retried after a fixed 5 s "
@@ -383,13 +428,22 @@ def build_validated(dest: Path) -> tuple[Path, dict]:
                                          "depending on this component"})
             item = {k: v for k, v in spec.items()
                     if k not in ("symbol", "anchor", "catalog", "also_cite",
-                                 "preconditions")}
+                                 "preconditions", "implicit_guarantees", "blast_items")}
             # the symbol's span, clamped to the file: a range past the end
             # of the file is rejected by the validator (#25)
             total = len((repo / hs["file"]).read_text(encoding="utf-8").splitlines())
             item["location"] = {"file": hs["file"], "symbol": spec["symbol"],
                                 "lines": f"{line}-{min(line + 12, total)}"}
             item["evidence"] = evidence
+            first_catalog = len(evidence) - len(spec.get("catalog", []))
+            where = {"code": 0,
+                     **{f"also:{n}": 1 + n for n in range(len(spec.get("also_cite", [])))},
+                     **{f"catalog:{n}": first_catalog + n
+                        for n in range(len(spec.get("catalog", [])))}}
+            for key in ("implicit_guarantees", "blast_items"):
+                if key in spec:
+                    item[key] = [{**e, **({"evidence": [where[t] for t in e["evidence"]]}
+                                          if "evidence" in e else {})} for e in spec[key]]
             item["preconditions"] = [
                 {**{k: v for k, v in p.items() if k != "anchor"},
                  "default_ref": f"{hs['file']}:{_line_of(repo, hs['file'], p['anchor'])}"}
