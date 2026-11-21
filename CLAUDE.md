@@ -58,6 +58,9 @@ uv run scripts/calibrate.py --repo /path/to/repo --lang all --patterns all --sum
 uv run scripts/benchmark.py --run docs/calibration/correctness/celery/runs/spike-refuter.json
 uv run scripts/benchmark.py --report <scan>/report.json --bundles <scan>/bundles   # confidences and bundles
 
+# The fix and review guidance (#107): the behaviours pinned for each document, as a table for a PR
+uv run --with pyyaml python tests/guidance_check.py --table
+
 # Build the fixture repo to poke at by hand
 python3 tests/fixtures/build_fixture.py /tmp/fixture
 ```
@@ -290,6 +293,28 @@ git config, the generator pins its dependencies exactly, and the report's
 dates are fixed to the fixture's last commit (only the generator does that —
 a real scan never prints a fixed date). Bumping `lizard` or `pyyaml` in the
 generator means regenerating the sample in the same PR.
+
+## The fix and review guidance is the maintainer's
+
+`docs/fix-agent-instructions.md` and `docs/review-briefs.md` are written by the
+maintainer and shipped as written. No script and no ticket agent edits either
+one: not a typo, not a link, not to make a check pass. The suite only reads
+them (`tests/test_fix_guidance.py`, helpers in `tests/guidance_check.py`):
+
+- **Neutral.** A harness tool name, a plugin path, a plugin script or skill
+  name, a slash command or a harness feature fails the suite
+  (`tests/guidance/neutrality.yaml`). Plain words such as "tool" and "agent"
+  are never forbidden. To allow a legitimate phrase, narrow the rule and add a
+  negative sample: there is no inline waiver.
+- **Complete.** Each behaviour the ticket requires is pinned to a quoted phrase
+  in `tests/guidance/behaviours.yaml`. When a document changes on purpose, the
+  quote changes in the same PR and the PR shows the `--table` output.
+- **Out of the pipeline.** Nothing a scan runs reads either document.
+
+A failure is a gap in the document, or a rule too strict for a legitimate
+sentence. The ticket agent stops as `agent:blocked` and quotes the lines. The
+two paths are linked from the README and from tickets already filed: moving
+one is a change to those links first.
 
 ## Plugin manifest
 

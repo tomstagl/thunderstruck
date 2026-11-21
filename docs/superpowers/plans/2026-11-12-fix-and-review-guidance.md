@@ -1607,7 +1607,7 @@ git commit -m "Guidance checks: a scan does not read the documents (#107)" \
 
 No generated file is regenerated in this ticket: the two `--check`s below must pass unchanged.
 
-- [ ] **Step 1: CLAUDE.md.** In the Commands block, replace
+- [x] **Step 1: CLAUDE.md.** In the Commands block, replace
 
 ```
 # Build the fixture repo to poke at by hand
@@ -1651,7 +1651,7 @@ one is a change to those links first.
 
 ```
 
-- [ ] **Step 2: Version and CHANGELOG.** Bump the minor version in all four places to the next minor above `main`'s, read from `origin/main`, never typed in. Run:
+- [x] **Step 2: Version and CHANGELOG.** Bump the minor version in all four places to the next minor above `main`'s, read from `origin/main`, never typed in. Run:
 
 ```bash
 python3 - <<'EOF'
@@ -1694,7 +1694,7 @@ EOF
 
 Expected: prints `<old> -> <new>`, the new version one minor above `origin/main`'s.
 
-- [ ] **Step 3: Verify everything, each with its real exit code.**
+- [x] **Step 3: Verify everything, each with its real exit code.**
 
 ```bash
 THUNDERSTRUCK_REQUIRE_RENDERER=1 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/ -q; echo "exit=$?"
@@ -1737,9 +1737,9 @@ git diff --quiet origin/main -- docs/fix-agent-instructions.md docs/review-brief
 
 Expected: `ok      only the expected paths changed` and `ok      both documents are as found`. An `UNEXPECTED` path is reverted unless the plan names it. `CHANGED` is reverted with `git checkout origin/main -- docs/fix-agent-instructions.md docs/review-briefs.md`, and the run's summary says so.
 
-- [ ] **Step 4: Prepare the PR body.** In *Verified locally*, list each command above with its exit code, and the install check. In *Not verifiable in CI*, write: "Whether each pinned text states the behaviour in its row (AC-1, AC-2, AC-4) is a reading judgement the suite cannot make. The table is below for the reviewer, with the documents' blob ids as found on main: `<the two ids from Task 0 Step 4>`. Not caught by the neutrality check: a tool used as a bare verb, a plugin file named in prose outside a code span, a harness or tool no rule lists (spec §3)." Then paste the Task 4 Step 6 table.
+- [x] **Step 4: Prepare the PR body.** In *Verified locally*, list each command above with its exit code, and the install check. In *Not verifiable in CI*, write: "Whether each pinned text states the behaviour in its row (AC-1, AC-2, AC-4) is a reading judgement the suite cannot make. The table is below for the reviewer, with the documents' blob ids as found on main: `<the two ids from Task 0 Step 4>`. Not caught by the neutrality check: a tool used as a bare verb, a plugin file named in prose outside a code span, a harness or tool no rule lists (spec §3)." Then paste the Task 4 Step 6 table.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/superpowers/plans/2026-11-12-fix-and-review-guidance.md CLAUDE.md CHANGELOG.md .claude-plugin/plugin.json .claude-plugin/marketplace.json pyproject.toml
