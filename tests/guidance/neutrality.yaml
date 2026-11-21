@@ -1,0 +1,175 @@
+# Harness-neutrality rules for the fix instructions and the review briefs (#107).
+# Design: docs/superpowers/specs/2026-11-12-fix-and-review-guidance-design.md §3.
+#
+# A rule is a Python regex searched in the text of each Markdown block of a
+# document (soft-wrapped lines joined), so a phrase wrapped across two lines is
+# still found. Every rule needs a positive and a negative sample. A positive
+# sample must trip its own rule. A negative sample must trip NO rule: that is
+# how a rule is kept from flagging a legitimate sentence. To allow a phrase,
+# narrow the pattern and add a negative sample; there is no inline waiver.
+#
+# Plain words such as "tool", "agent", "plugin", "hook" and "skill" are never
+# forbidden: a neutral document may say that it assumes none.
+
+# Never derived from the tree: ordinary names of ordinary repository files.
+generic_files: [README.md, LICENSE, CHANGELOG.md, CONTRIBUTING.md, __init__.py]
+
+# Plugin files that are also ordinary names. Alone in a code span they pass (a
+# review brief may say "write your report to `report.html`"); after a plugin
+# directory they are still forbidden (`scripts/validate.py`). A scan's own output
+# names (report.md, index.json, ...) are not listed: they are not derived from the
+# tree, and the path `.thunderstruck/` is caught by N02.
+bare_ok: [validate.py, verify.py, report.py, context.py, links.py, usage.py, deps.py,
+          bundle.py, modules.py, report.html]
+
+derived:
+  N20:
+    why: The name of a skill or an agent shipped with the plugin, as a name or a slash command.
+    negative:
+      - "thunderstruck found the failure in the retry path."
+      - "Run a scan of the repository and read the ticket."
+      - "The stability catalog is not an input here."
+  N21:
+    why: A file shipped with the plugin, named by a path into one of its directories or alone in a code span.
+    positive:
+      - "Run `scripts/validate.py` first."
+      - "Open `templates/report.html` and read it."
+      - "Keep `thunderstruck.toml.example` as it is."
+    negative:
+      - "Write your report to `report.md`."
+      - "Run `validate.py` on the input and keep what it prints."
+      - "Check `links.py` and `context.py` in the repository under review."
+      - "The checker's output goes to `report.json`."
+      - "Open `src/report.py` and find the failure."
+      - "Run `make test` and keep the output."
+      - "Keep the retry in `client/links.py` as it is."
+      - "Update the project README.md if behaviour changes."
+      - "The deploy script is `scripts/deploy.sh`."
+
+rules:
+  - id: N01
+    name: harness-environment-variable
+    pattern: '\bCLAUDE_[A-Z][A-Z_]*\b'
+    why: A variable the harness sets, such as the plugin root.
+    positive:
+      - 'Run "${CLAUDE_PLUGIN_ROOT}/scripts/report.py" first.'
+      - "Set CLAUDE_CODE_ENTRYPOINT before you start."
+    negative:
+      - "Export API_TIMEOUT before you run the suite."
+
+  - id: N02
+    name: harness-or-plugin-file
+    pattern: '(?<![\w-])(?:CLAUDE|AGENTS|GEMINI)\.md\b|(?<![\w-])\.(?:claude(?:-plugin)?|cursorrules|thunderstruck)\b|\bcopilot-instructions\.md\b'
+    why: An instruction file of a harness, or a directory or file the plugin writes.
+    positive:
+      - "Do not edit CLAUDE.md."
+      - "Read AGENTS.md before you start."
+      - "Open `.claude/settings.json`."
+      - "The report is in `.thunderstruck/report.json`."
+      - "Look at `.claude-plugin/plugin.json`."
+    negative:
+      - "Follow the CONTRIBUTING.md of the repository."
+      - "Keep thunderstruck findings out of the commit message."
+      - "Open the file named in the ticket."
+
+  - id: N03
+    name: model-context-protocol
+    pattern: '\bmcp__\w+|\bMCP\b|\bModel Context Protocol\b'
+    why: A harness integration; a neutral document cannot assume it exists.
+    positive:
+      - "Query the tracker through mcp__github__issue_read."
+      - "Use an MCP server if you have one."
+    negative:
+      - "The McpClient class retries once."
+      - "Ask the tracker's owner for the missing input."
+
+  - id: N04
+    name: harness-hook-event
+    pattern: '\b(?:PreToolUse|PostToolUse|SubagentStop|SessionStart|UserPromptSubmit)\b'
+    why: The name of a harness hook event.
+    positive:
+      - "The PreToolUse hook warns before an edit."
+      - "Save the result on SubagentStop."
+    negative:
+      - "Run the pre-commit hooks of the repository before you commit."
+
+  - id: N05
+    name: harness-tool-name
+    pattern: '\b(?:TodoWrite|NotebookEdit|WebFetch|WebSearch|MultiEdit|SendMessage|ToolSearch|AskUserQuestion|ExitPlanMode|EnterPlanMode|BashOutput|KillShell)\b'
+    why: A compound tool name; it is never ordinary prose.
+    positive:
+      - "Track your steps with TodoWrite."
+      - "Fetch the page with WebFetch."
+    negative:
+      - "Do a web search for the error text only if your environment allows it."
+      - "Keep a todo list in the ticket."
+
+  - id: N06
+    name: harness-tool-by-name
+    pattern: '(?:\b(?i:the|a|an|this|that|your)\s+|`)(?:Read|Write|Edit|Bash|Grep|Glob|Task|Agent|Skill)`?\s+(?i:tools?)\b'
+    why: A single-word tool name used as a name, "the Read tool". The bare word is a verb and is not flagged.
+    positive:
+      - "Open the file with the Read tool."
+      - "Use the `Bash` tool to run the suite."
+      - "Hand the review to your Task tool."
+    negative:
+      - "Read tool output before you rely on it."
+      - "Write tool documentation for the next fixer."
+      - "Edit the test, then run it."
+      - "The task of the fixer is small."
+
+  - id: N07
+    name: harness-product-name
+    pattern: '\b(?:Claude Code|Claude|GitHub Copilot|Copilot|Codex|Aider|Windsurf|Gemini CLI)\b'
+    why: The name of a specific coding assistant.
+    positive:
+      - "In Claude Code, run the command."
+      - "Copilot can do this for you."
+    negative:
+      - "Use whatever coding assistant your team has."
+      - "Any person or agent can follow this."
+
+  - id: N08
+    name: harness-feature
+    pattern: '(?i)\bsub-?agents?\b|\bslash[ -]commands?\b|\bplan mode\b|\bagent teams?\b|\bpermission mode\b'
+    why: A feature of an agent harness, not of every environment.
+    positive:
+      - "Spawn a subagent for each lens."
+      - "Run the slash command."
+      - "Switch to plan mode before you edit."
+    negative:
+      - "Run each lens in a separate session, by a person or an agent."
+      - "Cut the path at the last slash."
+      - "A command that fails stops the run."
+
+  - id: N09
+    name: harness-slash-command
+    pattern: '(?<![\w/.:~-])/(?:plugin|compact)(?![\w/-])'
+    why: A built-in command of a harness. Names such as /agents or /hooks are left out because a service can have that route.
+    positive:
+      - "Type /compact when the context fills."
+      - "Run `/plugin` to see what is installed."
+    negative:
+      - "GET /health returns 200 when the service is up."
+      - "Read /etc/hosts on the host."
+      - "See docs/plugin.md for the details."
+      - "The /plugins page lists them."
+
+# Sentences a neutral document may contain. None may trip any rule. The first
+# ones restate the ticket's own behaviours.
+legitimate:
+  - "Stop and ask when an input is missing."
+  - "Re-check the code against the ticket before you plan the fix."
+  - "Read the callers, the numbers and the not-checked items."
+  - "Write down the implicit guarantees the current code gives."
+  - "Get a human decision when behaviour that a caller can see changes."
+  - "Write a failing test first, and make the smallest change that passes it."
+  - "Report the real commands you ran and the real results. Never invent a result. Never push."
+  - "Run the integration suites when your environment supports it."
+  - "Reviewers are read-only and are not given the implementer's conclusions."
+  - "Do not rely on any plugin, hook or tool your environment may not have."
+  - "The cursor is saved after each page, so a restart resumes where it stopped."
+  - "A lock also guaranteed that only one caller fetched."
+  - "Check the service's /health endpoint and the README.md of the repository."
+  - "Write your report to `report.md`, one finding per heading."
+  - "Never push."

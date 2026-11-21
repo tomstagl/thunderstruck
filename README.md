@@ -235,6 +235,20 @@ model `--verify` uses, reached 11), and a scan with verification used about
 (`docs/calibration/consumption.md`). The report's Consumption section
 lists the skeptics' tokens separately from the investigators'.
 
+## From a finding to a reviewed fix
+
+Two plain documents ship with the plugin, for whoever fixes a finding and
+whoever reviews the fix. They name no tool, script or agent environment, so a
+person, or an agent in any environment, can follow either as written:
+
+- [`docs/fix-agent-instructions.md`](docs/fix-agent-instructions.md) is for
+  whoever implements the fix.
+- [`docs/review-briefs.md`](docs/review-briefs.md) is for the reviewers: four
+  lenses, each with its own brief, and one report format they all share.
+
+The plugin does not run either one. Link them by these paths, which do not
+change between releases.
+
 ## The catalog
 
 23 stability patterns drawn from Nygard's *Release It!*, the Amazon Builders'

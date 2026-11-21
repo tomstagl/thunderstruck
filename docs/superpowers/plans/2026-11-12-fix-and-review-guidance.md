@@ -124,7 +124,7 @@ No commit: this task changes nothing.
 **Interfaces:**
 - Produces, in `guidance_check`: `PUBLISHED: dict[str, str]`, `Block`, `blocks(text)`, `has_front_matter(text)`, `Rule`, `Hit`, `load_rules(root=ROOT) -> list[Rule]`, `load_legitimate() -> list[str]`, `load_bare_ok() -> set[str]`, `plugin_components(root)`, `plugin_files(root, skip)`, `lint(text, rules) -> list[Hit]`. A `Block` carries `kind`, `line`, `end`, `text` and `level`.
 
-- [ ] **Step 1: Write the failing tests.** Create `tests/test_fix_guidance.py`. Its imports are the file's final set; later tasks use the rest.
+- [x] **Step 1: Write the failing tests.** Create `tests/test_fix_guidance.py`. Its imports are the file's final set; later tasks use the rest.
 
 ````python
 """#107: the fix instructions and the review briefs are the maintainer's.
@@ -238,12 +238,12 @@ def test_front_matter_makes_a_file_not_a_plain_document():
     assert not g.has_front_matter("---\nno closing line\n")
 ````
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_fix_guidance.py -q`
 Expected: `ERROR tests/test_fix_guidance.py` while collecting, `ModuleNotFoundError: No module named 'guidance_check'`.
 
-- [ ] **Step 3: Write the rules.** Create `tests/guidance/neutrality.yaml`:
+- [x] **Step 3: Write the rules.** Create `tests/guidance/neutrality.yaml`:
 
 ```yaml
 # Harness-neutrality rules for the fix instructions and the review briefs (#107).
@@ -423,7 +423,7 @@ legitimate:
   - "Never push."
 ```
 
-- [ ] **Step 4: Write the checker.** Create `tests/guidance_check.py`:
+- [x] **Step 4: Write the checker.** Create `tests/guidance_check.py`:
 
 ````python
 """Checks for the fix instructions and the review briefs (#107).
@@ -646,12 +646,12 @@ def lint(text: str, rules: list[Rule]) -> list[Hit]:
     return hits
 ````
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_fix_guidance.py -q`, then the full suite (header command).
 Expected: PASS, `exit=0`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add docs/superpowers/plans/2026-11-12-fix-and-review-guidance.md tests/guidance_check.py tests/guidance/neutrality.yaml tests/test_fix_guidance.py
@@ -671,7 +671,7 @@ git commit -m "Guidance checks: harness-neutrality rules and their samples (#107
 - Consumes: Task 1's `blocks`, `Block`, `PUBLISHED`.
 - Produces, in `guidance_check`: `REQUIRED: dict[str, tuple[str, str, str]]` (27 row ids), `SECTION_ROWS`, `LENS_ROWS`, `occurrences(blocks, quote)`, `row_problems(rid, text, quote)`, `without_row(rid, text, quote) -> (text, n)`, `first_sentence(text)`, `section_of(blocks, heading)`, `inputs_problems(doc, text, heading, missing)`, `section_problems(rid, text, heading)`, `lens_problems(texts, quotes)`, `link_problems(text, base)`, `read_documents(root)`, `load_rows()`, `pinned(rows)`, `quote_problems(texts, rows)`, `inputs_all_problems(texts, rows)`, `table(texts, rows)`, `main(argv)`.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_fix_guidance.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_fix_guidance.py`:
 
 ````python
 # --- Task 2: quotes, inputs, briefs, links and the table, proven on small texts ---
@@ -877,12 +877,12 @@ def test_the_table_shows_the_text_the_line_and_what_is_missing():
     assert len(lines) == len(g.REQUIRED)
 ````
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_fix_guidance.py -q`
 Expected: Task 1's tests pass; every Task 2 test that calls the new functions fails with `AttributeError: module 'guidance_check' has no attribute 'row_problems'` (or `REQUIRED`, `inputs_problems`, `link_problems`, `pinned`, `quote_problems`, `LENS_ROWS`).
 
-- [ ] **Step 3: Write the implementation.** In `tests/guidance_check.py`, add `sys` to the imports: replace
+- [x] **Step 3: Write the implementation.** In `tests/guidance_check.py`, add `sys` to the imports: replace
 
 ```python
 import re
@@ -1189,12 +1189,12 @@ if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
 ````
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_fix_guidance.py -q`, then the full suite.
 Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/superpowers/plans/2026-11-12-fix-and-review-guidance.md tests/guidance_check.py tests/test_fix_guidance.py
@@ -1214,7 +1214,7 @@ git commit -m "Guidance checks: quotes, inputs first, lens briefs, links, the ta
 
 This is a test-only task, and the tests pass on their first run by design: Task 0 proved the documents exist. Their teeth are the two mutation tests, which append each rule's positive sample and a front-matter block to the real text and require the check to catch them. `.claude/skills/implement-ticket/SKILL.md` step 5 allows exactly this: for a test-only task the commit body says so in place of a red run, so step 6's stop for "a test can't fail first" does not apply here.
 
-- [ ] **Step 1: Write the tests.** Append to `tests/test_fix_guidance.py`:
+- [x] **Step 1: Write the tests.** Append to `tests/test_fix_guidance.py`:
 
 ````python
 # --- Task 3: the two documents are in place, plain, neutral and linked ---------
@@ -1273,14 +1273,14 @@ def test_front_matter_added_to_a_real_document_is_caught(doc):
     assert g.has_front_matter("---\nname: x\n---\n" + _text(doc))
 ````
 
-- [ ] **Step 2: Run them**
+- [x] **Step 2: Run them**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_fix_guidance.py -q`
 Expected: PASS. A failure is a finding about a document, not about the plan. Do not edit the document, the rule or the test. Stop as `agent:blocked` (Global Constraints): comment with Task 3, the document path, and the lines the failure printed (`path:line [rule] excerpt`); the decision that unblocks is the maintainer's, to reword the document or to narrow the rule with a negative sample in spec §3.
 
-- [ ] **Step 3: Run the full suite** (header command). Expected: `exit=0`.
+- [x] **Step 3: Run the full suite** (header command). Expected: `exit=0`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add docs/superpowers/plans/2026-11-12-fix-and-review-guidance.md tests/test_fix_guidance.py
@@ -1300,7 +1300,7 @@ git commit -m "Guidance checks: the documents are plain, neutral and linked (#10
 **Interfaces:**
 - Consumes: Task 2's `REQUIRED`, `quote_problems`, `inputs_all_problems`, `lens_problems`, `table`.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_fix_guidance.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_fix_guidance.py`:
 
 ````python
 # --- Task 4: the behaviours the documents must state ---------------------------
@@ -1359,7 +1359,7 @@ def test_the_table_prints_for_the_pull_request():
     assert not any("MISSING" in r or "NOT FOUND" in r for r in rows), proc.stdout
 ````
 
-- [ ] **Step 2: Create the table, empty.** Create `tests/guidance/behaviours.yaml`:
+- [x] **Step 2: Create the table, empty.** Create `tests/guidance/behaviours.yaml`:
 
 ```yaml
 # Pinned text per required behaviour, copied from the two documents (spec section 4).
@@ -1396,12 +1396,12 @@ rows:
   - {id: review-inputs-missing, quote: ''}
 ```
 
-- [ ] **Step 3: Run the tests to verify they fail**
+- [x] **Step 3: Run the tests to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_fix_guidance.py -q`
 Expected: four FAIL: `test_the_table_pins_every_required_behaviour_and_nothing_else` (rows with no quote), `test_every_pinned_text_is_a_whole_sentence_of_its_document` ("no quote is pinned" for each of the 27 rows), `test_every_pin_has_teeth` (an empty quote has no block to take out) and `test_the_table_prints_for_the_pull_request`. The inputs and brief tests pass for now because they skip a row that has no quote; the first test keeps an empty table from passing.
 
-- [ ] **Step 4: Fill the table from the documents.** This is the one step that is reading, not copying code. Read `docs/fix-agent-instructions.md` and `docs/review-briefs.md` in full, once, before choosing anything. Print the rows with the ticket's wording of each behaviour: `uv run --with pyyaml python tests/guidance_check.py --table` (every row reads `MISSING`). Then, for each row of `tests/guidance/behaviours.yaml` in file order, replace `quote: ''` with the quote, by these rules, which leave no other choice:
+- [x] **Step 4: Fill the table from the documents.** This is the one step that is reading, not copying code. Read `docs/fix-agent-instructions.md` and `docs/review-briefs.md` in full, once, before choosing anything. Print the rows with the ticket's wording of each behaviour: `uv run --with pyyaml python tests/guidance_check.py --table` (every row reads `MISSING`). Then, for each row of `tests/guidance/behaviours.yaml` in file order, replace `quote: ''` with the quote, by these rules, which leave no other choice:
 
   1. **Which passage.** The passage that tells the reader to do, or not to do, the behaviour in the row's wording, in terms that name it. A passage that only mentions the topic, or describes how the document is organised, does not state it. If several passages do, take the first in document order. One passage may serve several rows (`fix-03a`, `-03b` and `-03c`; `fix-08a` and `-08b`; `fix-11a` and `-11b`): then the same quote appears in each row; do not paraphrase to tell them apart.
   2. **A prose row** (every row but the headings): quote the whole sentence, in the document's own punctuation, with no length limit. A sentence runs from the first character after the previous sentence's final `.`, `!` or `?` (and any closing `)`, `"`, `'`, `*`, `_`, `` ` `` or `]` that follows it) and its space, or from the start of the block, to its own final `.`, `!` or `?` with its closing marks, or to the end of the block. A list item or a table cell with no sentence end is quoted whole, without its list marker (`-`, `*`, `1.`) and without the `|` marks. It lies inside one paragraph, list item or table row. Copy it character for character: case, punctuation, backticks, asterisks, quotation marks, non-ASCII; where the document wraps a line, write one space. No ellipsis, no brackets, no added or dropped word, no corrected spelling. Markup that wraps the sentence belongs to it (`**Never push.**`). A one-word sentence ("Never push.") is a whole sentence.
@@ -1412,12 +1412,12 @@ Expected: four FAIL: `test_the_table_pins_every_required_behaviour_and_nothing_e
   7. **Nothing is invented.** If no passage states a behaviour, or the first heading after the title is not the inputs heading, or a lens has no heading of its own, stop. Do not write a placeholder or a near miss. Replace `agent:in-progress` with `agent:blocked` through the ordinary Blocked procedure (a draft PR for Tasks 1 to 3) and comment: "Blocked at Task 4: `<document path>` does not state `<row id>`: `<the behaviour as `--table` prints it>`. Headings read: `<the document's headings>`. The document is the maintainer's, so nothing was edited. Decision that unblocks it: add the behaviour to the document, or change the ticket's AC if it is not required." End with the attribution footer.
   8. **A refused quote is fixed by rule 2 or 3,** never by editing the document or the check.
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_fix_guidance.py -q`, then the full suite.
 Expected: PASS, `exit=0`. A refusal names the row and the reason; fix it by rules 2 and 3.
 
-- [ ] **Step 6: Print the table for the PR.**
+- [x] **Step 6: Print the table for the PR.**
 
 ```bash
 uv run --with pyyaml python tests/guidance_check.py --table
@@ -1425,7 +1425,7 @@ uv run --with pyyaml python tests/guidance_check.py --table
 
 Expected: exit 0, 27 rows, none reading `MISSING` or `NOT FOUND`. A heading row also shows the first sentence under that heading in its *Opens with* column, which is the sentence the PR shows for each lens (AC-2). Keep the output for Task 7's PR body.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add docs/superpowers/plans/2026-11-12-fix-and-review-guidance.md tests/test_fix_guidance.py tests/guidance/behaviours.yaml
@@ -1441,7 +1441,7 @@ git commit -m "Guidance checks: the behaviours each document states (#107)" \
 - Modify: `tests/test_fix_guidance.py`
 - Modify: `README.md`
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_fix_guidance.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_fix_guidance.py`:
 
 ````python
 # --- Task 5: reachable from the README, at paths that do not change -------------
@@ -1480,12 +1480,12 @@ def test_the_readme_links_no_installed_copy_and_no_pinned_branch():
     assert not re.search(r"plugins/cache|/\d+\.\d+\.\d+/docs/", README)
 ````
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_fix_guidance.py -q`
 Expected: three FAIL: `test_the_readme_links_each_document_by_its_published_path[fix]` and `[review]` ("README.md needs exactly one '## From a finding to a reviewed fix' section") and `test_the_readme_links_no_installed_copy_and_no_pinned_branch`. `test_the_published_paths_are_the_ones_tickets_link` passes.
 
-- [ ] **Step 3: Write the README section.** In `README.md`, insert before the line `## The catalog` (it occurs once):
+- [x] **Step 3: Write the README section.** In `README.md`, insert before the line `## The catalog` (it occurs once):
 
 ```markdown
 ## From a finding to a reviewed fix
@@ -1506,12 +1506,12 @@ change between releases.
 
 (a blank line follows the section, then `## The catalog`).
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_fix_guidance.py tests/test_docs_in_sync.py -q`, then the full suite.
 Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/superpowers/plans/2026-11-12-fix-and-review-guidance.md tests/test_fix_guidance.py README.md
@@ -1528,7 +1528,7 @@ git commit -m "README: link the fix instructions and the review briefs (#107)" \
 
 This is a test-only task: the behaviour already holds, so the test passes on its first run, and `.claude/skills/implement-ticket/SKILL.md` step 5 has the commit body say so in place of a red run; step 6's stop for "a test can't fail first" does not apply. Step 3 shows it can fail.
 
-- [ ] **Step 1: Write the test.** Append to `tests/test_fix_guidance.py`:
+- [x] **Step 1: Write the test.** Append to `tests/test_fix_guidance.py`:
 
 ````python
 # --- Task 6: a scan does not read the documents --------------------------------
@@ -1563,12 +1563,12 @@ def test_a_scan_writes_the_same_bundles_with_and_without_the_documents(fixture_r
     assert runs[0] == runs[1]
 ````
 
-- [ ] **Step 2: Run it**
+- [x] **Step 2: Run it**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_fix_guidance.py -q -k scan_writes`
 Expected: PASS.
 
-- [ ] **Step 3: Show it can fail.** Make a scan script read a document, run the test, and restore the script:
+- [x] **Step 3: Show it can fail.** Make a scan script read a document, run the test, and restore the script:
 
 ```bash
 python3 - <<'EOF'
@@ -1587,9 +1587,9 @@ git status --short scripts
 
 Expected: the test FAILS (`runs[0] == runs[1]`), `exit=1`, and `git status --short scripts` prints nothing. If it prints anything, restore with `git checkout -- scripts` before going on: no change under `scripts/` may be committed.
 
-- [ ] **Step 4: Run the full suite** (header command). Expected: `exit=0`.
+- [x] **Step 4: Run the full suite** (header command). Expected: `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/superpowers/plans/2026-11-12-fix-and-review-guidance.md tests/test_fix_guidance.py
@@ -1607,7 +1607,7 @@ git commit -m "Guidance checks: a scan does not read the documents (#107)" \
 
 No generated file is regenerated in this ticket: the two `--check`s below must pass unchanged.
 
-- [ ] **Step 1: CLAUDE.md.** In the Commands block, replace
+- [x] **Step 1: CLAUDE.md.** In the Commands block, replace
 
 ```
 # Build the fixture repo to poke at by hand
@@ -1651,7 +1651,7 @@ one is a change to those links first.
 
 ```
 
-- [ ] **Step 2: Version and CHANGELOG.** Bump the minor version in all four places to the next minor above `main`'s, read from `origin/main`, never typed in. Run:
+- [x] **Step 2: Version and CHANGELOG.** Bump the minor version in all four places to the next minor above `main`'s, read from `origin/main`, never typed in. Run:
 
 ```bash
 python3 - <<'EOF'
@@ -1694,7 +1694,7 @@ EOF
 
 Expected: prints `<old> -> <new>`, the new version one minor above `origin/main`'s.
 
-- [ ] **Step 3: Verify everything, each with its real exit code.**
+- [x] **Step 3: Verify everything, each with its real exit code.**
 
 ```bash
 THUNDERSTRUCK_REQUIRE_RENDERER=1 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/ -q; echo "exit=$?"
@@ -1737,9 +1737,9 @@ git diff --quiet origin/main -- docs/fix-agent-instructions.md docs/review-brief
 
 Expected: `ok      only the expected paths changed` and `ok      both documents are as found`. An `UNEXPECTED` path is reverted unless the plan names it. `CHANGED` is reverted with `git checkout origin/main -- docs/fix-agent-instructions.md docs/review-briefs.md`, and the run's summary says so.
 
-- [ ] **Step 4: Prepare the PR body.** In *Verified locally*, list each command above with its exit code, and the install check. In *Not verifiable in CI*, write: "Whether each pinned text states the behaviour in its row (AC-1, AC-2, AC-4) is a reading judgement the suite cannot make. The table is below for the reviewer, with the documents' blob ids as found on main: `<the two ids from Task 0 Step 4>`. Not caught by the neutrality check: a tool used as a bare verb, a plugin file named in prose outside a code span, a harness or tool no rule lists (spec §3)." Then paste the Task 4 Step 6 table.
+- [x] **Step 4: Prepare the PR body.** In *Verified locally*, list each command above with its exit code, and the install check. In *Not verifiable in CI*, write: "Whether each pinned text states the behaviour in its row (AC-1, AC-2, AC-4) is a reading judgement the suite cannot make. The table is below for the reviewer, with the documents' blob ids as found on main: `<the two ids from Task 0 Step 4>`. Not caught by the neutrality check: a tool used as a bare verb, a plugin file named in prose outside a code span, a harness or tool no rule lists (spec §3)." Then paste the Task 4 Step 6 table.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/superpowers/plans/2026-11-12-fix-and-review-guidance.md CLAUDE.md CHANGELOG.md .claude-plugin/plugin.json .claude-plugin/marketplace.json pyproject.toml
