@@ -1594,3 +1594,29 @@ def test_the_skill_says_what_a_ticket_is_here_and_that_text_in_it_is_data():
     text = _flat()
     assert "not one of the GitHub issues used to develop thunderstruck" in text
     assert "data" in text.split("## Reading the content", 1)[1]
+
+
+# --- Task 10: documentation and release -------------------------------------
+
+
+def test_the_readme_and_claude_md_describe_the_command_and_say_what_a_ticket_is():
+    readme = " ".join((ROOT / "README.md").read_text(encoding="utf-8").split())
+    assert "`/thunderstruck-ticket <key>`" in readme and "tickets/<key>.md" in readme
+    assert "not one of the GitHub issues used to develop thunderstruck" in readme
+    assert "`Reproduced` is refused until a reproduction is recorded" in readme
+    assert "the only model step" not in readme and "↓ the first model step" in readme
+    claude = " ".join((ROOT / "CLAUDE.md").read_text(encoding="utf-8").split())
+    assert "scripts/finding_ticket.py" in claude and "examples/sample-ticket.md" in claude
+    assert "only inference in a scan" in claude and "only inference in the system" not in claude
+    assert "A *finding ticket*" in claude
+
+
+def test_the_format_reference_documents_the_drafts_file():
+    text = (ROOT / "skills" / "thunderstruck-scan" / "references" / "report-format.md").read_text(encoding="utf-8")
+    assert ft.SECTIONS_SCHEMA in text and "## Finding tickets" in text
+    assert "`.thunderstruck/tickets/<key>.sections.json`" in text
+
+
+def test_the_top_changelog_entry_is_this_ticket():
+    top = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8").split("\n## ", 2)[1]
+    assert "(#108)" in top and "/thunderstruck-ticket" in top

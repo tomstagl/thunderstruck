@@ -72,7 +72,7 @@ Proved in a scratch copy while this plan was written: a fresh clone of `main` at
 
 **Satisfies:** none directly; every later task assumes it.
 
-- [ ] **Step 1: Check #105 and #107 are on `main`, and that the code this plan edits is as it was written against.** A missing prerequisite sets `B`; a moved anchor sets `A`.
+- [x] **Step 1: Check #105 and #107 are on `main`, and that the code this plan edits is as it was written against.** A missing prerequisite sets `B`; a moved anchor sets `A`.
 
 ```bash
 git fetch -q origin
@@ -137,11 +137,11 @@ else echo "READY"; fi
 
 Expected: every line `ok`, then `READY`.
 
-- [ ] **Step 2: Stop if anything is missing.** The last line says which way.
+- [x] **Step 2: Stop if anything is missing.** The last line says which way.
   - `BLOCKED` (a `MISSING` or `EXISTS` line): a prerequisite ticket's work is not on `main`, or another change took a name. Replace `agent:in-progress` with `agent:blocked` on #108, comment "Blocked at Task 0: <the lines>. #105 (the finding fields) or #107 (the guidance documents) is not on main", open no PR. A missing guidance document or a missing #105 name is never amendable.
   - `AMENDABLE` (only `MOVED` lines, so every prerequisite is there and an anchor text changed): this is an amendable gap (`.claude/skills/implement-ticket/SKILL.md` step 6a), not a block. Do not add `agent:blocked`, which would stop the next night's pick. Take step 6a: propose one amendment to this plan and spec that moves the anchor to where the text now is, if one conforming text is clear. If the moved text has more than one reasonable reading, it is not amendable: stop as `BLOCKED` above.
 
-- [ ] **Step 3: Record the baseline.** On a clean `origin/main`, run the full suite (command in the header). Expected `exit=0`. Keep the counts: this plan adds tests, and a changed count that is not an addition is a regression to explain.
+- [x] **Step 3: Record the baseline.** On a clean `origin/main`, run the full suite (command in the header). Expected `exit=0`. Keep the counts: this plan adds tests, and a changed count that is not an addition is a regression to explain.
 
 No commit: this task changes nothing.
 
@@ -3309,7 +3309,7 @@ git commit -m "Skill: /thunderstruck-ticket (#108)" \
 
 No generated file is regenerated here: the sample was regenerated once, in Task 8, and the `--check` below must pass unchanged.
 
-- [ ] **Step 1: Write the tests.** Append to `tests/test_finding_ticket.py`:
+- [x] **Step 1: Write the tests.** Append to `tests/test_finding_ticket.py`:
 
 ``````python
 # --- Task 10: documentation and release -------------------------------------
@@ -3338,7 +3338,7 @@ def test_the_top_changelog_entry_is_this_ticket():
     assert "(#108)" in top and "/thunderstruck-ticket" in top
 ``````
 
-- [ ] **Step 2: Run them.**
+- [x] **Step 2: Run them.**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_finding_ticket.py tests/test_report_links.py -q
@@ -3346,7 +3346,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: FAIL, 3 failed: the README lacks `/thunderstruck-ticket <key>`, the format reference lacks `thunderstruck.ticket-sections/v1`, the top CHANGELOG entry is not `(#108)`.
 
-- [ ] **Step 3: Documentation.** Make these edits:
+- [x] **Step 3: Documentation.** Make these edits:
 
 In `README.md`, replace this text, which occurs once:
 
@@ -3585,7 +3585,7 @@ used, and the ticket says so in its Provenance.
 ## Identity: `id` versus `key`
 ``````
 
-- [ ] **Step 4: Version and CHANGELOG.** Bump the minor version in all four places to the next minor above `main`'s, read from `origin/main`, never typed in, and add the changelog entry. Run:
+- [x] **Step 4: Version and CHANGELOG.** Bump the minor version in all four places to the next minor above `main`'s, read from `origin/main`, never typed in, and add the changelog entry. Run:
 
 ``````bash
 python3 - <<'EOF'
@@ -3637,7 +3637,7 @@ EOF
 
 Expected: prints `<old> -> <new>`, the new version one minor above `origin/main`'s.
 
-- [ ] **Step 5: Verify everything, each with its real exit code.**
+- [x] **Step 5: Verify everything, each with its real exit code.**
 
 ```bash
 THUNDERSTRUCK_REQUIRE_RENDERER=1 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/ -q; echo "exit=$?"
@@ -3682,9 +3682,9 @@ git diff --quiet origin/main -- docs/fix-agent-instructions.md docs/review-brief
 
 Expected: both `ok` lines. An `UNEXPECTED` path is reverted unless the plan names it; `CHANGED` is reverted with `git checkout origin/main -- docs/fix-agent-instructions.md docs/review-briefs.md`.
 
-- [ ] **Step 6: Prepare the PR body.** In *Verified locally*, list each command with its exit code and the install check. In *Not verifiable in CI*, write: "How GitHub, GitLab or Bitbucket render the ticket is inferred from cmark-gfm and markdown-it-py, which the tests use. The drafting step (a model writing the four proposal sections) never runs in CI: the sample's proposals are canned text. Tracker references in `report.md` are now code spans (one test edited in Task 1; neither sample report moved). GitHub's issue-body limit (65,536 as reported; the unit, characters or bytes, is unconfirmed), from which `MAX_TICKET_BYTES` is derived, was not verified against GitHub." Add the CLAUDE.md consequence: "The sentence 'The investigator and the skeptic are the only inference in the system' now reads 'in a scan', and records the one optional model step after it (spec §6)."
+- [x] **Step 6: Prepare the PR body.** In *Verified locally*, list each command with its exit code and the install check. In *Not verifiable in CI*, write: "How GitHub, GitLab or Bitbucket render the ticket is inferred from cmark-gfm and markdown-it-py, which the tests use. The drafting step (a model writing the four proposal sections) never runs in CI: the sample's proposals are canned text. Tracker references in `report.md` are now code spans (one test edited in Task 1; neither sample report moved). GitHub's issue-body limit (65,536 as reported; the unit, characters or bytes, is unconfirmed), from which `MAX_TICKET_BYTES` is derived, was not verified against GitHub." Add the CLAUDE.md consequence: "The sentence 'The investigator and the skeptic are the only inference in the system' now reads 'in a scan', and records the one optional model step after it (spec §6)."
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add README.md CLAUDE.md skills/thunderstruck-scan/references/report-format.md CHANGELOG.md .claude-plugin/plugin.json .claude-plugin/marketplace.json pyproject.toml tests/test_finding_ticket.py docs/superpowers/plans/2026-11-12-finding-to-ticket.md

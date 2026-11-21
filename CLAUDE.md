@@ -32,7 +32,7 @@ uv run --with pytest --with pyyaml --with lizard pytest tests/detectors -k "S02-
 
 # Regenerate the two generated artefacts (both checked in CI)
 uv run scripts/gen_catalog_docs.py          # --check exits 1 if stale
-uv run scripts/gen_sample_report.py         # runs the real pipeline over the fixture; --check diffs both samples
+uv run scripts/gen_sample_report.py         # runs the real pipeline over the fixture; --check diffs every sample
 
 # The HTML report in Chromium (Playwright pinned to the pre-installed browser build)
 THUNDERSTRUCK_REQUIRE_BROWSER=1 uv run --with pytest --with pyyaml --with lizard \
@@ -51,6 +51,8 @@ uv run scripts/bundle.py  --repo /path/to/repo      # --investigate-dormant N ad
 uv run scripts/validate.py --repo /path/to/repo    # exit 1 == repair round needed
 uv run scripts/report.py  --repo /path/to/repo
 uv run scripts/report_html.py --repo /path/to/repo   # report.json -> report.html
+uv run scripts/finding_ticket.py --repo /path/to/repo --list          # the findings and their keys
+uv run scripts/finding_ticket.py --repo /path/to/repo --key <key>     # .thunderstruck/tickets/<key>.md (#108)
 uv run scripts/calibrate.py --repo /path/to/repo --lang java --patterns S01,S27   # every hit, every tracked file
 uv run scripts/calibrate.py --repo /path/to/repo --lang all --patterns all --summary   # counts only, safe to share
 
@@ -78,11 +80,16 @@ skeptic       ← MODEL →       one read-only refuter per finding (verificatio
 verify.py     deterministic   apply: resolves every verdict ref, settles the check status
 report.py     deterministic   report.md · report.json · index.json
 report_html.py deterministic  report.json → report.html (templates/report.html, stdlib only)
+finding_ticket.py deterministic report.json + git → tickets/<key>.md (#108)
                                               ↓
 guardrail.py  (PreToolUse hook) reads index.json, injects findings before an edit
 ```
 
-The investigator and the skeptic are the only inference in the system.
+The investigator and the skeptic are the only inference in a scan. The finding ticket
+(#108) has one optional model step after a scan: the host session may draft four
+judgement sections into `.thunderstruck/tickets/<key>.sections.json`, which
+`finding_ticket.py` validates like model output and shows as a labelled proposal.
+Nothing in a scan, a report or a guardrail reads that file.
 
 No scan stage and not the guardrail runs, imports or builds the scanned
 project (the approved catalog command excepted); `tests/test_no_execution.py`
@@ -297,6 +304,7 @@ exercised.
 
 - `skills/stability-catalog/references/patterns.md` ← `gen_catalog_docs.py`
 - `examples/sample-report.md` and `examples/sample-report.html` ← `gen_sample_report.py`
+- `examples/sample-ticket.md` ← `gen_sample_report.py` (the ticket for the first sample finding)
 
 The sample report is produced by running the real pipeline over the fixture,
 and its findings pass the real validator. If the finding contract changes,
@@ -329,6 +337,35 @@ A failure is a gap in the document, or a rule too strict for a legitimate
 sentence. The ticket agent stops as `agent:blocked` and quotes the lines. The
 two paths are linked from the README and from tickets already filed: moving
 one is a change to those links first.
+
+## The finding ticket
+
+`scripts/finding_ticket.py` (`/thunderstruck-ticket`) writes
+`.thunderstruck/tickets/<key>.md` from `report.json` and git. A *finding ticket* is the
+text a scan runner files in the scanned repository's tracker, not one of this
+repository's GitHub issues. What keeps it honest:
+
+- **Key, never id.** The lookup, the file name and the header carry the `key`; the
+  skill may turn an id the user typed into a key once.
+- **Never quote code that is not the scan's.** Snippets are the blobs at `repo.head`.
+  Before that every file the ticket quotes must pass `links.stale_paths` and match
+  the recorded `content_hash` and `evidence_hashes`, or generation stops, names the
+  file and writes nothing.
+- **Links are the report's, never built.** Each `url` comes from `report.json` and
+  is checked by `safe_url`; the guidance documents are linked by the plugin
+  repository's address from `plugin.json`, never by a relative path.
+- **Inert, and no machine value.** Model and repository text goes through `mdtext`
+  (which also code-spans tracker references such as `#12`), a snippet through
+  `mdtext.verbatim`; the repository's path, the home directory, the user name and the
+  host name of the machine that ran the scan are scrubbed from model text (not from a
+  snippet, which is the repository's own), and `repo.branch` and `generated_at` are
+  never read.
+- **A ticket must fit a tracker.** `MAX_TICKET_BYTES` caps it: mechanism steps are
+  dropped from the end, with a note, and a ticket that still does not fit is a stop.
+- **Only `Reproduced` is gated.** `recorded_reproduction` returns `None` until #103
+  records one, and the request is refused.
+- **The four judgement sections are a proposal or "Not assessed".** Output is a pure
+  function of `report.json`, git and the optional drafts file.
 
 ## Plugin manifest
 
@@ -378,7 +415,8 @@ has the method; the rules that kept breaking it:
 ## Tickets, specs and plans
 
 Every feature has three artefacts. Each answers one question, and nothing is
-written in two of them.
+written in two of them. (A *finding ticket*, below, is a different thing: the
+text `finding_ticket.py` writes for a scan runner's own tracker.)
 
 | Artefact | Lives in | Answers | Contains | Never contains |
 |---|---|---|---|---|

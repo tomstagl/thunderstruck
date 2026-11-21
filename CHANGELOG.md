@@ -4,6 +4,24 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.17.0
+
+A finding becomes a ticket someone can act on (#108).
+
+### Added
+
+- **`/thunderstruck-ticket <key>`** writes a ticket for one finding to `.thunderstruck/tickets/<key>.md`, ready to paste into your tracker. A ticket here is the issue you file in your own repository from a finding. It has a fixed set of sections: the claim, the code the finding cites copied from the scanned commit with a permalink to those lines, what is traced and what is inferred, what a fix would remove, what was not checked, and links to the fix instructions and the review briefs. A section with no data says "Not assessed" and why. `scripts/finding_ticket.py --list` shows the keys.
+- **A ticket fits a tracker.** If it would be longer than 60,000 bytes, mechanism steps are dropped from the end and the ticket says so; the code references stay listed under Evidence status. A ticket too long even without steps is a stop.
+- **Nothing about the machine reaches a ticket.** The repository's path, the home directory, the user name and the host name of the machine that ran the scan are replaced in model text by `<repo>`, `<home>`, `<user>` and `<host>`. A path in the repository's own code is shown as it is.
+- **It stops rather than quote the wrong code.** When a cited file differs from the scanned commit, or no longer matches the hash the scan recorded, no ticket is written; the message names the file and says to rescan or to check out the scanned commit (or only to rescan, when the scan saw the file in another state). A file stored in Git LFS is a stop too.
+- **Status.** `--status` takes Hypothesis (the default), Reproduced, Fix proposed or Fix reviewed. Reproduced is refused until a reproduction is recorded (#103).
+- **Four sections may be proposed.** Fix options, acceptance criteria, out of scope, and rollout and rollback are in no finding. The skill can have the session's model draft them into `.thunderstruck/tickets/<key>.sections.json`; the script validates the file like model output and the ticket shows them as "Proposal, not verified". Without the file they read "Not assessed". This is one optional model step after a scan; nothing in a scan, a report or the guardrail reads it.
+- **`examples/sample-ticket.md`**, produced by the real pipeline over the fixture and checked for freshness with the sample report.
+
+### Changed
+
+- **Tracker references in text are shown as code.** `report.md` and the ticket show `#12`, `acme/api#12`, `PR#7`, `!7`, a key such as `ABC-123` and a commit sha (a short sha made only of digits cannot be told from a number) in a code span, so a tracker does not turn them into links to its own issues and commits. A commit sha in a warning of `report.md` is now in backticks.
+
 ## 0.16.0
 
 A finding says what its fix would remove and what was not checked, and bundles number their lines (#105).

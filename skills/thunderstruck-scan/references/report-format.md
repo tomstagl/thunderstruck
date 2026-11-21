@@ -270,6 +270,28 @@ says so under each of them. In `report.json`, every finding carries
 `refs` lists this finding's own overlapping refs. The findings are linked,
 never merged.
 
+## Finding tickets
+
+`finding_ticket.py` writes `.thunderstruck/tickets/<key>.md` for one finding. It
+reads, from `report.json`: the finding by `key`, `scanned_at` (the ticket's date),
+`repo.head` (the scanned commit), `links`, `warnings` and `run_warnings` (the reason
+links were not built), `verification.ran` and `schema`. It reads `repo.root`, and the
+machine's home directory, user name and host name, only to remove them from text, and
+never `repo.branch` or `generated_at`.
+
+Four sections may come from `.thunderstruck/tickets/<key>.sections.json`, which a model
+may write and the script validates:
+
+```json
+{"schema": "thunderstruck.ticket-sections/v1", "key": "<key>", "scanned_at": "<report scanned_at>",
+ "sections": {"fix_options": ["…"], "acceptance_criteria": ["…"],
+              "out_of_scope": ["…"], "rollout_and_rollback": ["…"]}}
+```
+
+`key` and `scanned_at` must equal the report's; each section is a list of 1 to 8
+strings of at most 400 characters; the file is at most 64 KB. Anything else is not
+used, and the ticket says so in its Provenance.
+
 ## Identity: `id` versus `key`
 
 `id` (`FR-001`) is a display label. It renumbers whenever ranking changes.
