@@ -303,8 +303,8 @@ them (`tests/test_fix_guidance.py`, helpers in `tests/guidance_check.py`):
 
 - **Neutral.** A harness tool name, a plugin path, a plugin script or skill
   name, a slash command or a harness feature fails the suite
-  (`tests/guidance/neutrality.yaml`). Plain words such as "tool" and "agent"
-  are never forbidden. To allow a legitimate phrase, narrow the rule and add a
+  (`tests/guidance/neutrality.yaml`). The bare words "tool" and "agent"
+  are allowed; a harness tool name used as a name ("the Agent tool") is not. To allow a legitimate phrase, narrow the rule and add a
   negative sample: there is no inline waiver.
 - **Complete.** Each behaviour the ticket requires is pinned to a quoted phrase
   in `tests/guidance/behaviours.yaml`. When a document changes on purpose, the

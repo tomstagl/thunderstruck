@@ -11,7 +11,7 @@ Fix and review guidance anyone can follow in any agent environment (#107).
 ### Added
 
 - **Two plain documents ship with the plugin**: `docs/fix-agent-instructions.md`, for whoever implements a fix, and `docs/review-briefs.md`, four review lenses with one shared report format. They are the maintainer's, shipped as written, and name no tool, plugin path, script or agent environment. The README links both, and the paths do not change between releases.
-- **The suite keeps them that way.** `tests/test_fix_guidance.py` fails when a harness tool name, a plugin path or script name, a slash command or a harness feature appears in either document (rules and samples in `tests/guidance/neutrality.yaml`), and when a behaviour pinned in `tests/guidance/behaviours.yaml` is no longer stated. `python tests/guidance_check.py --table` prints what is pinned, for review.
+- **The suite keeps them that way.** `tests/test_fix_guidance.py` fails when a harness tool name, a plugin path or script name, a slash command or a harness feature appears in either document (rules and samples in `tests/guidance/neutrality.yaml`), and when a behaviour pinned in `tests/guidance/behaviours.yaml` is no longer stated. `uv run --with pyyaml python tests/guidance_check.py --table` prints what is pinned, for review.
 - Nothing a scan runs reads either document, and no report, bundle or generated file changes.
 
 ## 0.14.0

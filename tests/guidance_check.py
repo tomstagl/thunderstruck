@@ -12,6 +12,7 @@ Test data is in tests/guidance/. Not a test module: pytest does not collect it.
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -145,16 +146,34 @@ def plugin_components(root: Path = ROOT) -> list[str]:
     return sorted(names)
 
 
+def _tracked(root: Path) -> set[str] | None:
+    """Paths git tracks in `root`, or None when `root` is not itself a git work tree.
+    Untracked and local files (settings, notes) are not part of the plugin and must
+    not change what a document may say, so the same document passes on every checkout."""
+    try:
+        top = subprocess.run(["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+                             capture_output=True, text=True, check=True).stdout.strip()
+        if Path(top).resolve() != root.resolve():
+            return None
+        out = subprocess.run(["git", "-C", str(root), "ls-files", "-z"],
+                             capture_output=True, text=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return {n for n in out.split("\0") if n}
+
+
 def plugin_files(root: Path, skip) -> list[str]:
     """File names under the plugin's own directories, except the generic ones."""
     names: set[str] = set()
+    tracked = _tracked(root)
     for top in PLUGIN_DIRS:
         base = root / top
         if not base.is_dir():
             continue
         for p in base.rglob("*"):
             if (p.is_file() and "__pycache__" not in p.parts
-                    and p.suffix != ".pyc" and p.name not in skip):
+                    and p.suffix != ".pyc" and p.name not in skip
+                    and (tracked is None or p.relative_to(root).as_posix() in tracked)):
                 names.add(p.name)
     return sorted(names)
 
@@ -492,7 +511,7 @@ def table(texts: dict, rows: list[dict]) -> str:
 
 def main(argv: list[str]) -> int:
     if argv != ["--table"]:
-        print("usage: python tests/guidance_check.py --table", file=sys.stderr)
+        print("usage: uv run --with pyyaml python tests/guidance_check.py --table", file=sys.stderr)
         return 2
     texts, rows = read_documents(), load_rows()
     print(table(texts, rows))

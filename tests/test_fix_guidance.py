@@ -366,7 +366,7 @@ def test_front_matter_added_to_a_real_document_is_caught(doc):
 
 DRIFT = (
     "\nIf the document changed on purpose, update the pinned text in tests/guidance/behaviours.yaml in the "
-    "same change and show the table (python tests/guidance_check.py --table) in the pull request for review. "
+    "same change and show the table (uv run --with pyyaml python tests/guidance_check.py --table) in the pull request for review. "
     "If the document lacks the behaviour, that is a gap in the maintainer's document: the ticket agent stops "
     "as agent:blocked, names the behaviour, and never edits the document.")
 
@@ -484,3 +484,17 @@ def test_a_scan_writes_the_same_bundles_with_and_without_the_documents(fixture_r
         runs.append(_scan(plugin, repo))
     assert any(name.startswith("bundles/") for name in runs[0]), sorted(runs[0])
     assert runs[0] == runs[1]
+
+
+def test_untracked_files_do_not_change_what_a_document_may_say(tmp_path):
+    """Local files (settings, notes) are not part of the plugin: a name read from one
+    must not become forbidden, or the same document passes on one checkout and fails on another."""
+    run = lambda *a: subprocess.run(["git", "-C", str(tmp_path), *a], check=True, capture_output=True)
+    run("init", "-q")
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "shipped_tool.py").write_text("x = 1\n")
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "local_notes.md").write_text("notes\n")
+    run("add", "scripts/shipped_tool.py")
+    names = g.plugin_files(tmp_path, set())
+    assert "shipped_tool.py" in names and "local_notes.md" not in names, names
