@@ -362,3 +362,57 @@ def test_a_violation_added_to_a_real_document_is_caught(doc, rule):
 @pytest.mark.parametrize("doc", sorted(DOCS))
 def test_front_matter_added_to_a_real_document_is_caught(doc):
     assert g.has_front_matter("---\nname: x\n---\n" + _text(doc))
+# --- Task 4: the behaviours the documents must state ---------------------------
+
+DRIFT = (
+    "\nIf the document changed on purpose, update the pinned text in tests/guidance/behaviours.yaml in the "
+    "same change and show the table (python tests/guidance_check.py --table) in the pull request for review. "
+    "If the document lacks the behaviour, that is a gap in the maintainer's document: the ticket agent stops "
+    "as agent:blocked, names the behaviour, and never edits the document.")
+
+
+def _texts() -> dict[str, str]:
+    return {doc: _text(doc) for doc in DOCS}
+
+
+def test_the_table_pins_every_required_behaviour_and_nothing_else():
+    quotes, problems = g.pinned(g.load_rows())
+    unfilled = [rid for rid in g.REQUIRED if not (isinstance(quotes.get(rid), str) and quotes[rid].strip())]
+    assert not problems and not unfilled, f"unmatched rows: {problems}; rows with no quote: {unfilled}" + DRIFT
+
+
+def test_every_pinned_text_is_a_whole_sentence_of_its_document():
+    problems = g.quote_problems(_texts(), g.load_rows())
+    assert not problems, "\n".join(problems) + DRIFT
+
+
+def test_each_document_begins_with_its_inputs():
+    problems = g.inputs_all_problems(_texts(), g.load_rows())
+    assert not problems, "\n".join(problems) + DRIFT
+
+
+def test_each_lens_has_a_brief_and_the_report_format_has_its_own_section():
+    quotes, _ = g.pinned(g.load_rows())
+    problems = g.lens_problems(_texts(), quotes)
+    assert not problems, "\n".join(problems) + DRIFT
+
+
+def test_every_pin_has_teeth():
+    """Take the block a pinned text sits in out of the real document, by its
+    line, and its row must fail."""
+    texts = _texts()
+    for row in g.load_rows():
+        rid = row["id"]
+        doc = g.REQUIRED[rid][0]
+        mutated, n = g.without_row(rid, texts[doc], row["quote"])
+        assert n >= 1, f"{rid}: found no block to take out of {g.PUBLISHED[doc]}"
+        assert g.row_problems(rid, mutated, row["quote"]), f"{rid} is still satisfied without its text"
+
+
+def test_the_table_prints_for_the_pull_request():
+    proc = subprocess.run([sys.executable, str(ROOT / "tests" / "guidance_check.py"), "--table"],
+                          capture_output=True, text=True, cwd=str(ROOT))
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    rows = proc.stdout.strip().splitlines()[2:]
+    assert [r.split("|")[1].strip("` ") for r in rows] == list(g.REQUIRED)
+    assert not any("MISSING" in r or "NOT FOUND" in r for r in rows), proc.stdout

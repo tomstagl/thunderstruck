@@ -1,0 +1,32 @@
+# Pinned text per required behaviour, copied from the two documents (spec section 4).
+# One row per id in tests/guidance_check.py REQUIRED. Filled at build time (plan Task 4); never paraphrased.
+rows:
+  # docs/fix-agent-instructions.md
+  - {id: fix-01-stop-and-ask, quote: 'Stop and ask when an input is missing.'}
+  - {id: fix-02-recheck-the-code, quote: 'Re-check the code against the ticket.'}
+  - {id: fix-03a-read-the-callers, quote: 'Read the callers.'}
+  - {id: fix-03b-read-the-numbers, quote: 'Read the numbers.'}
+  - {id: fix-03c-read-the-not-checked-items, quote: 'Read the not-checked items.'}
+  - {id: fix-04-write-down-implicit-guarantees, quote: 'Write down the implicit guarantees.'}
+  - {id: fix-05-human-decision-on-caller-visible-change, quote: 'Get a human decision when caller-visible behaviour changes.'}
+  - {id: fix-06-failing-test-first, quote: 'Write a failing test first.'}
+  - {id: fix-07-smallest-change, quote: 'Make the smallest change that makes the test pass.'}
+  - {id: fix-08a-account-for-what-was-removed, quote: 'Account for what the fix removed.'}
+  - {id: fix-08b-account-for-what-is-not-fixed, quote: 'Account for what the fix does not fix.'}
+  - {id: fix-09-real-commands-and-results, quote: 'Report the real commands you ran and the real results they printed.'}
+  - {id: fix-10-integration-suites, quote: 'Run the integration suites when your environment supports it.'}
+  - {id: fix-11a-never-invent-a-result, quote: 'Never invent a result.'}
+  - {id: fix-11b-never-push, quote: 'Never push.'}
+  - {id: fix-inputs-heading, quote: 'What you need before you start'}
+  - {id: fix-inputs-missing, quote: 'Stop and ask when an input is missing.'}
+  # docs/review-briefs.md
+  - {id: review-lens-1-state-and-concurrency, quote: 'Lens 1: State and concurrency'}
+  - {id: review-lens-2-callers-and-behaviour-change, quote: 'Lens 2: Callers and behaviour change'}
+  - {id: review-lens-3-test-and-conventions, quote: 'Lens 3: Test and conventions'}
+  - {id: review-lens-4-whole-finding-coverage, quote: 'Lens 4: Whole-finding coverage'}
+  - {id: review-report-format-heading, quote: 'Report format'}
+  - {id: review-report-format-shared, quote: 'All four lenses report in this one format.'}
+  - {id: review-read-only, quote: 'Be read-only: change no file, run nothing that changes state, and fix nothing yourself, however small the fix.'}
+  - {id: review-no-implementer-conclusions, quote: 'Do not ask for the implementer''s conclusions, and ignore them if they reach you: judge the change against the ticket and the code alone.'}
+  - {id: review-inputs-heading, quote: 'What you need before you start'}
+  - {id: review-inputs-missing, quote: 'If an input is missing, say which one in your report and stop; do not guess it.'}

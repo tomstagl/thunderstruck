@@ -1300,7 +1300,7 @@ git commit -m "Guidance checks: the documents are plain, neutral and linked (#10
 **Interfaces:**
 - Consumes: Task 2's `REQUIRED`, `quote_problems`, `inputs_all_problems`, `lens_problems`, `table`.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_fix_guidance.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_fix_guidance.py`:
 
 ````python
 # --- Task 4: the behaviours the documents must state ---------------------------
@@ -1359,7 +1359,7 @@ def test_the_table_prints_for_the_pull_request():
     assert not any("MISSING" in r or "NOT FOUND" in r for r in rows), proc.stdout
 ````
 
-- [ ] **Step 2: Create the table, empty.** Create `tests/guidance/behaviours.yaml`:
+- [x] **Step 2: Create the table, empty.** Create `tests/guidance/behaviours.yaml`:
 
 ```yaml
 # Pinned text per required behaviour, copied from the two documents (spec section 4).
@@ -1396,12 +1396,12 @@ rows:
   - {id: review-inputs-missing, quote: ''}
 ```
 
-- [ ] **Step 3: Run the tests to verify they fail**
+- [x] **Step 3: Run the tests to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_fix_guidance.py -q`
 Expected: four FAIL: `test_the_table_pins_every_required_behaviour_and_nothing_else` (rows with no quote), `test_every_pinned_text_is_a_whole_sentence_of_its_document` ("no quote is pinned" for each of the 27 rows), `test_every_pin_has_teeth` (an empty quote has no block to take out) and `test_the_table_prints_for_the_pull_request`. The inputs and brief tests pass for now because they skip a row that has no quote; the first test keeps an empty table from passing.
 
-- [ ] **Step 4: Fill the table from the documents.** This is the one step that is reading, not copying code. Read `docs/fix-agent-instructions.md` and `docs/review-briefs.md` in full, once, before choosing anything. Print the rows with the ticket's wording of each behaviour: `uv run --with pyyaml python tests/guidance_check.py --table` (every row reads `MISSING`). Then, for each row of `tests/guidance/behaviours.yaml` in file order, replace `quote: ''` with the quote, by these rules, which leave no other choice:
+- [x] **Step 4: Fill the table from the documents.** This is the one step that is reading, not copying code. Read `docs/fix-agent-instructions.md` and `docs/review-briefs.md` in full, once, before choosing anything. Print the rows with the ticket's wording of each behaviour: `uv run --with pyyaml python tests/guidance_check.py --table` (every row reads `MISSING`). Then, for each row of `tests/guidance/behaviours.yaml` in file order, replace `quote: ''` with the quote, by these rules, which leave no other choice:
 
   1. **Which passage.** The passage that tells the reader to do, or not to do, the behaviour in the row's wording, in terms that name it. A passage that only mentions the topic, or describes how the document is organised, does not state it. If several passages do, take the first in document order. One passage may serve several rows (`fix-03a`, `-03b` and `-03c`; `fix-08a` and `-08b`; `fix-11a` and `-11b`): then the same quote appears in each row; do not paraphrase to tell them apart.
   2. **A prose row** (every row but the headings): quote the whole sentence, in the document's own punctuation, with no length limit. A sentence runs from the first character after the previous sentence's final `.`, `!` or `?` (and any closing `)`, `"`, `'`, `*`, `_`, `` ` `` or `]` that follows it) and its space, or from the start of the block, to its own final `.`, `!` or `?` with its closing marks, or to the end of the block. A list item or a table cell with no sentence end is quoted whole, without its list marker (`-`, `*`, `1.`) and without the `|` marks. It lies inside one paragraph, list item or table row. Copy it character for character: case, punctuation, backticks, asterisks, quotation marks, non-ASCII; where the document wraps a line, write one space. No ellipsis, no brackets, no added or dropped word, no corrected spelling. Markup that wraps the sentence belongs to it (`**Never push.**`). A one-word sentence ("Never push.") is a whole sentence.
@@ -1412,12 +1412,12 @@ Expected: four FAIL: `test_the_table_pins_every_required_behaviour_and_nothing_e
   7. **Nothing is invented.** If no passage states a behaviour, or the first heading after the title is not the inputs heading, or a lens has no heading of its own, stop. Do not write a placeholder or a near miss. Replace `agent:in-progress` with `agent:blocked` through the ordinary Blocked procedure (a draft PR for Tasks 1 to 3) and comment: "Blocked at Task 4: `<document path>` does not state `<row id>`: `<the behaviour as `--table` prints it>`. Headings read: `<the document's headings>`. The document is the maintainer's, so nothing was edited. Decision that unblocks it: add the behaviour to the document, or change the ticket's AC if it is not required." End with the attribution footer.
   8. **A refused quote is fixed by rule 2 or 3,** never by editing the document or the check.
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_fix_guidance.py -q`, then the full suite.
 Expected: PASS, `exit=0`. A refusal names the row and the reason; fix it by rules 2 and 3.
 
-- [ ] **Step 6: Print the table for the PR.**
+- [x] **Step 6: Print the table for the PR.**
 
 ```bash
 uv run --with pyyaml python tests/guidance_check.py --table
@@ -1425,7 +1425,7 @@ uv run --with pyyaml python tests/guidance_check.py --table
 
 Expected: exit 0, 27 rows, none reading `MISSING` or `NOT FOUND`. A heading row also shows the first sentence under that heading in its *Opens with* column, which is the sentence the PR shows for each lens (AC-2). Keep the output for Task 7's PR body.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add docs/superpowers/plans/2026-11-12-fix-and-review-guidance.md tests/test_fix_guidance.py tests/guidance/behaviours.yaml
