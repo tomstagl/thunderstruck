@@ -105,7 +105,7 @@ No commit: this task changes nothing.
 **Interfaces:**
 - Produces, in `_common`: `FIX_TOUCHES`, `GUARANTEE_KEYS`, `BLAST_BASES`, `BLAST_KEYS`, `NOT_CHECKED_KEYS`, `RESOLUTION_STATES`, `MAX_GUARANTEES`, `MAX_BLAST_ITEMS`, `MAX_NOT_CHECKED`, `NOT_ADDRESSED`, `IMPACT_SENTENCES: dict[str, str]`; `guarantee_state(finding) -> str`; `not_checked_states(finding) -> list[str]`.
 
-- [ ] **Step 1: Write the failing tests.** Create `tests/test_fix_impact.py`:
+- [x] **Step 1: Write the failing tests.** Create `tests/test_fix_impact.py`:
 
 ````python
 """#105: what a fix would remove, what was traced and what was inferred, what was
@@ -175,12 +175,12 @@ def test_not_checked_states_keep_every_item(finding, states):
     assert c.not_checked_states(finding) == states
 ````
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_fix_impact.py -q`
 Expected: FAIL, 18 failed: `AttributeError: module '_common' has no attribute 'FIX_TOUCHES'` (and `guarantee_state`, `not_checked_states`), and `assert {} == {'S02': 'retry', …}` for the catalog.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 ````diff
 --- a/scripts/_common.py
@@ -306,9 +306,9 @@ Expected: FAIL, 18 failed: `AttributeError: module '_common' has no attribute 'F
        A lock held across a slow call, or a wait with no bound, lets one
 ````
 
-- [ ] **Step 4: Run the tests to verify they pass** (Step 2's command), then the full suite (header). Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests to verify they pass** (Step 2's command), then the full suite (header). Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/_common.py catalog/stability.yaml tests/test_fix_impact.py
