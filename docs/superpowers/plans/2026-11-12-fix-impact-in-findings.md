@@ -2955,7 +2955,7 @@ git commit -m "HTML report: traced and inferred impact, guarantees and not-check
 **Interfaces:**
 - Consumes: `index.json` as Task 6 leaves it.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_fix_impact.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_fix_impact.py`:
 
 ````python
 # --- Task 8 -----------------------------------------------------------------
@@ -3004,12 +3004,12 @@ def test_the_new_lines_are_statements_of_fact(project):
         assert imperative not in lowered
 ````
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_fix_impact.py -q -k "guardrail or index_from_before or new_lines"`
 Expected: the first two fail with `AssertionError` (the lines are not in the context); the other two pass already.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 ````diff
 --- a/scripts/guardrail.py
@@ -3052,9 +3052,9 @@ Expected: the first two fail with `AssertionError` (the lines are not in the con
                  lines.append(fact if fact.startswith("  ") else f"  {fact}")
 ````
 
-- [ ] **Step 4: Run the tests to verify they pass.** Run Step 2's command, then `tests/test_guardrail.py` (the 100 ms budget and the stdlib-only checks), then the full suite (header). Expected: PASS, `exit=0`.
+- [x] **Step 4: Run the tests to verify they pass.** Run Step 2's command, then `tests/test_guardrail.py` (the 100 ms budget and the stdlib-only checks), then the full suite (header). Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/guardrail.py tests/test_fix_impact.py

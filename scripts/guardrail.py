@@ -88,6 +88,29 @@ def history_line(f: dict) -> str | None:
          for h in items], "; ") + "."
 
 
+def _one_line(value, limit: int) -> str:
+    return " ".join(str(value).split())[:limit]
+
+
+def guarantee_line(f: dict) -> str | None:
+    """What the investigator says the code provides without saying so (#105). Absent
+    from an index written before it, and then not stated."""
+    items = [g for g in f.get("implicit_guarantees") or []
+             if isinstance(g, dict) and isinstance(g.get("guarantee"), str) and g["guarantee"].strip()]
+    if not items:
+        return None
+    return ("The investigator found this code also provides, without saying so: " + _capped(
+        [f"{_one_line(g['guarantee'], 200)} (removed by: {_one_line(g.get('removed_by') or '?', 160)})"
+         for g in items], "; ") + ".")
+
+
+def not_checked_line(f: dict) -> str | None:
+    items = [i for i in f.get("not_checked") or [] if isinstance(i, str) and i.strip()]
+    if not items:
+        return None
+    return "Not checked and still open: " + _capped([_one_line(i, 160) for i in items], "; ") + "."
+
+
 def holds_line(f: dict) -> str | None:
     """What a check found still holds of a narrowed finding (#37 §11.6)."""
     holds = f.get("holds")
@@ -207,7 +230,8 @@ def build_context(entry: dict, rel: str, stale: bool) -> str | None:
         lines.append(f"- {f.get('id', '?')}{where}: {f.get('failure_mode', '')}")
         lines.append(f"  missing patterns: {pats}; confidence: {f['_confidence']}; "
                      f"check status: {f['_status']}.")
-        for fact in (precondition_line(f), holds_line(f), history_line(f)):
+        for fact in (precondition_line(f), holds_line(f), guarantee_line(f), not_checked_line(f),
+                     history_line(f)):
             if fact:
                 lines.append(fact if fact.startswith("  ") else f"  {fact}")
         if f.get("sustaining_effect"):
