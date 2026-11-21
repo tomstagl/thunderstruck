@@ -2930,7 +2930,7 @@ git commit -m "Ticket: hostile text stays inert, through both markdown engines (
 
 The generator already builds the validated, verified, linked fixture. It now pins `report.json` on disk, writes a canned drafts file for the first finding (no model runs, as for the canned findings and verdicts), and runs the real `finding_ticket.py`.
 
-- [ ] **Step 1: Write the tests.** Append to `tests/test_finding_ticket.py`:
+- [x] **Step 1: Write the tests.** Append to `tests/test_finding_ticket.py`:
 
 ``````python
 # --- Task 8: the sample ticket ----------------------------------------------
@@ -2968,7 +2968,7 @@ def test_the_sample_ticket_matches_a_fresh_generation():
 ``````
 
 
-- [ ] **Step 2: Run them.**
+- [x] **Step 2: Run them.**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_finding_ticket.py tests/test_report_links.py -q
@@ -2976,7 +2976,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: FAIL, 3 failed: `FileNotFoundError` for `examples/sample-ticket.md` (twice) and `KeyError: 'sample-ticket.md'`.
 
-- [ ] **Step 3: Write the implementation, then generate the sample.**
+- [x] **Step 3: Write the implementation, then generate the sample.**
 
 In `scripts/gen_sample_report.py`:
 
@@ -3098,7 +3098,7 @@ git status --short examples
 
 Expected: `wrote …/sample-ticket.md (174 lines)` among the three writes, `exit=0`, and `examples/sample-ticket.md` as the only new path under `examples/` (the two existing samples do not move). Read it once: the first finding's ticket, three steps, a guarantee, `Proposal, not verified` under four headings.
 
-- [ ] **Step 4: Run the task's tests, then the full suite.** First:
+- [x] **Step 4: Run the task's tests, then the full suite.** First:
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_finding_ticket.py tests/test_report_links.py -q
@@ -3106,7 +3106,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Then the full suite (command in the header). Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/gen_sample_report.py examples/sample-ticket.md tests/test_finding_ticket.py
