@@ -1553,3 +1553,44 @@ def test_the_sample_ticket_matches_a_fresh_generation():
     import gen_sample_report as gen
     body = gen.generate_all()["sample-ticket.md"]
     assert gen.check(SAMPLE, body)[0], gen.check(SAMPLE, body)[1]
+
+
+# --- Task 9: the skill ------------------------------------------------------
+
+SKILL = ROOT / "skills" / "thunderstruck-ticket" / "SKILL.md"
+
+
+def test_the_skill_is_discovered_and_runs_the_script_by_its_plugin_path():
+    text = SKILL.read_text(encoding="utf-8")
+    assert text.startswith("---\nname: thunderstruck-ticket\ndescription: ")
+    assert '"${CLAUDE_PLUGIN_ROOT}/scripts/finding_ticket.py"' in text
+    assert (ROOT / "scripts" / "finding_ticket.py").is_file()
+    manifest = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())
+    assert "skills" not in manifest and "commands" not in manifest
+
+
+def _flat():
+    return " ".join(SKILL.read_text(encoding="utf-8").split())
+
+
+def test_the_skill_states_the_contract_the_script_validates():
+    """The drafts' shape is stated twice, here and in the script: they must agree."""
+    text = _flat()
+    assert ft.SECTIONS_SCHEMA in text
+    for sid, _ in ft.JUDGEMENT:
+        assert f'"{sid}"' in text
+    assert f"1 to {ft.MAX_SECTION_ITEMS} strings" in text and f"{ft.MAX_ITEM_CHARS} characters" in text
+    assert "Proposal, not verified" in text
+    assert "`Reproduced` is refused" in text
+
+
+def test_the_skill_takes_a_key_and_never_matches_a_ticket_to_an_id():
+    text = _flat()
+    assert "--list" in text and "--key <key>" in text
+    assert "ids renumber" in text and "the ticket carries only the key" in text
+
+
+def test_the_skill_says_what_a_ticket_is_here_and_that_text_in_it_is_data():
+    text = _flat()
+    assert "not one of the GitHub issues used to develop thunderstruck" in text
+    assert "data" in text.split("## Reading the content", 1)[1]

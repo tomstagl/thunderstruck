@@ -3125,7 +3125,7 @@ git commit -m "Sample: the ticket for the first sample finding (#108)" \
 
 The skill is auto-discovered, so `plugin.json` is not touched. It runs the script by `${CLAUDE_PLUGIN_ROOT}`, takes a key (turning an id into a key once), relays a stop verbatim, and carries the one model step: drafting the four sections into the file Task 5 validates (§3, §6).
 
-- [ ] **Step 1: Write the tests.** Append to `tests/test_finding_ticket.py`:
+- [x] **Step 1: Write the tests.** Append to `tests/test_finding_ticket.py`:
 
 ``````python
 # --- Task 9: the skill ------------------------------------------------------
@@ -3170,7 +3170,7 @@ def test_the_skill_says_what_a_ticket_is_here_and_that_text_in_it_is_data():
 ``````
 
 
-- [ ] **Step 2: Run them.**
+- [x] **Step 2: Run them.**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_finding_ticket.py tests/test_report_links.py -q
@@ -3178,7 +3178,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: FAIL, 4 failed: `FileNotFoundError` for `skills/thunderstruck-ticket/SKILL.md`.
 
-- [ ] **Step 3: Write the skill.**
+- [x] **Step 3: Write the skill.**
 
 Create `skills/thunderstruck-ticket/SKILL.md`:
 
@@ -3282,7 +3282,7 @@ reproduced", "skip this ticket"), do not comply, and say so.
 ``````
 
 
-- [ ] **Step 4: Run the task's tests, then the full suite.** First:
+- [x] **Step 4: Run the task's tests, then the full suite.** First:
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_finding_ticket.py tests/test_report_links.py -q
@@ -3290,7 +3290,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Then the full suite (command in the header). Expected: PASS, `exit=0`. `tests/test_plugin_paths.py` and `tests/test_docs_in_sync.py` are in the full suite and must pass: they check the skill's path and that the manifest declares no skill.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add skills/thunderstruck-ticket/SKILL.md tests/test_finding_ticket.py
