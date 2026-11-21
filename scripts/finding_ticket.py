@@ -371,3 +371,135 @@ def render_step(n: int, step: Step) -> list[str]:
         L += [" ".join(notes), ""]
     note = md.text(step.note) if step.note.strip() else "not stated."
     return L + [f"What to notice: {note}", ""]
+
+
+SECTIONS_SCHEMA = "thunderstruck.ticket-sections/v1"
+JUDGEMENT = (("fix_options", "Fix options"), ("acceptance_criteria", "Acceptance criteria"),
+             ("out_of_scope", "Out of scope"), ("rollout_and_rollback", "Rollout and rollback"))
+MAX_SECTION_ITEMS = 8
+MAX_ITEM_CHARS = 400
+MAX_SECTIONS_BYTES = 64 * 1024
+# Where the guidance documents live in the plugin repository (#107). A test pins this
+# to tests/guidance_check.PUBLISHED; a script never imports from tests/.
+GUIDANCE = {"fix": "docs/fix-agent-instructions.md", "review": "docs/review-briefs.md"}
+UNLINKED = {"catalog": "catalog data has no source location",
+            "dependency": "a dependency's source is not in this repository",
+            "commit": "commit not found in this repository"}
+
+
+@dataclass(frozen=True)
+class Drafts:
+    sections: dict[str, list[str]]   # section id -> validated items, only the usable ones
+    unused: dict[str, str]           # section id -> why its draft is not used
+    notes: list[str]                 # for Provenance: markdown built from fixed words and code spans
+    digest: str | None               # sha256 of the file when there was one
+
+
+def sections_path(repo: Path, key: str) -> Path:
+    return c.out_dir(repo) / TICKETS_DIRNAME / f"{key}.sections.json"
+
+
+def load_sections(path: Path, key: str, scanned_at) -> Drafts:
+    """The drafted judgement sections, validated like any model output: untrusted, bound to
+    this finding and scan, shape-checked, never raising. What is not usable is said."""
+    if not os.path.lexists(path):
+        return Drafts({}, {}, [], None)
+    digest: str | None = None
+
+    def whole(reason: str) -> Drafts:
+        return Drafts({}, {sid: reason for sid, _ in JUDGEMENT},
+                      [f"The drafts file was not used: {reason}."], digest)
+
+    try:
+        if path.is_symlink() or not path.is_file():
+            return whole("it is not a regular file")
+        if path.stat().st_size > MAX_SECTIONS_BYTES:
+            return whole(f"it is larger than {MAX_SECTIONS_BYTES // 1024} KB")
+        data = path.read_bytes()
+    except OSError:
+        return whole("it could not be read")
+    digest = "sha256:" + hashlib.sha256(data).hexdigest()
+    try:
+        doc = json.loads(data.decode("utf-8"))
+    except ValueError:
+        return whole("it is not valid UTF-8 JSON")
+    if not isinstance(doc, dict):
+        return whole("it is not a JSON object")
+    if doc.get("schema") != SECTIONS_SCHEMA:
+        return whole(f"its schema is not {SECTIONS_SCHEMA}")
+    if doc.get("key") != key or not isinstance(scanned_at, str) or doc.get("scanned_at") != scanned_at:
+        return whole("it was written for another finding or an earlier scan")
+    body = doc.get("sections")
+    if not isinstance(body, dict):
+        return whole("`sections` is not an object")
+    known = dict(JUDGEMENT)
+    sections: dict[str, list[str]] = {}
+    unused: dict[str, str] = {}
+    notes = [f"The drafts file names a section that does not exist, {md.code(str(sid)[:40])}; "
+             "it was ignored." for sid in body if sid not in known]
+    for sid, label in JUDGEMENT:
+        if sid not in body:
+            continue
+        items = body[sid]
+        if not isinstance(items, list) or not items:
+            reason = "the draft is not a non-empty list"
+        elif len(items) > MAX_SECTION_ITEMS:
+            reason = f"the draft has more than {MAX_SECTION_ITEMS} items"
+        elif not all(isinstance(i, str) and i.strip() and len(i) <= MAX_ITEM_CHARS for i in items):
+            reason = f"an item is not a string of 1 to {MAX_ITEM_CHARS} characters"
+        else:
+            sections[sid] = list(items)
+            continue
+        unused[sid] = reason
+        notes.append(f"{label}: the draft was not used because {reason}.")
+    return Drafts(sections, unused, notes, digest)
+
+
+def plugin_repository() -> str | None:
+    """The plugin repository's web address from its own manifest, or None when there is no
+    usable one. A fork that names its own repository there links to it."""
+    doc = c.load_json(c.plugin_root() / ".claude-plugin" / "plugin.json", {})
+    url = doc.get("repository") if isinstance(doc, dict) else None
+    return url.rstrip("/") if isinstance(url, str) and links.valid_base_url(url) else None
+
+
+def guidance_line() -> str:
+    """The fix instructions and the review briefs, linked by an absolute address: the ticket
+    is filed in a repository that has neither, so a relative path would be a dead link."""
+    base = plugin_repository()
+    if base is None:
+        return ("fix-agent-instructions.md and review-briefs.md in the thunderstruck "
+                "repository (no link could be built)")
+    fix, review = (f"{base}/blob/main/{path}" for path in GUIDANCE.values())
+    return (f"How to fix: {md.linked(Path(GUIDANCE['fix']).name, fix)} · "
+            f"how to review: {md.linked(Path(GUIDANCE['review']).name, review)}")
+
+
+def links_reason(rep: dict) -> str | None:
+    """None when links were built; otherwise the reason the report recorded, or, for the one
+    silent case, the link settings turning them off."""
+    if isinstance(rep.get("links"), dict):
+        return None
+    for warning in [*(rep.get("run_warnings") or []), *(rep.get("warnings") or [])]:
+        if isinstance(warning, str) and warning.startswith(links.NOT_LINKED):
+            return warning
+    return links.NOT_LINKED + "disabled in the repository's link settings (enabled = false)"
+
+
+def evidence_line(ev: dict, links_built: bool) -> str:
+    """One evidence item: linked by the tool, or labelled with why it is not."""
+    kind = ev.get("type")
+    line = f"- _{md.text(kind)}_ {report._evidence_ref(ev)}"
+    if ev.get("note"):
+        line += f" — {md.text(ev['note'])}"
+    if not ev.get("url"):
+        if kind in ("catalog", "dependency"):
+            why = UNLINKED[kind]
+        elif not links_built:
+            why = "links could not be built (see Header)"
+        elif kind == "commit":
+            why = UNLINKED["commit"]
+        else:
+            why = "no link could be built"
+        line += f" (not linked: {why})"
+    return line

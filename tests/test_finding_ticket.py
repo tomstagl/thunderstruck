@@ -698,3 +698,159 @@ def test_a_step_never_takes_an_unsafe_address(tmp_path):
     repo = make_repo(tmp_path)
     (step,), _ = _steps(repo, _cite(repo, "src/releases.ts", 3, url="https://x.example/a) [b](c"))
     assert step.url is None
+
+
+# --- Task 5: links, the guidance and the drafted sections -------------------
+
+SECTIONS_OK = {"schema": "thunderstruck.ticket-sections/v1", "key": KEY, "scanned_at": SCANNED_AT,
+               "sections": {"fix_options": ["Cap the loop at one attempt."],
+                            "acceptance_criteria": ["A 503 is retried at most twice."]}}
+
+
+def _drafts(tmp_path, doc=None, raw=None, scanned_at=SCANNED_AT, key=KEY):
+    path = tmp_path / f"{KEY}.sections.json"
+    if raw is not None:
+        path.write_bytes(raw)
+    elif doc is not None:
+        path.write_text(json.dumps(doc))
+    return ft.load_sections(path, key, scanned_at)
+
+
+def test_no_drafts_file_is_silent(tmp_path):
+    drafts = _drafts(tmp_path)
+    assert drafts == ft.Drafts({}, {}, [], None)
+
+
+def test_a_valid_drafts_file_is_used_and_fingerprinted(tmp_path):
+    drafts = _drafts(tmp_path, SECTIONS_OK)
+    assert drafts.sections == {"fix_options": ["Cap the loop at one attempt."],
+                               "acceptance_criteria": ["A 503 is retried at most twice."]}
+    assert drafts.unused == {} and drafts.notes == []
+    assert drafts.digest == "sha256:" + hashlib.sha256((tmp_path / f"{KEY}.sections.json").read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("doc, reason", [
+    ({**SECTIONS_OK, "key": "f" * 12}, "it was written for another finding or an earlier scan"),
+    ({**SECTIONS_OK, "scanned_at": "2020-01-01T00:00:00+00:00"}, "it was written for another finding or an earlier scan"),
+    ({**SECTIONS_OK, "schema": "v0"}, "its schema is not thunderstruck.ticket-sections/v1"),
+    ({**SECTIONS_OK, "sections": ["x"]}, "`sections` is not an object"),
+    ([1, 2], "it is not a JSON object"),
+])
+def test_a_file_that_does_not_belong_is_not_used_at_all(tmp_path, doc, reason):
+    drafts = _drafts(tmp_path, doc)
+    assert drafts.sections == {} and len(drafts.unused) == 4
+    assert all(reason in r for r in drafts.unused.values())
+    assert drafts.notes == [f"The drafts file was not used: {reason}."]
+
+
+@pytest.mark.parametrize("raw, reason", [
+    (b"{not json", "it is not valid UTF-8 JSON"), (b"\xff\xfe", "it is not valid UTF-8 JSON"),
+    (b"x" * (64 * 1024 + 1), "it is larger than 64 KB")])
+def test_a_file_that_is_not_json_or_too_large_is_not_used(tmp_path, raw, reason):
+    drafts = _drafts(tmp_path, raw=raw)
+    assert drafts.sections == {} and reason in drafts.notes[0]
+
+
+def test_a_drafts_file_with_the_wrong_binding_is_not_used_when_the_scan_has_no_stamp(tmp_path):
+    assert _drafts(tmp_path, SECTIONS_OK, scanned_at=None).sections == {}
+
+
+def test_a_symlinked_drafts_file_is_not_read(tmp_path):
+    target = tmp_path / "elsewhere.json"
+    target.write_text(json.dumps(SECTIONS_OK))
+    link = tmp_path / f"{KEY}.sections.json"
+    link.symlink_to(target)
+    drafts = ft.load_sections(link, KEY, SCANNED_AT)
+    assert drafts.sections == {} and "not a regular file" in drafts.notes[0]
+
+
+@pytest.mark.parametrize("draft, reason", [
+    ("text", "not a non-empty list"), ([], "not a non-empty list"), (None, "not a non-empty list"),
+    (["x"] * 9, "more than 8 items"), (["ok", ""], "not a string of 1 to 400 characters"),
+    (["ok", "  "], "not a string of 1 to 400 characters"), (["ok", 7], "not a string of 1 to 400 characters"),
+    (["x" * 401], "not a string of 1 to 400 characters")])
+def test_one_bad_section_is_not_used_and_the_others_stand(tmp_path, draft, reason):
+    doc = {**SECTIONS_OK, "sections": {"fix_options": draft, "out_of_scope": ["Fixing callers."]}}
+    drafts = _drafts(tmp_path, doc)
+    assert drafts.sections == {"out_of_scope": ["Fixing callers."]}
+    assert reason in drafts.unused["fix_options"]
+    assert any("Fix options" in n and reason in n for n in drafts.notes)
+
+
+def test_the_caps_are_inclusive(tmp_path):
+    doc = {**SECTIONS_OK, "sections": {"fix_options": ["x" * 400] * 8}}
+    assert list(_drafts(tmp_path, doc).sections) == ["fix_options"]
+
+
+def test_an_unknown_section_is_ignored_and_named_as_text(tmp_path):
+    doc = {**SECTIONS_OK, "sections": {"fix_options": ["a"], "severity": ["high"], "x](https://evil.example)": ["b"]}}
+    drafts = _drafts(tmp_path, doc)
+    assert list(drafts.sections) == ["fix_options"]
+    assert any("`severity`" in n for n in drafts.notes)
+    assert any("`x](https://evil.example)`" in n for n in drafts.notes)         # a code span, not a link
+
+
+def test_the_guidance_paths_are_the_ones_the_guidance_ticket_published():
+    from guidance_check import PUBLISHED
+    assert ft.GUIDANCE == PUBLISHED
+    for path in ft.GUIDANCE.values():
+        assert (ROOT / path).is_file()
+
+
+def _plugin_repository():
+    return json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["repository"].rstrip("/")
+
+
+def test_the_guidance_line_links_the_plugin_repository_not_a_relative_path():
+    base = _plugin_repository()
+    line = ft.guidance_line()
+    assert line == (f"How to fix: [`fix-agent-instructions.md`]({base}/blob/main/docs/fix-agent-instructions.md)"
+                    f" · how to review: [`review-briefs.md`]({base}/blob/main/docs/review-briefs.md)")
+    assert "](docs/" not in line
+
+
+@pytest.mark.parametrize("plugin_json", [
+    None, "{not json", "[]", "{}", '{"repository": 7}', '{"repository": "git+ssh://git@x.example/a/b"}',
+    '{"repository": "https://user:secret@x.example/a/b"}', '{"repository": "https://x.example/a/b?token=1"}'])
+def test_without_a_usable_repository_the_guidance_line_says_so_and_never_fails(tmp_path, monkeypatch, plugin_json):
+    root = tmp_path / "plugin"
+    (root / ".claude-plugin").mkdir(parents=True)
+    if plugin_json is not None:
+        (root / ".claude-plugin" / "plugin.json").write_text(plugin_json)
+    monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", str(root))
+    assert ft.guidance_line() == ("fix-agent-instructions.md and review-briefs.md in the thunderstruck "
+                                  "repository (no link could be built)")
+
+
+def test_a_fork_that_names_its_own_repository_links_there(tmp_path, monkeypatch):
+    root = tmp_path / "plugin"
+    (root / ".claude-plugin").mkdir(parents=True)
+    (root / ".claude-plugin" / "plugin.json").write_text('{"repository": "https://git.example.com/me/thunderstruck/"}')
+    monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", str(root))
+    assert "(https://git.example.com/me/thunderstruck/blob/main/docs/review-briefs.md)" in ft.guidance_line()
+
+
+def test_links_built_have_no_reason_and_links_not_built_give_the_one_the_report_recorded():
+    assert ft.links_reason({"links": {"provider": "github"}}) is None
+    recorded = "references are not linked: host git.example.com is not recognised; set provider"
+    assert ft.links_reason({"links": None, "warnings": ["other"], "run_warnings": ["x", recorded]}) == recorded
+    assert ft.links_reason({"links": None, "warnings": [recorded], "run_warnings": []}) == recorded
+    assert "enabled = false" in ft.links_reason({"links": None, "warnings": [], "run_warnings": []})
+
+
+@pytest.mark.parametrize("ev, linked, fragment", [
+    ({"type": "code", "ref": "src/a.ts:1", "url": "https://h.example/a#L1"}, True, None),
+    ({"type": "catalog", "ref": "dependencyOf component:default/web", "url": None}, True,
+     "not linked: catalog data has no source location"),
+    ({"type": "dependency", "ref": "pypi:requests@2.0:requests/api.py:5", "url": None}, True,
+     "not linked: a dependency's source is not in this repository"),
+    ({"type": "commit", "ref": "abc1234", "url": None}, True, "not linked: commit not found in this repository"),
+    ({"type": "code", "ref": "src/a.ts:1", "url": None}, True, "not linked: no link could be built"),
+    ({"type": "code", "ref": "src/a.ts:1", "url": None}, False, "not linked: links could not be built (see Header)"),
+    ({"type": "catalog", "ref": "dependencyOf x", "url": None}, False, "not linked: catalog data has no source location")])
+def test_a_reference_is_linked_or_labelled_never_bare(ev, linked, fragment):
+    line = ft.evidence_line({"note": "n", **ev}, linked)
+    if fragment is None:
+        assert "not linked" not in line and "](https://h.example/a#L1)" in line
+    else:
+        assert f"({fragment})" in line and "](" not in line
