@@ -380,7 +380,7 @@ git commit -m "mdtext: a verbatim fence and tracker references as code (#108)" \
 
 The script is a module until Task 6 gives it `main`. A finding is found by `key` only; every other case names what to do (§4).
 
-- [ ] **Step 1: Write the tests.** Append to `tests/test_finding_ticket.py`:
+- [x] **Step 1: Write the tests.** Append to `tests/test_finding_ticket.py`:
 
 ``````python
 # --- Task 2: choosing the finding, and the status --------------------------
@@ -593,7 +593,7 @@ def test_nothing_records_a_reproduction_yet(tmp_path):
 ``````
 
 
-- [ ] **Step 2: Run them.**
+- [x] **Step 2: Run them.**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_finding_ticket.py tests/test_report_links.py -q
@@ -601,7 +601,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: FAIL at collection, 1 error: `ModuleNotFoundError: No module named 'finding_ticket'`.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 Create `scripts/finding_ticket.py`:
 
@@ -761,7 +761,7 @@ def require_status(status: str, finding: dict) -> None:
 ``````
 
 
-- [ ] **Step 4: Run the task's tests, then the full suite.** First:
+- [x] **Step 4: Run the task's tests, then the full suite.** First:
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_finding_ticket.py tests/test_report_links.py -q
@@ -769,7 +769,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Then the full suite (command in the header). Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/finding_ticket.py tests/test_finding_ticket.py
