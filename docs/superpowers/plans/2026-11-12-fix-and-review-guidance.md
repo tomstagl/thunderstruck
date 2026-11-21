@@ -671,7 +671,7 @@ git commit -m "Guidance checks: harness-neutrality rules and their samples (#107
 - Consumes: Task 1's `blocks`, `Block`, `PUBLISHED`.
 - Produces, in `guidance_check`: `REQUIRED: dict[str, tuple[str, str, str]]` (27 row ids), `SECTION_ROWS`, `LENS_ROWS`, `occurrences(blocks, quote)`, `row_problems(rid, text, quote)`, `without_row(rid, text, quote) -> (text, n)`, `first_sentence(text)`, `section_of(blocks, heading)`, `inputs_problems(doc, text, heading, missing)`, `section_problems(rid, text, heading)`, `lens_problems(texts, quotes)`, `link_problems(text, base)`, `read_documents(root)`, `load_rows()`, `pinned(rows)`, `quote_problems(texts, rows)`, `inputs_all_problems(texts, rows)`, `table(texts, rows)`, `main(argv)`.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_fix_guidance.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_fix_guidance.py`:
 
 ````python
 # --- Task 2: quotes, inputs, briefs, links and the table, proven on small texts ---
@@ -877,12 +877,12 @@ def test_the_table_shows_the_text_the_line_and_what_is_missing():
     assert len(lines) == len(g.REQUIRED)
 ````
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_fix_guidance.py -q`
 Expected: Task 1's tests pass; every Task 2 test that calls the new functions fails with `AttributeError: module 'guidance_check' has no attribute 'row_problems'` (or `REQUIRED`, `inputs_problems`, `link_problems`, `pinned`, `quote_problems`, `LENS_ROWS`).
 
-- [ ] **Step 3: Write the implementation.** In `tests/guidance_check.py`, add `sys` to the imports: replace
+- [x] **Step 3: Write the implementation.** In `tests/guidance_check.py`, add `sys` to the imports: replace
 
 ```python
 import re
@@ -1189,12 +1189,12 @@ if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
 ````
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run --with pytest --with pyyaml --with lizard pytest tests/test_fix_guidance.py -q`, then the full suite.
 Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/superpowers/plans/2026-11-12-fix-and-review-guidance.md tests/guidance_check.py tests/test_fix_guidance.py
