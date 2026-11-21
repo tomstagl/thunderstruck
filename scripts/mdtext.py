@@ -18,6 +18,8 @@ _BACKTICKS = re.compile(r"`+")
 # C0/C1 controls, DEL, and bidi marks/overrides/isolates: shown as visible \\uXXXX, so a
 # field can't hide characters or reverse what the reader sees.
 _INVISIBLE = re.compile("[\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f-\\x9f\\u061c\\u200e\\u200f\\u202a-\\u202e\\u2066-\\u2069]")
+# Inside a code block a lone carriage return is a line break to a renderer, so it is shown too.
+_INVISIBLE_BLOCK = re.compile(_INVISIBLE.pattern + "|\r")
 
 # A renderer turns substrings into links whatever the escaping: autolinks run
 # on text nodes after parsing (GFM: http(s)://, www., e-mail; linkify-it, as in
@@ -30,7 +32,11 @@ _LINKISH = re.compile(
     r"://|//|www\.|mailto:|xmpp:|@"            # scheme, protocol-relative, www., e-mail
     r"|\.[^\W\d_]{2}"                           # a dot then two letters: a domain-like word
     r"|:[a-z0-9_+-]*[a-z][a-z0-9_+-]*:"          # emoji shortcode (needs a letter: not 10:30:45)
-    r"|:[+-]1:|:100:|:1234:",                    # ...and GitHub's letterless ones
+    r"|:[+-]1:|:100:|:1234:"                     # ...and GitHub's letterless ones
+    # A tracker links these after rendering, and a link into someone's issue notifies it (#108):
+    r"|[#!][0-9]"                                # an issue or merge request, here or in another repository: #12, acme/api#12, PR#7, group/proj!3
+    r"|(?-i:\b[A-Z][A-Z0-9]+-[0-9])"             # a Jira-style key: ABC-123 (capitals only: not utf-8 or sha-256)
+    r"|\b(?=[0-9a-f]*[0-9])(?=[0-9]*[a-f])[0-9a-f]{7,40}\b",  # a commit sha: a digit and a letter (a run of digits alone is a number)
     re.IGNORECASE)
 
 # Sentence punctuation peeled off a linkish token, so the span wraps only the
@@ -74,6 +80,27 @@ def code(value: Any, cell: bool = False) -> str:
     if cell:
         text = text.replace("|", "\\|")
     return f"{fence}{pad}{text}{pad}{fence}"
+
+
+def verbatim(lines: list[str]) -> tuple[str, int]:
+    """A fenced code block showing `lines` as written, and how many characters it
+    had to show as \\uXXXX (controls, bidirectional marks, a lone carriage return).
+
+    The fence is backticks, one more than the longest run in any line and at
+    least three, with no info string, so no line can end it. It is a block of its
+    own: put it at the start of a line, never inside a list item.
+    """
+    escaped = 0
+
+    def show(m: re.Match) -> str:
+        nonlocal escaped
+        escaped += 1
+        return f"\\u{ord(m.group(0)):04x}"
+
+    body = [_INVISIBLE_BLOCK.sub(show, line) for line in lines]
+    longest = max((len(run) for line in body for run in _BACKTICKS.findall(line)), default=0)
+    fence = "`" * max(3, longest + 1)
+    return "\n".join([fence, *body, fence]), escaped
 
 
 def linked(value: Any, url: str | None, cell: bool = False) -> str:

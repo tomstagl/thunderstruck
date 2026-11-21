@@ -160,7 +160,7 @@ No commit: this task changes nothing.
 
 `mdtext` has no multi-line verbatim block, and escapes Markdown but not what a tracker links after rendering. This task adds the one and the other, with the hostile cases of #28 for both markdown engines.
 
-- [ ] **Step 1: Write the tests.** Create `tests/test_finding_ticket.py`:
+- [x] **Step 1: Write the tests.** Create `tests/test_finding_ticket.py`:
 
 ``````python
 """#108: a finding becomes a ticket someone can act on.
@@ -253,7 +253,7 @@ def test_ordinary_words_and_numbers_are_left_alone(word):
 ``````
 
 
-- [ ] **Step 2: Run them.**
+- [x] **Step 2: Run them.**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_finding_ticket.py tests/test_report_links.py -q
@@ -261,7 +261,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: FAIL, 13 failed: `AttributeError: module 'mdtext' has no attribute 'verbatim'` for the fence tests, and the nine tracker-reference cases on their assertions (`test_ordinary_words_and_numbers_are_left_alone` passes).
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 In `scripts/mdtext.py`, make the three changes below. Then run `tests/test_report_links.py`: `test_file_edited_after_the_scan_is_not_linked` now fails, because the scanned commit's short sha in a run warning is a code span; this is the one existing test the change pins. Make the fourth change.
 
@@ -350,7 +350,7 @@ uv run scripts/gen_sample_report.py --check; echo "exit=$?"
 
 Expected: `exit=0`, both samples up to date. If it reports a sample stale, regenerate with `uv run scripts/gen_sample_report.py`, read the diff of `examples/` (only tracker-reference spans should differ), add both files to this commit and say so in its body.
 
-- [ ] **Step 4: Run the task's tests, then the full suite.** First:
+- [x] **Step 4: Run the task's tests, then the full suite.** First:
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_finding_ticket.py tests/test_report_links.py -q
@@ -358,7 +358,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Then the full suite (command in the header). Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/mdtext.py tests/test_report_links.py tests/test_finding_ticket.py
