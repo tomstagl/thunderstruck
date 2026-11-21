@@ -3069,7 +3069,7 @@ git commit -m "Guardrail: state guarantees and open not-checked items as the inv
 - Regenerate: `examples/sample-report.md`, `examples/sample-report.html`
 - Test: `tests/test_fix_impact.py`
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_fix_impact.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_fix_impact.py`:
 
 ````python
 # --- Task 9 -----------------------------------------------------------------
@@ -3099,12 +3099,12 @@ def test_the_html_sample_carries_the_impact_fields_of_every_finding():
     assert any(f["check"].get("guarantees", {}).get("state") == "named" for f in page["findings"])
 ````
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_fix_impact.py -q -k "the_sample or html_sample"`
 Expected: FAIL with `AssertionError` (the committed samples are from before).
 
-- [ ] **Step 3: Regenerate, then read the result.**
+- [x] **Step 3: Regenerate, then read the result.**
 
 ```bash
 uv run scripts/gen_sample_report.py
@@ -3113,9 +3113,9 @@ uv run scripts/gen_sample_report.py --check; echo "exit=$?"
 
 Read `examples/sample-report.md` in full before committing: FR-001 shows a traced item (a path of two links), a catalog item, a guarantee confirmed by the check, one resolved and one open not-checked item; the `api.ts` finding says none found, with the check's statement beside it; the other findings say "none stated by the investigator, who was not required to for these patterns" and carry the not-addressed reason; no sentence says "not assessed".
 
-- [ ] **Step 4: Run the tests to verify they pass.** Step 2's command, then the full suite (header). Expected: PASS, `exit=0`; `--check` prints both samples up to date.
+- [x] **Step 4: Run the tests to verify they pass.** Step 2's command, then the full suite (header). Expected: PASS, `exit=0`; `--check` prints both samples up to date.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add examples/sample-report.md examples/sample-report.html tests/test_fix_impact.py

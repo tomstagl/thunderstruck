@@ -107,6 +107,23 @@ Each row is a stability pattern the detectors searched for. A lead is a line whe
 
 Checked by `canned (no model ran)`
 
+**Traced impact** — each item cites the code the investigator says it followed to reach it; each cited line is checked to exist, not to connect to the next.
+
+- Every feature that resolves a release waits on this loop, and on the inner retry layer under it — cites: [`src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/4edc250939e0c138c081863bebe9bc0d696919e9/src/client/releases.ts#L16), [`src/client/retry-wrapper.ts:1`](https://github.example.com/acme/fixture/blob/4edc250939e0c138c081863bebe9bc0d696919e9/src/client/retry-wrapper.ts#L1)
+
+**Inferred impact** — each item rests on a catalog edge or an assumption, not on cited code.
+
+- web-frontend depends on this component, so its release lookups are affected — rests on the catalog: `dependencyOf component:default/web-frontend`
+
+**Implicit guarantees** — what this code provides without saying so, as the investigator stated it.
+
+- A single transient 5xx or timeout never reaches the caller: the loop absorbs it and the caller gets a result — provided by [`src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/4edc250939e0c138c081863bebe9bc0d696919e9/src/client/releases.ts#L16) — removed by: removing either retry layer, or capping the loop at one attempt — confirmed by the check: [`src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/4edc250939e0c138c081863bebe9bc0d696919e9/src/client/releases.ts#L16)
+
+**Not checked** — what the investigator did not read or test, and how to check it.
+
+- Whether any caller of fetchRelease retries again above it — how to check: Grep the callers of fetchRelease and read what each does on failure — resolved by a check: Both callers, batchSync and userLookup, call fetchRelease once through submit and neither retries. — evidence: [`src/sync/scheduler.ts:30`](https://github.example.com/acme/fixture/blob/4edc250939e0c138c081863bebe9bc0d696919e9/src/sync/scheduler.ts#L30)
+- How long one mesh attempt may take before it is retried — how to check: Read the route's per-try timeout in `deploy/releases-virtualservice.yaml`, or the mesh default — still open after a check: The repository sets no per-try timeout on the route; the mesh default is not readable from here.
+
 **Preconditions** — none: the failure happens on default settings.
 
 **History** — a signal of how often this code changed, not of whether the claim holds.
@@ -141,6 +158,18 @@ Checked by `canned (no model ran)`
 **Check** — upheld. A check tried to refute this claim and it held. The comment is present verbatim; its claim to be reviewed is part of what the finding reports.
 
 Checked by `canned (no model ran)`
+
+**Traced impact** — none: no item cites code it followed.
+
+**Inferred impact** — each item rests on a catalog edge or an assumption, not on cited code.
+
+- Any credential reachable by a tool that complies with the comment — an assumption
+
+**Implicit guarantees** — none stated by the investigator, who was not required to for these patterns.
+
+The skeptic named no guarantee and did not say it found none.
+
+**Not checked** — none listed by the investigator.
 
 **Preconditions** — none: the failure happens on default settings.
 
@@ -178,6 +207,20 @@ Checked by `canned (no model ran)`
 
 Checked by `canned (no model ran)`
 
+**Traced impact** — none: no item cites code it followed.
+
+**Inferred impact** — each item rests on a catalog edge or an assumption, not on cited code.
+
+- Every interactive lookup waits behind the batch while it runs — an assumption
+
+**Implicit guarantees** — none stated by the investigator, who was not required to for these patterns.
+
+The skeptic named no guarantee and did not say it found none.
+
+**Not checked** — what the investigator did not read or test, and how to check it.
+
+- Whether batchSync and userLookup run in one process — how to check: Read the deployment that starts the scheduler and the lookup handler — still open after a check: The skeptic did not address this item.
+
 **Preconditions** — none: the failure happens on default settings.
 
 **History** — a signal of how often this code changed, not of whether the claim holds.
@@ -213,6 +256,18 @@ Checked by `canned (no model ran)`
 **Check** — inconclusive. A check could not settle this claim, so it is reported at medium confidence (claimed high). The check upheld this claim, but it rests on a default no one confirmed: `sync.pageSize` (a check found a different default registered).
 
 Checked by `canned (no model ran)`
+
+**Traced impact** — each item cites the code the investigator says it followed to reach it; each cited line is checked to exist, not to connect to the next.
+
+- The user's collection gains duplicate rows on every attempt — cites: [`src/sync/collection.ts:7`](https://github.example.com/acme/fixture/blob/4edc250939e0c138c081863bebe9bc0d696919e9/src/sync/collection.ts#L7)
+
+**Inferred impact** — none.
+
+**Implicit guarantees** — none stated by the investigator, who was not required to for these patterns.
+
+The skeptic named no guarantee and did not say it found none.
+
+**Not checked** — none listed by the investigator.
 
 **Preconditions**
 
@@ -259,6 +314,20 @@ Refuted in part:
 - *Amplifier*: “immediately schedules another”. Each retry first waits the fixed 5 s, then recurses. Evidence: [`src/client/api.ts:10`](https://github.example.com/acme/fixture/blob/4edc250939e0c138c081863bebe9bc0d696919e9/src/client/api.ts#L10)
 
 Checked by `canned (no model ran)`
+
+**Traced impact** — each item cites the code the investigator says it followed to reach it; each cited line is checked to exist, not to connect to the next.
+
+- Every call through callApi waits the fixed 5 s while the API is throttling — cites: [`src/client/api.ts:8`](https://github.example.com/acme/fixture/blob/4edc250939e0c138c081863bebe9bc0d696919e9/src/client/api.ts#L8)
+
+**Inferred impact** — none.
+
+**Implicit guarantees** — none found, per the investigator: With API\_RETRY\_ON\_429 unset the recursion never runs and callers receive the 429 response itself, so nothing depends on the retry
+
+The check found none: The retry only runs with API\_RETRY\_ON\_429 set, so no caller depends on it by default.
+
+**Not checked** — what the investigator did not read or test, and how to check it.
+
+- Whether any service that calls callApi sets API\_RETRY\_ON\_429 — how to check: Read the deployment manifests of those services — still open after a check: The services that call callApi, and their manifests, are not in this repository.
 
 **Preconditions**
 

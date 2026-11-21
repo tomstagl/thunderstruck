@@ -1126,3 +1126,30 @@ def test_the_new_lines_are_statements_of_fact(project):
     lowered = _context(project, "src/flagged.ts").lower()
     for imperative in ("you must", "do not edit", "re-check this edit", "stop and", "ignore previous"):
         assert imperative not in lowered
+
+
+# --- Task 9 -----------------------------------------------------------------
+def test_the_sample_shows_impact_in_each_of_its_states():
+    sample = (ROOT / "examples" / "sample-report.md").read_text()
+    assert "**Traced impact** — each item cites the code the investigator says it followed to reach it; each cited line is checked to exist, not to connect to the next." in sample
+    assert "**Inferred impact** — each item rests on a catalog edge or an assumption" in sample
+    assert "— rests on the catalog: `dependencyOf component:default/web-frontend`" in sample
+    assert "— confirmed by the check: [`src/client/releases.ts:" in sample
+    assert "— resolved by a check: Both callers, batchSync and userLookup" in sample
+    assert "— still open after a check: The repository sets no per-try timeout" in sample
+    assert "none found, per the investigator: With API\\_RETRY\\_ON\\_429 unset" in sample
+    assert "The check found none: The retry only runs with API\\_RETRY\\_ON\\_429 set" in sample
+    assert "none stated by the investigator, who was not required to for these patterns." in sample
+    assert "The skeptic named no guarantee and did not say it found none." in sample
+    assert "— an assumption" in sample and "— open: no check has looked at it" not in sample
+    assert "not assessed" not in sample, "every finding in the sample was written under the new contract"
+
+
+def test_the_html_sample_carries_the_impact_fields_of_every_finding():
+    from test_sample_report import _sample_html
+    page = _embedded(_sample_html())
+    assert page["findings"]
+    for f in page["findings"]:
+        assert f["blast_items"] and isinstance(f["not_checked"], list)
+    assert page["counts"]["not_checked"]["resolved"] == 1
+    assert any(f["check"].get("guarantees", {}).get("state") == "named" for f in page["findings"])
