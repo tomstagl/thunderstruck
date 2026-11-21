@@ -316,3 +316,190 @@ def test_the_investigator_example_follows_the_impact_contract(catalog):
 def test_the_validator_requires_the_keys_the_prompt_names():
     flat = " ".join(INVESTIGATOR.read_text(encoding="utf-8").split())
     assert len(REQUIRED_FIELDS) == 12 and all(f"`{key}`" in flat for key in REQUIRED_FIELDS)
+
+
+# --- Task 4 -----------------------------------------------------------------
+import re  # noqa: E402
+
+import benchmark as b  # noqa: E402
+import bundle  # noqa: E402
+import validate  # noqa: E402
+
+NUMBERED = re.compile(r"^( *)(\d+) \| ?(.*)\Z", re.S)
+MARKER = re.compile(r"^\.\.\. \[trimmed: lines (\d+)-(\d+) omitted\] \.\.\.\Z")
+WHOLE = re.compile(r"^_whole file, (\d+) lines_$", re.M)
+EXCERPT = re.compile(r"^_lines (\d+)-(\d+) — .* the file is (\d+) lines and did not fit the budget_$", re.M)
+TRIMMED = re.compile(r"^_file trimmed to fit the budget; (\d+) lines total_$", re.M)
+
+CONTENTS = {
+    "lf": b"".join(f"x_{i:04d} = {i}\n".encode() for i in range(1, 401)),
+    "no final newline": b"\n".join(f"x_{i:04d} = {i}".encode() for i in range(1, 401)),
+    "crlf": b"".join(f"x_{i:04d} = {i}\r\n".encode() for i in range(1, 401)),
+    "lone cr and form feed": b"".join((f"x_{i:04d} = {i}  # a\rb\x0cc\n" if i % 7 == 0 else f"x_{i:04d} = {i}\n").encode()
+                                      for i in range(1, 401)),
+    "blank lines": b"".join((b"\n" if i % 5 == 0 else f"x_{i:04d} = {i}\n".encode()) for i in range(1, 401)),
+}
+
+
+def _source(tmp_path: Path, content: bytes, budget: int, top: dict | None = None) -> tuple[str, list[str]]:
+    (tmp_path / "m.py").write_bytes(content)
+    hs = {"file": "m.py", "language": "python", "complexity": {"top_function": top} if top else {}}
+    block = bundle.section_source(tmp_path, hs, budget)
+    body = block.split("```python\n", 1)[1].rsplit("\n```", 1)[0]
+    return block, body.split("\n")
+
+
+def _file_lines(content: bytes) -> list[str]:
+    """The lines as git counts them (split at \\n only), shown as the bundle shows them: one
+    trailing \\r dropped, any other \\r as U+240D."""
+    parts = content.decode().split("\n")
+    if parts[-1] == "":
+        parts.pop()
+    return [(p[:-1] if p.endswith("\r") else p).replace("\r", "\u240d") for p in parts]
+
+
+CASES = [(500, None), (10000, None), (200, {"name": "f", "lines": "100-250"}),
+         (600, {"name": "f", "lines": "100-120"}), (300, {"name": "f", "lines": "380-400"}),
+         (10000, {"name": "f", "lines": "100-150"})]
+
+
+@pytest.mark.parametrize("name", sorted(CONTENTS))
+@pytest.mark.parametrize("budget, top", CASES)
+def test_every_shown_line_is_the_file_line_it_is_numbered_as(tmp_path, name, budget, top):
+    """AC-8: the number in front of a line is its number in the file, whatever the file's
+    line endings, and the text after it is that line."""
+    content = CONTENTS[name]
+    file_lines = _file_lines(content)
+    block, rows = _source(tmp_path, content, budget, top)
+    width = len(str(len(file_lines)))
+    shown: list[int] = []
+    for row in rows:
+        if MARKER.match(row):
+            continue
+        m = NUMBERED.match(row)
+        assert m, row
+        n = int(m.group(2))
+        assert row == f"{n:>{width}} | {file_lines[n - 1]}", (n, row)
+        shown.append(n)
+    assert shown == sorted(set(shown)) and shown, "numbers rise, and something is shown"
+    # and what is shown is exactly what the note and the marker say
+    if m := EXCERPT.search(block):
+        first, last, total = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    else:
+        m = WHOLE.search(block) or TRIMMED.search(block)
+        first, last, total = 1, int(m.group(1)), int(m.group(1))
+    assert total == len(file_lines), "the note counts the file as validate.py does"
+    omitted = [int(x) for r in rows if (m := MARKER.match(r)) for x in m.groups()]
+    covered = set(shown) | (set(range(omitted[0], omitted[1] + 1)) if omitted else set())
+    assert covered == set(range(first, last + 1)), (first, last, omitted)
+
+
+def test_a_clipped_block_says_which_lines_it_leaves_out(tmp_path):
+    _, rows = _source(tmp_path, CONTENTS["lf"], 200, {"name": "f", "lines": "100-250"})
+    at = next(i for i, r in enumerate(rows) if MARKER.match(r))
+    lo, hi = (int(x) for x in MARKER.match(rows[at]).groups())
+    assert int(NUMBERED.match(rows[at - 1]).group(2)) + 1 == lo
+    assert int(NUMBERED.match(rows[at + 1]).group(2)) - 1 == hi
+    assert sum(1 for r in rows if MARKER.match(r)) == 1
+
+
+def test_an_excerpt_is_numbered_from_its_own_start_not_from_one(tmp_path):
+    """The reproduction in #105: a function at line 76 gave 'lines 61-…' and the first body
+    line was counted as line 1."""
+    block, rows = _source(tmp_path, CONTENTS["lf"], 400, {"name": "f", "lines": "76-120"})
+    assert "_lines 61-135 — the most complex function `f`" in block
+    assert rows[0] == " 61 | x_0061 = 61"
+
+
+def test_the_counts_in_the_notes_are_the_counts_validate_py_makes(tmp_path):
+    """The excerpt note said 562 for a file of 561 lines: the empty string after the final newline."""
+    for name, content in CONTENTS.items():
+        (tmp_path / "m.py").write_bytes(content)
+        assert len(bundle.source_lines(tmp_path / "m.py")) == validate._count_lines(tmp_path / "m.py"), name
+    block, _ = _source(tmp_path, CONTENTS["lf"], 500, {"name": "f", "lines": "380-400"})
+    assert "the file is 400 lines" in block and "lines 365-400 " in block
+    block, _ = _source(tmp_path, CONTENTS["lf"], 500)
+    assert "file trimmed to fit the budget; 400 lines total" in block
+    block, _ = _source(tmp_path, CONTENTS["lf"][:2000], 10000)
+    assert "whole file, " in block
+
+
+def test_the_numbers_count_against_the_budget(tmp_path):
+    """AC-9: a file whose text fits the budget but whose numbered text does not is no longer
+    shown whole, and a clipped block stays within its budget."""
+    content = "".join(f"line {i:02d}\n" for i in range(1, 101)).encode()   # 801 characters: 200 tokens
+    assert len(content) // 4 == 200
+    block, rows = _source(tmp_path, content, 230)           # the text alone would fit
+    assert "whole file" not in block and any(MARKER.match(r) for r in rows)
+    assert len("\n".join(rows)) <= 230 * 4 + 60             # the budget, and the marker line
+    block, rows = _source(tmp_path, content, 350)           # numbered, it fits
+    assert "whole file, 100 lines" in block and not any(MARKER.match(r) for r in rows)
+
+
+def test_a_line_too_long_for_the_budget_is_named_as_left_out(tmp_path):
+    content = b"a = 1\n" + b"x = '" + b"y" * 5000 + b"'\n" + b"b = 2\n"
+    _, rows = _source(tmp_path, content, 100)
+    assert any(MARKER.match(r) for r in rows)
+    assert not any("yyyy" in r for r in rows)
+
+
+def test_a_fence_in_the_source_cannot_end_the_block(tmp_path):
+    lines = [f"x_{i:04d} = {i}" for i in range(1, 41)]
+    lines[9] = "```"
+    block, rows = _source(tmp_path, ("\n".join(lines) + "\n").encode(), 10000)
+    assert "\n```\n" not in block.split("```python\n", 1)[1].rsplit("\n```", 1)[0]
+    assert rows[9] == "10 | ```"
+    assert b.shown_lines(block) == ("m.py", [(1, 40)])
+
+
+def test_the_source_block_is_byte_identical_across_calls(tmp_path):
+    first = _source(tmp_path, CONTENTS["lone cr and form feed"], 300, {"name": "f", "lines": "100-250"})
+    assert first == _source(tmp_path, CONTENTS["lone cr and form feed"], 300, {"name": "f", "lines": "100-250"})
+
+
+@pytest.mark.parametrize("budget, top", CASES)
+def test_the_benchmark_reads_a_numbered_block_exactly(tmp_path, budget, top):
+    """shown_lines used to count lines from the marker and could under-count by two; it now
+    reads the numbers, so it names exactly the lines that are shown."""
+    content = CONTENTS["lf"]
+    block, rows = _source(tmp_path, content, budget, top)
+    file, ranges = b.shown_lines(block + "## Change history — last 1 commits touching this file\n")
+    claimed = {i for lo, hi in ranges for i in range(lo, hi + 1)}
+    shown = {int(NUMBERED.match(r).group(2)) for r in rows if not MARKER.match(r)}
+    assert file == "m.py" and claimed == shown
+
+
+def test_the_benchmark_still_reads_a_bundle_written_before_numbering():
+    legacy = "## Source — `a.py`\n\n_whole file, 3 lines_\n\n```python\nx = 1\ny = 2\nz = 3\n```\n"
+    assert b.shown_lines(legacy) == ("a.py", [(1, 3)])
+    clipped = ("## Source — `a.py`\n\n_lines 10-20 — the most complex function `f` with 15 lines of "
+               "context; the file is 90 lines and did not fit the budget_\n\n```python\na\nb\n\n\n"
+               "... [trimmed: 30 characters omitted] ...\n\nc\nd\n```\n")
+    assert b.shown_lines(clipped) is not None
+
+
+def test_a_lone_carriage_return_is_shown_visibly_and_never_starts_a_row(tmp_path):
+    """A lone \\r is not a line break to git or validate.py. Raw, it could pass for the start of an
+    unnumbered row; it is shown as U+240D and the numbers stay the file's."""
+    content = b"a = 1\rb = 2\nc = 3\r\nd = 4\r\r\ne = 5\n"
+    block, rows = _source(tmp_path, content, 10000)
+    assert rows == ["1 | a = 1\u240db = 2", "2 | c = 3", "3 | d = 4\u240d", "4 | e = 5"]
+    assert all(NUMBERED.match(r) for r in rows) and "\r" not in block
+    assert b.shown_lines(block) == ("m.py", [(1, 4)])
+    assert len(bundle.source_lines(tmp_path / "m.py")) == validate._count_lines(tmp_path / "m.py") == 4
+
+
+def test_the_investigator_prompt_tells_the_model_to_cite_the_numbers():
+    flat = " ".join(INVESTIGATOR.read_text(encoding="utf-8").split())
+    assert "Cite those numbers in `location` and in `code` refs; never count lines yourself" in flat
+    assert "trimmed one names the lines it leaves out" in flat
+
+
+def test_every_bundle_of_the_fixture_numbers_its_source(scanned_repo):
+    """AC-8, AC-9: every bundle's hash changed once, because every bundle's source is numbered."""
+    bundles = sorted((scanned_repo / ".thunderstruck" / "bundles").glob("H*.md"))
+    assert bundles
+    for path in bundles:
+        file, ranges = b.shown_lines(path.read_text())
+        assert ranges and ranges[0][0] >= 1, path.name
+        assert re.search(r"```\w*\n *\d+ \| ", path.read_text()), path.name

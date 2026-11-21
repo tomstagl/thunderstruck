@@ -244,6 +244,27 @@ _MARKER = re.compile(r"\n\n\.\.\. \[[^\]]*: \d+ characters omitted\] \.\.\.\n\n"
 _WHOLE = re.compile(r"^whole file, (\d+) lines$")
 _RANGE = re.compile(r"^lines (\d+)-(\d+) — ")
 _TRIMMED = re.compile(r"^file trimmed to fit the budget; (\d+) lines total$")
+# A numbered Source block (#105): every line is `<number> | <text>`, and a clip is one marker line.
+_NUMBERED = re.compile(r"^ *(\d+) \| ")
+_NUMBERED_MARKER = re.compile(r"^\.\.\. \[trimmed: lines \d+-\d+ omitted\] \.\.\.$")
+
+
+def _numbered_ranges(body: str) -> list[tuple[int, int]] | None:
+    """The line ranges a numbered Source body shows, read from its own numbers;
+    None when the body is not numbered (a bundle written before #105)."""
+    ranges: list[tuple[int, int]] = []
+    for row in body.split("\n"):
+        if _NUMBERED_MARKER.match(row):
+            continue
+        m = _NUMBERED.match(row)
+        if not m:
+            return None
+        n = int(m.group(1))
+        if ranges and ranges[-1][1] + 1 == n:
+            ranges[-1] = (ranges[-1][0], n)
+        else:
+            ranges.append((n, n))
+    return ranges or None
 
 
 def shown_lines(bundle_text: str) -> tuple[str, list[tuple[int, int]]] | None:
@@ -252,14 +273,17 @@ def shown_lines(bundle_text: str) -> tuple[str, list[tuple[int, int]]] | None:
     if not m:
         return None
     note, body = m.group("note"), m.group("body")
+    numbered = _numbered_ranges(body)
     if w := _WHOLE.match(note):
-        return m.group("file"), [(1, int(w.group(1)))]  # never clipped
+        return m.group("file"), numbered or [(1, int(w.group(1)))]  # never clipped
     if r := _RANGE.match(note):
         start, end = int(r.group(1)), int(r.group(2))
     elif t := _TRIMMED.match(note):
         start, end = 1, int(t.group(1))
     else:
         return None
+    if numbered:
+        return m.group("file"), numbered
     if body.endswith("\n"):
         # The excerpt ran to the file's final newline; bundle.py counted the empty line after it.
         body, end = body[:-1], end - 1

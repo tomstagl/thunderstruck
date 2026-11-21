@@ -1205,7 +1205,7 @@ git commit -m "Validator: guarantees, traced and inferred impact, not-checked it
 **Interfaces:**
 - Produces: `bundle.source_lines(path) -> list[str]`; `bundle._clip_lines(rows, token_budget) -> str`; `benchmark._numbered_ranges(body) -> list[tuple[int, int]] | None`.
 
-- [ ] **Step 1: Update the one renderer-coupled test.** `test_bundle_parser_matches_what_bundle_py_renders` renders `section_source` and parses the body with a regex that cannot survive numbering. It is not a baseline test (it reads no frozen file); the baseline tests (`test_today_bundles_baseline`, the labels, verdicts and runs) are not touched:
+- [x] **Step 1: Update the one renderer-coupled test.** `test_bundle_parser_matches_what_bundle_py_renders` renders `section_source` and parses the body with a regex that cannot survive numbering. It is not a baseline test (it reads no frozen file); the baseline tests (`test_today_bundles_baseline`, the labels, verdicts and runs) are not touched:
 
 ````diff
 --- a/tests/test_benchmark.py
@@ -1223,7 +1223,7 @@ git commit -m "Validator: guarantees, traced and inferred impact, not-checked it
  
 ````
 
-- [ ] **Step 2: Write the failing tests.** Append to `tests/test_fix_impact.py`:
+- [x] **Step 2: Write the failing tests.** Append to `tests/test_fix_impact.py`:
 
 ````python
 # --- Task 4 -----------------------------------------------------------------
@@ -1413,12 +1413,12 @@ def test_every_bundle_of_the_fixture_numbers_its_source(scanned_repo):
         assert re.search(r"```\w*\n *\d+ \| ", path.read_text()), path.name
 ````
 
-- [ ] **Step 3: Run them to verify they fail**
+- [x] **Step 3: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_fix_impact.py tests/test_benchmark.py -q`
 Expected: FAIL, 51 failed: the rows are not numbered (`AssertionError: x_0001 = 1`, `x_0085 = 85`), `bundle.source_lines` does not exist, the note-range cases cannot find a numbered block, and the updated benchmark test fails the same way (`assert {1, 2, 3, …} == set()`).
 
-- [ ] **Step 4: Write the implementation.**
+- [x] **Step 4: Write the implementation.**
 
 ````diff
 --- a/scripts/bundle.py
@@ -1583,9 +1583,9 @@ The investigator's instructions say what the numbers are:
  to **9** additional files with Read/Grep/Glob to confirm or reject a lead;
 ````
 
-- [ ] **Step 5: Run the tests to verify they pass.** Run Step 3's command, then `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_pipeline.py tests/test_benchmark.py tests/test_benchmark_second_set.py -q` (the budget and determinism test and every baseline), then the full suite (header). Expected: PASS, `exit=0`. Then check no baseline input moved: `git diff --stat origin/main -- docs/calibration` prints nothing.
+- [x] **Step 5: Run the tests to verify they pass.** Run Step 3's command, then `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_pipeline.py tests/test_benchmark.py tests/test_benchmark_second_set.py -q` (the budget and determinism test and every baseline), then the full suite (header). Expected: PASS, `exit=0`. Then check no baseline input moved: `git diff --stat origin/main -- docs/calibration` prints nothing.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/bundle.py scripts/benchmark.py agents/thunderstruck-investigator.md tests/test_benchmark.py tests/test_fix_impact.py

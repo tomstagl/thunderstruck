@@ -20,7 +20,10 @@ classified as fix/resilience/refactor/feature, with trimmed diffs. You have no B
 no git. Everything historical is in the bundle.
 
 The bundle's Source section holds the hotspot file, and says when it was
-trimmed. Do not Read a file whose full source is already in the bundle.
+trimmed. Every line carries its number in the file (`  42 | code`), and a
+trimmed one names the lines it leaves out. Cite those numbers in `location`
+and in `code` refs; never count lines yourself. Do not Read a file whose full
+source is already in the bundle.
 Re-read a trimmed file only for the line range a lead needs. You may open up
 to **9** additional files with Read/Grep/Glob to confirm or reject a lead;
 prefer a `Grep` with a narrow pattern over reading a whole file. Prefer the
