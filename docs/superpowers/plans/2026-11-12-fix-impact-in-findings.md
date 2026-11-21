@@ -3129,7 +3129,7 @@ git commit -m "Sample: impact, guarantees and not-checked items in every state (
 **Files:**
 - Modify: `README.md`, `CLAUDE.md`, `skills/thunderstruck-scan/references/report-format.md`, `skills/thunderstruck-scan/references/orchestration.md`, `CHANGELOG.md`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `pyproject.toml`
 
-- [ ] **Step 1: README.** Findings are falsifiable (three bullets), the verification section (the skeptic's statements), the guardrail section, and the `bundles/` row:
+- [x] **Step 1: README.** Findings are falsifiable (three bullets), the verification section (the skeptic's statements), the guardrail section, and the `bundles/` row:
 
 ````diff
 --- a/README.md
@@ -3181,7 +3181,7 @@ git commit -m "Sample: impact, guarantees and not-checked items in every state (
  the other location. A settled verdict is remembered and reused on the next
 ````
 
-- [ ] **Step 2: `CLAUDE.md`.** The evidence-ref paragraph, the numbered-source paragraph, the verdict sentence and the `fix_touches` note:
+- [x] **Step 2: `CLAUDE.md`.** The evidence-ref paragraph, the numbered-source paragraph, the verdict sentence and the `fix_touches` note:
 
 ````diff
 --- a/CLAUDE.md
@@ -3221,7 +3221,7 @@ git commit -m "Sample: impact, guarantees and not-checked items in every state (
  `file_absent` (anchor present *and* absent-regex matching nowhere, optionally
 ````
 
-- [ ] **Step 3: The references.**
+- [x] **Step 3: The references.**
 
 ````diff
 --- a/skills/thunderstruck-scan/references/report-format.md
@@ -3291,7 +3291,7 @@ git commit -m "Sample: impact, guarantees and not-checked items in every state (
  force every finding to be checked again, delete `.thunderstruck/checks/`.
 ````
 
-- [ ] **Step 4: Version and `CHANGELOG`.** Read the current version from `origin/main`, never from this plan, and bump the minor in all four places:
+- [x] **Step 4: Version and `CHANGELOG`.** Read the current version from `origin/main`, never from this plan, and bump the minor in all four places:
 
 ```bash
 CUR=$(git show origin/main:pyproject.toml | python3 -c 'import sys, tomllib; print(tomllib.loads(sys.stdin.read())["project"]["version"])')
@@ -3332,7 +3332,7 @@ Add this entry directly above the previous top entry of `CHANGELOG.md`, with `##
  
 ````
 
-- [ ] **Step 5: Run the full suite and the generated-file and plugin checks**
+- [x] **Step 5: Run the full suite and the generated-file and plugin checks**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/ -q; echo "exit=$?"
@@ -3346,7 +3346,7 @@ claude plugin marketplace add "$PWD" && claude plugin install thunderstruck@thun
 
 Expected: every `exit=0` (exit 2 from `validate_plugin.py` means `claude` is not on `PATH`: not run, never passed); `test_versions_agree` passes; the `docs/calibration` diff prints nothing; `claude plugin list` shows thunderstruck `enabled`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add README.md CLAUDE.md skills/thunderstruck-scan/references/report-format.md skills/thunderstruck-scan/references/orchestration.md CHANGELOG.md .claude-plugin/plugin.json .claude-plugin/marketplace.json pyproject.toml

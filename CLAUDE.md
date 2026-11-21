@@ -115,7 +115,15 @@ rejected.
 file and line must exist, a `commit` ref must resolve in that repo *and* have
 changed the finding's file (or a file cited as code evidence), a
 `detector` ref must match a hit in `hotspots.json` exactly. This is the reason
-the tool is worth anything; do not add a path that bypasses it.
+the tool is worth anything; do not add a path that bypasses it. The impact
+fields (`implicit_guarantees`, `blast_items`) hold no ref of their own: they
+point into `evidence` by position, so each ref is still resolved once, there.
+
+**Bundle source is numbered with the file's own line numbers.** `bundle.py`'s
+`source_lines` counts lines the way `validate.py` does (split at `\n` only), the
+numbers count against the budget, and a clipped listing names the lines it
+left out. `benchmark.py`'s `shown_lines` reads the numbers; a bundle written
+before numbering still parses by its old note.
 
 **`id` vs `key`.** Display ids (`FR-001`) renumber whenever ranking changes.
 `key` is a hash of file + failure mode and is stable across runs. Prediction
@@ -140,7 +148,8 @@ can be `high`, everything else is at most `medium`, and `narrowed` drops one
 level. A scan that did not verify reports every finding `unchecked`. `finding_shape.shape()` strips
 `check`, `history` and `confidence_claimed` from model output, so a model
 cannot raise its own finding, and `validate.py` never overwrites an existing
-`check`. A cited commit's class (`_common.classify_commit`) and whether it
+`check`. A skeptic's resolution of `not_checked` items and its `guarantees`
+live under `check` and never change a status. A cited commit's class (`_common.classify_commit`) and whether it
 wrote a cited line are reported as `history` and feed nothing. A commit cited
 with `role: introduced` must have written a cited line per `git blame`.
 Findings whose `preconditions` need a setting changed (`_common.finding_gate`)
@@ -207,6 +216,11 @@ to add one, something is wrong.
 `setting_reads` (#57) follows the negative-control discipline too: every
 language in it needs a positive and a negative case in `READS`
 (`tests/test_confirmed_defaults.py`).
+
+The patterns #105 scoped to implicit guarantees (`S02 S03 S04 S10` retry, `S09`
+cache, `S28` lock) carry `fix_touches`; `validate.py` requires a finding for
+one of them to state `implicit_guarantees` or say it found none. That list is
+the ticket's choice, not a property of the patterns: adding one is that one key.
 
 Three detector kinds: `regex` (line match with a look-ahead/behind window),
 `file_absent` (anchor present *and* absent-regex matching nowhere, optionally

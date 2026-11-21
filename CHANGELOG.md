@@ -4,6 +4,25 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.16.0
+
+A finding says what its fix would remove and what was not checked, and bundles number their lines (#105).
+
+### Changed
+
+- **Every bundle's source carries the file's own line numbers** (`  42 | code`), including an excerpt that starts partway through, and a clipped listing names the lines it leaves out. A citation counted from the top of an excerpt was off by the excerpt's start line. The numbers count against the bundle's budget, and the excerpt note no longer counts the empty line after a final newline. A lone `\r`, which is not a line break to git, is shown as `␍` so it cannot pass for the start of a row. **Every bundle changes once.**
+- **Validation rules version 5.** A finding states `blast_items` (what is traced and what is inferred) and `not_checked`, and a finding whose missing patterns include a lock, retry or cache pattern (`S02`, `S03`, `S04`, `S09`, `S10`, `S28`) states `implicit_guarantees` or says it found none, and why. **Findings cached from earlier versions are investigated again on the first scan after upgrading.**
+- **`FINDING_SCHEMA_VERSION` is `thunderstruck.finding/v3`.** `report.json` and `index.json` keep their schemas: the additions are optional.
+- The skeptic's brief carries the impact claims, and its verdict gains `guarantees`, `no_guarantees_reason` and `not_checked`. Neither changes a status. The skeptic still reads at most 10 files, now shared with resolving the not-checked items.
+
+### Added
+
+- **Implicit guarantees**: what the code provides without saying so, the kind of change that would remove it, and the code that provides it, in `report.md`, `report.json`, the HTML report and the edit guardrail.
+- **Traced and inferred impact** apart, each traced item citing the code the investigator followed (each cited line is checked to exist, not to connect to the next). A catalog edge never makes an item traced.
+- **Not checked** as a list of items with how to check each. A verified finding shows each one resolved, with evidence, or still open, and `report.json` counts them in `counts.not_checked`.
+- `fix_touches` on the six catalog patterns the ticket scoped to implicit guarantees (`S02`, `S03`, `S04`, `S10` retry; `S09` cache; `S28` lock).
+- A report written before this change still renders; where it lacks the new fields it says *not assessed*. The consumption of a scan with these fields has not been measured.
+
 ## 0.15.0
 
 Fix and review guidance anyone can follow in any agent environment (#107).

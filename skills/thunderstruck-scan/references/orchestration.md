@@ -84,6 +84,10 @@ marks every bundle whose content hash matches an existing finding as
 stopped, because the hook saves each finding the moment its investigator
 finishes rather than at the end.
 
+The first scan after the release that numbered bundle source and moved the
+validation rules to version 5 (#105) investigates every hotspot again, once:
+every bundle's hash changed, and no cached finding passes the new rules.
+
 To force a full re-investigation, delete `.thunderstruck/findings/`. To
 force every finding to be checked again, delete `.thunderstruck/checks/`.
 
