@@ -2654,7 +2654,7 @@ git commit -m "Report: traced and inferred impact, guarantees and not-checked it
 - Consumes: `report.json` as Task 6 leaves it.
 - Produces: the template's `IMPACT_SENTENCES` object, equal to `_common.IMPACT_SENTENCES` (a test compares them, as it does for `CHECK_SENTENCES`).
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_fix_impact.py` (the template checks and the data-block test; the browser tests are in Step 2):
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_fix_impact.py` (the template checks and the data-block test; the browser tests are in Step 2):
 
 ````python
 # --- Task 7 -----------------------------------------------------------------
@@ -2723,7 +2723,7 @@ def test_hostile_text_in_the_new_fields_stays_inside_the_data_block(scanned_copy
         assert got["check"]["guarantees"]["reason"] == f"check none: {H}"
 ````
 
-- [ ] **Step 2: Write the browser tests.** Append to `tests/test_report_html_browser.py`:
+- [x] **Step 2: Write the browser tests.** Append to `tests/test_report_html_browser.py`:
 
 ````diff
 --- a/tests/test_report_html_browser.py
@@ -2835,12 +2835,12 @@ def test_hostile_text_in_the_new_fields_stays_inside_the_data_block(scanned_copy
 +    assert "Added by the check: callers share a slot — removed by: a second pool" in body
 ````
 
-- [ ] **Step 3: Run them to verify they fail**
+- [x] **Step 3: Run them to verify they fail**
 
 Run: `uv run --with pytest --with pyyaml --with lizard --with packaging pytest tests/test_fix_impact.py -q -k "template or data_block"` and `THUNDERSTRUCK_REQUIRE_BROWSER=1 uv run --with pytest --with pyyaml --with lizard --with playwright==1.56.0 pytest tests/test_report_html_browser.py -q -k "impact or not_shown_as_confirmed or guarantee_the_check_added"`
 Expected: the two template tests fail: `AssertionError: IMPACT_SENTENCES` (the template has no such object) and `assert (0 == 1)` (no `impactRows`). The six browser tests fail on missing text (`AssertionError: assert ('Traced impact' in 'FR-001hotspot H01 …`, `assert 'as the investigator stated it. No check has confirmed this.' in …`, `assert 0 == 3`, `AssertionError: claim …`, `assert 'None stated by the investigator, who was not required to for these patterns.' in …`): the dossier has no such rows.
 
-- [ ] **Step 4: Write the implementation.** In `templates/report.html`:
+- [x] **Step 4: Write the implementation.** In `templates/report.html`:
 
 ````diff
 --- a/templates/report.html
@@ -2935,9 +2935,9 @@ Expected: the two template tests fail: `AssertionError: IMPACT_SENTENCES` (the t
 
 The `IMPACT_SENTENCES` line is `json.dumps(_common.IMPACT_SENTENCES, ensure_ascii=False)`; regenerate it, rather than copy it, if Task 1's sentences changed.
 
-- [ ] **Step 5: Run the tests to verify they pass.** Run Step 3's commands (the browser ones need the Playwright-pinned Chromium: `THUNDERSTRUCK_REQUIRE_BROWSER=1`, `playwright==1.56.0`, as `CLAUDE.md` says), then `tests/test_report_html.py`, then the full suite (header). Expected: PASS, `exit=0`.
+- [x] **Step 5: Run the tests to verify they pass.** Run Step 3's commands (the browser ones need the Playwright-pinned Chromium: `THUNDERSTRUCK_REQUIRE_BROWSER=1`, `playwright==1.56.0`, as `CLAUDE.md` says), then `tests/test_report_html.py`, then the full suite (header). Expected: PASS, `exit=0`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add templates/report.html tests/test_report_html_browser.py tests/test_fix_impact.py

@@ -327,3 +327,105 @@ def test_refuted_findings_are_a_group_at_the_end_of_the_rail(page, scanned_copy,
     body = p.page.text_content("#doc")
     assert "withDefaults sets one" in body and "the timeout is set elsewhere" in body
     assert p.errors == [] and p.requests == [p.url]
+
+
+# --- #105 -------------------------------------------------------------------
+def _with_impact(report: dict) -> dict:
+    f = report["findings"][0]
+    ref = f["evidence"][0]["ref"]
+    f["blast_items"] = [{"claim": "callers wait on the loop", "basis": "traced", "evidence": [0]},
+                        {"claim": "web depends on it", "basis": "assumption"}]
+    f["implicit_guarantees"] = [{"guarantee": "one refresh at a time", "removed_by": "releasing the lock",
+                                 "evidence": [0]}]
+    f.pop("no_guarantees_reason", None)
+    f["not_checked"] = [{"item": "the timeout value", "how_to_check": "read config.ts"},
+                        {"item": "the caller's handling", "how_to_check": "grep the callers"}]
+    f["check"] = {"status": "upheld", "by": "skeptic", "reason": "held", "model": "claude-haiku-4-5",
+                  "evidence": [{"type": "code", "ref": ref, "note": "n", "url": None}],
+                  "guarantees": {"state": "named", "reason": None, "items": [
+                      {"of": 0, "guarantee": "one refresh at a time", "removed_by": "releasing the lock",
+                       "evidence": [0]},
+                      {"of": None, "guarantee": "callers share a slot", "removed_by": "a second pool",
+                       "evidence": [0]}]},
+                  "not_checked": [{"item": 0, "state": "resolved", "note": "it is 5s", "evidence": [0]},
+                                  {"item": 1, "state": "unresolved", "note": "read limit", "evidence": []}]}
+    return report
+
+
+def test_dossier_shows_traced_and_inferred_impact_guarantees_and_open_items(page, scanned_copy, plugin_root):
+    p = page(_with_impact(_report(scanned_copy, plugin_root)))
+    p.page.keyboard.press("j")
+    body = p.page.text_content("#doc")
+    assert "Traced impact" in body and "callers wait on the loop — cites: " in body
+    assert "→" not in body
+    assert "Inferred impact" in body and "web depends on it — an assumption" in body
+    assert "one refresh at a time — provided by " in body and "— removed by: releasing the lock" in body
+    assert "— confirmed by the check: " in body
+    assert "Added by the check: callers share a slot — removed by: a second pool" in body
+    assert "the timeout value — how to check: read config.ts — resolved by a check: it is 5s" in body
+    assert "the caller's handling — how to check: grep the callers — still open after a check: read limit" in body
+    assert p.errors == [] and p.requests == [p.url]
+
+
+def test_an_unverified_finding_is_not_shown_as_confirmed(page, scanned_copy, plugin_root):
+    report = _with_impact(_report(scanned_copy, plugin_root))
+    report["findings"][0]["check"] = {"status": "unchecked", "by": None, "reason": None}
+    p = page(report)
+    p.page.keyboard.press("j")
+    body = p.page.text_content("#doc")
+    assert "as the investigator stated it. No check has confirmed this." in body
+    assert "confirmed by the check" not in body and "resolved by a check" not in body
+    assert body.count("open: no check has looked at it") == 2
+
+
+def test_a_finding_from_before_the_impact_fields_reads_not_assessed(page, scanned_copy, plugin_root):
+    report = _report(scanned_copy, plugin_root)
+    for key in ("blast_items", "not_checked", "implicit_guarantees", "no_guarantees_reason"):
+        report["findings"][0].pop(key, None)
+    p = page(report)
+    p.page.keyboard.press("j")
+    body = p.page.text_content("#doc")
+    assert body.count("Not assessed: this finding was written before it was recorded.") == 3
+    assert p.errors == [] and p.requests == [p.url]
+
+
+@pytest.mark.parametrize("variant", ["guarantees", "none_found"])
+def test_model_text_in_the_impact_fields_is_shown_as_text(page, scanned_copy, plugin_root, variant):
+    report = _with_impact(_report(scanned_copy, plugin_root))
+    f = report["findings"][0]
+    f["blast_items"][0]["claim"] = "claim " + HOSTILE
+    f["not_checked"][0].update(item="item " + HOSTILE, how_to_check="how " + HOSTILE)
+    f["check"]["reason"] = "check reason " + HOSTILE
+    f["check"]["not_checked"][0]["note"] = "note " + HOSTILE
+    shown = ["claim ", "item ", "how ", "check reason ", "note "]
+    if variant == "guarantees":
+        f["implicit_guarantees"][0].update(guarantee="guarantee " + HOSTILE, removed_by="removed " + HOSTILE)
+        f["check"]["guarantees"]["items"][1].update(guarantee="added " + HOSTILE,
+                                                    removed_by="added removed " + HOSTILE)
+        shown += ["guarantee ", "removed ", "added ", "added removed "]
+    else:
+        f.pop("implicit_guarantees")
+        f["no_guarantees_reason"] = "reason " + HOSTILE
+        f["check"]["guarantees"] = {"state": "none_found", "reason": "check none " + HOSTILE, "items": []}
+        shown += ["reason ", "check none "]
+    p = page(report)
+    p.page.keyboard.press("j")
+    assert p.page.evaluate("window.pwned") is None
+    for sel in ("#pwn", "#pwn-img", "#pwn-b", "img"):
+        assert p.page.query_selector(sel) is None, sel
+    body = p.page.text_content("#doc")
+    for label in shown:
+        assert (label + HOSTILE) in body, label
+    assert p.errors == [] and p.requests == [p.url]
+
+
+def test_a_guarantee_the_check_added_is_shown_when_the_investigator_listed_none(page, scanned_copy, plugin_root):
+    report = _with_impact(_report(scanned_copy, plugin_root))
+    f = report["findings"][0]
+    f.pop("implicit_guarantees")
+    f["check"]["guarantees"]["items"] = [f["check"]["guarantees"]["items"][1]]
+    p = page(report)
+    p.page.keyboard.press("j")
+    body = p.page.text_content("#doc")
+    assert "None stated by the investigator, who was not required to for these patterns." in body
+    assert "Added by the check: callers share a slot — removed by: a second pool" in body

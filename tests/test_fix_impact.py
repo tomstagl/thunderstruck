@@ -1014,3 +1014,69 @@ def test_hostile_none_found_reasons_stay_inert(linked_copy, plugin_root):
     _assert_inert(markdown)
     html = render(markdown)
     assert html.tags.count("h3") == 1 and "fake heading" in "".join(html.text)
+
+
+# --- Task 7 -----------------------------------------------------------------
+import report_html  # noqa: E402
+from test_report_html import _embedded, _js_object, _outside_data, _run as _run_html  # noqa: E402
+
+
+def test_the_template_shares_report_mds_impact_sentences():
+    assert _js_object("IMPACT_SENTENCES") == c.IMPACT_SENTENCES
+
+
+def test_the_template_renders_impact_through_one_named_function():
+    template = (ROOT / "templates" / "report.html").read_text(encoding="utf-8")
+    assert template.count("function impactRows(") == 1 and "impactRows(f).forEach" in template
+    for label in ("Traced impact", "Inferred impact", "Implicit guarantees", "Not checked"):
+        assert f'"{label}"' in template, label
+
+
+@pytest.mark.parametrize("variant", ["guarantees", "none_found"])
+def test_hostile_text_in_the_new_fields_stays_inside_the_data_block(scanned_copy, plugin_root, variant):
+    """Every new model-written field, in both forms of the guarantees statement."""
+    from test_report_html import HOSTILE_TEXT as H
+    from test_inert_report import _verification_ran
+    hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
+    f = doc["findings"][0]
+    f["blast_items"] = [{"claim": f"claim: {H}", "basis": "traced", "evidence": [0]}]
+    f["not_checked"] = [{"item": f"item: {H}", "how_to_check": f"how: {H}"}]
+    if variant == "guarantees":
+        f["implicit_guarantees"][0].update(guarantee=f"g: {H}", removed_by=f"r: {H}")
+    else:
+        del f["implicit_guarantees"]
+        f["no_guarantees_reason"] = f"reason: {H}"
+    _write_finding(scanned_copy, hid, doc)
+    assert _validate(scanned_copy, plugin_root).returncode == 0
+    path = scanned_copy / ".thunderstruck" / "findings" / f"{hid}.json"
+    saved = json.loads(path.read_text())
+    ref = saved["findings"][0]["evidence"][0]["ref"]
+    guarantees = ({"state": "named", "reason": None, "items": [
+        {"of": 0, "guarantee": "g", "removed_by": "r", "evidence": [0]},
+        {"of": None, "guarantee": f"added: {H}", "removed_by": f"added removed: {H}", "evidence": [0]}]}
+        if variant == "guarantees" else {"state": "none_found", "reason": f"check none: {H}", "items": []})
+    saved["findings"][0]["check"] = {
+        "status": "upheld", "by": "skeptic", "reason": f"check reason: {H}", "model": "claude-haiku-4-5",
+        "duplicate_of": None, "evidence": [{"type": "code", "ref": ref}], "guarantees": guarantees,
+        "not_checked": [{"item": 0, "state": "unresolved", "note": f"note: {H}", "evidence": []}]}
+    path.write_text(json.dumps(saved))
+    _verification_ran(scanned_copy)
+    subprocess.run([sys.executable, str(plugin_root / "scripts" / "report.py"), "--repo", str(scanned_copy)],
+                   check=True, capture_output=True)
+    assert _run_html(scanned_copy).returncode == 0
+    html = (scanned_copy / ".thunderstruck" / "report.html").read_text(encoding="utf-8")
+    outside = _outside_data(html)
+    for marker in ("pwn", "pwned", "evil.example", "onerror"):
+        assert marker not in outside, marker
+    assert html.count("<script") == 2 and html.count("</script>") == 2
+    got = _embedded(html)["findings"][0]
+    assert got["blast_items"][0]["claim"] == f"claim: {H}"
+    assert got["not_checked"][0] == {"item": f"item: {H}", "how_to_check": f"how: {H}"}
+    assert got["check"]["reason"] == f"check reason: {H}"
+    assert got["check"]["not_checked"][0]["note"] == f"note: {H}"
+    if variant == "guarantees":
+        assert got["implicit_guarantees"][0]["removed_by"] == f"r: {H}"
+        assert got["check"]["guarantees"]["items"][1]["removed_by"] == f"added removed: {H}"
+    else:
+        assert got["no_guarantees_reason"] == f"reason: {H}"
+        assert got["check"]["guarantees"]["reason"] == f"check none: {H}"
