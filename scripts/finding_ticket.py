@@ -614,6 +614,19 @@ def _not_assessed(reason: str) -> str:
     return f"Not assessed: {reason}."
 
 
+def _placeholders(text: str) -> int:
+    """The sections that read "Not assessed": lines that begin with it outside a code fence, so
+    a quoted line of code or a sentence of model text that says it is not counted."""
+    count, fence = 0, None
+    for line in text.split("\n"):
+        run = re.match(r"`{3,}", line)
+        if run and (fence is None or (len(run.group(0)) >= fence and not line.strip("`"))):
+            fence = None if fence is not None else len(run.group(0))
+        elif fence is None and line.startswith("Not assessed: "):
+            count += 1
+    return count
+
+
 def _plural(n: int, one: str, many: str) -> str:
     return one if n == 1 else many
 
@@ -782,7 +795,10 @@ def main(argv: list[str] | None = None) -> int:
     except subprocess.TimeoutExpired:
         c.die(f"git did not answer within {GIT_TIMEOUT}s.")
         return 2
-    count = text.count("Not assessed:")
+    except OSError as exc:
+        c.die(f"could not read or write under {c.OUTPUT_DIRNAME}/: {exc.strerror or type(exc).__name__}.")
+        return 2
+    count = _placeholders(text)
     print(f"ticket for {finding['key']}: {c.OUTPUT_DIRNAME}/{TICKETS_DIRNAME}/{dest.name} "
           f"({count} {_plural(count, 'section', 'sections')} not assessed, "
           f"{len(drafts.sections)} drafted)")

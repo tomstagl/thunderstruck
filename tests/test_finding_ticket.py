@@ -1620,3 +1620,22 @@ def test_the_format_reference_documents_the_drafts_file():
 def test_the_top_changelog_entry_is_this_ticket():
     top = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8").split("\n## ", 2)[1]
     assert "(#108)" in top and "/thunderstruck-ticket" in top
+
+
+# --- Repair round (code review) ----------------------------------------------
+
+
+def test_the_not_assessed_count_ignores_code_and_prose_that_say_it():
+    text = "Not assessed: a.\n\n````\nNot assessed: legacy path\n````\n\n- Not assessed: drafted\nNot assessed: b.\n"
+    assert ft._placeholders(text) == 2
+
+
+def test_a_tickets_directory_that_is_a_file_is_a_named_stop_not_a_traceback(tmp_path, capsys):
+    repo = make_repo(tmp_path)
+    make_report(repo, [make_finding(repo)])
+    (repo / ".thunderstruck" / "tickets").write_text("not a directory")
+    with pytest.raises(SystemExit) as stop:
+        ft.main(["--repo", str(repo), "--key", KEY])
+    assert stop.value.code == 2
+    err = capsys.readouterr().err
+    assert "could not read or write under" in err and "Traceback" not in err
