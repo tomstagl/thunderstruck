@@ -26,7 +26,7 @@ Find every caller of the changed code and read how each one handles the result, 
 
 ## Lens 3: Test and conventions
 
-Run the new test without the fix and confirm that it fails for the reason the ticket gives and not for a reason of the test setup. Ask what a mock or a stub in the test cannot show, and whether an integration suite covers it. Check the change against the repository's own conventions for naming, errors, logging and structure, and against the tests next to it.
+Run the new test without the fix and confirm that it fails for the reason the ticket gives and not for a reason of the test setup. Do this on a separate clean checkout of the commit the diff applies to, never by removing the fix from the working tree you were given; if you cannot, say so and judge by reading whether it would fail. Ask what a mock or a stub in the test cannot show, and whether an integration suite covers it. Check the change against the repository's own conventions for naming, errors, logging and structure, and against the tests next to it.
 
 ## Lens 4: Whole-finding coverage
 
