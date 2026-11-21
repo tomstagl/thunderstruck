@@ -793,7 +793,7 @@ git commit -m "Ticket: choose a finding by key, and the status (#108)" \
 
 Every file the ticket quotes must be the scanned commit's, by the rule the links already use, and the file the scan recorded, by the hashes `validate.py` took (§8).
 
-- [ ] **Step 1: Write the tests.** Append to `tests/test_finding_ticket.py`:
+- [x] **Step 1: Write the tests.** Append to `tests/test_finding_ticket.py`:
 
 ``````python
 # --- Task 3: stop when the code is not the scan ----------------------------
@@ -1018,7 +1018,7 @@ def test_a_git_failure_or_timeout_is_a_named_stop(tmp_path, monkeypatch):
 ``````
 
 
-- [ ] **Step 2: Run them.**
+- [x] **Step 2: Run them.**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_finding_ticket.py tests/test_report_links.py -q
@@ -1026,7 +1026,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: FAIL, 29 failed: `AttributeError: module 'finding_ticket' has no attribute 'check_snapshot'`.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 In `scripts/links.py`:
 
@@ -1171,7 +1171,7 @@ with:
 ``````
 
 
-- [ ] **Step 4: Run the task's tests, then the full suite.** First:
+- [x] **Step 4: Run the task's tests, then the full suite.** First:
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_finding_ticket.py tests/test_report_links.py -q
@@ -1179,7 +1179,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Then the full suite (command in the header). Expected: PASS, `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/links.py scripts/finding_ticket.py tests/test_finding_ticket.py tests/test_no_execution.py

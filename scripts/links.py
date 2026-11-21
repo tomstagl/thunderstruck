@@ -433,6 +433,13 @@ def _stale_paths(repo, sha: str, paths: list[str]) -> set[str]:
     return stale
 
 
+def stale_paths(repo, sha: str, paths) -> set[str]:
+    """The paths among `paths` whose content at `sha` is not what is on disk now: the
+    rule the links use, so a file a link would leave unlinked is one a ticket refuses.
+    A git failure raises."""
+    return _stale_paths(repo, sha, sorted({c.ref_path(p) for p in paths}))
+
+
 def _chunks(paths: list[str]):
     chunk: list[str] = []
     size = 0

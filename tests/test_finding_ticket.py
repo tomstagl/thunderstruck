@@ -294,3 +294,224 @@ def test_nothing_records_a_reproduction_yet(tmp_path):
     assert "#103" in message and "No ticket was written" in message
     for ok in ("Hypothesis", "Fix proposed", "Fix reviewed"):
         ft.require_status(ok, f)
+
+
+# --- Task 3: stop when the code is not the scan ----------------------------
+
+import links
+
+
+def _check(repo, rep=None, finding=None):
+    rep = rep if rep is not None else json.loads((repo / ".thunderstruck" / "report.json").read_text())
+    ft.check_snapshot(repo, rep, finding if finding is not None else ft.find_finding(rep, KEY))
+
+
+def _refused(repo, *fragments, rep=None, finding=None):
+    with pytest.raises(c.ThunderstruckError) as err:
+        _check(repo, rep, finding)
+    message = str(err.value)
+    for fragment in fragments:
+        assert fragment in message, (fragment, message)
+    return message
+
+
+def test_a_tree_that_is_the_scanned_commit_passes(tmp_path):
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    _check(repo)
+
+
+def test_an_edited_cited_file_stops_and_names_the_way_forward(tmp_path):
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    (repo / "src/releases.ts").write_text("edited\n")
+    message = _refused(repo, '"src/releases.ts": differs from the scanned commit',
+                       "Rescan with /thunderstruck-scan", f"git switch --detach {head_of(repo)}")
+    assert message.startswith("no ticket was written for finding " + KEY)
+
+
+def test_a_staged_edit_stops(tmp_path):
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    (repo / "src/api.ts").write_text("export const api = 2;\n")
+    git(repo, "add", "src/api.ts")
+    _refused(repo, '"src/api.ts": differs from the scanned commit')
+
+
+def test_a_file_the_scan_saw_in_another_state_can_only_be_fixed_by_a_rescan(tmp_path):
+    repo = make_repo(tmp_path)
+    finding = make_finding(repo, content_hash="sha256:" + "0" * 64)     # scanned dirty, now the commit's text
+    make_report(repo, [finding])
+    message = _refused(repo, '"src/releases.ts": changed since the scan recorded it',
+                       "Rescan with /thunderstruck-scan", "cannot fix that")
+    assert "git switch" not in message
+
+
+def test_an_edit_since_the_scan_offers_the_checkout_and_says_when_it_will_not_do(tmp_path):
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    (repo / "src/releases.ts").write_text("edited\n")
+    message = _refused(repo, f"git switch --detach {head_of(repo)}", "only a rescan fixes that")
+    assert "cannot fix that" not in message
+
+
+def test_when_any_file_needs_a_rescan_the_way_forward_is_the_rescan(tmp_path):
+    repo = make_repo(tmp_path)
+    finding = make_finding(repo, content_hash="sha256:" + "0" * 64)
+    make_report(repo, [finding])
+    (repo / "src/api.ts").write_text("edited\n")                      # a plain edit as well
+    message = _refused(repo, '"src/api.ts": differs from the scanned commit',
+                       '"src/releases.ts": changed since the scan recorded it', "cannot fix that")
+    assert "git switch" not in message
+
+
+def test_the_ticket_script_may_start_git_and_nothing_else():
+    """#102's test_no_execution.py reviews where a process may start: finding_ticket.py runs git, in _git."""
+    import ast
+    import test_no_execution as ne
+    tree = ast.parse((ROOT / "scripts" / "finding_ticket.py").read_text(encoding="utf-8"))
+    starters = {fn for fn, call in ne._calls(tree) if ast.unparse(call.func).startswith("subprocess.")}
+    assert starters == {"_git"}
+    assert ("finding_ticket.py", "_git") in ne.GIT_ONLY
+
+
+def test_a_commit_made_since_the_scan_stops(tmp_path):
+    repo = make_repo(tmp_path)
+    rep = make_report(repo)
+    (repo / "src/releases.ts").write_text(RELEASES + "more\n")
+    git(repo, "commit", "-qam", "later")
+    _refused(repo, '"src/releases.ts"', rep=rep)
+
+
+def test_an_untracked_cited_file_stops(tmp_path):
+    repo = make_repo(tmp_path)
+    (repo / "src/new.ts").write_text("export const n = 1;\n")
+    finding = make_finding(repo, evidence=[{"type": "code", "ref": "src/new.ts:1", "note": "n", "url": None}],
+                           blast_items=[], implicit_guarantees=[])
+    make_report(repo, [finding])
+    _refused(repo, '"src/new.ts": is not tracked by git')
+
+
+def test_a_committed_symlink_and_a_submodule_stop(tmp_path):
+    repo = make_repo(tmp_path)
+    (repo / "src/link.ts").symlink_to("api.ts")
+    git(repo, "add", "src/link.ts")
+    git(repo, "update-index", "--add", "--cacheinfo", f"160000,{head_of(repo)},vendor/lib")
+    git(repo, "commit", "-qm", "link and submodule")
+    evidence = [{"type": "code", "ref": "src/link.ts:1", "note": "l", "url": None},
+                {"type": "code", "ref": "vendor/lib:1", "note": "s", "url": None}]
+    finding = make_finding(repo, evidence=evidence, blast_items=[], implicit_guarantees=[],
+                           content_hash="sha256:x", evidence_hashes={"src/link.ts": "x", "vendor/lib": "x"})
+    make_report(repo, [finding])
+    _refused(repo, '"src/link.ts": is a symbolic link', '"vendor/lib": is a submodule')
+
+
+def test_a_deleted_cited_file_stops(tmp_path):
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    (repo / "src/api.ts").unlink()
+    _refused(repo, '"src/api.ts": is missing from the working tree')
+
+
+@pytest.mark.parametrize("flag", ["--assume-unchanged", "--skip-worktree"])
+def test_a_file_git_was_told_to_ignore_cannot_hide_an_edit(tmp_path, flag):
+    repo = make_repo(tmp_path)
+    make_report(repo)
+    git(repo, "update-index", flag, "src/releases.ts")
+    (repo / "src/releases.ts").write_text("edited behind git's back\n")
+    _refused(repo, '"src/releases.ts": differs from the scanned commit')
+
+
+def test_a_file_scanned_dirty_and_since_reverted_is_not_what_the_finding_recorded(tmp_path):
+    repo = make_repo(tmp_path)
+    finding = make_finding(repo, content_hash="sha256:" + "0" * 64)      # the scan saw other bytes
+    make_report(repo, [finding])
+    _refused(repo, '"src/releases.ts": changed since the scan recorded it')
+
+
+def test_an_unrecorded_hash_is_a_stop_not_a_pass(tmp_path):
+    repo = make_repo(tmp_path)
+    finding = make_finding(repo)
+    del finding["evidence_hashes"]["src/api.ts"]
+    make_report(repo, [finding])
+    _refused(repo, '"src/api.ts": has no hash recorded by the scan')
+
+
+@pytest.mark.parametrize("head", ["", "unknown", "abc1234", "A" * 40, "g" * 40, None, 7])
+def test_a_scan_without_a_full_commit_cannot_be_checked(tmp_path, head):
+    repo = make_repo(tmp_path)
+    rep = make_report(repo)
+    rep["repo"]["head"] = head
+    _refused(repo, "records no scanned commit", rep=rep)
+
+
+def test_a_commit_this_clone_does_not_have_stops_and_names_it(tmp_path):
+    repo = make_repo(tmp_path)
+    rep = make_report(repo)
+    rep["repo"]["head"] = "0" * 40
+    _refused(repo, "0" * 40, "is not in this repository", "shallow", rep=rep)
+
+
+def test_a_shallow_clone_that_has_the_scanned_commit_passes(tmp_path):
+    origin = make_repo(tmp_path / "origin")
+    (origin / "src/releases.ts").write_text(RELEASES + "second\n")
+    git(origin, "commit", "-qam", "second")
+    clone = tmp_path / "clone"
+    subprocess.run(["git", "clone", "-q", "--depth", "1", f"file://{origin}", str(clone)],
+                   check=True, capture_output=True, env=GIT_ENV)
+    assert git(clone, "rev-parse", "--is-shallow-repository").stdout.strip() == "true"
+    make_report(clone)
+    _check(clone)
+
+
+def test_a_dirty_file_nothing_cites_is_not_compared(tmp_path):
+    repo = make_repo(tmp_path, {"src/releases.ts": RELEASES, "src/api.ts": "x\n", "src/other.ts": "y\n"})
+    make_report(repo)
+    (repo / "src/other.ts").write_text("dirty\n")
+    (repo / "notes.txt").write_text("untracked\n")
+    _check(repo)
+
+
+def test_line_ending_conversion_alone_does_not_stop(tmp_path):
+    repo = make_repo(tmp_path)
+    git(repo, "config", "core.autocrlf", "true")
+    (repo / "src/releases.ts").write_bytes(RELEASES.replace("\n", "\r\n").encode())
+    make_report(repo)               # the hashes are of these working-tree bytes, as validate.py takes them
+    _check(repo)
+
+
+def test_many_files_are_named_five_at_a_time(tmp_path):
+    files = {f"src/f{n}.ts": f"{n}\n" for n in range(7)}
+    repo = make_repo(tmp_path, files)
+    evidence = [{"type": "code", "ref": f"src/f{n}.ts:1", "note": "n", "url": None} for n in range(7)]
+    finding = make_finding(repo, location={"file": "src/f0.ts", "lines": "1"}, evidence=evidence,
+                           blast_items=[], implicit_guarantees=[])
+    make_report(repo, [finding])
+    for n in range(7):
+        (repo / f"src/f{n}.ts").write_text("edited\n")
+    message = _refused(repo, "… and 2 more")
+    assert message.count("differs from the scanned commit") == 5
+
+
+def test_a_cited_path_that_leaves_the_repository_stops(tmp_path):
+    repo = make_repo(tmp_path)
+    evidence = [{"type": "code", "ref": "../outside.ts:1", "note": "o", "url": None}]
+    finding = make_finding(repo, evidence=evidence, blast_items=[], implicit_guarantees=[],
+                           content_hash="sha256:x", evidence_hashes={})
+    make_report(repo, [finding])
+    _refused(repo, "climbs out of the repository")
+
+
+def test_a_git_failure_or_timeout_is_a_named_stop(tmp_path, monkeypatch):
+    repo = make_repo(tmp_path)
+    make_report(repo)
+
+    def timeout(*a, **k):
+        raise subprocess.TimeoutExpired("git", 30)
+
+    def failure(*a, **k):
+        raise c.ThunderstruckError("git ls-tree failed (128): fatal: /secret/path")
+    monkeypatch.setattr(links, "stale_paths", timeout)
+    _refused(repo, "git did not answer")
+    monkeypatch.setattr(links, "stale_paths", failure)
+    assert "/secret/path" not in _refused(repo, "git failed while comparing")

@@ -150,3 +150,106 @@ def require_status(status: str, finding: dict) -> None:
                    "verification run left behind and recorded; thunderstruck does not record one "
                    "yet (issue #103 in the thunderstruck repository). Ask for Hypothesis, or "
                    "record a reproduction first. No ticket was written.")
+
+
+FULL_SHA = re.compile(r"[0-9a-f]{40}\Z")
+GIT_TIMEOUT = 30
+WAY_FORWARD = ("Rescan with /thunderstruck-scan, or check out the scanned commit {sha} "
+               "(`git switch --detach {sha}`; stash or commit edits to those files first) "
+               "and run this again. If it then stops with \"changed since the scan recorded it\", "
+               "the scan saw that file in another state, and only a rescan fixes that.")
+WAY_RESCAN = ("Rescan with /thunderstruck-scan. The scan saw a file above in a state the scanned "
+              "commit does not have, so checking out the commit cannot fix that.")
+SCAN_SAW_OTHER = ("changed since the scan recorded it", "has no hash recorded by the scan")
+
+
+def quoted_files(finding: dict) -> list[str]:
+    """The files a ticket quotes or links, canonical, once each: the finding's own file
+    and every file it cites as code."""
+    loc = finding.get("location") if isinstance(finding.get("location"), dict) else {}
+    out = [c.ref_path(loc["file"])] if loc.get("file") else []
+    for ev in finding.get("evidence") or []:
+        if isinstance(ev, dict) and ev.get("type") == "code":
+            m = CODE_REF.match(str(ev.get("ref") or "").strip())
+            if m:
+                out.append(c.ref_path(m["path"]))
+    return list(dict.fromkeys(out))
+
+
+def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, timeout=GIT_TIMEOUT)
+
+
+def _why_stale(repo: Path, sha: str, rel: str, index: dict | None) -> str:
+    """Why a file links would leave unlinked is not the scanned commit's, for the message
+    only: the decision was made by links.stale_paths."""
+    if index is None:
+        return "differs from the scanned commit, or is not in it"
+    mode = index.get(rel)
+    if mode is None:
+        return "is not tracked by git"
+    if mode == "120000":
+        return "is a symbolic link"
+    if mode == "160000":
+        return "is a submodule"
+    if not os.path.lexists(repo / rel):
+        return "is missing from the working tree"
+    if _git(repo, "cat-file", "-e", f"{sha}:{rel}").returncode != 0:
+        return "is not in the scanned commit"
+    return "differs from the scanned commit"
+
+
+def check_snapshot(repo: Path, rep: dict, finding: dict) -> None:
+    """Raise unless every file the ticket quotes is the scanned commit's file, and is
+    the file the scan recorded: the snippets are read from that commit, and a ticket
+    over other code would send a fixer to the wrong place."""
+    repo_block = rep.get("repo") if isinstance(rep.get("repo"), dict) else {}
+    sha = repo_block.get("head")
+    if not isinstance(sha, str) or not FULL_SHA.match(sha):
+        raise stop("report.json records no scanned commit (repo.head is not a 40-character sha), so "
+                   "the cited code cannot be checked against it. Rescan with /thunderstruck-scan.")
+    files = quoted_files(finding)
+    try:
+        if _git(repo, "cat-file", "-e", f"{sha}^{{commit}}").returncode != 0:
+            raise stop(f"the scanned commit {sha} is not in this repository (a shallow or a "
+                       "different clone?). Fetch it, or rescan with /thunderstruck-scan.")
+        for rel in files:
+            if (why := c.path_problem(rel)):
+                raise stop(f"the finding cites {json.dumps(rel)}, which {why}. "
+                           "Rescan with /thunderstruck-scan.")
+        try:
+            stale = links.stale_paths(repo, sha, files)
+        except (c.ThunderstruckError, OSError):
+            raise stop("git failed while comparing the cited files with the scanned commit. "
+                       "Check the repository, then run this again.") from None
+        problems: dict[str, str] = {}
+        if stale:
+            try:
+                index = c.tracked_index(repo)
+            except (c.ThunderstruckError, OSError):
+                index = None
+            problems = {rel: _why_stale(repo, sha, rel, index) for rel in files if rel in stale}
+    except subprocess.TimeoutExpired:
+        raise stop(f"git did not answer within {GIT_TIMEOUT}s while checking the cited files.") from None
+    except OSError:
+        raise stop("git could not be run.") from None
+    loc = finding.get("location") if isinstance(finding.get("location"), dict) else {}
+    by_path = finding.get("evidence_hashes") if isinstance(finding.get("evidence_hashes"), dict) else {}
+    for rel in files:
+        if rel in problems:
+            continue
+        recorded = {h for h in (finding.get("content_hash") if loc.get("file") and
+                                c.ref_path(loc["file"]) == rel else None, by_path.get(rel))
+                    if isinstance(h, str)}
+        if not recorded:
+            problems[rel] = "has no hash recorded by the scan"
+        elif any(h != c.sha256_file(repo / rel) for h in recorded):
+            problems[rel] = "changed since the scan recorded it"
+    if problems:
+        rows = [f"{json.dumps(rel)}: {why}" for rel, why in problems.items()]
+        more = len(rows) - links.MAX_NAMED
+        way = (WAY_RESCAN if any(why in SCAN_SAW_OTHER for why in problems.values())
+               else WAY_FORWARD.format(sha=sha))
+        raise stop(f"no ticket was written for finding {finding.get('key')}: the code it cites is "
+                   "not the scan's.\n  " + "\n  ".join(rows[:links.MAX_NAMED])
+                   + (f"\n  … and {more} more" if more > 0 else "") + "\n" + way)
