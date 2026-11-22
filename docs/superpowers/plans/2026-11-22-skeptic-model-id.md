@@ -121,10 +121,10 @@ and extend the tests at `:286` and `:699` only if they hard-code 4.5 (they read 
 - [ ] Put one sentence in `docs/calibration/consumption.md` after the "Skeptic model" bullet (around line 310): "The alias table was corrected by #100; the figures here keep the 4.5 row they were weighted with."
 - [ ] Run the three new tests, `tests/test_usage.py`, and `tests/test_docs*` if present. Commit these paths explicitly. Body: `AC-4`, `Task: 4`.
 
-## Task 5: generated files, version, changelog (AC-5)
+## Task 5: generated files, changelog (AC-5)
 
 - [ ] Run `uv run scripts/gen_sample_report.py`, then `--check`; `uv run scripts/gen_catalog_docs.py --check`. Review the diff of `examples/`: only the model name may change. Anything else: stop.
-- [ ] Bump the patch version on `main` in `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `pyproject.toml` and the top `CHANGELOG.md` heading. Add under `### Fixed`: "The skeptic's model is `claude-haiku-5-5` where it runs as that, so `check.model` and `run.json` name it and its tokens are weighted, by prompt length (#100)."
+- [ ] Do not bump the version (maintainer's call, 2026-11-22: versions are bumped at release, not per ticket). Add under an `## Unreleased` heading in `CHANGELOG.md`, `### Fixed`: "The skeptic's model is `claude-haiku-5-5` where it runs as that, so `check.model` and `run.json` name it and its tokens are weighted, by prompt length (#100)."
 - [ ] Run the full suite (CLAUDE.md command, with the browser tests as in CI), `uv run scripts/validate_plugin.py`, and the plugin install check. All must pass before any push.
 - [ ] Commit by explicit path. Body: `AC-5`, `Task: 5`.
 
