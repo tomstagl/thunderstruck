@@ -2496,7 +2496,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: FAIL. Five tests fail with `FileNotFoundError` for the example.
 
-**The seven texts are drafts.** The source PRD gives AC-10's seven titles and nothing else; the maintainer's case text is not in this repository. Each statement and check was written generically from its title, each `source` says it comes from the case behind #104, and each `confirmed_by` says maintainer review is pending (spec §18, question 1). Do not improve them from memory of any case, and do not change `confirmed_by`. The pull request description's *Not verifiable in CI* section says that the seven texts are drafts that need the maintainer's source.
+**The seven texts are drafts.** The source PRD gives AC-10's seven titles and nothing else; the maintainer's case text is not in this repository. Each statement and check was written generically from its title, each `source` says it comes from the case behind #104, and each `confirmed_by` says maintainer review is pending (spec §18, question 1: decided 2026-11-22, ship the drafts). Do not improve them from memory of any case, and do not change `confirmed_by`. The pull request description's *Not verifiable in CI* section says that the seven texts are drafts that need the maintainer's source.
 
 - [ ] **Step 3: Write the implementation.**
 
