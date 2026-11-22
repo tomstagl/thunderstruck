@@ -151,3 +151,63 @@ def test_without_skeptics_the_section_is_unchanged(scanned_copy):
     before = _section(_report(scanned_copy, _usage(scanned_copy))[0])
     after = _section(_report(scanned_copy, _usage(scanned_copy, skeptics=None))[0])
     assert after == before and "Skeptics" not in after
+
+
+# --- #96 Task 3: the report says why the hook delivered little -------------
+def _trace(repo: Path, *outcomes: str) -> None:
+    hotspots = json.loads((repo / ".thunderstruck" / "hotspots.json").read_text())
+    rows = [{"at": "2999-01-01T00:00:00+00:00", "agent_type": "thunderstruck:thunderstruck-investigator",
+             "keys": ["agent_id"], "outcome": o} for o in outcomes]
+    (repo / ".thunderstruck" / "hook-trace.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in rows))
+    assert hotspots["generated_at"] < "2999"
+
+
+def _warnings(markdown: str) -> str:
+    return markdown.split("## Run warnings\n", 1)[1].split("\n## ", 1)[0] \
+        if "## Run warnings" in markdown else ""
+
+
+def test_most_results_by_fallback_with_no_trace_says_the_hook_did_not_run(scanned_copy):
+    usage = _usage(scanned_copy)
+    usage["investigators"].update(agents=10, fallback_saves=10)
+    markdown, doc = _report(scanned_copy, usage)
+    sentence = "The capture hook delivered 0 of 10 results: it did not run for any agent."
+    assert sentence in _warnings(markdown)
+    assert sentence in doc["run_warnings"]
+
+
+def test_the_warning_names_the_outcome_when_the_hook_ran(scanned_copy):
+    usage = _usage(scanned_copy)
+    usage["investigators"].update(agents=10, fallback_saves=8)
+    _trace(scanned_copy, "no_message", "no_message", "saved")
+    markdown, _ = _report(scanned_copy, usage)
+    # report text goes through mdtext, which escapes the underscore
+    assert ("The capture hook delivered 2 of 10 results: it ran for 3 agents "
+            "(no\\_message x2, saved x1).") in _warnings(markdown)
+
+
+def test_skeptics_count_towards_the_total(scanned_copy):
+    usage = _usage(scanned_copy)
+    usage["investigators"].update(agents=4, fallback_saves=0)
+    usage["skeptics"] = {"agents": 6, "respawns": 0, "fallback_saves": 6, "failed": 0,
+                         "calls": 1, "by_model": {}, "by_finding": {}}
+    markdown, _ = _report(scanned_copy, usage)
+    assert "The capture hook delivered 4 of 10 results" in _warnings(markdown)
+
+
+def test_half_or_fewer_by_fallback_is_not_a_warning(scanned_copy):
+    usage = _usage(scanned_copy)
+    usage["investigators"].update(agents=10, fallback_saves=5)
+    markdown, doc = _report(scanned_copy, usage)
+    assert "capture hook delivered" not in _warnings(markdown)
+    assert not any("capture hook" in w for w in doc["run_warnings"])
+
+
+def test_a_hostile_outcome_in_the_trace_is_not_rendered(scanned_copy):
+    usage = _usage(scanned_copy)
+    usage["investigators"].update(agents=10, fallback_saves=10)
+    _trace(scanned_copy, "[click](http://evil.example) <b>x</b>")
+    markdown, _ = _report(scanned_copy, usage)
+    assert "evil.example" not in markdown and "<b>" not in markdown
+    assert "(other x1)" in _warnings(markdown)

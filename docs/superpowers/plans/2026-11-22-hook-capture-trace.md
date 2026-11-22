@@ -38,9 +38,9 @@
 
 **Files:** `scripts/report.py`, `scripts/usage.py` only if it must expose the count, tests.
 
-- [ ] Failing test: with `fallback_saves` over half the saved results and a trace with no lines, Run warnings holds "The capture hook delivered 0 of N results: it did not run."; with `no_message` lines the sentence names the outcome. Text built from counts and outcome names; the existing inert-text tests still pass.
-- [ ] Implement, regenerate `examples/` only if the sample changes (it should not): `uv run scripts/gen_sample_report.py --check`.
-- [ ] Commit. `AC-3`, `Task: 3`.
+- [x] Failing test: with `fallback_saves` over half the saved results and a trace with no lines, Run warnings holds "The capture hook delivered 0 of N results: it did not run."; with `no_message` lines the sentence names the outcome. Text built from counts and outcome names; the existing inert-text tests still pass.
+- [x] Implement, regenerate `examples/` only if the sample changes (it should not): `uv run scripts/gen_sample_report.py --check`.
+- [x] Commit. `AC-3`, `Task: 3`.
 
 ## Task 4: drop the matcher (AC-4)
 

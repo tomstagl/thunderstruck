@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -31,6 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _common as c  # noqa: E402
 import deps  # noqa: E402
+import finding_shape  # noqa: E402
 import links  # noqa: E402
 import mdtext as md  # noqa: E402
 from validate import CODE_REF, DETECTOR_REF, _count_lines  # noqa: E402
@@ -225,7 +227,33 @@ def _usage(out: Path, generated_at: str) -> tuple[dict | None, list[str]]:
     window = doc.get("window") if isinstance(doc, dict) else None
     if not isinstance(window, dict) or window.get("from") != generated_at:
         return None, ["usage.json is from an earlier scan and was ignored"]
-    return doc, []
+    hook = _hook_warning(out, doc, generated_at)
+    return doc, [hook] if hook else []
+
+
+_OUTCOME = re.compile(r"^(?:[a-z_]+|error:[A-Za-z0-9_]{1,60})\Z")
+
+
+def _hook_warning(out: Path, usage: dict, generated_at: str) -> str | None:
+    """When most results were saved by the orchestrator, say how many the hook
+    delivered and why not (#96). Built from counts and outcome names only; a
+    name outside the hook's vocabulary is shown as `other`."""
+    parts = [p for p in (usage.get("investigators"), usage.get("skeptics")) if isinstance(p, dict)]
+    count = lambda p, k: p[k] if isinstance(p.get(k), int) and not isinstance(p.get(k), bool) else 0  # noqa: E731
+    total = sum(count(p, "agents") for p in parts)
+    fallback = sum(count(p, "fallback_saves") for p in parts)
+    if total <= 0 or fallback * 2 <= total:
+        return None
+    lines = finding_shape.trace_lines(out, generated_at)
+    delivered = f"The capture hook delivered {max(total - fallback, 0)} of {total} results: "
+    if not lines:
+        return delivered + "it did not run for any agent."
+    seen: dict[str, int] = {}
+    for row in lines:
+        name = row["outcome"] if _OUTCOME.match(row["outcome"]) else "other"
+        seen[name] = seen.get(name, 0) + 1
+    shown = ", ".join(f"{n} x{k}" for n, k in sorted(seen.items(), key=lambda kv: (-kv[1], kv[0])))
+    return delivered + f"it ran for {len(lines)} agent{'s' * (len(lines) != 1)} ({shown})."
 
 
 def _attach_commit_subjects(repo: Path, findings: list[dict]) -> None:
