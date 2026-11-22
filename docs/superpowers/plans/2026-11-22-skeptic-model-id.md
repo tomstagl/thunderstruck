@@ -123,10 +123,10 @@ and leave the test at `:286` as it is (it reads `MODEL_ALIASES`, so it follows).
 
 ## Task 5: generated files, changelog (AC-5)
 
-- [ ] Run `uv run scripts/gen_sample_report.py`, then `--check`; `uv run scripts/gen_catalog_docs.py --check`. Review the diff of `examples/`: only the model name may change. Anything else: stop.
-- [ ] Do not bump the version (maintainer's call, 2026-11-22: versions are bumped at release, not per ticket). Add under an `## Unreleased` heading in `CHANGELOG.md`, `### Fixed`: "The skeptic's model is `claude-haiku-5-5` where it runs as that, so `check.model` and `run.json` name it and its tokens are weighted, by prompt length (#100)."
-- [ ] Run the full suite (CLAUDE.md command, with the browser tests as in CI), `uv run scripts/validate_plugin.py`, and the plugin install check. All must pass before any push.
-- [ ] Commit by explicit path. Body: `AC-5`, `Task: 5`.
+- [x] Run `uv run scripts/gen_sample_report.py`, then `--check`; `uv run scripts/gen_catalog_docs.py --check`. Review the diff of `examples/`: only the model name may change. Anything else: stop.
+- [x] Do not bump the version (maintainer's call, 2026-11-22: versions are bumped at release, not per ticket). Add under an `## Unreleased` heading in `CHANGELOG.md`, `### Fixed`: "The skeptic's model is `claude-haiku-5-5` where it runs as that, so `check.model` and `run.json` name it and its tokens are weighted, by prompt length (#100)."
+- [x] Run the full suite (CLAUDE.md command, with the browser tests as in CI), `uv run scripts/validate_plugin.py`, and the plugin install check. All must pass before any push.
+- [x] Commit by explicit path. Body: `AC-5`, `Task: 5`.
 
 ## Task 6: finish (AC-1 to AC-5)
 

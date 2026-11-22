@@ -18,6 +18,10 @@ All notable changes to thunderstruck are recorded here. The format follows
 - **The scan skill says what to do when agents return in the background** (#97). Whether an `Agent` call returns a result or only a launch acknowledgement depends on the host. In the second case the skill ends the turn without polling, and a batch is done when every agent in it has produced its result and its completion notification; usage for a fallback save comes from that notification, and a save without it is reported as partial and named, never guessed. The investigators' repair round and the skeptic batches follow the same rule. The skill still never asks for a background agent.
 - **The `SubagentStop` hook has no matcher.** It runs for every subagent stop and the script keeps only the plugin's investigator and skeptic, by agent type, namespaced or not.
 
+### Fixed
+
+- The skeptic's model is `claude-haiku-5-5` where it runs as that, so `check.model` and `run.json` name it and its tokens are weighted, by prompt length (#100).
+
 ## 0.17.0
 
 A finding becomes a ticket someone can act on (#108).
