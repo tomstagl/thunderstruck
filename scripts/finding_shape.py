@@ -271,4 +271,4 @@ def trace_reason(out: Path, scan_stamp: Any, ident: str) -> str:
         top = sorted(failures.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
         return f"the hook ran and recorded {top}"
     n = len(lines)
-    return f"the hook ran for {n} other agent{'s' * (n != 1)}, none delivered this one"
+    return f"the hook ran for {n} agent{'s' * (n != 1)}, none delivered this one"

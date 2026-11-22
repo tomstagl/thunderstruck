@@ -62,6 +62,21 @@ def _listed_invalid(out: Path, hotspot_id: str) -> bool:
                for r in (results if isinstance(results, list) else []))
 
 
+def _drop_oldest(path: Path) -> None:
+    """Keep the newest lines, at most half the bound, so the file never stops
+    recording: a full file would read as "the hook did not run" (code review of #96)."""
+    kept: list[str] = []
+    total = 0
+    for line in reversed(path.read_text(encoding="utf-8").splitlines(keepends=True)):
+        total += len(line.encode("utf-8"))
+        if total > MAX_TRACE_BYTES // 2:
+            break
+        kept.append(line)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text("".join(reversed(kept)), encoding="utf-8")
+    os.replace(tmp, path)
+
+
 def _trace(payload: dict, outcome: str, ident: str | None = None) -> None:
     """Append one line to the trace. Never raises, never creates a directory."""
     try:
@@ -79,7 +94,7 @@ def _trace(payload: dict, outcome: str, ident: str | None = None) -> None:
         path = out / TRACE_FILENAME
         size = path.stat().st_size if path.is_file() else 0
         if size + len(text.encode("utf-8")) > MAX_TRACE_BYTES:
-            return
+            _drop_oldest(path)
         with path.open("a", encoding="utf-8") as fh:
             fh.write(text)
     except BaseException:
@@ -155,7 +170,7 @@ def main(stdin_text: str) -> None:
     # Past this point the invocation is ours, so it is traced whatever happens.
     outcome, ident = "error:unknown", None
     try:
-        if not isinstance(payload.get("cwd", ""), str):
+        if payload.get("cwd") is not None and not isinstance(payload.get("cwd"), str):
             outcome = "bad_payload"
         elif agent_type.endswith("thunderstruck-skeptic"):
             outcome, ident = _capture_skeptic(payload)

@@ -305,11 +305,28 @@ def test_another_plugins_agent_leaves_no_trace(scanned_copy):
     assert _trace_lines(scanned_copy) == []
 
 
-def test_the_trace_stops_growing_at_64_kib(scanned_copy):
+def test_the_trace_never_passes_64_kib_and_keeps_recording(scanned_copy):
+    """Code review of #96: a full file must not read as "the hook did not run"."""
+    sys.path.insert(0, str(SCRIPTS))
+    import capture_finding
     path = scanned_copy / ".thunderstruck" / TRACE
     path.write_text("x" * 65_530 + "\n")
-    _run(_payload("valid", scanned_copy))
-    assert path.stat().st_size == 65_531
+    payload = json.loads(_payload("valid", scanned_copy))
+    for i in range(700):
+        capture_finding._trace(payload, "no_message")
+        assert path.stat().st_size <= 64 * 1024
+    lines = [json.loads(x) for x in path.read_text().splitlines()]
+    assert lines and all(x["outcome"] == "no_message" for x in lines)
+    assert len(lines) > 100, "the newest lines are kept, not just the last one"
+
+
+def test_a_null_cwd_falls_back_to_the_process_directory(scanned_copy):
+    stdin = json.dumps({**json.loads(_payload("valid", scanned_copy)), "cwd": None})
+    proc = subprocess.run([sys.executable, str(HOOK)], input=stdin, cwd=scanned_copy,
+                          capture_output=True, text=True)
+    assert proc.returncode == 0 and proc.stdout == ""
+    assert (scanned_copy / ".thunderstruck" / "findings" / "H01.json").is_file()
+    assert [t["outcome"] for t in _trace_lines(scanned_copy)] == ["saved"]
 
 
 def test_the_trace_creates_no_directory_outside_a_scan(tmp_path):

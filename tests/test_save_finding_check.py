@@ -140,7 +140,7 @@ def test_missing_after_other_agents_were_saved(scanned_copy):
     _trace(scanned_copy, ("2999-01-01T00:00:00+00:00", "saved:H02"),
            ("2999-01-01T00:00:01+00:00", "no_message"))
     assert _lines(scanned_copy, "H01") == [
-        "H01 missing (the hook ran for 2 other agents, none delivered this one)"]
+        "H01 missing (the hook ran for 2 agents, none delivered this one)"]
 
 
 def test_missing_when_every_line_has_the_same_failure(scanned_copy):
