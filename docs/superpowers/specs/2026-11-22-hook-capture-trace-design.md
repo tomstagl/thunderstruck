@@ -36,8 +36,8 @@ Two scans saved 0 of 19 results by hook. The hook's own contract (exit 0, silent
 `save_finding.py --check` and `verify.py check` still print `saved`, `missing`, `failed` first on the line. A `missing` line gains a reason from the trace, taken from lines at or after the scan's `generated_at` (`hotspots.json`):
 
 - no trace line for this scan at all: `missing (the capture hook did not run for any agent in this scan)`;
-- lines exist, none for this id: `missing (the hook ran for N other agents, none delivered this one)`. The hook does not know the id before it parses the message, so a line carries `id` only when `outcome` is `saved` or `no_entry`... in the first case the id is set; for the others the line names no hotspot, and the reason is the aggregate above;
-- the last matching line has an outcome other than `saved`: `missing (the hook ran and recorded no_message)`.
+- lines exist, none for this id: `missing (the hook ran for N other agents, none delivered this one)`. A line carries `id` (a hotspot id or finding key) only when the outcome is `saved`, because only then has the hook parsed the message and found the entry; for every other outcome the hook does not know whose result it was, so the reason is the aggregate above;
+- every line since the scan began has an outcome other than `saved`, and they agree: `missing (the hook ran and recorded no_message)`; when they differ the reason names the most frequent outcome.
 
 A script that prints a reason never changes what `missing` means to the skill: the first word is unchanged.
 
