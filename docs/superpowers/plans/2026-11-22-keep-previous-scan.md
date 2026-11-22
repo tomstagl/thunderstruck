@@ -1,6 +1,6 @@
 # A re-scan keeps the scan it replaces: Implementation Plan
 
-> For agentic workers: build task by task, test first. Steps use checkbox (`- [ ]`) syntax.
+> For agentic workers: build task by task, test first. Steps use checkbox (`- [x]`) syntax.
 
 **Ticket:** #98. **Spec:** `docs/superpowers/specs/2026-11-22-keep-previous-scan-design.md`. Each task names the `AC-n` of the ticket it satisfies. A design change goes in the spec first.
 
@@ -12,16 +12,16 @@
 
 ## Task 0: anchors (no AC)
 
-- [ ] Read the spec. Confirm: `signals.py` writes `hotspots.json` in `main` after printing warnings and has `--since` default `"12m"`; `window` and `config` keys as the spec lists; `report_html.py` has the schema refusal; `report.py` prints `hotspots["warnings"]` under Run warnings.
-- [ ] `git grep -n "generated_at" scripts/report.py | head` to find the finished-scan rule used for `checks/run.json`, and reuse that helper, not a second copy.
-- [ ] Run `tests/test_signals*.py` and `tests/test_report*.py`: note they pass.
+- [x] Read the spec. Confirm: `signals.py` writes `hotspots.json` in `main` after printing warnings and has `--since` default `"12m"`; `window` and `config` keys as the spec lists; `report_html.py` has the schema refusal; `report.py` prints `hotspots["warnings"]` under Run warnings.
+- [x] `git grep -n "generated_at" scripts/report.py | head` to find the finished-scan rule used for `checks/run.json`, and reuse that helper, not a second copy.
+- [x] Run `tests/test_signals*.py` and `tests/test_report*.py`: note they pass.
 
 ## Task 1: the scan identity and the finished test (AC-1, AC-2)
 
 **Files:** `scripts/_common.py`, `tests/test_previous_scan.py` (new).
 
-- [ ] Failing tests for `c.scan_identity(hotspots_doc)` (returns the tuple of spec §2.1, `None` for a document missing a part) and `c.scan_finished(out_dir)` (true only when `report.json` exists and its `scanned_at` equals `hotspots.json`'s `generated_at`).
-- [ ] Implement both in `_common.py`. Commit `scripts/_common.py` and the test file. `AC-1, AC-2`, `Task: 1`.
+- [x] Failing tests for `c.scan_identity(hotspots_doc)` (returns the tuple of spec §2.1, `None` for a document missing a part) and `c.scan_finished(out_dir)` (true only when `report.json` exists and its `scanned_at` equals `hotspots.json`'s `generated_at`).
+- [x] Implement both in `_common.py`. Commit `scripts/_common.py` and the test file. `AC-1, AC-2`, `Task: 1`.
 
 ## Task 2: the archive (AC-1, AC-2, AC-5)
 

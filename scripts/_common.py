@@ -1218,6 +1218,35 @@ def load_json(path: Path, default: Any = None) -> Any:
         return default
 
 
+def scan_identity(hotspots: Any) -> tuple | None:
+    """What makes two scans the same scan (#98 spec 2.1), or None when a part is missing."""
+    if not isinstance(hotspots, dict):
+        return None
+    repo, window, config = (hotspots.get(k) for k in ("repo", "window", "config"))
+    if not (isinstance(repo, dict) and isinstance(window, dict) and isinstance(config, dict)):
+        return None
+    head, since_date = repo.get("head"), window.get("since_date")
+    if not head or not since_date or "top" not in config or "include_tests" not in config:
+        return None
+    return (head, since_date, config["top"], config.get("path"),
+            bool(config["include_tests"]), REPORT_SCHEMA_VERSION)
+
+
+def scan_finished(out: Path) -> bool:
+    """True when `out` holds a report of the scan its hotspots.json records (#98 spec 2.1).
+
+    report.json's own `generated_at` is when the report was rendered; `scanned_at` is the
+    scan's, as `checks/run.json`'s `generated_at` is.
+    """
+    out = Path(out)
+    hotspots = load_json(out / "hotspots.json", None)
+    report = load_json(out / "report.json", None)
+    if not isinstance(hotspots, dict) or not isinstance(report, dict):
+        return False
+    stamp = hotspots.get("generated_at")
+    return bool(stamp) and report.get("scanned_at") == stamp
+
+
 def die(message: str, code: int = 2) -> None:
     print(f"thunderstruck: {message}", file=sys.stderr)
     raise SystemExit(code)
