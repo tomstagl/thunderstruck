@@ -1,6 +1,6 @@
 # Skeptic model id Implementation Plan
 
-> For agentic workers: build task by task, test first. Steps use checkbox (`- [x]`) syntax.
+> For agentic workers: build task by task, test first. Steps use checkbox (`- [ ]`) syntax.
 
 **Ticket:** #100. **Spec:** `docs/superpowers/specs/2026-11-22-skeptic-model-id-design.md`. Every task names the `AC-n` of the ticket it satisfies. A design change goes in the spec first.
 
