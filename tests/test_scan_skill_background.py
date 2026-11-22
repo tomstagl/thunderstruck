@@ -10,6 +10,7 @@ on: a fallback save without usage is accepted and the report names it.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -72,6 +73,17 @@ def test_what_was_forbidden_stays_forbidden(forbidden):
     assert "never" in text[max(0, i - 160):i].lower()
 
 
+def test_a_partial_batch_does_not_trigger_the_check():
+    text = _flat(STEP3).lower()
+    assert "every wake before that ends the turn again with no tool call" in text
+    assert "the last agent's result and notification have both arrived" in text
+
+
+def test_the_skeptic_fallback_may_omit_usage_too():
+    text = _flat(STEP4B)
+    assert "save without `--usage`" in text and "never invent a figure" in text
+
+
 def test_the_repair_round_and_the_skeptic_batches_follow_the_same_rule():
     assert "the rule of step 3" in _flat(STEP4)
     assert "the rule of step 3" in _flat(STEP4B)
@@ -82,10 +94,14 @@ def test_the_repair_round_and_the_skeptic_batches_follow_the_same_rule():
 def test_a_fallback_save_without_usage_is_partial_and_named(scan):  # noqa: F811
     repo, out = scan["repo"], scan["out"]
     (out / "agents" / "H01.json").unlink()
+    result = repo / "result.json"
+    result.write_text(json.dumps({"hotspot_id": "H01", "findings": []}))
     proc = subprocess.run([sys.executable, str(ROOT / "scripts" / "save_finding.py"),
-                           "--repo", str(repo), "--id", "H01", "--failed", "--fallback"],
+                           "--repo", str(repo), "--id", "H01", "--from", str(result),
+                           "--fallback"],
                           capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr
+    assert json.loads((out / "agents" / "H01.json").read_text())["fallback"] is True
     doc = _build(scan)
     assert doc["source"] == "partial"
     assert any(m.startswith("H01") for m in doc["missing"]), doc["missing"]

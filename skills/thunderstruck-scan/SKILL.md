@@ -137,8 +137,10 @@ What an `Agent` call returns depends on the host, and the scan works either way:
   result. End your turn with no further tool call: do not poll or read files.
   Each agent later produces its result as a message and its token usage in a
   completion notification, in either order. **A batch is done when every agent
-  of the batch has produced both.** Only then run the check below and start the
-  next batch.
+  of the batch has produced both.** Every wake before that ends the turn again
+  with no tool call; the check below runs only on the wake in which the last
+  agent's result and notification have both arrived, and the next batch starts
+  after it.
 - Usage for a fallback save comes from the completion notification (or the
   inline result), and never from a guess: never invent a figure.
 - If a notification does not arrive, run the check when the user continues the
@@ -264,7 +266,10 @@ A `missing` line carries the same kind of reason as in step 3. For each
 uv run "${CLAUDE_PLUGIN_ROOT}/scripts/verify.py" save --key <key> --from /path/to/result.json --fallback --usage '<usage from the completion notification or the inline result>'
 ```
 
-or, when the skeptic returned nothing, `save --key <key> --failed --reason "<what happened>" --fallback`.
+If, once every skeptic of the batch has reported, no usage figure is there,
+save without `--usage` (`verify.py save` accepts that, and the report names the
+usage as partial); never invent a figure. Or, when the skeptic returned
+nothing, `save --key <key> --failed --reason "<what happened>" --fallback`.
 
 **Never re-spawn a skeptic, and there is no repair round.** A verdict whose
 evidence does not resolve is reported `inconclusive`, and a skeptic that
