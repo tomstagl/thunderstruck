@@ -420,3 +420,20 @@ def test_an_empty_or_stray_previous_is_not_a_kept_copy(repo):
     out = _bad_schema(repo)
     (out / "previous" / "notes").mkdir(parents=True)
     assert "was not kept" in _run_script(repo, "report_html.py").stderr
+
+
+def test_a_stored_report_of_an_older_schema_is_archived_when_the_scan_is_otherwise_equal(tmp_path):
+    # review finding: the old identity must carry the schema the stored report was written with,
+    # not the running version's, or a schema bump never archives anything
+    out = _scan(tmp_path)
+    (out / "report.json").write_text(json.dumps({"scanned_at": _hotspots()["generated_at"],
+                                                 "schema": "thunderstruck.report/v1"}))
+    result = previous.archive(tmp_path, _new())
+    assert result["archived"] == "20261122-aaaaaaa"
+
+
+def test_a_stored_report_of_the_current_schema_is_the_same_scan(tmp_path):
+    out = _scan(tmp_path)
+    (out / "report.json").write_text(json.dumps({"scanned_at": _hotspots()["generated_at"],
+                                                 "schema": c.REPORT_SCHEMA_VERSION}))
+    assert previous.archive(tmp_path, _new())["archived"] is None

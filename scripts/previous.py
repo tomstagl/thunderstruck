@@ -79,7 +79,10 @@ def archive(repo: Path, new_identity: tuple | None) -> dict[str, Any]:
     nothing = {"archived": None, "warning": None, "previous": None}
     out = c.out_dir(repo)
     hotspots = c.load_json(out / "hotspots.json", None)
-    old_identity = c.scan_identity(hotspots)
+    report = c.load_json(out / "report.json", None)
+    stored = report.get("schema") if isinstance(report, dict) else None
+    # the schema the stored report was written with, so a version bump is a different scan
+    old_identity = c.scan_identity(hotspots, stored if isinstance(stored, str) else None)
     if old_identity is None or not c.scan_finished(out) or old_identity == new_identity:
         return nothing
     earlier = {"archived": None, "generated_at": hotspots["generated_at"],

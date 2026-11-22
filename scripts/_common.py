@@ -1253,8 +1253,12 @@ def previous_schema_note(repo_root: Path) -> str:
             f"not kept (output from before scans were archived is not).")
 
 
-def scan_identity(hotspots: Any) -> tuple | None:
-    """What makes two scans the same scan (#98 spec 2.1), or None when a part is missing."""
+def scan_identity(hotspots: Any, schema: str | None = None) -> tuple | None:
+    """What makes two scans the same scan (#98 spec 2.1), or None when a part is missing.
+
+    `schema` is the report schema the scan's report was written with; the running version's
+    when not given, which is the new scan's.
+    """
     if not isinstance(hotspots, dict):
         return None
     repo, window, config = (hotspots.get(k) for k in ("repo", "window", "config"))
@@ -1264,7 +1268,7 @@ def scan_identity(hotspots: Any) -> tuple | None:
     if not head or not since_date or "top" not in config or "include_tests" not in config:
         return None
     return (head, since_date, config["top"], config.get("path"),
-            bool(config["include_tests"]), REPORT_SCHEMA_VERSION)
+            bool(config["include_tests"]), schema or REPORT_SCHEMA_VERSION)
 
 
 def scan_finished(out: Path) -> bool:
