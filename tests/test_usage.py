@@ -318,7 +318,8 @@ def test_a_skeptic_fallback_save_is_weighted_by_its_alias(scan):
              relayed_usage={"input_tokens": 1000, "model": "haiku"})
     doc = _build(scan)
     sk = doc["skeptics"]
-    assert sk["fallback_saves"] == 1 and sk["by_model"][HAIKU]["weighted"] == 500
+    # The alias's model, at the Haiku 5.5 up-to-100k input row: 0.05 x 1000.
+    assert sk["fallback_saves"] == 1 and sk["by_model"][c.MODEL_ALIASES["haiku"]]["weighted"] == 50
     assert doc["source"] == "partial"
     assert any("skeptic dddddddddddd" in m for m in doc["missing"])
 

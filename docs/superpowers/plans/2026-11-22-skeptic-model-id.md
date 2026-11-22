@@ -98,7 +98,7 @@ def test_a_relayed_haiku_is_weighted_low_and_says_so(scan):
 
 **Files:** `scripts/_common.py`, `tests/test_verification.py`.
 
-- [ ] Write the failing test (beside `test_verification.py:286`):
+- [x] Write the failing test (beside `test_verification.py:286`):
 
 ```python
 def test_the_haiku_alias_names_the_model_that_runs():
@@ -106,10 +106,10 @@ def test_the_haiku_alias_names_the_model_that_runs():
 ```
 
 and leave the test at `:286` as it is (it reads `MODEL_ALIASES`, so it follows). The test at `:699`, `test_the_default_skeptic_model_is_the_measured_one`, compares the frozen `skeptic-haiku.json` run, which is not edited (spec §2.5): change its last assertion to `assert run["produced_by"]["model"] == "claude-haiku-4-5"`, with a comment that a frozen run records the model it ran as when made. The alias is pinned by the test above, not by this one.
-- [ ] Run: fails with `'claude-haiku-4-5' == 'claude-haiku-5-5'`.
-- [ ] Change `MODEL_ALIASES["haiku"]` to `"claude-haiku-5-5"`.
-- [ ] Run `tests/test_verification.py tests/test_usage.py tests/test_report_consumption.py`: the 4.5 literals in those tests are arbitrary model strings and keep passing. `tests/test_usage.py::test_a_skeptic_fallback_save_is_weighted_by_its_alias` asserts the alias: read its model from `c.MODEL_ALIASES["haiku"]` and its weighted figure as 50 (the Haiku 5.5 up-to-100k input row, 0.05 × 1000), never a literal id. The one test allowed a literal is the one at `:699`, above, which asserts a recorded fact, not the alias.
-- [ ] Commit by path. Body: `AC-1`, `Task: 3`, the red line.
+- [x] Run: fails with `'claude-haiku-4-5' == 'claude-haiku-5-5'`.
+- [x] Change `MODEL_ALIASES["haiku"]` to `"claude-haiku-5-5"`.
+- [x] Run `tests/test_verification.py tests/test_usage.py tests/test_report_consumption.py`: the 4.5 literals in those tests are arbitrary model strings and keep passing. `tests/test_usage.py::test_a_skeptic_fallback_save_is_weighted_by_its_alias` asserts the alias: read its model from `c.MODEL_ALIASES["haiku"]` and its weighted figure as 50 (the Haiku 5.5 up-to-100k input row, 0.05 × 1000), never a literal id. The one test allowed a literal is the one at `:699`, above, which asserts a recorded fact, not the alias.
+- [x] Commit by path. Body: `AC-1`, `Task: 3`, the red line.
 
 ## Task 4: the pinning tests and the documented table (AC-4)
 

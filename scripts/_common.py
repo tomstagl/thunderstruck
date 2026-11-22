@@ -67,7 +67,7 @@ def weights_for(model: str, prompt_tokens: int) -> dict[str, float] | None:
 
 
 # The scan's --model values, as the ids TOKEN_WEIGHTS is keyed by.
-MODEL_ALIASES = {"haiku": "claude-haiku-4-5", "sonnet": "claude-sonnet-5-5",
+MODEL_ALIASES = {"haiku": "claude-haiku-5-5", "sonnet": "claude-sonnet-5-5",
                  "opus": "claude-opus-5-5"}
 # Weighted tokens (Sonnet 5.5 row) one investigator consumes per token of
 # its bundle: the dry-run estimate's only assumption. Measured in
