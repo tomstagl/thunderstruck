@@ -42,7 +42,30 @@ TOKEN_WEIGHTS: dict[str, dict[str, float]] = {
                          "cache_read": 0.05, "output": 2.5},
     "claude-fable-5-1": {"input": 5, "cache_write_5m": 6.25, "cache_write_1h": 10,
                          "cache_read": 0.125, "output": 25},
+    # Haiku 5.5 up to 100,000 prompt tokens; the row over that is LONG_PROMPT_WEIGHTS
+    # (USD per million / 2, read 2026-11-22 from the pricing page; #100 spec §2.2).
+    "claude-haiku-5-5": {"input": 0.05, "cache_write_5m": 0.0625, "cache_write_1h": 0.1,
+                         "cache_read": 0.005, "output": 0.25},
 }
+# Haiku 5.5 is priced by prompt length (spec 2026-11-22 §2.2): a request whose
+# prompt (all input tokens, cache reads and writes included) is over the
+# threshold pays the second row for the whole request.
+LONG_PROMPT_WEIGHTS: dict[str, tuple[int, dict[str, float]]] = {
+    "claude-haiku-5-5": (100_000, {"input": 0.25, "cache_write_5m": 0.3125,
+                                   "cache_write_1h": 0.5, "cache_read": 0.025,
+                                   "output": 1.25}),
+}
+
+
+def weights_for(model: str, prompt_tokens: int) -> dict[str, float] | None:
+    """The weights row one request of `model` is priced at, or None if unknown."""
+    base = TOKEN_WEIGHTS.get(model)
+    tier = LONG_PROMPT_WEIGHTS.get(model)
+    if base is not None and tier is not None and prompt_tokens > tier[0]:
+        return tier[1]
+    return base
+
+
 # The scan's --model values, as the ids TOKEN_WEIGHTS is keyed by.
 MODEL_ALIASES = {"haiku": "claude-haiku-4-5", "sonnet": "claude-sonnet-5-5",
                  "opus": "claude-opus-5-5"}

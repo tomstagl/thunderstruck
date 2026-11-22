@@ -1,6 +1,6 @@
 # Skeptic model id Implementation Plan
 
-> For agentic workers: build task by task, test first. Steps use checkbox (`- [ ]`) syntax.
+> For agentic workers: build task by task, test first. Steps use checkbox (`- [x]`) syntax.
 
 **Ticket:** #100. **Spec:** `docs/superpowers/specs/2026-11-22-skeptic-model-id-design.md`. Every task names the `AC-n` of the ticket it satisfies. A design change goes in the spec first.
 
@@ -14,16 +14,16 @@
 
 ## Task 0: anchors (no AC)
 
-- [ ] Read the spec. Confirm in the tree: `_common.py` has `TOKEN_WEIGHTS` and `MODEL_ALIASES` with `haiku -> claude-haiku-4-5`; `usage.py` has `_weights`, `weighted`, `tally`; `verify.py` writes `c.MODEL_ALIASES.get(plan["model"], …)` at three places; `agents/thunderstruck-skeptic.md` says `model: haiku`.
-- [ ] Open the pricing page `https://platform.claude.com/docs/en/about-claude/pricing`. If Haiku 5.5's rows differ from spec §2.2, stop and report which: the spec's numbers are the design and a changed price changes them.
-- [ ] Confirm `grep -n "claude-haiku-5-5" scripts/` finds nothing. If something already handles it, stop: the ticket is partly done.
-- [ ] Run the usage tests and note they pass: `tests/test_usage.py`.
+- [x] Read the spec. Confirm in the tree: `_common.py` has `TOKEN_WEIGHTS` and `MODEL_ALIASES` with `haiku -> claude-haiku-4-5`; `usage.py` has `_weights`, `weighted`, `tally`; `verify.py` writes `c.MODEL_ALIASES.get(plan["model"], …)` at three places; `agents/thunderstruck-skeptic.md` says `model: haiku`.
+- [x] Open the pricing page `https://platform.claude.com/docs/en/about-claude/pricing`. If Haiku 5.5's rows differ from spec §2.2, stop and report which: the spec's numbers are the design and a changed price changes them.
+- [x] Confirm `grep -n "claude-haiku-5-5" scripts/` finds nothing. If something already handles it, stop: the ticket is partly done.
+- [x] Run the usage tests and note they pass: `tests/test_usage.py`.
 
 ## Task 1: the tiered weights table (AC-2, AC-3)
 
 **Files:** `scripts/_common.py`, `tests/test_usage.py`.
 
-- [ ] Write the failing test in `tests/test_usage.py`:
+- [x] Write the failing test in `tests/test_usage.py`:
 
 ```python
 def test_weights_for_switches_tier_above_100k_prompt_tokens():
@@ -35,8 +35,8 @@ def test_weights_for_switches_tier_above_100k_prompt_tokens():
     assert c.weights_for("claude-unknown-1", 5) is None
 ```
 
-- [ ] Run it: fails with `module '_common' has no attribute 'weights_for'`.
-- [ ] In `_common.py` add the `claude-haiku-5-5` row to `TOKEN_WEIGHTS` (spec §2.2's up-to-100k row), then:
+- [x] Run it: fails with `module '_common' has no attribute 'weights_for'`.
+- [x] In `_common.py` add the `claude-haiku-5-5` row to `TOKEN_WEIGHTS` (spec §2.2's up-to-100k row), then:
 
 ```python
 # Haiku 5.5 is priced by prompt length (spec 2026-11-22 §2.2): a request whose
@@ -58,7 +58,7 @@ def weights_for(model: str, prompt_tokens: int) -> dict[str, float] | None:
     return base
 ```
 
-- [ ] Run the test: passes. Commit `_common.py` and `tests/test_usage.py` by path. Body: `AC-3`, `Task: 1`, the red line.
+- [x] Run the test: passes. Commit `_common.py` and `tests/test_usage.py` by path. Body: `AC-3`, `Task: 1`, the red line.
 
 ## Task 2: usage weights each request by its tier (AC-2, AC-3)
 

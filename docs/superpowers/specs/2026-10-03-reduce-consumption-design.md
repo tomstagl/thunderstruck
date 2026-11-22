@@ -54,8 +54,11 @@ One number that tracks cost across models and token types without naming a price
 | `claude-opus-5-5` | 2 | 2.5 | 4 | 0.1 | 10 |
 | `claude-haiku-4-5` | 0.5 | 0.625 | 1 | 0.05 | 2.5 |
 | `claude-fable-5-1` | 5 | 6.25 | 10 | 0.125 | 25 |
+| `claude-haiku-5-5` | 0.05 | 0.0625 | 0.1 | 0.005 | 0.25 |
 
 A cache write whose TTL the transcript does not state is weighted as a 5-minute write.
+
+The `claude-haiku-5-5` row is the up-to-100,000-prompt-token price; a request over that pays a higher row. Added by #100; see 2026-11-22-skeptic-model-id-design.md.
 
 A single per-model factor would be wrong: cache writes are 1.25× and 2× input on every model, but cache reads are 0.1× on most models, 0.05× on Opus 5.5 and 0.025× on Fable 5.1 (Anthropic pricing page, read 2026-10-03). Cache reads are most of a scan's tokens.
 

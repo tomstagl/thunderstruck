@@ -337,3 +337,12 @@ def test_a_failed_skeptic_is_counted(scan):
 def test_no_skeptic_records_leaves_the_totals_unchanged(scan):
     doc = _build(scan)
     assert doc["skeptics"] is None and doc["total_weighted"] == 160 + 300 + 75
+
+
+def test_weights_for_switches_tier_above_100k_prompt_tokens():
+    low = c.weights_for("claude-haiku-5-5", 100_000)
+    high = c.weights_for("claude-haiku-5-5", 100_001)
+    assert low["input"] == 0.05 and low["output"] == 0.25
+    assert high["input"] == 0.25 and high["output"] == 1.25
+    assert c.weights_for("claude-sonnet-5-5", 10_000_000) == c.TOKEN_WEIGHTS["claude-sonnet-5-5"]
+    assert c.weights_for("claude-unknown-1", 5) is None
