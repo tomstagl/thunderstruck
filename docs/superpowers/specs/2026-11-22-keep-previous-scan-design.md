@@ -14,7 +14,7 @@ The window is already recorded (`window.since`, `window.since_date`), but a bare
 
 ### 2.1 What "the same scan" means
 
-A scan's identity is `(repo.head, window.since_date, config.top, config.path, config.include_tests, REPORT_SCHEMA_VERSION)`. The earlier scan counts as *finished* when `.thunderstruck/report.json` exists and its `generated_at` equals `hotspots.json`'s (the rule `report.py` already uses for `checks/run.json`).
+A scan's identity is `(repo.head, window.since_date, config.top, config.path, config.include_tests, REPORT_SCHEMA_VERSION)`. The earlier scan counts as *finished* when `.thunderstruck/report.json` exists and its `scanned_at` equals `hotspots.json`'s `generated_at` (`report.json`'s own `generated_at` is when the report was rendered; the rule is the one `report.py` already uses for `checks/run.json`, which carries the scan's `generated_at`).
 
 - Finished and the identity is equal: this is a re-run of the same scan. Nothing is archived and nothing changes: the checkpoint in `bundle.py` keeps working on the live `findings/`.
 - Finished and the identity differs: archive (§2.2).
