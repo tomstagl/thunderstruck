@@ -309,6 +309,7 @@ data point.
   `TOKEN_WEIGHTS` has no row for. Their tokens are weighted here with the
   `claude-haiku-4-5` row (0.5, 0.625, 1, 0.05, 2.5), as the alias table implies.
   Investigators ran on `claude-sonnet-5-5`, the default.
+  The alias table was corrected by #100; the figures here keep the 4.5 row they were weighted with.
 - Each run was a fresh headless session (`claude -p --model claude-opus-5-5`),
   not an interactive one, started in a clean `.thunderstruck/`. The scan
   command was the only prompt. Every run ranked the same 10 hotspots.

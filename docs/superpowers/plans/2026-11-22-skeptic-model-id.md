@@ -115,11 +115,11 @@ and leave the test at `:286` as it is (it reads `MODEL_ALIASES`, so it follows).
 
 **Files:** `tests/test_model_ids.py` (new), `skills/thunderstruck-scan/references/orchestration.md`, `docs/superpowers/specs/2026-10-03-reduce-consumption-design.md`.
 
-- [ ] Write `tests/test_model_ids.py` with three tests (spec §2.4): every `MODEL_ALIASES` value is a `TOKEN_WEIGHTS` key; the skeptic agent's front-matter `model:` and `verify.py`'s `--model` default are `MODEL_ALIASES` keys; the table in `orchestration.md` equals `TOKEN_WEIGHTS` and contains a line naming each key of `LONG_PROMPT_WEIGHTS` with its threshold. Use the table-parsing code of `test_token_weights_equal_the_spec_table` for the first parse.
-- [ ] Run: the orchestration test fails (no 5.5 row).
-- [ ] Add the `claude-haiku-5-5` row (`0.05 | 0.0625 | 0.1 | 0.005 | 0.25`) to the table in `orchestration.md`, and under it one sentence: "`claude-haiku-5-5` is priced by prompt length: a request over 100,000 prompt tokens (cache reads and writes included) is weighted `0.25 | 0.3125 | 0.5 | 0.025 | 1.25`, as a whole." Add the same row to §2.3 of `2026-10-03-reduce-consumption-design.md` with the note "added by #100; see 2026-11-22-skeptic-model-id-design.md". `test_token_weights_equal_the_spec_table` must pass.
-- [ ] Put one sentence in `docs/calibration/consumption.md` after the "Skeptic model" bullet (around line 310): "The alias table was corrected by #100; the figures here keep the 4.5 row they were weighted with."
-- [ ] Run the three new tests, `tests/test_usage.py`, and `tests/test_docs*` if present. Commit these paths explicitly. Body: `AC-4`, `Task: 4`.
+- [x] Write `tests/test_model_ids.py` with three tests (spec §2.4): every `MODEL_ALIASES` value is a `TOKEN_WEIGHTS` key; the skeptic agent's front-matter `model:` and `verify.py`'s `--model` default are `MODEL_ALIASES` keys; the table in `orchestration.md` equals `TOKEN_WEIGHTS` and contains a line naming each key of `LONG_PROMPT_WEIGHTS` with its threshold. Use the table-parsing code of `test_token_weights_equal_the_spec_table` for the first parse.
+- [x] Run: the orchestration test fails (no 5.5 row).
+- [x] Add the `claude-haiku-5-5` row (`0.05 | 0.0625 | 0.1 | 0.005 | 0.25`) to the table in `orchestration.md`, and under it one sentence: "`claude-haiku-5-5` is priced by prompt length: a request over 100,000 prompt tokens (cache reads and writes included) is weighted `0.25 | 0.3125 | 0.5 | 0.025 | 1.25`, as a whole." Add the same row to §2.3 of `2026-10-03-reduce-consumption-design.md` with the note "added by #100; see 2026-11-22-skeptic-model-id-design.md". `test_token_weights_equal_the_spec_table` must pass.
+- [x] Put one sentence in `docs/calibration/consumption.md` after the "Skeptic model" bullet (around line 310): "The alias table was corrected by #100; the figures here keep the 4.5 row they were weighted with."
+- [x] Run the three new tests, `tests/test_usage.py`, and `tests/test_docs*` if present. Commit these paths explicitly. Body: `AC-4`, `Task: 4`.
 
 ## Task 5: generated files, changelog (AC-5)
 

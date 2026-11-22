@@ -38,7 +38,10 @@ token type. The table is `TOKEN_WEIGHTS` in `${CLAUDE_PLUGIN_ROOT}/scripts/_comm
 | `claude-sonnet-5-5` | 1 | 1.25 | 2 | 0.1 | 5 |
 | `claude-opus-5-5` | 2 | 2.5 | 4 | 0.1 | 10 |
 | `claude-haiku-4-5` | 0.5 | 0.625 | 1 | 0.05 | 2.5 |
+| `claude-haiku-5-5` | 0.05 | 0.0625 | 0.1 | 0.005 | 0.25 |
 | `claude-fable-5-1` | 5 | 6.25 | 10 | 0.125 | 25 |
+
+`claude-haiku-5-5` is priced by prompt length: a request over 100,000 prompt tokens (cache reads and writes included) is weighted `0.25 | 0.3125 | 0.5 | 0.025 | 1.25`, as a whole.
 
 Measured before the consumption work (`docs/calibration/consumption.md`, a
 default `--top 10` scan of a real repository, everything on
