@@ -139,7 +139,7 @@ def test_file_edited_after_the_scan_is_not_linked(linked_copy, plugin_root):
                     "--repo", str(linked_copy)], check=True, capture_output=True)
     md = (linked_copy / ".thunderstruck" / "report.md").read_text()
     assert f"`{file}:1-2`" in md and f"[`{file}:1-2`]" not in md
-    assert re.search(rf"differ from the scanned commit [0-9a-f]{{7}} or are not in it, "
+    assert re.search(rf"differ from the scanned commit `?[0-9a-f]{{7}}`? or are not in it, "
                      rf"and are not linked: {re.escape(mdtext.text(file))}", md)
     # commits are not files: they stay linked
     assert "/commit/" in md

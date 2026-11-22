@@ -83,6 +83,7 @@ Written to `.thunderstruck/` in the scanned repository:
 | `report.html` | The same report as one self-contained page: go through findings one by one, filter by confidence, step with `j`/`k`, mark them reviewed with `r`, copy the verify command. Opens offline, makes no network request, and is safe to send. `/thunderstruck-report` rebuilds it |
 | `report.json` | Stable versioned schema, for diffing runs over time |
 | `index.json` | file → findings, read by the edit guardrail |
+| `tickets/<key>.md` | A ticket for one finding, written by `/thunderstruck-ticket`, ready to paste into your tracker |
 | `hotspots.json` | The deterministic layer's output, inspectable |
 | `bundles/` | Exactly what each investigator was shown; source lines carry their own file line numbers |
 | `findings/` | Per-hotspot results, keyed by bundle hash |
@@ -139,7 +140,7 @@ signals.py    churn × complexity × (1 + stability weight), temporal coupling
 bundle.py     one token-budgeted briefing per hotspot
      ↓        deterministic
 investigator  read-only subagents, ≤4 in parallel, one per hotspot
-     ↓        the only model step
+     ↓        the first model step
 validate.py   every evidence ref resolved against the filesystem and git
      ↓        deterministic
 verify.py     plans one skeptic per finding, snapshots dependency source (deps.py)
@@ -151,6 +152,7 @@ verify.py     every verdict ref resolved; the check status settled mechanically
 report.py     report.md · report.json · index.json
      ↓        deterministic
 report_html.py  report.html, from report.json only
+finding_ticket.py  tickets/<key>.md, from report.json and git (a model may propose four sections)
 ```
 
 Verification (the three middle steps) is skipped with `--no-verify`.
@@ -269,6 +271,31 @@ person, or an agent in any environment, can follow either as written:
 
 The plugin does not run either one. Link them by these paths, which do not
 change between releases.
+
+`/thunderstruck-ticket <key>` writes a ticket for one finding to
+`.thunderstruck/tickets/<key>.md`, ready to paste into your tracker; `--list`
+(through the skill) shows the keys. In this section a ticket is the issue you
+file in your own repository from a finding. It is not one of the GitHub issues
+used to develop thunderstruck. A ticket has a fixed set of sections, the code
+the finding cites copied from the scanned commit with a permalink to those
+lines, what is traced and what is inferred, what a fix would remove, and what
+was not checked. A section with no data says "Not assessed" and why. The two
+documents above are linked by their addresses on this repository's `main`
+branch, since your repository does not have them.
+
+- **Nothing stale.** If a cited file differs from the scanned commit, or no
+  longer matches what the scan recorded, no ticket is written, and the message
+  says to rescan or to check out the scanned commit.
+- **Links** come from your `[links]` settings (see *Source links*). Without
+  them the ticket says links could not be built, and why.
+- **Status** is Hypothesis unless you pass `--status`. `Reproduced` is refused
+  until a reproduction is recorded (#103).
+- **Proposals.** Fix options, acceptance criteria, out of scope, and rollout and
+  rollback are in no finding. The skill may have the session's model draft them
+  into `.thunderstruck/tickets/<key>.sections.json`; the ticket shows them as
+  "Proposal, not verified", and without the file they read "Not assessed".
+- A finding has no severity, so the ticket shows its confidence and check status.
+  Nothing is opened in a tracker, and nothing is written outside `.thunderstruck/`.
 
 ## The catalog
 
