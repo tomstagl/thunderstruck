@@ -54,9 +54,9 @@
 
 ## Task 5: docs and the skill (AC-5)
 
-- [ ] `skills/thunderstruck-scan/SKILL.md` step 3 and 5: say `--check` may print a reason, and that "the hook did not run for any agent" means every result is saved by fallback and the report names it. CLAUDE.md "The guardrail's hard constraints" gains the trace sentence. `CHANGELOG.md` under `## Unreleased`.
-- [ ] Run the full suite, `gen_sample_report.py --check`, `gen_catalog_docs.py --check`, `validate_plugin.py`. All pass before any push.
-- [ ] Commit. `AC-5`, `Task: 5`.
+- [x] `skills/thunderstruck-scan/SKILL.md` step 3 and 5: say `--check` may print a reason, and that "the hook did not run for any agent" means every result is saved by fallback and the report names it. CLAUDE.md "The guardrail's hard constraints" gains the trace sentence. `CHANGELOG.md` under `## Unreleased`.
+- [x] Run the full suite, `gen_sample_report.py --check`, `gen_catalog_docs.py --check`, `validate_plugin.py`. All pass before any push.
+- [x] Commit. `AC-5`, `Task: 5`.
 
 ## Task 6: the measured run (maintainer, AC-6)
 

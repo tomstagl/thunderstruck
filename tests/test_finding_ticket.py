@@ -1617,9 +1617,13 @@ def test_the_format_reference_documents_the_drafts_file():
     assert "`.thunderstruck/tickets/<key>.sections.json`" in text
 
 
-def test_the_top_changelog_entry_is_this_ticket():
-    top = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8").split("\n## ", 2)[1]
-    assert "(#108)" in top and "/thunderstruck-ticket" in top
+def test_the_changelog_entry_of_0_17_0_is_this_ticket():
+    # Anchored on the version, not on "the first heading": the first heading is
+    # `## Unreleased` whenever a later ticket has recorded its change (maintainer's
+    # decision, 2026-11-22; the two assertions are unchanged).
+    text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    entry = text.split("\n## 0.17.0\n", 1)[1].split("\n## ", 1)[0]
+    assert "(#108)" in entry and "/thunderstruck-ticket" in entry
 
 
 # --- Repair round (code review) ----------------------------------------------

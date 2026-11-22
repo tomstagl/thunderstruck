@@ -4,6 +4,18 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- **The capture hook says that it ran** (#96). Each invocation for the plugin's own agents appends one line to `.thunderstruck/hook-trace.jsonl`: a time, the agent type, the payload's key names and an outcome. It never holds the message, a path or repository text, stops at 64 KiB, and is written only when `.thunderstruck/` exists.
+- **`--check` says why a result is missing.** `save_finding.py --check` and `verify.py check` add a reason after `missing`: the hook did not run in this scan, it ran for other agents only, or it ran and recorded an outcome.
+- **The report says it once.** When most results were saved by the orchestrator, Run warnings state how many the hook delivered and why not.
+
+### Changed
+
+- **The `SubagentStop` hook has no matcher.** It runs for every subagent stop and the script keeps only the plugin's investigator and skeptic, by agent type, namespaced or not.
+
 ## 0.17.0
 
 A finding becomes a ticket someone can act on (#108).
