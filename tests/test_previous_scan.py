@@ -237,3 +237,124 @@ def test_a_failing_copy_leaves_no_partial_directory(tmp_path, monkeypatch):
     assert result["previous"]["archived"] is None
     assert list((out / "previous").iterdir()) == []
     assert (out / "findings/FR-a.json").is_file()
+
+
+# --------------------------------------------------------------------------
+# Task 3: signals writes it, and --since previous (AC-1, AC-2, AC-3)
+# --------------------------------------------------------------------------
+
+import subprocess  # noqa: E402
+import sys  # noqa: E402
+
+SIGNALS = Path(__file__).resolve().parent.parent / "scripts" / "signals.py"
+
+
+@pytest.fixture
+def repo(fixture_repo, tmp_path):
+    dest = tmp_path / "fixture"
+    shutil.copytree(fixture_repo, dest, symlinks=True)
+    # other tests scan the shared fixture: start with no earlier scan
+    shutil.rmtree(dest / ".thunderstruck", ignore_errors=True)
+    return dest
+
+
+def _signals(repo: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run([sys.executable, str(SIGNALS), "--repo", str(repo), *args],
+                          capture_output=True, text=True, cwd=str(repo))
+
+
+def _hs(repo: Path) -> dict:
+    return json.loads((repo / ".thunderstruck/hotspots.json").read_text())
+
+
+def _finish(repo: Path) -> None:
+    """What report.py leaves behind: a report of this scan."""
+    out = repo / ".thunderstruck"
+    (out / "report.json").write_text(json.dumps({"scanned_at": _hs(repo)["generated_at"]}))
+    (out / "findings").mkdir(exist_ok=True)
+    (out / "findings/FR-a.json").write_text("{}\n")
+
+
+def test_a_second_scan_with_another_top_archives_and_says_so(repo):
+    assert _signals(repo, "--top", "10", "--since", "24m").returncode == 0
+    first = _hs(repo)
+    _finish(repo)
+    proc = _signals(repo, "--top", "5", "--since", "24m")
+    assert proc.returncode == 0, proc.stderr
+    second = _hs(repo)
+    name = f"{first['generated_at'][:10].replace('-', '')}-{first['repo']['head'][:7]}"
+    sentence = (f"the earlier scan of {first['generated_at'][:10]} (head {first['repo']['head'][:7]}, "
+                f"since {first['window']['since_date']}) was replaced; a copy is in "
+                f".thunderstruck/previous/{name}/. Finding ids (FR-001) are numbered per scan: "
+                f"refer to a finding by its key.")
+    assert sentence in second["warnings"] and f"warning: {sentence}" in proc.stderr
+    assert second["previous"] == {"archived": name, "generated_at": first["generated_at"],
+                                  "head": first["repo"]["head"], "since_date": first["window"]["since_date"]}
+    kept = repo / ".thunderstruck/previous" / name
+    assert json.loads((kept / "hotspots.json").read_text()) == first
+    assert (kept / "findings/FR-a.json").is_file()
+    assert (repo / ".thunderstruck/findings/FR-a.json").is_file()   # the checkpoint still reads it
+
+
+def test_a_rerun_of_the_same_scan_archives_nothing(repo):
+    assert _signals(repo, "--top", "10", "--since", "24m").returncode == 0
+    _finish(repo)
+    proc = _signals(repo, "--top", "10", "--since", "24m")
+    assert proc.returncode == 0
+    assert not (repo / ".thunderstruck/previous").exists()
+    assert "previous" not in _hs(repo) and "was replaced" not in proc.stderr
+    assert (repo / ".thunderstruck/findings/FR-a.json").is_file()
+
+
+def test_a_scan_that_never_finished_is_not_archived(repo):
+    assert _signals(repo, "--top", "10", "--since", "24m").returncode == 0
+    assert _signals(repo, "--top", "5", "--since", "24m").returncode == 0
+    assert not (repo / ".thunderstruck/previous").exists()
+
+
+def test_since_previous_repeats_the_earlier_window(repo):
+    assert _signals(repo, "--since", "2020-01-01").returncode == 0
+    _finish(repo)
+    proc = _signals(repo, "--since", "previous", "--top", "5")
+    assert proc.returncode == 0, proc.stderr
+    assert _hs(repo)["window"]["since_date"] == "2020-01-01"
+    assert "the earlier scan used since" not in proc.stderr
+
+
+def test_since_previous_with_no_earlier_scan_fails_clearly(repo):
+    proc = _signals(repo, "--since", "previous")
+    assert proc.returncode == 2
+    assert "--since previous" in proc.stderr and "no earlier scan" in proc.stderr
+    assert not (repo / ".thunderstruck/hotspots.json").exists()
+
+
+def test_a_bare_rerun_on_another_window_says_both_and_how_to_repeat(repo):
+    assert _signals(repo, "--since", "2020-01-01").returncode == 0
+    proc = _signals(repo)
+    assert proc.returncode == 0, proc.stderr
+    hs = _hs(repo)
+    sentence = (f"the earlier scan used since 2020-01-01; this one uses 12m "
+                f"(since {hs['window']['since_date']}). Pass --since previous to repeat it.")
+    assert sentence in hs["warnings"] and sentence in proc.stderr
+
+
+def test_a_bare_rerun_on_the_same_window_says_nothing_about_it(repo):
+    assert _signals(repo).returncode == 0
+    proc = _signals(repo)
+    assert proc.returncode == 0
+    assert "the earlier scan used since" not in proc.stderr
+
+
+def test_the_first_scan_has_no_previous_and_no_window_sentence(repo):
+    proc = _signals(repo)
+    assert proc.returncode == 0
+    hs = _hs(repo)
+    assert "previous" not in hs and not any("earlier scan" in w for w in hs["warnings"])
+    assert hs["window"]["since"] == "12m"
+
+
+def test_stdout_mode_archives_nothing(repo):
+    assert _signals(repo, "--since", "24m").returncode == 0
+    _finish(repo)
+    assert _signals(repo, "--since", "24m", "--top", "3", "--stdout").returncode == 0
+    assert not (repo / ".thunderstruck/previous").exists()

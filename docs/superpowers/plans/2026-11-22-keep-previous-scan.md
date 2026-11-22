@@ -35,9 +35,9 @@
 
 **Files:** `scripts/signals.py`, `tests/test_previous_scan.py`.
 
-- [ ] Failing tests through `signals.py` on the fixture (`tests/fixtures/build_fixture.py`): a second run with a different `--top` archives and warns with the spec's sentence; `hotspots.json` has `previous`; `--since previous` resolves to the first run's `since_date`; with no earlier scan it exits 2 with the message of §2.4; a bare re-run on a later date (monkeypatch the clock the way existing tests do) prints the window sentence.
-- [ ] Change `--since` to default `None` with the resolution of spec §2.4; call `previous.archive` just before `c.write_json(dest, payload)`; append the warning(s) to `payload["warnings"]` before they are printed (the warnings are printed after the write today: keep that order, and add them to the payload first).
-- [ ] Bundles stay identical: run `tests/test_bundles*` (the determinism test). Commit by path. `AC-1, AC-3`, `Task: 3`.
+- [x] Failing tests through `signals.py` on the fixture (`tests/fixtures/build_fixture.py`): a second run with a different `--top` archives and warns with the spec's sentence; `hotspots.json` has `previous`; `--since previous` resolves to the first run's `since_date`; with no earlier scan it exits 2 with the message of §2.4; a bare re-run on a later date (monkeypatch the clock the way existing tests do) prints the window sentence.
+- [x] Change `--since` to default `None` with the resolution of spec §2.4; call `previous.archive` just before `c.write_json(dest, payload)`; append the warning(s) to `payload["warnings"]` before they are printed (the warnings are printed after the write today: keep that order, and add them to the payload first).
+- [x] Bundles stay identical: run `tests/test_bundles*` (the determinism test). Commit by path. `AC-1, AC-3`, `Task: 3`.
 
 ## Task 4: the report and the renderer say it (AC-4, AC-6)
 
