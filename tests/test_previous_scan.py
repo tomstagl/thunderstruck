@@ -358,3 +358,65 @@ def test_stdout_mode_archives_nothing(repo):
     _finish(repo)
     assert _signals(repo, "--since", "24m", "--top", "3", "--stdout").returncode == 0
     assert not (repo / ".thunderstruck/previous").exists()
+
+
+# --------------------------------------------------------------------------
+# Task 4: the report and the renderer say it (AC-4, AC-6)
+# --------------------------------------------------------------------------
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def _run_script(repo: Path, script: str) -> subprocess.CompletedProcess:
+    return subprocess.run([sys.executable, str(ROOT / "scripts" / script), "--repo", str(repo)],
+                          capture_output=True, text=True, cwd=str(repo))
+
+
+def test_the_report_says_the_earlier_scan_was_replaced(repo):
+    from test_inert_report import _assert_inert
+    assert _signals(repo, "--top", "10", "--since", "24m").returncode == 0
+    first = _hs(repo)
+    _finish(repo)
+    assert _signals(repo, "--top", "5", "--since", "24m").returncode == 0
+    for step in ("bundle.py", "report.py"):
+        proc = _run_script(repo, step)
+        assert proc.returncode == 0, proc.stderr
+    md = (repo / ".thunderstruck/report.md").read_text()
+    rep = json.loads((repo / ".thunderstruck/report.json").read_text())
+    run_warnings = md.split("## Run warnings", 1)[1].split("\n## ", 1)[0]
+    assert "was replaced" in run_warnings and "numbered per scan" in run_warnings
+    assert first["repo"]["head"][:7] in run_warnings
+    assert any("was replaced" in w for w in rep["run_warnings"])
+    _assert_inert(md)
+
+
+def _bad_schema(repo: Path) -> Path:
+    out = repo / ".thunderstruck"
+    out.mkdir(exist_ok=True)
+    (out / "report.json").write_text(json.dumps({"schema": "thunderstruck.report/v0"}))
+    return out
+
+
+def test_the_refusal_names_previous_when_a_copy_was_kept(repo):
+    out = _bad_schema(repo)
+    (out / "previous" / "20260101-1111111").mkdir(parents=True)
+    proc = _run_script(repo, "report_html.py")
+    assert proc.returncode == 2
+    assert "thunderstruck.report/v0" in proc.stderr
+    assert ("If this scan was replaced by a newer one, its copy is in .thunderstruck/previous/ "
+            f"(kept from version {c.plugin_version()})") in proc.stderr
+
+
+def test_the_refusal_says_when_no_copy_was_kept(repo):
+    _bad_schema(repo)
+    proc = _run_script(repo, "report_html.py")
+    assert proc.returncode == 2
+    assert "No copy of the earlier output is in .thunderstruck/previous/" in proc.stderr
+    assert "was not kept" in proc.stderr
+    assert "its copy is in" not in proc.stderr
+
+
+def test_an_empty_or_stray_previous_is_not_a_kept_copy(repo):
+    out = _bad_schema(repo)
+    (out / "previous" / "notes").mkdir(parents=True)
+    assert "was not kept" in _run_script(repo, "report_html.py").stderr

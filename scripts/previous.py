@@ -10,7 +10,6 @@ a scan reads ever reads `previous/`, so a bundle cannot depend on it.
 
 from __future__ import annotations
 
-import re
 import shutil
 from pathlib import Path
 from typing import Any
@@ -23,8 +22,8 @@ FILES = ("hotspots.json", "report.json", "report.md", "report.html", "index.json
          "validation.json", "usage.json", "checks/verdicts.json", "checks/run.json")
 DIRS = ("findings",)
 # The only directories under previous/ this module may remove.
-ARCHIVE_NAME = re.compile(r"^\d{8}-[0-9a-f]{7}(-\d+)?$")
-DIRNAME = "previous"
+ARCHIVE_NAME = c.ARCHIVE_NAME
+DIRNAME = c.PREVIOUS_DIRNAME
 
 _IDS = "Finding ids (FR-001) are numbered per scan: refer to a finding by its key."
 
@@ -40,10 +39,6 @@ def warning_for(earlier: dict[str, Any], reason: str | None = None) -> str:
         return (f"{_label(earlier)} was replaced; a copy is in "
                 f".thunderstruck/{DIRNAME}/{earlier['archived']}/. {_IDS}")
     return f"{_label(earlier)} was replaced and a copy could not be kept ({reason}). {_IDS}"
-
-
-def _is_real_dir(path: Path) -> bool:
-    return path.is_dir() and not path.is_symlink()
 
 
 def _free_name(prev: Path, base: str) -> str:
@@ -64,13 +59,13 @@ def _copy_into(out: Path, dest: Path) -> None:
         shutil.copy2(src, dest / rel)
     for rel in DIRS:
         src = out / rel
-        if _is_real_dir(src):
+        if c.is_real_dir(src):
             shutil.copytree(src, dest / rel, symlinks=True)
 
 
 def _prune(prev: Path) -> None:
     names = sorted(p.name for p in prev.iterdir()
-                   if ARCHIVE_NAME.match(p.name) and _is_real_dir(p))
+                   if ARCHIVE_NAME.match(p.name) and c.is_real_dir(p))
     for name in names[:-KEEP]:
         shutil.rmtree(prev / name, ignore_errors=True)
 
@@ -112,3 +107,4 @@ def archive(repo: Path, new_identity: tuple | None) -> dict[str, Any]:
     except OSError:
         pass
     return {"archived": name, "warning": warning_for(earlier), "previous": earlier}
+

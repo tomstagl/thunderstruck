@@ -43,9 +43,9 @@
 
 **Files:** `scripts/report.py`, `scripts/report_html.py`, tests.
 
-- [ ] Failing tests: Run warnings carries the replaced-scan line (inert text; it is built from stored values and goes through `mdtext`); `report_html.py` with a stored `report.json` of another schema prints the `previous/` sentence of spec §2.5, and prints the "not kept" variant when no `previous/` exists.
-- [ ] Implement. `uv run scripts/gen_sample_report.py --check` must stay 0 (the fixture has no earlier scan).
-- [ ] Commit by path. `AC-4, AC-6`, `Task: 4`.
+- [x] Failing tests: Run warnings carries the replaced-scan line (inert text; it is built from stored values and goes through `mdtext`); `report_html.py` with a stored `report.json` of another schema prints the `previous/` sentence of spec §2.5, and prints the "not kept" variant when no `previous/` exists.
+- [x] Implement. `uv run scripts/gen_sample_report.py --check` must stay 0 (the fixture has no earlier scan).
+- [x] Commit by path. `AC-4, AC-6`, `Task: 4`.
 
 ## Task 5: the skill, docs and checks (AC-7)
 

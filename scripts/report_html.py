@@ -95,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
         if report.get("schema") != c.REPORT_SCHEMA_VERSION:
             raise c.ThunderstruckError(
                 f"report.json has schema {report.get('schema')!r}; this version renders "
-                f"{c.REPORT_SCHEMA_VERSION!r}. Re-run the scan.")
+                f"{c.REPORT_SCHEMA_VERSION!r}. Re-run the scan. {c.previous_schema_note(repo)}")
         try:
             template = TEMPLATE.read_text(encoding="utf-8")
         except OSError:

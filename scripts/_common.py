@@ -1218,6 +1218,41 @@ def load_json(path: Path, default: Any = None) -> Any:
         return default
 
 
+PREVIOUS_DIRNAME = "previous"
+# The only directory names under previous/ that are archives, and the only ones removed (#98).
+ARCHIVE_NAME = re.compile(r"^\d{8}-[0-9a-f]{7}(-\d+)?$")
+
+
+def is_real_dir(path: Path) -> bool:
+    return path.is_dir() and not path.is_symlink()
+
+
+def plugin_version() -> str:
+    """The version of this plugin, as `.claude-plugin/plugin.json` records it."""
+    doc = load_json(plugin_root() / ".claude-plugin" / "plugin.json", None)
+    version = doc.get("version") if isinstance(doc, dict) else None
+    return str(version) if version else "unknown"
+
+
+def previous_schema_note(repo_root: Path) -> str:
+    """What a refusal of a stored report.json adds: is a copy of the output kept, or not (#98 spec 2.5).
+
+    A copy counts only when a directory named like an archive is there. An archive of
+    another schema is never rendered by this version: the one that wrote it renders it.
+    """
+    prev = out_dir(repo_root) / PREVIOUS_DIRNAME
+    try:
+        kept = is_real_dir(prev) and any(ARCHIVE_NAME.match(p.name) and is_real_dir(p)
+                                         for p in prev.iterdir())
+    except OSError:
+        kept = False
+    if kept:
+        return (f"If this scan was replaced by a newer one, its copy is in "
+                f".thunderstruck/{PREVIOUS_DIRNAME}/ (kept from version {plugin_version()}).")
+    return (f"No copy of the earlier output is in .thunderstruck/{PREVIOUS_DIRNAME}/: it was "
+            f"not kept (output from before scans were archived is not).")
+
+
 def scan_identity(hotspots: Any) -> tuple | None:
     """What makes two scans the same scan (#98 spec 2.1), or None when a part is missing."""
     if not isinstance(hotspots, dict):
