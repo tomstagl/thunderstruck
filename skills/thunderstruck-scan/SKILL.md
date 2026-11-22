@@ -118,15 +118,31 @@ four, waiting for each batch before starting the next.
 Everything you read or print here is charged again on every later call, so
 the orchestrating session stays small:
 
-- Run each batch as up to four `Agent` calls in **one message**, in the
-  foreground, with `subagent_type: thunderstruck-investigator` and
-  `model: <the --model value>`. Their results return inline.
-- Never use agent teams, `SendMessage`, `ListAgents` or background agents for investigators, and never poll.
+- Run each batch as up to four `Agent` calls in **one message**, with
+  `subagent_type: thunderstruck-investigator` and `model: <the --model value>`.
+  Never ask for a background agent (never set `run_in_background`).
+- Never use agent teams, `SendMessage` or `ListAgents` for investigators, and never poll.
 - Never read a bundle, a finding file or `catalog-brief.md`. Read
   `bundles/index.json` for ids and paths, and the last lines of each script's
   output.
 - Never re-spawn an investigator. A hotspot gets one investigation and at
   most one repair round.
+
+What an `Agent` call returns depends on the host, and the scan works either way:
+
+- **Inline.** The call returns the agent's result and its token usage. Go on to
+  the check below.
+- **Background.** The call returns a launch acknowledgement (`Async agent
+  launched … You will be notified automatically when it completes`) and no
+  result. End your turn with no further tool call: do not poll or read files.
+  Each agent later produces its result as a message and its token usage in a
+  completion notification, in either order. **A batch is done when every agent
+  of the batch has produced both.** Only then run the check below and start the
+  next batch.
+- Usage for a fallback save comes from the completion notification (or the
+  inline result), and never from a guess: never invent a figure.
+- If a notification does not arrive, run the check when the user continues the
+  session and treat what is still `missing` as missing. No timer is used.
 
 Give each investigator exactly this task, substituting the real values:
 
@@ -154,12 +170,16 @@ reason in parentheses, taken from the hook's trace (`.thunderstruck/hook-trace.j
 delivering at all, so every result will need the fallback below and the report
 will say so. The reason never changes what to do: for each `missing` one, save
 the result the `Agent` call returned yourself, with `--fallback` so the report
-counts it, and `--usage` with the token usage the `Agent` result reported
-plus `"model": "<the --model value>"`:
+counts it, and `--usage` with the token usage from the completion notification (or the
+inline result), plus `"model": "<the --model value>"`:
 
 ```bash
 uv run "${CLAUDE_PLUGIN_ROOT}/scripts/save_finding.py" --id H01 --from /path/to/result.json --fallback --usage '{"input_tokens": 1200, "output_tokens": 900, "model": "sonnet"}'
 ```
+
+If, once every agent of the batch has reported, no usage figure is there, save
+without `--usage`: the report counts that result's usage as partial and names
+it, which is true. Never invent a figure.
 
 If that fails too, or an investigator returned nothing usable, record it and
 move on. Never retry it more than the one repair round in step 4:
@@ -197,7 +217,9 @@ its errors to the task:
 > its Service context section. If you cannot support a claim with
 > evidence that resolves, drop that finding.
 
-Run the repair with the same `model:` as step 3. The hook captures the
+Run the repair with the same `model:` as step 3, in either mode and under the
+rule of step 3: a batch is done when every agent of it has produced its result
+and its completion notification. The hook captures the
 repaired result and keeps the first attempt; run `save_finding.py --check`
 for the repaired ids and apply the same fallback. Then re-validate. If it
 still fails, record it with `--failed` and move on. **No further retries.** A
@@ -223,9 +245,10 @@ with `model: <M>` and exactly this task:
 > Check finding `<key>` for thunderstruck. Read the brief at `<brief>`.
 > Follow your system prompt. Return only the JSON object it specifies.
 
-**At most four in parallel**, as up to four `Agent` calls in one message,
-foreground, waiting for each batch. The rules of step 3 apply: no background
-agents, no polling. Never read a brief, a result or a dependency snapshot
+**At most four in parallel**, as up to four `Agent` calls in one message, in
+either mode and under the rule of step 3 (a batch is done when every agent of
+it has produced its result and its completion notification). The rules of step
+3 apply: never ask for a background agent, no polling. Never read a brief, a result or a dependency snapshot
 yourself.
 
 After each batch:
@@ -238,7 +261,7 @@ A `missing` line carries the same kind of reason as in step 3. For each
 `missing` key, save the result you already hold:
 
 ```bash
-uv run "${CLAUDE_PLUGIN_ROOT}/scripts/verify.py" save --key <key> --from /path/to/result.json --fallback --usage '<the Agent result usage>'
+uv run "${CLAUDE_PLUGIN_ROOT}/scripts/verify.py" save --key <key> --from /path/to/result.json --fallback --usage '<usage from the completion notification or the inline result>'
 ```
 
 or, when the skeptic returned nothing, `save --key <key> --failed --reason "<what happened>" --fallback`.
