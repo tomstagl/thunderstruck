@@ -322,3 +322,26 @@ def test_an_unwritable_trace_never_fails_the_hook(scanned_copy):
     (scanned_copy / ".thunderstruck" / TRACE).mkdir()  # a directory in the way
     _run(_payload("valid", scanned_copy))
     assert (scanned_copy / ".thunderstruck" / "findings" / "H01.json").is_file()
+
+
+def test_the_hook_decides_by_agent_type_since_it_has_no_matcher():
+    """#96: hooks.json registers the hook for every stop; the script keeps only ours."""
+    sys.path.insert(0, str(SCRIPTS))
+    import capture_finding
+    assert capture_finding.OURS == ("thunderstruck-investigator", "thunderstruck-skeptic")
+    for ours in ("thunderstruck-investigator", "thunderstruck:thunderstruck-investigator",
+                 "plugin:thunderstruck:thunderstruck-skeptic"):
+        assert ours.endswith(capture_finding.OURS)
+    for other in ("Explore", "general-purpose", "thunderstruck-investigator-extra", ""):
+        assert not other.endswith(capture_finding.OURS)
+
+
+def test_an_unrelated_agent_costs_one_cheap_start(scanned_copy):
+    stdin = _payload("other_agent", scanned_copy)
+    timings = []
+    for _ in range(20):
+        start = time.perf_counter()
+        subprocess.run([sys.executable, str(HOOK)], input=stdin, capture_output=True, text=True)
+        timings.append((time.perf_counter() - start) * 1000)
+    timings.sort()
+    assert timings[len(timings) // 2] < 100, timings

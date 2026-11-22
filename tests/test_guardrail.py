@@ -207,10 +207,12 @@ def test_hooks_json_declares_each_event_once():
     assert set(hooks) == {"PreToolUse", "SubagentStop"}
     assert all(len(entries) == 1 for entries in hooks.values())
     stop = hooks["SubagentStop"][0]
-    investigator = "thunderstruck-investigator"
-    # #37: the skeptic is a second alternative of the investigator's form
-    skeptic = investigator.replace("thunderstruck-investigator", "thunderstruck-skeptic")
-    assert stop["matcher"] == f"{investigator}|{skeptic}"
+    # #96: no matcher. A matcher naming the bare agent types may never match the
+    # namespaced form (thunderstruck:thunderstruck-investigator), which silently
+    # disabled the hook. The script filters on the agent type itself
+    # (capture_finding.OURS, pinned in test_capture_finding.py), so every
+    # subagent stop starts it and it decides.
+    assert "matcher" not in stop
     command = stop["hooks"][0]["command"]
     assert "${CLAUDE_PLUGIN_ROOT}/scripts/capture_finding.py" in command
     assert command.endswith("|| exit 0"), "the hook command must fail open"

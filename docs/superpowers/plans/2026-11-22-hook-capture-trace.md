@@ -46,11 +46,11 @@
 
 **Files:** `hooks/hooks.json`, `tests/test_guardrail.py`.
 
-- [ ] Change the pinning test (`test_hooks_json_declares_each_event_once`) to assert `"matcher" not in stop` and to import `capture_finding` and assert that an `agent_type` of `thunderstruck:thunderstruck-skeptic` and of `thunderstruck-skeptic` are both accepted and `other:agent` is not. Run: fails on the matcher.
-- [ ] Remove the matcher from `hooks.json`.
-- [ ] Time the hook on a payload for an unrelated agent: median under 100 ms (`tests/test_guardrail.py`'s latency approach).
-- [ ] `uv run scripts/validate_plugin.py` and a plugin install (CLAUDE.md "Plugin manifest"): `claude plugin list` must say enabled.
-- [ ] Commit. `AC-4`, `Task: 4`.
+- [x] Change the pinning test (`test_hooks_json_declares_each_event_once`) to assert `"matcher" not in stop` and to import `capture_finding` and assert that an `agent_type` of `thunderstruck:thunderstruck-skeptic` and of `thunderstruck-skeptic` are both accepted and `other:agent` is not. Run: fails on the matcher.
+- [x] Remove the matcher from `hooks.json`.
+- [x] Time the hook on a payload for an unrelated agent: median under 100 ms (`tests/test_guardrail.py`'s latency approach).
+- [x] `uv run scripts/validate_plugin.py` and a plugin install (CLAUDE.md "Plugin manifest"): `claude plugin list` must say enabled.
+- [x] Commit. `AC-4`, `Task: 4`.
 
 ## Task 5: docs and the skill (AC-5)
 
