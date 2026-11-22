@@ -64,7 +64,7 @@ def weights_for(model: str, prompt_tokens: int) -> dict[str, float] | None:
 
 **Files:** `scripts/usage.py`, `tests/test_usage.py`.
 
-- [ ] Write failing tests:
+- [x] Write failing tests:
 
 ```python
 def test_a_tiered_model_is_weighted_per_request(scan):
@@ -88,11 +88,11 @@ def test_a_relayed_haiku_is_weighted_low_and_says_so(scan):
     assert any("up-to-100k" in m for m in doc["missing"])
 ```
 
-- [ ] Run them: fail (`KeyError`/no weights).
-- [ ] In `usage.py` replace `_weights`/`weighted`/`tally` with a per-tier grouping: for each entry compute `b = split(e["usage"])`, `prompt = b["input"] + b["cache_write_5m"] + b["cache_write_1h"] + b["cache_read"]`, `row = c.weights_for(model, prompt)`; group bucket sums by `(model, id(row))`, weight each group with its row, round once per model after summing the groups' unrounded values. A model with no row (`None`) keeps today's behaviour: weight `None`, named in `missing`. Keep `weighted(model, buckets)` for the callers that exist, now using `c.weights_for(model, 0)` and the dated-id strip.
-- [ ] A relayed entry is marked `{"relayed": True}` by `_relayed`; `tally`'s caller (`_measure`) appends to `missing` the line `"<label>: relayed usage weighted at the up-to-100k rate; per-request lengths unknown"` only when the model is in `c.LONG_PROMPT_WEIGHTS`.
-- [ ] Both tests pass, and every test already in `tests/test_usage.py` still passes unchanged (an untiered model is byte-identical).
-- [ ] Commit `scripts/usage.py` and `tests/test_usage.py`. Body: `AC-2, AC-3`, `Task: 2`, the red line.
+- [x] Run them: fail (`KeyError`/no weights).
+- [x] In `usage.py` replace `_weights`/`weighted`/`tally` with a per-tier grouping: for each entry compute `b = split(e["usage"])`, `prompt = b["input"] + b["cache_write_5m"] + b["cache_write_1h"] + b["cache_read"]`, `row = c.weights_for(model, prompt)`; group bucket sums by `(model, id(row))`, weight each group with its row, round once per model after summing the groups' unrounded values. A model with no row (`None`) keeps today's behaviour: weight `None`, named in `missing`. Keep `weighted(model, buckets)` for the callers that exist, now using `c.weights_for(model, 0)` and the dated-id strip.
+- [x] A relayed entry is marked `{"relayed": True}` by `_relayed`; `tally`'s caller (`_measure`) appends to `missing` the line `"<label>: relayed usage weighted at the up-to-100k rate; per-request lengths unknown"` only when the model is in `c.LONG_PROMPT_WEIGHTS`.
+- [x] Both tests pass, and every test already in `tests/test_usage.py` still passes unchanged (an untiered model is byte-identical).
+- [x] Commit `scripts/usage.py` and `tests/test_usage.py`. Body: `AC-2, AC-3`, `Task: 2`, the red line.
 
 ## Task 3: the alias and the recorded model (AC-1)
 

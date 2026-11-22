@@ -346,3 +346,48 @@ def test_weights_for_switches_tier_above_100k_prompt_tokens():
     assert high["input"] == 0.25 and high["output"] == 1.25
     assert c.weights_for("claude-sonnet-5-5", 10_000_000) == c.TOKEN_WEIGHTS["claude-sonnet-5-5"]
     assert c.weights_for("claude-unknown-1", 5) is None
+
+
+def test_a_tiered_model_is_weighted_per_request(scan):
+    import usage
+    _jsonl(scan["subagents"] / "agent-t1.jsonl", [
+        _assistant("t1", "2026-10-03T09:10:00Z", {"input_tokens": 1000}, "claude-haiku-5-5"),
+        _assistant("t2", "2026-10-03T09:11:00Z",
+                   {"input_tokens": 1000, "cache_read_input_tokens": 100_000}, "claude-haiku-5-5")])
+    entries = usage.read_entries(scan["subagents"] / "agent-t1.jsonl")
+    row = usage.tally(entries)["by_model"]["claude-haiku-5-5"]
+    # t1 at the low row, t2 (prompt 101,000) at the high row, as a whole
+    assert row["weighted"] == round(0.05 * 1000 + 0.25 * 1000 + 0.025 * 100_000)
+    assert row["input"] == 2000 and row["cache_read"] == 100_000
+
+
+def test_the_tier_counts_cache_writes_in_the_prompt_length(scan):
+    import usage
+    just_over = [{"model": "claude-haiku-5-5",
+                  "usage": {"input_tokens": 1, "cache_creation_input_tokens": 100_000}}]
+    at_limit = [{"model": "claude-haiku-5-5",
+                 "usage": {"input_tokens": 0, "cache_creation_input_tokens": 100_000}}]
+    assert usage.tally(just_over)["by_model"]["claude-haiku-5-5"]["weighted"] == round(0.25 + 0.3125 * 100_000)
+    assert usage.tally(at_limit)["by_model"]["claude-haiku-5-5"]["weighted"] == round(0.0625 * 100_000)
+
+
+def test_an_untiered_model_is_weighted_exactly_as_before(scan):
+    import usage
+    entries = [{"model": "claude-sonnet-5-5", "usage": {"input_tokens": 500_000, "output_tokens": 10}},
+               {"model": "claude-sonnet-5-5", "usage": {"input_tokens": 3, "output_tokens": 1}}]
+    assert usage.tally(entries)["by_model"]["claude-sonnet-5-5"]["weighted"] == round(500_003 + 5 * 11)
+
+
+def test_a_relayed_haiku_is_weighted_low_and_says_so(scan):
+    _skeptic(scan, "dddddddddddd", [{"kind": "fallback"}], fallback=True,
+             relayed_usage={"input_tokens": 1000, "model": "claude-haiku-5-5"})
+    doc = _build(scan)
+    assert doc["skeptics"]["by_model"]["claude-haiku-5-5"]["weighted"] == 50
+    assert any("up-to-100k" in m for m in doc["missing"])
+    assert doc["source"] == "partial"
+
+
+def test_a_relayed_untiered_model_adds_no_tier_note(scan):
+    _skeptic(scan, "dddddddddddd", [{"kind": "fallback"}], fallback=True,
+             relayed_usage={"input_tokens": 1000, "model": "sonnet"})
+    assert not any("up-to-100k" in m for m in _build(scan)["missing"])
