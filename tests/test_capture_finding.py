@@ -187,18 +187,29 @@ def test_a_skeptic_verdict_is_captured(validated_repo, validated_env):
     assert [a["kind"] for a in agents["agents"]] == ["first"]
 
 
-@pytest.mark.parametrize("message", [
-    lambda k: json.dumps({"key": "ffffffffffff", "verdict": "upheld"}),   # not planned
-    lambda k: json.dumps({"key": "../../x", "verdict": "upheld"}),        # path-shaped
-    lambda k: "Here is my verdict:\n" + json.dumps({"key": k, "verdict": "upheld"}),
-    lambda k: json.dumps([k]),
+@pytest.mark.parametrize("message,outcome", [
+    (lambda k: json.dumps({"key": "ffffffffffff", "verdict": "upheld"}), "no_entry"),  # not planned
+    (lambda k: json.dumps({"key": "../../x", "verdict": "upheld"}), "no_entry"),       # path-shaped
+    # a message that is not a JSON object cannot be parsed: the trace names the class
+    (lambda k: "Here is my verdict:\n" + json.dumps({"key": k, "verdict": "upheld"}),
+     "error:ValueError"),
+    (lambda k: json.dumps([k]), "error:ValueError"),
 ])
-def test_a_skeptic_message_without_a_planned_key_writes_nothing(validated_repo, validated_env, message):
+def test_a_skeptic_message_without_a_planned_key_writes_nothing(validated_repo, validated_env,
+                                                                 message, outcome):
     """Review Focus 2."""
     _, entry = _planned(validated_repo, validated_env)
-    before = sorted(p for p in (validated_repo / ".thunderstruck").rglob("*"))
+    out = validated_repo / ".thunderstruck"
+
+    def tree() -> list:
+        # the trace (#96) is the one thing the hook may add: it records that it ran
+        return sorted(p for p in out.rglob("*") if p.name != "hook-trace.jsonl")
+
+    before = tree()
     _run(_skeptic_payload(validated_repo, message(entry["key"])))
-    assert sorted(p for p in (validated_repo / ".thunderstruck").rglob("*")) == before
+    assert tree() == before
+    lines = [json.loads(x) for x in (out / "hook-trace.jsonl").read_text().splitlines()]
+    assert [x["outcome"] for x in lines] == [outcome]
 
 
 def test_a_second_delivery_is_a_respawn_and_wins(validated_repo, validated_env):
@@ -217,3 +228,97 @@ def test_the_hook_still_ignores_other_agents_and_stays_fast(validated_repo, vali
     payload["agent_type"] = "Explore"
     _run(json.dumps(payload))
     assert not (validated_repo / ".thunderstruck" / "checks" / "results").exists()
+
+
+# --- #96 Task 1: a trace line per invocation -------------------------------
+TRACE = "hook-trace.jsonl"
+
+
+def _trace_lines(repo: Path) -> list[dict]:
+    path = repo / ".thunderstruck" / TRACE
+    if not path.is_file():
+        return []
+    return [json.loads(line) for line in path.read_text().splitlines()]
+
+
+def _without(name: str, cwd: Path, *keys: str) -> str:
+    doc = json.loads(_payload(name, cwd))
+    for k in keys:
+        doc.pop(k, None)
+    return json.dumps(doc)
+
+
+def test_a_saved_result_leaves_one_trace_line_without_message_text(scanned_copy):
+    _run(_payload("valid", scanned_copy))
+    (line,) = _trace_lines(scanned_copy)
+    assert line["outcome"] == "saved" and line["id"] == "H01"
+    assert line["agent_type"] == "plugin:thunderstruck:thunderstruck-investigator"
+    assert line["keys"] == sorted(json.loads(_payload("valid", scanned_copy)))
+    assert set(line) == {"at", "agent_type", "keys", "outcome", "id"}
+    raw = (scanned_copy / ".thunderstruck" / TRACE).read_text()
+    assert "src/client/releases.ts" not in raw and "Retries on a fixed" not in raw
+    assert str(scanned_copy) not in raw
+
+
+@pytest.mark.parametrize("stdin_for,outcome", [
+    (lambda r: _without("valid", r, "last_assistant_message"), "no_message"),
+    (lambda r: _payload("unknown_id", r), "no_entry"),
+])
+def test_each_outcome_is_traced(scanned_copy, stdin_for, outcome):
+    _run(stdin_for(scanned_copy))
+    assert [t["outcome"] for t in _trace_lines(scanned_copy)] == [outcome]
+    assert "id" not in _trace_lines(scanned_copy)[0]
+
+
+def test_a_payload_without_a_usable_cwd_is_traced_where_the_hook_runs(scanned_copy):
+    stdin = json.dumps({**json.loads(_payload("valid", scanned_copy)), "cwd": 7})
+    proc = subprocess.run([sys.executable, str(HOOK)], input=stdin, cwd=scanned_copy,
+                          capture_output=True, text=True)
+    assert proc.returncode == 0 and proc.stdout == "" and proc.stderr == ""
+    assert [t["outcome"] for t in _trace_lines(scanned_copy)] == ["bad_payload"]
+    assert not (scanned_copy / ".thunderstruck" / "findings" / "H01.json").exists()
+
+
+def test_no_index_is_traced(scanned_copy):
+    (scanned_copy / ".thunderstruck" / "bundles" / "index.json").unlink()
+    _run(_payload("valid", scanned_copy))
+    assert [t["outcome"] for t in _trace_lines(scanned_copy)] == ["no_index"]
+
+
+def test_an_error_is_traced_by_class_name_only(scanned_copy):
+    (scanned_copy / ".thunderstruck" / "bundles" / "index.json").write_text("{not json")
+    _run(_payload("valid", scanned_copy))
+    (line,) = _trace_lines(scanned_copy)
+    assert line["outcome"] == "error:JSONDecodeError"
+
+
+@pytest.mark.parametrize("agent_type", ["thunderstruck:thunderstruck-skeptic",
+                                        "thunderstruck-skeptic"])
+def test_a_skeptic_is_traced_namespaced_or_not(scanned_copy, agent_type):
+    _run(_payload("valid", scanned_copy, agent_type=agent_type))
+    (line,) = _trace_lines(scanned_copy)
+    assert line["outcome"] == "no_index" and line["agent_type"] == agent_type
+
+
+def test_another_plugins_agent_leaves_no_trace(scanned_copy):
+    _run(_payload("other_agent", scanned_copy))
+    assert _trace_lines(scanned_copy) == []
+
+
+def test_the_trace_stops_growing_at_64_kib(scanned_copy):
+    path = scanned_copy / ".thunderstruck" / TRACE
+    path.write_text("x" * 65_530 + "\n")
+    _run(_payload("valid", scanned_copy))
+    assert path.stat().st_size == 65_531
+
+
+def test_the_trace_creates_no_directory_outside_a_scan(tmp_path):
+    (tmp_path / ".git").mkdir()
+    _run(_payload("valid", tmp_path))
+    assert not (tmp_path / ".thunderstruck").exists()
+
+
+def test_an_unwritable_trace_never_fails_the_hook(scanned_copy):
+    (scanned_copy / ".thunderstruck" / TRACE).mkdir()  # a directory in the way
+    _run(_payload("valid", scanned_copy))
+    assert (scanned_copy / ".thunderstruck" / "findings" / "H01.json").is_file()

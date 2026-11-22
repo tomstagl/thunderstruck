@@ -12,19 +12,19 @@
 
 ## Task 0: anchors (no AC)
 
-- [ ] Read the spec. Confirm `capture_finding.py` filters with `endswith`, `hooks.json` has the matcher, `save_finding.py` has `check(index, findings, ids)`, and find the verify check function with `grep -n "missing" scripts/verify.py`.
-- [ ] Find the existing hook tests: `git grep -ln capture_finding tests`. Record their names here when found.
-- [ ] Run them; note they pass.
+- [x] Read the spec. Confirm `capture_finding.py` filters with `endswith`, `hooks.json` has the matcher, `save_finding.py` has `check(index, findings, ids)`, and find the verify check function with `grep -n "missing" scripts/verify.py`.
+- [x] Find the existing hook tests: `git grep -ln capture_finding tests`. Record their names here when found.
+- [x] Run them; note they pass.
 
 ## Task 1: the trace (AC-1)
 
 **Files:** `scripts/capture_finding.py`, the hook test file.
 
-- [ ] Failing tests, one per outcome of spec §2.1 (`saved`, `no_message`, `no_index`, `no_entry`, `bad_payload`, `error:<Class>`), each asserting the line in `.thunderstruck/hook-trace.jsonl`: keys as listed, `agent_type`, `outcome`, no message text, and that stdout is empty and the exit code 0. Plus: another plugin's `agent_type` writes no file; a 64 KiB file takes no more lines; a read-only `.thunderstruck/` still exits 0 silently.
-- [ ] Run: fail (no trace).
-- [ ] Implement a `_trace(root_out, payload, outcome, hotspot_id=None)` in `capture_finding.py` (stdlib; `json`, `datetime`). Call it once per run from `main`, with the outcome decided where each early `return` is today. The `except BaseException` in `__main__` writes `error:<type(exc).__name__>` if it can find the root, and swallows any failure to do so.
-- [ ] Tests pass; the guardrail's AST check (stdlib only) and latency tests still pass.
-- [ ] Commit `scripts/capture_finding.py` and the test file by path. Body: `AC-1`, `Task: 1`, red line.
+- [x] Failing tests, one per outcome of spec §2.1 (`saved`, `no_message`, `no_index`, `no_entry`, `bad_payload`, `error:<Class>`), each asserting the line in `.thunderstruck/hook-trace.jsonl`: keys as listed, `agent_type`, `outcome`, no message text, and that stdout is empty and the exit code 0. Plus: another plugin's `agent_type` writes no file; a 64 KiB file takes no more lines; a read-only `.thunderstruck/` still exits 0 silently.
+- [x] Run: fail (no trace).
+- [x] Implement a `_trace(root_out, payload, outcome, hotspot_id=None)` in `capture_finding.py` (stdlib; `json`, `datetime`). Call it once per run from `main`, with the outcome decided where each early `return` is today. The `except BaseException` in `__main__` writes `error:<type(exc).__name__>` if it can find the root, and swallows any failure to do so.
+- [x] Tests pass; the guardrail's AST check (stdlib only) and latency tests still pass.
+- [x] Commit `scripts/capture_finding.py` and the test file by path. Body: `AC-1`, `Task: 1`, red line.
 
 ## Task 2: `--check` says why (AC-2)
 

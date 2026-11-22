@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -33,6 +34,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import finding_shape  # noqa: E402
 
 MAX_PAYLOAD = 1_000_000
+TRACE_FILENAME = "hook-trace.jsonl"
+MAX_TRACE_BYTES = 64 * 1024
+OURS = ("thunderstruck-investigator", "thunderstruck-skeptic")
 
 
 def _root(cwd: str) -> Path | None:
@@ -58,53 +62,67 @@ def _listed_invalid(out: Path, hotspot_id: str) -> bool:
                for r in (results if isinstance(results, list) else []))
 
 
-def _capture_skeptic(payload: dict) -> None:
+def _trace(payload: dict, outcome: str, ident: str | None = None) -> None:
+    """Append one line to the trace. Never raises, never creates a directory."""
+    try:
+        cwd = payload.get("cwd")
+        root = _root(cwd if isinstance(cwd, str) and cwd else os.getcwd())
+        out = root / ".thunderstruck" if root else None
+        if out is None or not out.is_dir():
+            return
+        line = {"at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "agent_type": str(payload.get("agent_type", "")),
+                "keys": sorted(str(k) for k in payload), "outcome": outcome}
+        if ident:
+            line["id"] = ident
+        text = json.dumps(line, sort_keys=False) + "\n"
+        path = out / TRACE_FILENAME
+        size = path.stat().st_size if path.is_file() else 0
+        if size + len(text.encode("utf-8")) > MAX_TRACE_BYTES:
+            return
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(text)
+    except BaseException:
+        pass
+
+
+def _capture_skeptic(payload: dict) -> tuple[str, str | None]:
     root = _root(payload.get("cwd") or os.getcwd())
     out = root / ".thunderstruck" if root else None
     plan_path = out / "checks" / "plan.json" if out else None
     if not plan_path or not plan_path.is_file():
-        return
+        return "no_index", None
     message = payload.get("last_assistant_message")
     if not isinstance(message, str):
-        return
+        return "no_message", None
     doc = finding_shape.parse_result(message)
     plan = json.loads(plan_path.read_text("utf-8"))
     entry = finding_shape.find_plan_entry(plan, doc.get("key"))
     if entry is None:
-        return
+        return "no_entry", None
     dest = out / "checks" / "results" / f"{entry['key']}.json"
     prior = _load(dest)
     kind = "respawn" if prior and prior.get("scan") == plan["generated_at"] else "first"
     finding_shape.write_json_atomic(dest, finding_shape.stamp_verdict(doc, plan, entry))
     agent = {k: payload.get(k) for k in ("agent_id", "session_id", "transcript_path", "stop_reason")}
     finding_shape.record_skeptic(out, plan, entry, {**agent, "kind": kind})
+    return "saved", str(entry["key"])
 
 
-def main(stdin_text: str) -> None:
-    if len(stdin_text) > MAX_PAYLOAD:
-        return
-    payload = json.loads(stdin_text)
-    if not isinstance(payload, dict):
-        return
-    agent_type = str(payload.get("agent_type", ""))
-    if agent_type.endswith("thunderstruck-skeptic"):
-        _capture_skeptic(payload)
-        return
-    if not agent_type.endswith("thunderstruck-investigator"):
-        return
+def _capture_investigator(payload: dict) -> tuple[str, str | None]:
     root = _root(payload.get("cwd") or os.getcwd())
     out = root / ".thunderstruck" if root else None
     index_path = out / "bundles" / "index.json" if out else None
     if not index_path or not index_path.is_file():
-        return
+        return "no_index", None
     message = payload.get("last_assistant_message")
     if not isinstance(message, str):
-        return
+        return "no_message", None
     doc = finding_shape.parse_result(message)
     entry = finding_shape.find_entry(json.loads(index_path.read_text("utf-8")),
                                      doc.get("hotspot_id"))
     if entry is None:
-        return
+        return "no_entry", None
     dest = out / "findings" / f"{entry['id']}.json"
     # A finding with this bundle hash may be from an earlier scan of an
     # unchanged repo (findings/ deleted, or requeued under newer rules). Only
@@ -122,6 +140,30 @@ def main(stdin_text: str) -> None:
     agent = {k: payload.get(k) for k in ("agent_id", "session_id", "transcript_path", "stop_reason")}
     finding_shape.record_agent(out, entry, {**agent, "kind": kind},
                                reset=bool(earlier) and not this_run)
+    return "saved", str(entry["id"])
+
+
+def main(stdin_text: str) -> None:
+    if len(stdin_text) > MAX_PAYLOAD:
+        return
+    payload = json.loads(stdin_text)
+    if not isinstance(payload, dict):
+        return
+    agent_type = str(payload.get("agent_type", ""))
+    if not agent_type.endswith(OURS):
+        return
+    # Past this point the invocation is ours, so it is traced whatever happens.
+    outcome, ident = "error:unknown", None
+    try:
+        if not isinstance(payload.get("cwd", ""), str):
+            outcome = "bad_payload"
+        elif agent_type.endswith("thunderstruck-skeptic"):
+            outcome, ident = _capture_skeptic(payload)
+        else:
+            outcome, ident = _capture_investigator(payload)
+    except BaseException as exc:
+        outcome = f"error:{type(exc).__name__}"
+    _trace(payload, outcome, ident)
 
 
 if __name__ == "__main__":
