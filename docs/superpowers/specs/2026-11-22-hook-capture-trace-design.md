@@ -25,7 +25,7 @@ Two scans saved 0 of 19 results by hook. The hook's own contract (exit 0, silent
  "keys": ["agent_id", "agent_type", "cwd", "session_id", "transcript_path"], "outcome": "no_message"}
 ```
 
-`outcome` is one of `saved`, `no_message` (the field is absent or not a string), `no_index`, `no_entry` (the result named no hotspot or key in the index or plan), `bad_payload`, `error:<ExceptionClassName>`. Only key names, the agent type, a time and the outcome are written: never the message, a path or any repository text. The file stops growing at 64 KiB (a line that would pass it is dropped), is written under `.thunderstruck/` only (`_root` finds the repository as today; no directory is created), and any failure to write is swallowed. The hook's contract (exit 0, silent, stdlib only, under 100 ms) is unchanged; `tests/test_guardrail.py`'s latency and AST checks apply to it.
+`outcome` is one of `saved`, `no_message` (the field is absent or not a string), `no_index`, `no_entry` (the result named no hotspot or key in the index or plan), `bad_payload`, `error:<ExceptionClassName>`. Only key names, the agent type, a time and the outcome are written: never the message, a path or any repository text. The file never passes 64 KiB: when a line would pass it, the oldest lines are dropped (down to half the bound) and the new line is kept, because a file that stopped recording would read as "the hook did not run" (found in the code review of #134). It is written under `.thunderstruck/` only (`_root` finds the repository as today; no directory is created), and any failure to write is swallowed. The hook's contract (exit 0, silent, stdlib only, under 100 ms) is unchanged; `tests/test_guardrail.py`'s latency and AST checks apply to it.
 
 **Why always on.** An opt-in switch needs the user to know the problem exists before it happens; the ticket's whole complaint is that it was invisible. The cost is one small append per subagent stop.
 
@@ -36,7 +36,7 @@ Two scans saved 0 of 19 results by hook. The hook's own contract (exit 0, silent
 `save_finding.py --check` and `verify.py check` still print `saved`, `missing`, `failed` first on the line. A `missing` line gains a reason from the trace, taken from lines at or after the scan's `generated_at` (`hotspots.json`):
 
 - no trace line for this scan at all: `missing (the capture hook did not run for any agent in this scan)`;
-- lines exist, none for this id: `missing (the hook ran for N other agents, none delivered this one)`. A line carries `id` (a hotspot id or finding key) only when the outcome is `saved`, because only then has the hook parsed the message and found the entry; for every other outcome the hook does not know whose result it was, so the reason is the aggregate above;
+- lines exist, none for this id: `missing (the hook ran for N agents, none delivered this one)`. The word "other" is not used: a failure line for the missing agent itself carries no id, so it cannot be told from another agent's. A line carries `id` (a hotspot id or finding key) only when the outcome is `saved`, because only then has the hook parsed the message and found the entry; for every other outcome the hook does not know whose result it was, so the reason is the aggregate above;
 - every line since the scan began has an outcome other than `saved`, and they agree: `missing (the hook ran and recorded no_message)`; when they differ the reason names the most frequent outcome.
 
 A script that prints a reason never changes what `missing` means to the skill: the first word is unchanged.
