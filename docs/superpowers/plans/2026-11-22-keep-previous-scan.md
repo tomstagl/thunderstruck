@@ -27,9 +27,9 @@
 
 **Files:** `scripts/previous.py` (new, stdlib and `_common`), `tests/test_previous_scan.py`.
 
-- [ ] Failing tests, each building an `.thunderstruck/` by hand: archive copies exactly the paths of spec §2.2 with the old bytes; names by old date and head, with `-2` on a clash; does nothing for an equal identity and for an unfinished scan; keeps 3 and removes only matching directory names; a symlinked `previous/` is skipped with a warning; a failing copy (monkeypatch `shutil.copy2` to raise) leaves no partial directory and returns a warning.
-- [ ] Implement `previous.archive(repo, new_identity) -> {"archived": name|None, "warning": str|None, "previous": {...}|None}`. No model, no network, no execution of the scanned project (`tests/test_no_execution.py` must still pass; add `previous.py` to its stage list as the test dictates).
-- [ ] Commit `scripts/previous.py` and the tests. `AC-1, AC-2, AC-5`, `Task: 2`.
+- [x] Failing tests, each building an `.thunderstruck/` by hand: archive copies exactly the paths of spec §2.2 with the old bytes; names by old date and head, with `-2` on a clash; does nothing for an equal identity and for an unfinished scan; keeps 3 and removes only matching directory names; a symlinked `previous/` is skipped with a warning; a failing copy (monkeypatch `shutil.copy2` to raise) leaves no partial directory and returns a warning.
+- [x] Implement `previous.archive(repo, new_identity) -> {"archived": name|None, "warning": str|None, "previous": {...}|None}`. No model, no network, no execution of the scanned project (`tests/test_no_execution.py` must still pass; add `previous.py` to its stage list as the test dictates).
+- [x] Commit `scripts/previous.py` and the tests. `AC-1, AC-2, AC-5`, `Task: 2`.
 
 ## Task 3: signals writes it, and `--since previous` (AC-1, AC-3)
 
