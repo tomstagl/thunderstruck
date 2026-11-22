@@ -8,6 +8,7 @@ All notable changes to thunderstruck are recorded here. The format follows
 
 ### Added
 
+- **A re-scan keeps the scan it replaces** (#98). When an earlier scan finished and the new one differs (head, window, `--top`, `--path`, test inclusion or report schema), `signals.py` copies its report, findings, verdicts and usage into `.thunderstruck/previous/<date>-<head>/` first, keeps the last three, and says so in the run warnings, with a note that finding ids are numbered per scan. A re-run of the same scan copies nothing. `--since previous` repeats the earlier window; a bare re-run on another window says both. `report_html.py` says whether a copy exists when it refuses a report of another schema.
 - **The capture hook says that it ran** (#96). Each invocation for the plugin's own agents appends one line to `.thunderstruck/hook-trace.jsonl`: a time, the agent type, the payload's key names and an outcome. It never holds the message, a path or repository text, stops at 64 KiB, and is written only when `.thunderstruck/` exists.
 - **`--check` says why a result is missing.** `save_finding.py --check` and `verify.py check` add a reason after `missing`: the hook did not run in this scan, it ran for other agents only, or it ran and recorded an outcome.
 - **The report says it once.** When most results were saved by the orchestrator, Run warnings state how many the hook delivered and why not.

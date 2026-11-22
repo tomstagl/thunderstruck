@@ -30,6 +30,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _common as c  # noqa: E402
+import previous  # noqa: E402
 from detectors import run_detectors  # noqa: E402
 
 HOTSPOTS_SCHEMA = "thunderstruck.hotspots/v1"
@@ -610,12 +611,38 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def resolve_since(args: argparse.Namespace, repo: Path) -> tuple[bool, str | None]:
+    """Settle `args.since` (#98 spec 2.4); returns (was it bare, the earlier scan's window start).
+
+    A bare run means 12m, as before; it never silently repeats the earlier window.
+    `previous` is the earlier scan's `window.since_date`, and an error when there is none.
+    """
+    earlier = c.load_json(c.out_dir(repo) / "hotspots.json", None)
+    window = earlier.get("window") if isinstance(earlier, dict) else None
+    earlier_since = window.get("since_date") if isinstance(window, dict) else None
+    if not isinstance(earlier_since, str) or not earlier_since:
+        earlier_since = None
+    bare = args.since is None
+    if bare:
+        args.since = "12m"
+    elif args.since.strip().lower() == "previous":
+        if earlier_since is None:
+            raise c.ThunderstruckError(
+                "--since previous: there is no earlier scan (no readable "
+                ".thunderstruck/hotspots.json) to take the window from. Run a scan first, "
+                "or give a window such as --since 12m.")
+        args.since = earlier_since
+    return bare, earlier_since
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         prog="signals.py", description="thunderstruck deterministic signal layer")
     ap.add_argument("--repo", default=None, help="target repo (default: cwd)")
     ap.add_argument("--top", type=int, default=10, help="how many hotspots to keep")
-    ap.add_argument("--since", default="12m", help="history window: 12m, 90d, 2y, ISO date")
+    ap.add_argument("--since", default=None,
+                    help="history window: 12m (the default), 90d, 2y, an ISO date, or "
+                         "'previous' for the earlier scan's window start")
     ap.add_argument("--path", default=None, help="restrict to a subdirectory")
     ap.add_argument("--include-tests", action="store_true",
                     help="rank test files too (excluded by default)")
@@ -627,10 +654,17 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     try:
+        repo = c.find_repo_root(args.repo)
+        bare, earlier_since = resolve_since(args, repo)
         payload = build(args)
     except c.ThunderstruckError as exc:
         c.die(str(exc))
         return 2
+    window_warning = None
+    if bare and earlier_since and earlier_since != payload["window"]["since_date"]:
+        window_warning = (f"the earlier scan used since {earlier_since}; this one uses 12m "
+                          f"(since {payload['window']['since_date']}). "
+                          f"Pass --since previous to repeat it.")
 
     # stderr only: hotspots.json and everything rendered from it stay free of
     # machine-specific paths.
@@ -642,11 +676,20 @@ def main(argv: list[str] | None = None) -> int:
               f"the GitHub marketplace for a fixed version.", file=sys.stderr)
 
     if args.stdout:
+        if window_warning:
+            payload["warnings"].append(window_warning)
         print(json.dumps(payload, indent=2))
         return 0
 
     repo = Path(payload["repo"]["root"])
     dest = c.out_dir(repo) / "hotspots.json"
+    # Before anything is overwritten: keep the finished scan this one replaces (#98).
+    kept = previous.archive(repo, c.scan_identity(payload))
+    if kept["previous"]:
+        payload["previous"] = kept["previous"]
+        payload["warnings"].append(kept["warning"])
+    if window_warning:
+        payload["warnings"].append(window_warning)
     c.write_json(dest, payload)
     for w in payload["warnings"]:
         print(f"thunderstruck: warning: {w}", file=sys.stderr)

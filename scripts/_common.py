@@ -1218,6 +1218,74 @@ def load_json(path: Path, default: Any = None) -> Any:
         return default
 
 
+PREVIOUS_DIRNAME = "previous"
+# The only directory names under previous/ that are archives, and the only ones removed (#98).
+ARCHIVE_NAME = re.compile(r"^\d{8}-[0-9a-f]{7}(-\d+)?$")
+
+
+def is_real_dir(path: Path) -> bool:
+    return path.is_dir() and not path.is_symlink()
+
+
+def plugin_version() -> str:
+    """The version of this plugin, as `.claude-plugin/plugin.json` records it."""
+    doc = load_json(plugin_root() / ".claude-plugin" / "plugin.json", None)
+    version = doc.get("version") if isinstance(doc, dict) else None
+    return str(version) if version else "unknown"
+
+
+def previous_schema_note(repo_root: Path) -> str:
+    """What a refusal of a stored report.json adds: is a copy of the output kept, or not (#98 spec 2.5).
+
+    A copy counts only when a directory named like an archive is there. An archive of
+    another schema is never rendered by this version: the one that wrote it renders it.
+    """
+    prev = out_dir(repo_root) / PREVIOUS_DIRNAME
+    try:
+        kept = is_real_dir(prev) and any(ARCHIVE_NAME.match(p.name) and is_real_dir(p)
+                                         for p in prev.iterdir())
+    except OSError:
+        kept = False
+    if kept:
+        return (f"If this scan was replaced by a newer one, its copy is in "
+                f".thunderstruck/{PREVIOUS_DIRNAME}/ (kept from version {plugin_version()}).")
+    return (f"No copy of the earlier output is in .thunderstruck/{PREVIOUS_DIRNAME}/: it was "
+            f"not kept (output from before scans were archived is not).")
+
+
+def scan_identity(hotspots: Any, schema: str | None = None) -> tuple | None:
+    """What makes two scans the same scan (#98 spec 2.1), or None when a part is missing.
+
+    `schema` is the report schema the scan's report was written with; the running version's
+    when not given, which is the new scan's.
+    """
+    if not isinstance(hotspots, dict):
+        return None
+    repo, window, config = (hotspots.get(k) for k in ("repo", "window", "config"))
+    if not (isinstance(repo, dict) and isinstance(window, dict) and isinstance(config, dict)):
+        return None
+    head, since_date = repo.get("head"), window.get("since_date")
+    if not head or not since_date or "top" not in config or "include_tests" not in config:
+        return None
+    return (head, since_date, config["top"], config.get("path"),
+            bool(config["include_tests"]), schema or REPORT_SCHEMA_VERSION)
+
+
+def scan_finished(out: Path) -> bool:
+    """True when `out` holds a report of the scan its hotspots.json records (#98 spec 2.1).
+
+    report.json's own `generated_at` is when the report was rendered; `scanned_at` is the
+    scan's, as `checks/run.json`'s `generated_at` is.
+    """
+    out = Path(out)
+    hotspots = load_json(out / "hotspots.json", None)
+    report = load_json(out / "report.json", None)
+    if not isinstance(hotspots, dict) or not isinstance(report, dict):
+        return False
+    stamp = hotspots.get("generated_at")
+    return bool(stamp) and report.get("scanned_at") == stamp
+
+
 def die(message: str, code: int = 2) -> None:
     print(f"thunderstruck: {message}", file=sys.stderr)
     raise SystemExit(code)

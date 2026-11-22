@@ -101,7 +101,10 @@ reproducible.** Detection, scoring, evidence checking and rendering never
 depend on model output format. If you find yourself needing an LLM to make the
 pipeline work, the design has gone wrong.
 
-Output lands in `.thunderstruck/` in the *scanned* repo, not here.
+Output lands in `.thunderstruck/` in the *scanned* repo, not here. A scan that
+replaces a finished, different one first copies it into `.thunderstruck/previous/`
+(`previous.py`, #98): copied, never moved, because `findings/` is the checkpoint;
+three kept; nothing a scan reads ever reads it.
 
 ### Things that will bite you
 
