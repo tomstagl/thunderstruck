@@ -20,7 +20,7 @@
 
 **Files:** `scripts/_common.py`, `tests/test_previous_scan.py` (new).
 
-- [ ] Failing tests for `c.scan_identity(hotspots_doc)` (returns the tuple of spec §2.1, `None` for a document missing a part) and `c.scan_finished(out_dir)` (true only when `report.json` exists and its `generated_at` equals `hotspots.json`'s).
+- [ ] Failing tests for `c.scan_identity(hotspots_doc)` (returns the tuple of spec §2.1, `None` for a document missing a part) and `c.scan_finished(out_dir)` (true only when `report.json` exists and its `scanned_at` equals `hotspots.json`'s `generated_at`).
 - [ ] Implement both in `_common.py`. Commit `scripts/_common.py` and the test file. `AC-1, AC-2`, `Task: 1`.
 
 ## Task 2: the archive (AC-1, AC-2, AC-5)
