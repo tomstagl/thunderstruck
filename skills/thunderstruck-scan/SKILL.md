@@ -16,7 +16,7 @@ Parse these from the user's invocation. All optional.
 | Argument | Default | Meaning |
 |---|---|---|
 | `--top N` | 10 | How many hotspots to investigate. Caps the subagent count. |
-| `--since W` | `12m` | History window: `12m`, `90d`, `2y`, or an ISO date. |
+| `--since W` | `12m` | History window: `12m`, `90d`, `2y`, an ISO date, or `previous` for the window start of the earlier scan. A bare re-run uses `12m` again; it never repeats the earlier window on its own. |
 | `--path P` | — | Restrict to a subdirectory. |
 | `--dry-run` | off | Steps 1–2 only. Print the plan and stop. |
 | `--include-tests` | off | Rank test files too. |
@@ -59,6 +59,15 @@ uv run "${CLAUDE_PLUGIN_ROOT}/scripts/signals.py" --top N --since W [--path P] [
 Writes `.thunderstruck/hotspots.json`. Relay any warnings it prints — a
 degraded run (no `lizard`, thin history) ranks on churn alone and the user
 should know the ranking is weaker.
+
+When an earlier scan finished and this one differs (another head, window,
+`--top`, `--path`, test inclusion or report schema), it keeps a copy under
+`.thunderstruck/previous/` first and prints a warning that the earlier scan was
+replaced and where the copy is. Relay that line: it also says finding ids
+(`FR-001`) are numbered per scan, so refer to a finding by its key. When the
+user gave no `--since` and an earlier scan exists, and you can ask, offer
+`--since previous` once to repeat the earlier window; if you cannot ask, relay
+the line that says the earlier scan used another window start.
 
 ## Step 1b — service context
 

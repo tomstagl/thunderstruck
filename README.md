@@ -87,6 +87,7 @@ Written to `.thunderstruck/` in the scanned repository:
 | `hotspots.json` | The deterministic layer's output, inspectable |
 | `bundles/` | Exactly what each investigator was shown; source lines carry their own file line numbers |
 | `findings/` | Per-hotspot results, keyed by bundle hash |
+| `previous/<date>-<head>/` | A copy of the finished scan a new, different scan replaced: its report, findings, verdicts and usage. The last three are kept; a re-run of the same scan copies nothing. `--since previous` repeats the earlier scan's window |
 
 The scan offers to add `.thunderstruck/` to your `.gitignore` on the first
 run. It will not add it without asking.

@@ -49,6 +49,6 @@
 
 ## Task 5: the skill, docs and checks (AC-7)
 
-- [ ] `skills/thunderstruck-scan/SKILL.md` Arguments: `--since previous`; step 1: relay the replaced-scan and window lines, and when an earlier scan exists and the user gave no `--since` and can be asked, offer `--since previous` once. README and CLAUDE.md ("Output lands in `.thunderstruck/`") name `previous/`. `CHANGELOG.md` under `## Unreleased`.
-- [ ] Run the full suite (CLAUDE.md command), both `--check` generators, `uv run scripts/validate_plugin.py`. All pass before any push.
-- [ ] Commit. `AC-7`, `Task: 5`.
+- [x] `skills/thunderstruck-scan/SKILL.md` Arguments: `--since previous`; step 1: relay the replaced-scan and window lines, and when an earlier scan exists and the user gave no `--since` and can be asked, offer `--since previous` once. README and CLAUDE.md ("Output lands in `.thunderstruck/`") name `previous/`. `CHANGELOG.md` under `## Unreleased`.
+- [x] Run the full suite (CLAUDE.md command), both `--check` generators, `uv run scripts/validate_plugin.py`. All pass before any push.
+- [x] Commit. `AC-7`, `Task: 5`.
