@@ -226,7 +226,10 @@ def _verify(repo: Path, env: dict, *args: str) -> subprocess.CompletedProcess:
 def test_check_and_save(validated_repo, validated_env, tmp_path):
     plan = _prepare(validated_repo, validated_env)
     a, b = plan["findings"][0]["key"], plan["findings"][1]["key"]
-    assert _verify(validated_repo, validated_env, "check", a, b).stdout.splitlines() == [f"{a} missing", f"{b} missing"]
+    got = _verify(validated_repo, validated_env, "check", a, b).stdout.splitlines()
+    assert [x.split(" ")[:2] for x in got] == [[a, "missing"], [b, "missing"]]
+    # #96: with no trace, a missing verdict says the hook did not run
+    assert all("(the capture hook did not run for any agent in this scan)" in x for x in got)
     result = tmp_path / "r.json"
     result.write_text("```json\n" + json.dumps({"key": a, "verdict": "upheld"}) + "\n```")
     assert _verify(validated_repo, validated_env, "save", "--key", a, "--from", str(result), "--fallback",

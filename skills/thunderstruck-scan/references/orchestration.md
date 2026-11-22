@@ -7,7 +7,7 @@ signals.py   →  hotspots.json          deterministic: churn, complexity, detec
 context.py   →  context.json           deterministic: runs the approved catalog command, if configured
 bundle.py    →  bundles/*.md           deterministic: one briefing per hotspot
 investigator →  (final message)        the only LLM step
-capture_finding.py → findings/*.json    SubagentStop hook: saves each result, records agents/*.json
+capture_finding.py → findings/*.json    SubagentStop hook: saves each result, records agents/*.json and one line of hook-trace.jsonl
 validate.py  →  validation.json        deterministic: schema + evidence resolution
 verify.py prepare → checks/plan.json, checks/briefs/  deterministic: which findings to check, what reuses
   deps.py    →  deps/index.json, deps/<ecosystem>/   deterministic: installed dependency source, copied

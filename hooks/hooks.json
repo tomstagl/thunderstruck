@@ -14,7 +14,6 @@
     ],
     "SubagentStop": [
       {
-        "matcher": "thunderstruck-investigator|thunderstruck-skeptic",
         "hooks": [
           {
             "type": "command",

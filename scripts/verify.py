@@ -315,7 +315,10 @@ def _cmd_check(args) -> int:
     repo = c.find_repo_root(args.repo)
     plan = _plan(repo)
     for key in args.keys:
-        print(f"{key} {result_state(repo, plan, key)}")
+        state = result_state(repo, plan, key)
+        reason = (f" ({finding_shape.trace_reason(c.out_dir(repo), plan['generated_at'], key)})"
+                  if state == "missing" else "")
+        print(f"{key} {state}{reason}")
     return 0
 
 

@@ -148,7 +148,11 @@ results reached disk:
 uv run "${CLAUDE_PLUGIN_ROOT}/scripts/save_finding.py" --check H01 H02 H03 H04
 ```
 
-It prints `saved`, `missing` or `failed` per id. For each `missing` one, save
+It prints `saved`, `missing` or `failed` per id. A `missing` line may carry a
+reason in parentheses, taken from the hook's trace (`.thunderstruck/hook-trace.jsonl`):
+`the capture hook did not run for any agent in this scan` means the hook is not
+delivering at all, so every result will need the fallback below and the report
+will say so. The reason never changes what to do: for each `missing` one, save
 the result the `Agent` call returned yourself, with `--fallback` so the report
 counts it, and `--usage` with the token usage the `Agent` result reported
 plus `"model": "<the --model value>"`:
@@ -230,7 +234,8 @@ After each batch:
 uv run "${CLAUDE_PLUGIN_ROOT}/scripts/verify.py" check <key> <key> …
 ```
 
-For each `missing` key, save the result you already hold:
+A `missing` line carries the same kind of reason as in step 3. For each
+`missing` key, save the result you already hold:
 
 ```bash
 uv run "${CLAUDE_PLUGIN_ROOT}/scripts/verify.py" save --key <key> --from /path/to/result.json --fallback --usage '<the Agent result usage>'

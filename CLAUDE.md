@@ -285,6 +285,16 @@ Two real false positives caught during the build, worth internalising:
   imperative, system-command-shaped text trips Claude's own prompt-injection
   defences and gets surfaced to the user instead of used
 
+`scripts/capture_finding.py` (the `SubagentStop` hook) has the same contract
+and adds one more: it **says that it ran** (#96). Each invocation for the
+plugin's own agents appends one line to `.thunderstruck/hook-trace.jsonl` (a
+time, the agent type, the payload's key names and an outcome: never the
+message, a path or repository text), stops at 64 KiB, and never creates the
+directory. `--check` and the report read it to tell "the hook did not run" from
+"it ran and saved nothing". The hook has no `matcher` in `hooks.json`: the
+script filters on the agent type itself, so a matcher that missed the
+namespaced agent type cannot disable it.
+
 It is `PreToolUse` (not `PostToolUse`) so the warning arrives before the edit.
 The matcher is `Edit|Write|NotebookEdit`; `MultiEdit` no longer exists in
 Claude Code.

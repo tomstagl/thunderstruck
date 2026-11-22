@@ -47,7 +47,8 @@ def relayed_usage(raw: str) -> dict:
     return kept
 
 
-def check(index: dict, findings: Path, ids: list[str]) -> None:
+def check(index: dict, findings: Path, ids: list[str], out: Path | None = None,
+          scan_stamp: object = None) -> None:
     for hid in ids:
         entry = fs.find_entry(index, hid)
         doc = None
@@ -57,7 +58,8 @@ def check(index: dict, findings: Path, ids: list[str]) -> None:
             state = "missing"
         else:
             state = "failed" if doc.get("analysis_failed") else "saved"
-        print(f"{hid} {state}")
+        reason = f" ({fs.trace_reason(out, scan_stamp, hid)})" if state == "missing" and out else ""
+        print(f"{hid} {state}{reason}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -89,7 +91,8 @@ def main(argv: list[str] | None = None) -> int:
     out = c.out_dir(repo)
     bundles = c.load_json(out / "bundles" / "index.json", {}) or {}
     if args.check is not None:
-        check(bundles, out / "findings", args.check)
+        stamp = (c.load_json(out / "hotspots.json", {}) or {}).get("generated_at")
+        check(bundles, out / "findings", args.check, out, stamp)
         return 0
     entry = fs.find_entry(bundles, args.id)
     if entry is None:

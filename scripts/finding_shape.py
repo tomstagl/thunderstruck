@@ -11,6 +11,8 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -219,3 +221,54 @@ def record_skeptic(out: Path, plan: dict, entry: dict, agent: dict) -> None:
         doc = {"key": entry["key"], "scan": plan["generated_at"], "agents": []}
     doc["agents"].append(agent)
     write_json_atomic(path, doc)
+
+
+# --- the hook's trace, read by --check (#96) --------------------------------
+TRACE_FILENAME = "hook-trace.jsonl"
+
+
+def _when(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        when = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+
+
+def trace_lines(out: Path, scan_stamp: Any) -> list[dict]:
+    """The hook's trace lines at or after the scan's start; malformed lines are skipped."""
+    began = _when(scan_stamp)
+    try:
+        raw = (out / TRACE_FILENAME).read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return []
+    lines: list[dict] = []
+    for text in raw:
+        try:
+            row = json.loads(text)
+        except ValueError:
+            continue
+        if not isinstance(row, dict) or not isinstance(row.get("outcome"), str):
+            continue
+        at = _when(row.get("at"))
+        if began is not None and (at is None or at < began):
+            continue
+        lines.append(row)
+    return lines
+
+
+def trace_reason(out: Path, scan_stamp: Any, ident: str) -> str:
+    """Why a result is missing, from the trace: one of three sentences (spec §2.2)."""
+    lines = trace_lines(out, scan_stamp)
+    if not lines:
+        return "the capture hook did not run for any agent in this scan"
+    if any(r["outcome"] == "saved" and r.get("id") == ident for r in lines):
+        return "the hook recorded a save for this id, but no current result is on disk"
+    failures = Counter(r["outcome"] for r in lines if r["outcome"] != "saved")
+    if len(failures) == len(Counter(r["outcome"] for r in lines)):
+        top = sorted(failures.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+        return f"the hook ran and recorded {top}"
+    n = len(lines)
+    return f"the hook ran for {n} agent{'s' * (n != 1)}, none delivered this one"
