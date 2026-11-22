@@ -55,6 +55,10 @@ A test pins the agreement, in three directions:
 
 The existing `test_token_weights_equal_the_spec_table` reads the table in `2026-10-03-reduce-consumption-design.md` §2.3. That table gains the `claude-haiku-5-5` row, with a note pointing here, so the test needs no change of shape. This is the only edit to an older spec, and it adds a row.
 
+### 2.5 A frozen run keeps the model it ran as
+
+`test_the_default_skeptic_model_is_the_measured_one` (`tests/test_verification.py`) ties the documented default skeptic model, the agent file and the frozen run `correctness/celery/runs/skeptic-haiku.json` together. That run records `claude-haiku-4-5` and is not edited (§3): a frozen run is a record of what ran when it was made, and it is pinned by the baseline tests. So the test's last assertion states that recorded model as a literal, `claude-haiku-4-5`, and no longer compares it with `MODEL_ALIASES`. The alias is pinned by its own test, `MODEL_ALIASES["haiku"] == "claude-haiku-5-5"` (§2.1); the two facts differ on purpose and each is asserted once.
+
 ## 3. Out of scope
 
 - Detecting at report time that the model in the transcript differs from the alias, and warning. The mismatch this ticket found would then have been visible; it is a separate ticket if wanted.
