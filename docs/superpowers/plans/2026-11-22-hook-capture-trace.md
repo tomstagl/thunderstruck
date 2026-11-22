@@ -30,9 +30,9 @@
 
 **Files:** `scripts/save_finding.py`, `scripts/verify.py`, a shared helper in `scripts/finding_shape.py` (stdlib; it is imported by the hook).
 
-- [ ] Failing tests for the three situations of spec §2.2, for `save_finding.py --check` and `verify.py check`: the first word of each line is unchanged; the parenthesis is the sentence the spec gives.
-- [ ] Implement `finding_shape.trace_reason(out, scan_stamp, hotspot_id_or_key)` returning the sentence or `None`; both checks append it to a `missing` line.
-- [ ] Commit by path. `AC-2`, `Task: 2`.
+- [x] Failing tests for the three situations of spec §2.2, for `save_finding.py --check` and `verify.py check`: the first word of each line is unchanged; the parenthesis is the sentence the spec gives.
+- [x] Implement `finding_shape.trace_reason(out, scan_stamp, hotspot_id_or_key)` returning the sentence or `None`; both checks append it to a `missing` line.
+- [x] Commit by path. `AC-2`, `Task: 2`.
 
 ## Task 3: the report says it once (AC-3)
 
