@@ -33,6 +33,6 @@
 
 ## Task 3: record it and verify (AC-4)
 
-- [ ] `CHANGELOG.md` under `## Unreleased`: "The scan skill says what to do when agents return in the background (#97)." CLAUDE.md needs no change unless Task 0 found a sentence there.
-- [ ] Run the full suite (CLAUDE.md command), `uv run scripts/gen_sample_report.py --check`, `gen_catalog_docs.py --check`, `uv run scripts/validate_plugin.py`. All pass before any push.
-- [ ] Commit. `AC-4`, `Task: 3`.
+- [x] `CHANGELOG.md` under `## Unreleased`: "The scan skill says what to do when agents return in the background (#97)." CLAUDE.md needs no change unless Task 0 found a sentence there.
+- [x] Run the full suite (CLAUDE.md command), `uv run scripts/gen_sample_report.py --check`, `gen_catalog_docs.py --check`, `uv run scripts/validate_plugin.py`. All pass before any push.
+- [x] Commit. `AC-4`, `Task: 3`.
