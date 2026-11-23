@@ -500,6 +500,8 @@ def mark_reached(findings: list[dict], index: dict | None) -> None:
                for p in (index or {}).get("packages") or []
                if isinstance(p, dict) and isinstance(p.get("reached_via"), list) and p["reached_via"]}
     for f in findings:
+        for ev in _evidence(f):
+            ev.pop("reached_via", None)  # an investigator cites no dependency
         check = f.get("check") if isinstance(f.get("check"), dict) else {}
         for ev in _check_evidence(check):
             ev.pop("reached_via", None)

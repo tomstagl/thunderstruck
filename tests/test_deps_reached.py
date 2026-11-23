@@ -384,3 +384,63 @@ def test_an_unavailable_reached_package_says_how_it_was_reached_in_the_run_warni
     assert warnings == ["Dependency source not available for pypi:vine (not declared by the project; "
                         "reached through amqp): installed 5.1.0, the lock says 5.0.0. "
                         "Verification continued without it."]
+
+
+# --- code review repair -----------------------------------------------------
+def test_a_clean_path_wins_over_a_marker_that_could_not_be_evaluated(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "requirements.txt").write_text("aaa\nbbb\n")
+    site = _venv(repo)
+    _install(site, "aaa", "1.0", ['shared; python_full_version ~= "x"'])
+    _install(site, "bbb", "1.0", ["shared"])
+    _install(site, "shared", "1.0")
+    shared = _reached(repo)["shared"]
+    assert (shared["status"], shared["reached_via"]) == ("available", ["bbb"])
+
+
+def test_the_marker_reason_holds_nothing_of_the_machine_that_ran_it(tmp_path):
+    import platform
+    repo = _repo(tmp_path)
+    (repo / "requirements.txt").write_text("a\n")
+    site = _venv(repo)
+    _install(site, "a", "1.0", ['odd; python_full_version ~= "x"'])
+    _install(site, "odd", "1.0")
+    assert platform.python_version() not in _reached(repo)["odd"]["reason"]
+
+
+def test_an_investigators_reached_via_is_never_printed(tmp_path):
+    f = _checked({"type": "dependency", "ref": "pypi:amqp@5.3.1:amqp/connection.py:12", "note": "n"})
+    f["evidence"] = [{"type": "code", "ref": "a.py:1", "reached_via": ["kombu"]}]
+    f["check"]["evidence"][0]["reached_via"] = ["kombu"]  # a verdict's own claim, not the index's
+    report.mark_reached([f], {"packages": []})
+    assert "reached_via" not in f["evidence"][0] and "reached_via" not in f["check"]["evidence"][0]
+
+
+def test_declared_packages_are_snapshotted_before_reached_ones(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "requirements.txt").write_text("zzz\n")
+    site = _venv(repo)
+    _install(site, "zzz", "1.0", ["aaa"], files={"zzz/__init__.py": "z" * 600})
+    _install(site, "aaa", "1.0", files={"aaa/__init__.py": "a" * 600})
+    limits = deps.Limits(per_package_bytes=1000, per_package_files=10, total_bytes=1000)
+    index = deps.snapshot(repo, deps.discover(repo, {}, tmp_path / "home"), limits)
+    by_id = {p["id"]: p for p in index["packages"]}
+    assert by_id["pypi:zzz"]["status"] == "available"
+    assert by_id["pypi:aaa"]["status"] == "unavailable" and "total is spent" in by_id["pypi:aaa"]["reason"]
+
+
+def test_a_poetry_table_names_its_extras(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "pyproject.toml").write_text('[tool.poetry]\nname="x"\n[tool.poetry.dependencies]\n'
+                                         'python="^3.11"\nkombu={version="^5.3", extras=["sqlalchemy"]}\n')
+    assert deps.pypi_declared_extras(repo) == {"kombu": ["sqlalchemy"]}
+    assert deps.pypi_declared(repo)["kombu"] == ("<6,>=5.3", ["pyproject.toml"])
+
+
+def test_the_projects_own_package_is_never_reached(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "pyproject.toml").write_text('[project]\nname="My_Proj"\ndependencies=["pytest-myproj"]\n')
+    site = _venv(repo)
+    _install(site, "pytest-myproj", "1.0", ["my-proj"])
+    _install(site, "my-proj", "0.9")
+    assert _reached(repo) == {}
