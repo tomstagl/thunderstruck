@@ -10,16 +10,16 @@
 
 ## Task 0: anchors (no AC)
 
-- [ ] Read the spec. Confirm in `scripts/deps.py`: `pypi_declared` returns `{name: (spec, files)}`, `discover_pypi`, `_installed`, `BASES`, `resolve_dependency_ref`. `git grep -n "basis" -- scripts skills agents tests | cut -c1-140` to find every consumer of `basis` (the brief, the report, tests): each learns `installed` in Task 4.
-- [ ] `git grep -n "declared_in\|\"declared\"" -- scripts tests` for every reader of those keys: a reached entry has `declared: null` and `declared_in: []`.
-- [ ] Run `tests/test_deps*.py` and `tests/test_verification.py`: note they pass.
+- [x] Read the spec. Confirm in `scripts/deps.py`: `pypi_declared` returns `{name: (spec, files)}`, `discover_pypi`, `_installed`, `BASES`, `resolve_dependency_ref`. `git grep -n "basis" -- scripts skills agents tests | cut -c1-140` to find every consumer of `basis` (the brief, the report, tests): each learns `installed` in Task 4.
+- [x] `git grep -n "declared_in\|\"declared\"" -- scripts tests` for every reader of those keys: a reached entry has `declared: null` and `declared_in: []`.
+- [x] Run `tests/test_deps*.py` and `tests/test_verification.py`: note they pass.
 
 ## Task 1: extras are kept (AC-1)
 
 **Files:** `scripts/deps.py`, `tests/test_deps_reached.py` (new).
 
-- [ ] Failing test: `pypi_declared` for a `requirements.txt` with `kombu[sqlalchemy,redis]>=5` and a `pyproject.toml` optional group listing `kombu[mongodb]` gives the union of extras for `kombu`. Today it returns only `(spec, files)`.
-- [ ] Implement without breaking the callers found in Task 0: return a third element, the sorted extras, or add `pypi_declared_extras(repo)` beside it, whichever leaves every existing test unchanged. Commit by path. `AC-1`, `Task: 1`.
+- [x] Failing test: `pypi_declared` for a `requirements.txt` with `kombu[sqlalchemy,redis]>=5` and a `pyproject.toml` optional group listing `kombu[mongodb]` gives the union of extras for `kombu`. Today it returns only `(spec, files)`.
+- [x] Implement without breaking the callers found in Task 0: return a third element, the sorted extras, or add `pypi_declared_extras(repo)` beside it, whichever leaves every existing test unchanged. Commit by path. `AC-1`, `Task: 1`.
 
 ## Task 2: follow the installed metadata (AC-1, AC-2, AC-3)
 

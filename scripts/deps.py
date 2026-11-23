@@ -231,7 +231,8 @@ def _requirement_lines(repo: Path, path: Path, seen: set[Path]) -> list[tuple[st
     return out
 
 
-def pypi_declared(repo: Path) -> dict[str, tuple[str, list[str]]]:
+def _pypi_requirements(repo: Path) -> list[tuple["Requirement", str]]:  # noqa: F821
+    """(parsed requirement, repo-relative file) for every PyPI declaration the project makes."""
     from packaging.requirements import InvalidRequirement, Requirement
 
     texts: list[tuple[str, str]] = []
@@ -256,16 +257,32 @@ def pypi_declared(repo: Path) -> dict[str, tuple[str, list[str]]]:
     seen: set[Path] = set()
     for path in sorted([*repo.glob("requirements*.txt"), *(repo / "requirements").rglob("*.txt")]):
         texts += _requirement_lines(repo, path.resolve(), seen)
-    declared: dict[str, tuple[str, list[str]]] = {}
+    out: list[tuple[Requirement, str]] = []
     for text, where in texts:
         try:
-            req = Requirement(text)
+            out.append((Requirement(text), where))
         except InvalidRequirement:
             continue
+    return out
+
+
+def pypi_declared(repo: Path) -> dict[str, tuple[str, list[str]]]:
+    declared: dict[str, tuple[str, list[str]]] = {}
+    for req, where in _pypi_requirements(repo):
         key = pep503(req.name)
         spec, files = declared.get(key, (str(req.specifier), []))
         declared[key] = (spec or str(req.specifier), sorted({*files, where}))
     return declared
+
+
+def pypi_declared_extras(repo: Path) -> dict[str, list[str]]:
+    """The extras the project asks for, per declared package: the union over every
+    declaration, sorted (#101 spec §2.2). `kombu[sqlalchemy]` and `kombu[redis]`
+    give `["redis", "sqlalchemy"]`; a bare `kombu` adds none."""
+    extras: dict[str, set[str]] = {}
+    for req, _ in _pypi_requirements(repo):
+        extras.setdefault(pep503(req.name), set()).update(pep503(e) for e in req.extras)
+    return {k: sorted(v) for k, v in sorted(extras.items())}
 
 
 def _poetry_spec(version: str) -> str:
