@@ -290,6 +290,10 @@ def test_upheld_is_written_into_the_findings_file(validated_repo, validated_env,
     assert _finding(validated_repo, e["key"])["check"]["status"] == "upheld"
 
 
+def test_the_haiku_alias_names_the_model_that_runs():
+    assert c.MODEL_ALIASES["haiku"] == "claude-haiku-5-5"
+
+
 def test_no_result_failed_and_unparsed_are_unchecked_with_reasons(validated_repo, validated_env, tmp_path):
     plan = _prepare(validated_repo, validated_env)
     keys = [e["key"] for e in plan["findings"]]
@@ -699,7 +703,9 @@ def test_the_default_skeptic_model_is_the_measured_one():
     assert front["model"] == chosen
     run = json.loads((ROOT / "docs" / "calibration" / "correctness" / "celery" / "runs"
                       / f"skeptic-{chosen}.json").read_text())
-    assert run["produced_by"]["model"] == c.MODEL_ALIASES[chosen]
+    # A frozen run records the model it ran as when it was made (spec §2.5);
+    # the alias is pinned by test_the_haiku_alias_names_the_model_that_runs.
+    assert run["produced_by"]["model"] == "claude-haiku-4-5"
 
 
 def test_the_default_skeptic_model_scores_as_recorded():

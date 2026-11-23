@@ -130,27 +130,56 @@ def split(usage: dict) -> dict[str, int]:
     return out
 
 
-def _weights(model: str) -> dict[str, float] | None:
-    # A dated id (claude-haiku-4-5-20251001) is the same model as its alias.
-    return c.TOKEN_WEIGHTS.get(model) or c.TOKEN_WEIGHTS.get(_DATED.sub("", model))
+def _known(model: str) -> str | None:
+    """The TOKEN_WEIGHTS key of `model`, or None. A dated id (claude-haiku-4-5-20251001)
+    is the same model as its alias."""
+    if model in c.TOKEN_WEIGHTS:
+        return model
+    stripped = _DATED.sub("", model)
+    return stripped if stripped in c.TOKEN_WEIGHTS else None
 
 
 def weighted(model: str, buckets: dict[str, int]) -> int | None:
-    w = _weights(model)
+    """Buckets weighted at the model's base row (no prompt length: see `tally`)."""
+    key = _known(model)
+    w = c.weights_for(key, 0) if key else None
     if w is None:
         return None
     return round(sum(w[b] * buckets.get(b, 0) for b in BUCKETS))
 
 
+def _prompt_tokens(buckets: dict[str, int]) -> int:
+    """A request's prompt length: every input token, cache reads and writes included."""
+    return (buckets["input"] + buckets["cache_write_5m"] + buckets["cache_write_1h"]
+            + buckets["cache_read"])
+
+
 def tally(entries: list[dict], missing: list[str] | None = None) -> dict:
+    """Bucket sums per model, and each model's weighted total.
+
+    Each request is weighted by the row its own prompt length selects (#100 spec 2.3), so a
+    model priced by prompt length is summed per entry, not per bucket total. A relayed
+    entry is an agent's total over many requests with no per-request lengths: it takes the
+    base row, a lower bound.
+    """
     by_model: dict[str, dict[str, int]] = {}
+    totals: dict[str, float | None] = {}
     for e in entries:
-        row = by_model.setdefault(e["model"], {b: 0 for b in BUCKETS})
-        for b, n in split(e["usage"]).items():
+        model = e["model"]
+        row = by_model.setdefault(model, {b: 0 for b in BUCKETS})
+        buckets = split(e["usage"])
+        for b, n in buckets.items():
             row[b] += n
+        key = _known(model)
+        w = c.weights_for(key, 0 if e.get("relayed") else _prompt_tokens(buckets)) if key else None
+        if w is None or totals.get(model, 0.0) is None:
+            totals[model] = None
+        else:
+            totals[model] = totals.get(model, 0.0) + sum(w[b] * buckets[b] for b in BUCKETS)
     out: dict[str, dict] = {}
     for model in sorted(by_model):
-        w = weighted(model, by_model[model])
+        total = totals[model]
+        w = None if total is None else round(total)
         out[model] = {**by_model[model], "weighted": w}
         line = f"model {model} has no weights; its tokens are not in the total"
         if w is None and missing is not None and line not in missing:
@@ -167,7 +196,14 @@ def _relayed(rec: dict) -> dict | None:
     if not isinstance(usage, dict):
         return None
     model = usage.get("model") if isinstance(usage.get("model"), str) else "unknown"
-    return {"model": c.MODEL_ALIASES.get(model, model), "usage": usage}
+    return {"model": c.MODEL_ALIASES.get(model, model), "usage": usage, "relayed": True}
+
+
+def _note_relayed_tier(relayed: dict, label: str, missing: list[str]) -> None:
+    """A relayed figure for a model priced by prompt length is a lower bound (#100 spec 2.3)."""
+    if _known(relayed["model"]) in c.LONG_PROMPT_WEIGHTS:
+        missing.append(f"{label}: relayed usage weighted at the up-to-100k rate; "
+                       f"per-request lengths unknown")
 
 
 def _measure(rec: dict, label: str, missing: list[str], sessions: list[str]) -> dict:
@@ -195,6 +231,7 @@ def _measure(rec: dict, label: str, missing: list[str], sessions: list[str]) -> 
             if relayed is not None:
                 relayed_used = True
                 hs_entries.append(relayed)
+                _note_relayed_tier(relayed, label, missing)
                 missing.append(f"{label}: subagent transcript not readable, "
                                f"used the usage the orchestrator relayed")
             else:
@@ -209,6 +246,7 @@ def _measure(rec: dict, label: str, missing: list[str], sessions: list[str]) -> 
     if relayed is not None:
         # a fallback save: an agent the hook never recorded
         hs_entries.append(relayed)
+        _note_relayed_tier(relayed, label, missing)
         n_agents += 1
         if listed:
             missing.append(f"{label}: one agent measured from the usage the "
