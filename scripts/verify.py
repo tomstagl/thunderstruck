@@ -226,11 +226,15 @@ def render_brief(finding: dict, others: list[dict], deps_index: dict | None,
     L += [x for sha, text in messages for x in _block(f"commit {sha}", text)] or ["None cited.", ""]
     L += ["## Dependency source", ""]
     packages = (deps_index or {}).get("packages") or []
-    for p in packages:
+    # declared first, then what they pull in (#101 spec §2.4); the index order inside each
+    for p in sorted(packages, key=lambda p: bool(p.get("reached_via"))):
+        via = p.get("reached_via") or []
+        mark = ("; reached via " + ", ".join(f"`{v}`" for v in via)
+                + ", not declared by the project") if via else ""
         if p.get("status") == "available":
-            L.append(f"- `{p['id']}@{p['version']}` ({p['basis']}): read it under `{p['snapshot']}/`")
+            L.append(f"- `{p['id']}@{p['version']}` ({p['basis']}): read it under `{p['snapshot']}/`{mark}")
         else:
-            L.append(f"- `{p['id']}`: not available ({p.get('reason')})")
+            L.append(f"- `{p['id']}`: not available ({p.get('reason')}){mark}")
     if not packages:
         L.append("None available for this repository.")
     L += ["", "## Other findings in this scan (the investigators')", ""]

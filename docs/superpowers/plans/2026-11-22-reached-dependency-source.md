@@ -41,9 +41,9 @@
 
 **Files:** `scripts/deps.py` (`resolve_dependency_ref`), `scripts/verify.py` (brief), `scripts/report.py`, tests.
 
-- [ ] Failing tests: a ref into a reached package resolves; into an undeclared, unreached one it is rejected with today's message; the brief lists reached packages after declared ones with `reached via <parent>` and is byte-identical across two runs; `report.py` appends "(not declared by the project; reached through <parent>)" to such a citation, through `mdtext`.
-- [ ] Implement. `tests/test_inert_report.py` and the brief determinism test must still pass.
-- [ ] Commit by path. `AC-3, AC-4`, `Task: 4`.
+- [x] Failing tests: a ref into a reached package resolves; into an undeclared, unreached one it is rejected with today's message; the brief lists reached packages after declared ones with `reached via <parent>` and is byte-identical across two runs; `report.py` appends "(not declared by the project; reached through <parent>)" to such a citation, through `mdtext`.
+- [x] Implement. `tests/test_inert_report.py` and the brief determinism test must still pass.
+- [x] Commit by path. `AC-3, AC-4`, `Task: 4`.
 
 ## Task 5: the skeptic's instructions and docs (AC-4, AC-5)
 

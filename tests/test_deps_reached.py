@@ -289,3 +289,98 @@ def test_an_installed_but_unavailable_package_is_still_followed(tmp_path):
     _install(site, "b", "1.0", ["c"], editable=True)
     _install(site, "c", "1.0")
     assert _reached(repo)["c"]["status"] == "available"
+
+
+# --- Task 4 -----------------------------------------------------------------
+import report  # noqa: E402
+import verify  # noqa: E402
+
+
+def _snapshotted_kombu(tmp_path: Path) -> tuple[Path, dict]:
+    repo = _repo(tmp_path)
+    (repo / "requirements.txt").write_text("kombu>=5\n")
+    site = _kombu_env(repo)
+    (site / "amqp" / "connection.py").write_text("".join(f"l{i}\n" for i in range(1, 51)))
+    rec = site / "amqp-5.3.1.dist-info" / "RECORD"
+    rec.write_text(rec.read_text() + "amqp/connection.py,,\n")
+    index = deps.snapshot(repo, deps.discover(repo, {}, tmp_path / "home"))
+    return repo, index
+
+
+def test_a_ref_into_a_reached_package_resolves(tmp_path):
+    repo, index = _snapshotted_kombu(tmp_path)
+    ok, why = deps.resolve_dependency_ref(repo, index, "pypi:amqp@5.3.1:amqp/connection.py:12-14")
+    assert why is None and ok == {"id": "pypi:amqp", "version": "5.3.1", "path": "amqp/connection.py",
+                                  "start": 12, "end": 14}
+
+
+def test_a_ref_into_a_package_neither_declared_nor_reached_is_rejected(tmp_path):
+    repo, index = _snapshotted_kombu(tmp_path)  # sqlalchemy is installed, behind an unrequested extra
+    ok, why = deps.resolve_dependency_ref(repo, index, "pypi:sqlalchemy@2.0.36:sqlalchemy/__init__.py:1")
+    assert ok is None
+    assert why == ("pypi:sqlalchemy is not an available dependency in this scan "
+                   "(see .thunderstruck/deps/index.json)")
+
+
+def _finding() -> dict:
+    return {"key": "k" * 12, "location": {"file": "a.py"}, "missing_patterns": ["S01"], "evidence": []}
+
+
+def test_the_brief_lists_reached_packages_after_declared_ones(tmp_path):
+    _, index = _snapshotted_kombu(tmp_path)
+    text = verify.render_brief(_finding(), [], index, [])
+    section = text.split("## Dependency source\n", 1)[1].split("\n## ", 1)[0]
+    lines = [l for l in section.splitlines() if l.startswith("- ")]
+    assert [l.split("`")[1].split("@")[0] for l in lines] == ["pypi:kombu", "pypi:amqp", "pypi:vine"]
+    assert "reached via `kombu`" in lines[1] and "not declared by the project" in lines[1]
+    assert "reached via `amqp`" in lines[2]
+    assert "reached via" not in lines[0]
+    assert str(tmp_path) not in section
+
+
+def test_the_brief_is_byte_identical_across_runs(tmp_path):
+    _, first = _snapshotted_kombu(tmp_path / "one")
+    _, second = _snapshotted_kombu(tmp_path / "two")
+    # the same environment discovered twice, in two places: no path or time reaches the brief
+    assert verify.render_brief(_finding(), [], first, []) == verify.render_brief(_finding(), [], second, [])
+
+
+def _checked(ev: dict) -> dict:
+    f = _finding()
+    f["check"] = {"status": "narrowed", "evidence": [ev],
+                  "refuted_claims": [{"field": "failure_mode", "claim": "c", "fact": "f", "evidence": [0]}]}
+    return f
+
+
+def test_the_report_marks_a_citation_into_a_reached_package(tmp_path):
+    _, index = _snapshotted_kombu(tmp_path)
+    f = _checked({"type": "dependency", "ref": "pypi:amqp@5.3.1:amqp/connection.py:12", "note": "n"})
+    report.mark_reached([f], index)
+    line = "\n".join(report._claim_lines(f["check"]))
+    assert ("pypi:amqp@5.3.1:amqp/connection.py:12` (not declared by the project; reached through kombu)"
+            in line)
+
+
+def test_a_citation_into_a_declared_package_is_not_marked(tmp_path):
+    _, index = _snapshotted_kombu(tmp_path)
+    f = _checked({"type": "dependency", "ref": "pypi:kombu@5.4.0:kombu/__init__.py:1", "note": "n"})
+    report.mark_reached([f], index)
+    assert "not declared" not in "\n".join(report._claim_lines(f["check"]))
+
+
+def test_the_reached_mark_is_inert(tmp_path):
+    f = _checked({"type": "dependency", "ref": "pypi:amqp@5.3.1:amqp/connection.py:12", "note": "n"})
+    index = {"packages": [{"id": "pypi:amqp", "version": "5.3.1", "reached_via": ["[x](https://e.test)"]}]}
+    report.mark_reached([f], index)
+    line = "\n".join(report._claim_lines(f["check"]))
+    assert "[x](https://e.test)" not in line
+
+
+def test_an_unavailable_reached_package_says_how_it_was_reached_in_the_run_warnings():
+    index = {"packages": [{"id": "pypi:vine", "version": "5.1.0", "basis": "locked", "status": "unavailable",
+                           "reason": "installed 5.1.0, the lock says 5.0.0", "declared": None,
+                           "reached_via": ["amqp"]}], "warnings": []}
+    _, warnings = report.verification_block({"model": "m"}, index)
+    assert warnings == ["Dependency source not available for pypi:vine (not declared by the project; "
+                        "reached through amqp): installed 5.1.0, the lock says 5.0.0. "
+                        "Verification continued without it."]
