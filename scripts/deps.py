@@ -34,7 +34,7 @@ import _common as c  # noqa: E402
 
 DEPS_SCHEMA = "thunderstruck.deps/v1"
 ECOSYSTEMS = ("pypi", "npm", "maven")
-BASES = ("locked", "pinned", "declared_range")
+BASES = ("locked", "pinned", "declared_range", "installed")
 # [0-9] and \Z, as validate.CODE_REF: no other digits, no trailing newline
 DEP_REF = re.compile(
     r"^(?P<eco>pypi|npm|maven):(?P<name>(?:@[^/@:\s]+/)?[^@:\s]+)@(?P<version>[^:@\s]+)"
@@ -380,8 +380,50 @@ def _record_files(dist: Path) -> tuple[list[str], str | None]:
     return sorted(files), (None if files else "no .py files in its RECORD")
 
 
-def reached_pypi(declared, extras: dict[str, list[str]],
-                 sites: list[Path]) -> tuple[list[dict], list[str]]:
+def _settle_version(p: dict, dist: Path, spec: str | None, locked: dict[str, str]) -> bool:
+    """Set `version` and `basis` from the installed copy, and `reason` when it is not the
+    version the project stands behind. True when the source may be read.
+
+    One rule for declared and reached packages (#101 spec §2.3): an editable install
+    is never a released version; a lock decides; otherwise a declared package is
+    checked against its pin or range, and a reached one (`spec` None) is `installed`.
+    """
+    from packaging.specifiers import InvalidSpecifier, SpecifierSet
+    from packaging.version import InvalidVersion, Version
+
+    installed = p["version"] = _metadata_version(dist)
+    direct = c.load_json(dist / "direct_url.json", None)
+    if isinstance(direct, dict) and (direct.get("dir_info") or {}).get("editable"):
+        p["reason"] = "editable install, not a released version"
+        return False
+    key = p["name"]
+    if key in locked:
+        p["basis"] = "locked"
+        if locked[key] != installed:
+            p["reason"] = f"installed {installed}, the lock says {locked[key]}"
+            return False
+    elif spec is None:
+        p["basis"] = "installed"
+    elif spec.startswith("==") and "," not in spec and "*" not in spec:
+        p["basis"] = "pinned"
+        if spec[2:] != installed:
+            p["reason"] = f"installed {installed}, pinned at {spec[2:]}"
+            return False
+    else:
+        p["basis"] = "declared_range"
+        try:
+            ok = Version(installed) in SpecifierSet(spec, prereleases=True)
+        except (InvalidSpecifier, InvalidVersion):
+            p["reason"] = f'declared range "{spec}" could not be checked'
+            return False
+        if not ok:
+            p["reason"] = f'installed {installed} does not satisfy the declared "{spec}"'
+            return False
+    return True
+
+
+def reached_pypi(declared, extras: dict[str, list[str]], sites: list[Path],
+                 locked: dict[str, str] | None = None) -> tuple[list[dict], list[str]]:
     """Packages a declared, installed package pulls in, from installed metadata (#101 spec §2.2).
 
     Breadth first from the declared names in sorted order, at most REACH_DEPTH
@@ -447,13 +489,14 @@ def reached_pypi(declared, extras: dict[str, list[str]],
                     p["reason"] = NOT_INSTALLED
                     continue
                 site, dist = installed[key]
-                p["version"], p["basis"] = _metadata_version(dist), "installed"
+                nxt[key] = {pep503(e) for e in req.extras}  # its metadata is read even if unavailable
+                if not _settle_version(p, dist, None, locked or {}):
+                    continue
                 files, missing = _record_files(dist)
                 if missing:
                     p["reason"] = missing
                     continue
                 p.update(status="available", source=str(site), files=files)
-                nxt[key] = {pep503(e) for e in req.extras}
         level = sorted(nxt.items())
     if over:
         warnings.append(f"{len(over)} packages reached past the cap of {REACH_MAX} were not snapshotted: "
@@ -462,9 +505,6 @@ def reached_pypi(declared, extras: dict[str, list[str]],
 
 
 def discover_pypi(repo: Path, env: dict[str, str]) -> tuple[list[dict], list[str]]:
-    from packaging.specifiers import InvalidSpecifier, SpecifierSet
-    from packaging.version import InvalidVersion, Version
-
     declared = pypi_declared(repo)
     if not declared:
         return [], []
@@ -481,39 +521,15 @@ def discover_pypi(repo: Path, env: dict[str, str]) -> tuple[list[dict], list[str
             p["reason"] = NOT_INSTALLED
             continue
         site, dist = found
-        installed = _metadata_version(dist)
-        p["version"] = installed
-        direct = c.load_json(dist / "direct_url.json", None)
-        if isinstance(direct, dict) and (direct.get("dir_info") or {}).get("editable"):
-            p["reason"] = "editable install, not a released version"
+        if not _settle_version(p, dist, spec, locked):
             continue
-        if key in locked:
-            p["basis"] = "locked"
-            if locked[key] != installed:
-                p["reason"] = f"installed {installed}, the lock says {locked[key]}"
-                continue
-        elif spec.startswith("==") and "," not in spec and "*" not in spec:
-            p["basis"] = "pinned"
-            if spec[2:] != installed:
-                p["reason"] = f"installed {installed}, pinned at {spec[2:]}"
-                continue
-        else:
-            p["basis"] = "declared_range"
-            try:
-                ok = Version(installed) in SpecifierSet(spec, prereleases=True)
-            except (InvalidSpecifier, InvalidVersion):
-                p["reason"] = f'declared range "{spec}" could not be checked'
-                continue
-            if not ok:
-                p["reason"] = f'installed {installed} does not satisfy the declared "{spec}"'
-                continue
         files = []
         for line in (dist / "RECORD").read_text(encoding="utf-8", errors="replace").splitlines():
             rel = line.split(",", 1)[0]
             if rel.endswith((".py", ".pyi")) and not rel.startswith("..") and ".dist-info/" not in rel:
                 files.append(rel)
         p.update(status="available", source=str(site), files=sorted(files))
-    reached, warnings = reached_pypi(declared, pypi_declared_extras(repo), sites)
+    reached, warnings = reached_pypi(declared, pypi_declared_extras(repo), sites, locked)
     return packages + reached, warnings
 
 

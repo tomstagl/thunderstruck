@@ -33,9 +33,9 @@
 
 **Files:** `scripts/deps.py`, tests.
 
-- [ ] Failing tests: `basis: installed` without a lock; `locked` when `uv.lock` lists it, `unavailable` with the existing mismatch wording when its version differs; an editable install is `unavailable`.
-- [ ] Add `installed` to `BASES` and apply the declared package's rules to a reached one (share the code; do not copy it).
-- [ ] Commit. `AC-2`, `Task: 3`.
+- [x] Failing tests: `basis: installed` without a lock; `locked` when `uv.lock` lists it, `unavailable` with the existing mismatch wording when its version differs; an editable install is `unavailable`.
+- [x] Add `installed` to `BASES` and apply the declared package's rules to a reached one (share the code; do not copy it).
+- [x] Commit. `AC-2`, `Task: 3`.
 
 ## Task 4: citing and showing it (AC-3, AC-4)
 

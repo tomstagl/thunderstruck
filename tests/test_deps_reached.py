@@ -241,3 +241,51 @@ def test_no_environment_reaches_nothing(tmp_path):
     repo = _repo(tmp_path)
     (repo / "requirements.txt").write_text("kombu>=5\n")
     assert _reached(repo) == {}
+
+
+# --- Task 3 -----------------------------------------------------------------
+def test_installed_is_a_basis():
+    assert deps.BASES == ("locked", "pinned", "declared_range", "installed")
+
+
+def test_a_lock_listing_a_reached_package_makes_it_locked(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "requirements.txt").write_text("kombu>=5\n")
+    (repo / "uv.lock").write_text('version = 1\n[[package]]\nname = "amqp"\nversion = "5.3.1"\n'
+                                  '[[package]]\nname = "vine"\nversion = "5.0.0"\n')
+    _kombu_env(repo)
+    reached = _reached(repo)
+    assert (reached["amqp"]["basis"], reached["amqp"]["status"]) == ("locked", "available")
+    vine = reached["vine"]
+    assert (vine["basis"], vine["status"]) == ("locked", "unavailable")
+    assert vine["reason"] == "installed 5.1.0, the lock says 5.0.0"
+    assert vine["version"] == "5.1.0" and vine["snapshot"] is None
+
+
+def test_without_a_lock_the_basis_is_installed(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "requirements.txt").write_text("kombu>=5\n")
+    _kombu_env(repo)
+    assert {p["basis"] for p in _reached(repo).values()} == {"installed"}
+
+
+def test_an_editable_reached_package_is_unavailable(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "requirements.txt").write_text("a\n")
+    site = _venv(repo)
+    _install(site, "a", "1.0", ["b"])
+    _install(site, "b", "1.0", editable=True)
+    b = _reached(repo)["b"]
+    assert b["status"] == "unavailable"
+    assert b["reason"] == "editable install, not a released version"
+
+
+def test_an_installed_but_unavailable_package_is_still_followed(tmp_path):
+    """As for a declared package: what it requires is read from its installed metadata."""
+    repo = _repo(tmp_path)
+    (repo / "requirements.txt").write_text("a\n")
+    site = _venv(repo)
+    _install(site, "a", "1.0", ["b"])
+    _install(site, "b", "1.0", ["c"], editable=True)
+    _install(site, "c", "1.0")
+    assert _reached(repo)["c"]["status"] == "available"
