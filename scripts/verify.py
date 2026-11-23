@@ -293,9 +293,11 @@ def _cmd_prepare(args) -> int:
     acts = [e["action"] for e in plan["findings"]]
     index = deps.load_index(repo) or {"packages": []}
     ok = sum(1 for p in index["packages"] if p["status"] == "available")
+    reached = sum(1 for p in index["packages"] if p.get("reached_via"))
     print(f"verification: {len(acts)} findings, {acts.count('check')} to check, "
           f"{acts.count('reuse')} reused; dependency source: {ok} of {len(index['packages'])} "
-          f"declared packages available (see .thunderstruck/deps/index.json)")
+          f"packages available, {reached} of them reached through a declared one "
+          f"(see .thunderstruck/deps/index.json)")
     return 0
 
 

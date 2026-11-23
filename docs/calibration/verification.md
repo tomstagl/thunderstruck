@@ -75,7 +75,9 @@ this.
   (`declared_range`); 4 of 73 declared packages available. py-amqp and
   SQLAlchemy are installed but not declared by Celery (they come through
   `kombu[...]`), so `deps.py` made no snapshot of them and no skeptic could
-  cite them as `dependency` evidence. #37's spike needed both.
+  cite them as `dependency` evidence. #37's spike needed both. #101 adds
+  the packages a declared package pulls in (`reached_via`); the "4 of 73"
+  above is the figure measured before it.
 
 ### `haiku`
 

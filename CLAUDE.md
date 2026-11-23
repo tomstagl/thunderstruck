@@ -182,7 +182,11 @@ check status is decided. A `refuted` or `narrowed` verdict with no resolving
 evidence is `inconclusive`, and a `dependency` ref resolves only into a
 snapshot under `.thunderstruck/deps/` that `deps.py` made. `deps.py` never
 downloads or executes anything, and imports only the stdlib and `_common` at
-module level, because `validate.py` imports it on every scan.
+module level, because `validate.py` imports it on every scan. For PyPI it
+also snapshots what a declared, installed package requires (`reached_pypi`,
+#101): from installed `Requires-Dist`, an extra only when the project's own
+requirement names it, at most 2 hops and 40 packages, basis `locked` or
+`installed`, each entry carrying `reached_via`.
 
 **`run.json` decides whether verification ran.** `report.py` treats it as run
 only when `checks/run.json`'s `generated_at` equals `hotspots.json`'s;

@@ -47,10 +47,10 @@
 
 ## Task 5: the skeptic's instructions and docs (AC-4, AC-5)
 
-- [ ] `agents/thunderstruck-skeptic.md`: one sentence that a dependency listed as reached is read as the declared package's dependency, not as the project's. Check `tests/test_skeptic_contract.py` for sentence pins and update them in the same commit if the file pins the prompt text.
-- [ ] `docs/calibration/verification.md`: add one sentence under "Celery benchmark" that #101 adds reached packages and that the measured "4 of 73" is the figure before it; do not change any measured figure. README and CLAUDE.md (the `deps.py` paragraph) say what is reached and the caps. `CHANGELOG.md` under `## Unreleased`.
-- [ ] Full suite (CLAUDE.md command), both `--check` generators, `uv run scripts/validate_plugin.py`. All pass before any push.
-- [ ] Commit. `AC-4, AC-5`, `Task: 5`.
+- [x] `agents/thunderstruck-skeptic.md`: one sentence that a dependency listed as reached is read as the declared package's dependency, not as the project's. Check `tests/test_skeptic_contract.py` for sentence pins and update them in the same commit if the file pins the prompt text.
+- [x] `docs/calibration/verification.md`: add one sentence under "Celery benchmark" that #101 adds reached packages and that the measured "4 of 73" is the figure before it; do not change any measured figure. README and CLAUDE.md (the `deps.py` paragraph) say what is reached and the caps. `CHANGELOG.md` under `## Unreleased`.
+- [x] Full suite (CLAUDE.md command), both `--check` generators, `uv run scripts/validate_plugin.py`. All pass before any push.
+- [x] Commit. `AC-4, AC-5`, `Task: 5`.
 
 ## Task 6: the measurement (maintainer, AC-6)
 

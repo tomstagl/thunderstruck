@@ -5,8 +5,8 @@
 # ///
 """Dependency source for verification (spec 2026-10-03-finding-verification-design.md §4).
 
-Finds the packages a project declares, the version each is locked, pinned or
-installed at, and copies the source of each available one into
+Finds the packages a project declares (and, for PyPI, the packages those pull
+in, #101), the version each is locked, pinned or installed at, and copies the source of each available one into
 .thunderstruck/deps/<ecosystem>/<name>@<version>/ so a skeptic can read it and
 validate.py can resolve a `dependency` ref against it.
 
@@ -778,7 +778,9 @@ def main(argv: list[str] | None = None) -> int:
     index = snapshot(repo, discover(repo))
     write_index(repo, index)
     ok = sum(1 for p in index["packages"] if p["status"] == "available")
-    print(f"dependency source: {ok} of {len(index['packages'])} declared packages available")
+    reached = sum(1 for p in index["packages"] if p.get("reached_via"))
+    print(f"dependency source: {ok} of {len(index['packages'])} packages available "
+          f"({len(index['packages']) - reached} declared, {reached} reached through them)")
     return 0
 
 
