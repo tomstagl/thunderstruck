@@ -440,7 +440,11 @@ Verification adds the skeptics' briefs (`.thunderstruck/checks/briefs/`) and
 the source of your declared dependencies. That source is read from what is
 already installed locally (the project's virtual environment, `node_modules`,
 the local Maven or Gradle cache) and copied into `.thunderstruck/deps/`. It is
-never downloaded, and nothing in it is executed.
+never downloaded, and nothing in it is executed. For PyPI it also covers the
+packages a declared, installed package requires, read from that package's
+installed metadata: two hops at most, extras only when your own requirement
+names them, and at most 40 such packages. The brief and the report mark each
+one as not declared by your project.
 
 **thunderstruck never runs, imports, installs or builds the project it
 scans.** It starts `git`, and the service-catalog command you approved by

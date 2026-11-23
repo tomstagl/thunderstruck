@@ -19,7 +19,9 @@ messages of the commits behind the cited code, the dependency source you may
 read, and the other findings in this scan.
 
 You may read the whole repository, and the dependency snapshots the brief
-lists under `.thunderstruck/deps/`, by their paths. Nothing else. Read
+lists under `.thunderstruck/deps/`, by their paths. A package the brief marks
+`reached via` another is that declared package's dependency, not the project's
+own: read it as what the declared package does when called. Nothing else. Read
 up to 10 files beyond the brief; prefer `Grep` with a narrow pattern. Refuting
 the claim comes first, then confirming the defaults it rests on (rules 7 and
 8). If ten are not enough to settle the claim itself, the verdict is

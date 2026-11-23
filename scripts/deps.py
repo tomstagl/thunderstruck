@@ -5,8 +5,8 @@
 # ///
 """Dependency source for verification (spec 2026-10-03-finding-verification-design.md §4).
 
-Finds the packages a project declares, the version each is locked, pinned or
-installed at, and copies the source of each available one into
+Finds the packages a project declares (and, for PyPI, the packages those pull
+in, #101), the version each is locked, pinned or installed at, and copies the source of each available one into
 .thunderstruck/deps/<ecosystem>/<name>@<version>/ so a skeptic can read it and
 validate.py can resolve a `dependency` ref against it.
 
@@ -34,7 +34,7 @@ import _common as c  # noqa: E402
 
 DEPS_SCHEMA = "thunderstruck.deps/v1"
 ECOSYSTEMS = ("pypi", "npm", "maven")
-BASES = ("locked", "pinned", "declared_range")
+BASES = ("locked", "pinned", "declared_range", "installed")
 # [0-9] and \Z, as validate.CODE_REF: no other digits, no trailing newline
 DEP_REF = re.compile(
     r"^(?P<eco>pypi|npm|maven):(?P<name>(?:@[^/@:\s]+/)?[^@:\s]+)@(?P<version>[^:@\s]+)"
@@ -137,7 +137,8 @@ def snapshot(repo: Path, index: dict, limits: Limits = LIMITS) -> dict:
     `files` and `jar` are dropped from the written index.
     """
     used = 0
-    for p in index.get("packages", []):
+    # declared packages spend the total budget first; what they pull in comes after (#101)
+    for p in sorted(index.get("packages", []), key=lambda p: bool(p.get("reached_via"))):
         files = p.pop("files", None)
         jar = p.pop("jar", None)
         if p.get("status") != "available":
@@ -231,7 +232,8 @@ def _requirement_lines(repo: Path, path: Path, seen: set[Path]) -> list[tuple[st
     return out
 
 
-def pypi_declared(repo: Path) -> dict[str, tuple[str, list[str]]]:
+def _pypi_requirements(repo: Path) -> list[tuple["Requirement", str]]:  # noqa: F821
+    """(parsed requirement, repo-relative file) for every PyPI declaration the project makes."""
     from packaging.requirements import InvalidRequirement, Requirement
 
     texts: list[tuple[str, str]] = []
@@ -252,20 +254,39 @@ def pypi_declared(repo: Path) -> dict[str, tuple[str, list[str]]]:
                 if name.lower() == "python":
                     continue
                 version = spec if isinstance(spec, str) else (spec or {}).get("version", "")
-                texts.append((f"{name}{_poetry_spec(version)}", "pyproject.toml"))
+                wanted = [] if isinstance(spec, str) else (spec or {}).get("extras") or []
+                wanted = [e for e in wanted if isinstance(e, str)]
+                extra = f"[{','.join(wanted)}]" if wanted else ""
+                texts.append((f"{name}{extra}{_poetry_spec(version)}", "pyproject.toml"))
     seen: set[Path] = set()
     for path in sorted([*repo.glob("requirements*.txt"), *(repo / "requirements").rglob("*.txt")]):
         texts += _requirement_lines(repo, path.resolve(), seen)
-    declared: dict[str, tuple[str, list[str]]] = {}
+    out: list[tuple[Requirement, str]] = []
     for text, where in texts:
         try:
-            req = Requirement(text)
+            out.append((Requirement(text), where))
         except InvalidRequirement:
             continue
+    return out
+
+
+def pypi_declared(repo: Path) -> dict[str, tuple[str, list[str]]]:
+    declared: dict[str, tuple[str, list[str]]] = {}
+    for req, where in _pypi_requirements(repo):
         key = pep503(req.name)
         spec, files = declared.get(key, (str(req.specifier), []))
         declared[key] = (spec or str(req.specifier), sorted({*files, where}))
     return declared
+
+
+def pypi_declared_extras(repo: Path) -> dict[str, list[str]]:
+    """The extras the project asks for, per declared package: the union over every
+    declaration, sorted (#101 spec §2.2). `kombu[sqlalchemy]` and `kombu[redis]`
+    give `["redis", "sqlalchemy"]`; a bare `kombu` adds none."""
+    extras: dict[str, set[str]] = {}
+    for req, _ in _pypi_requirements(repo):
+        extras.setdefault(pep503(req.name), set()).update(pep503(e) for e in req.extras)
+    return {k: sorted(v) for k, v in sorted(extras.items())}
 
 
 def _poetry_spec(version: str) -> str:
@@ -311,18 +332,21 @@ def site_packages(repo: Path, env: dict[str, str]) -> list[Path]:
     return [p for p in out if p.is_dir()]
 
 
-def _installed(sites: list[Path], key: str) -> tuple[Path, Path] | None:
-    """(site-packages, dist-info) of the first environment holding the package."""
+def _metadata_head(dist: Path) -> list[str]:
+    """The header lines of a dist-info's METADATA (the body after the blank line is prose)."""
+    return (dist / "METADATA").read_text(encoding="utf-8", errors="replace").split("\n\n", 1)[0].splitlines()
+
+
+def _installed_map(sites: list[Path]) -> dict[str, tuple[Path, Path]]:
+    """{normalised name: (site-packages, dist-info)}, the first environment holding each."""
+    out: dict[str, tuple[Path, Path]] = {}
     for site in sites:
         for dist in sorted(site.glob("*.dist-info")):
-            meta = dist / "METADATA"
-            if meta.is_file():
-                head = meta.read_text(encoding="utf-8", errors="replace").split("\n\n", 1)[0]
-                name = next((l.split(":", 1)[1].strip() for l in head.splitlines()
+            if (dist / "METADATA").is_file():
+                name = next((l.split(":", 1)[1].strip() for l in _metadata_head(dist)
                              if l.lower().startswith("name:")), "")
-                if pep503(name) == key:
-                    return site, dist
-    return None
+                out.setdefault(pep503(name), (site, dist))
+    return out
 
 
 def _metadata_version(dist: Path) -> str:
@@ -331,58 +355,203 @@ def _metadata_version(dist: Path) -> str:
                  if l.lower().startswith("version:")), "")
 
 
-def discover_pypi(repo: Path, env: dict[str, str]) -> tuple[list[dict], list[str]]:
+REACH_DEPTH = 2     # hops from a declared package (#101 spec §2.2)
+REACH_MAX = 40      # reached packages per scan; the rest are named in warnings
+REACH_VIA_MAX = 3   # parents listed in `reached_via`
+NOT_INSTALLED = "no installed copy in .venv, venv or $VIRTUAL_ENV"
+
+
+def _requires_dist(dist: Path) -> list[str]:
+    """The `Requires-Dist` values of an installed package's METADATA, as written."""
+    return [l.split(":", 1)[1].strip() for l in _metadata_head(dist) if l.lower().startswith("requires-dist:")]
+
+
+def _record_files(dist: Path) -> tuple[list[str], str | None]:
+    """The package's own .py/.pyi files from its RECORD, or why there are none to read."""
+    record = dist / "RECORD"
+    if not record.is_file():
+        return [], "no RECORD in its dist-info, so its files are unknown"
+    files = []
+    for line in record.read_text(encoding="utf-8", errors="replace").splitlines():
+        rel = line.split(",", 1)[0]
+        if rel.endswith((".py", ".pyi")) and not rel.startswith("..") and ".dist-info/" not in rel:
+            files.append(rel)
+    return sorted(files), (None if files else "no .py files in its RECORD")
+
+
+def _settle_version(p: dict, dist: Path, spec: str | None, locked: dict[str, str]) -> bool:
+    """Set `version` and `basis` from the installed copy, and `reason` when it is not the
+    version the project stands behind. True when the source may be read.
+
+    One rule for declared and reached packages (#101 spec §2.3): an editable install
+    is never a released version; a lock decides; otherwise a declared package is
+    checked against its pin or range, and a reached one (`spec` None) is `installed`.
+    """
     from packaging.specifiers import InvalidSpecifier, SpecifierSet
     from packaging.version import InvalidVersion, Version
 
+    installed = p["version"] = _metadata_version(dist)
+    direct = c.load_json(dist / "direct_url.json", None)
+    if isinstance(direct, dict) and (direct.get("dir_info") or {}).get("editable"):
+        p["reason"] = "editable install, not a released version"
+        return False
+    key = p["name"]
+    if key in locked:
+        p["basis"] = "locked"
+        if locked[key] != installed:
+            p["reason"] = f"installed {installed}, the lock says {locked[key]}"
+            return False
+    elif spec is None:
+        p["basis"] = "installed"
+    elif spec.startswith("==") and "," not in spec and "*" not in spec:
+        p["basis"] = "pinned"
+        if spec[2:] != installed:
+            p["reason"] = f"installed {installed}, pinned at {spec[2:]}"
+            return False
+    else:
+        p["basis"] = "declared_range"
+        try:
+            ok = Version(installed) in SpecifierSet(spec, prereleases=True)
+        except (InvalidSpecifier, InvalidVersion):
+            p["reason"] = f'declared range "{spec}" could not be checked'
+            return False
+        if not ok:
+            p["reason"] = f'installed {installed} does not satisfy the declared "{spec}"'
+            return False
+    return True
+
+
+def reached_pypi(declared, extras: dict[str, list[str]], sites: list[Path],
+                 locked: dict[str, str] | None = None,
+                 own: frozenset[str] = frozenset()) -> tuple[list[dict], list[str]]:
+    """Packages a declared, installed package pulls in, from installed metadata (#101 spec §2.2).
+
+    Breadth first from the declared names in sorted order, at most REACH_DEPTH
+    hops and REACH_MAX packages. A requirement under `extra == "x"` is followed
+    only when the requirement that reached its parent names `x` (for a declared
+    parent: any of the project's own declarations of it). The project's own
+    package names (`own`) are never reached (spec §3). A requirement whose marker
+    cannot be evaluated gives an unavailable entry only if no other parent
+    reaches the package cleanly. Reads metadata as data; nothing is imported,
+    run or fetched.
+    """
+    from packaging.markers import InvalidMarker, UndefinedComparison, UndefinedEnvironmentName
+    from packaging.requirements import InvalidRequirement, Requirement
+
+    installed = _installed_map(sites)
+    entries: dict[str, dict] = {}
+    marker_only: set[str] = set()  # entries made only by a marker that could not be evaluated
+    over: list[str] = []
+    warnings: list[str] = []
+    level = [(k, set(extras.get(k) or [])) for k in sorted(declared) if k in installed]
+    for _ in range(REACH_DEPTH):
+        nxt: dict[str, set[str]] = {}
+        for parent, wanted in level:
+            try:
+                lines = _requires_dist(installed[parent][1])
+            except (OSError, ValueError) as exc:
+                warnings.append(f"pypi:{parent}: its METADATA could not be read ({exc}); "
+                                "the packages it requires were not followed.")
+                continue
+            reqs = []
+            for line in lines:
+                try:
+                    reqs.append(Requirement(line))
+                except InvalidRequirement:
+                    continue
+            for req in sorted(reqs, key=lambda r: (pep503(r.name), str(r))):
+                key, why = pep503(req.name), None
+                if key == parent or key in declared or key in own:
+                    continue
+                if req.marker is not None:
+                    try:
+                        ok = any(req.marker.evaluate({"extra": e}) for e in ["", *sorted(wanted)])
+                    except (InvalidMarker, UndefinedComparison, UndefinedEnvironmentName):
+                        # the exception names the scanner's own interpreter: never in a reason
+                        ok, why = False, (f'required by {parent} as "{req}", whose marker could not be '
+                                          "evaluated; not followed")
+                    if not ok and why is None:
+                        continue
+                if key in entries and not (why is None and key in marker_only):
+                    via = entries[key]["reached_via"]
+                    if why is None and parent not in via and len(via) < REACH_VIA_MAX:
+                        via.append(parent)
+                    if why is None and key in nxt:
+                        nxt[key] |= {pep503(e) for e in req.extras}
+                    continue
+                if key in entries:  # made by a marker that failed; a clean path wins
+                    marker_only.discard(key)
+                    p = entries[key]
+                    p.update(reached_via=[parent], reason=None)
+                else:
+                    if key in over:
+                        continue
+                    if len(entries) >= REACH_MAX:
+                        over.append(key)
+                        continue
+                    p = entries[key] = {
+                        "id": f"pypi:{key}", "ecosystem": "pypi", "name": key, "declared": None,
+                        "declared_in": [], "reached_via": [parent], "version": None, "basis": None,
+                        "status": "unavailable", "reason": why, "source": None, "snapshot": None}
+                    if why:
+                        marker_only.add(key)
+                        continue
+                if key not in installed:
+                    p["reason"] = NOT_INSTALLED
+                    continue
+                site, dist = installed[key]
+                nxt[key] = {pep503(e) for e in req.extras}  # its metadata is read even if unavailable
+                if not _settle_version(p, dist, None, locked or {}):
+                    continue
+                files, missing = _record_files(dist)
+                if missing:
+                    p["reason"] = missing
+                    continue
+                p.update(status="available", source=str(site), files=files)
+        level = sorted(nxt.items())
+    if over:
+        warnings.append(f"{len(over)} packages reached past the cap of {REACH_MAX} were not snapshotted: "
+                        + ", ".join(over) + ".")
+    return list(entries.values()), warnings
+
+
+def _own_names(repo: Path) -> frozenset[str]:
+    """The project's own package name from pyproject.toml, normalised (#101 spec §3)."""
+    path = repo / "pyproject.toml"
+    if not path.is_file():
+        return frozenset()
+    doc = tomllib.loads(path.read_text(encoding="utf-8"))
+    names = [(doc.get("project") or {}).get("name"), ((doc.get("tool") or {}).get("poetry") or {}).get("name")]
+    return frozenset(pep503(n) for n in names if isinstance(n, str) and n)
+
+
+def discover_pypi(repo: Path, env: dict[str, str]) -> tuple[list[dict], list[str]]:
     declared = pypi_declared(repo)
     if not declared:
         return [], []
     locked, sites = pypi_locked(repo), site_packages(repo, env)
+    installed_map = _installed_map(sites)
     packages: list[dict] = []
     for key, (spec, where) in sorted(declared.items()):
         p = {"id": f"pypi:{key}", "ecosystem": "pypi", "name": key, "declared": spec,
              "declared_in": where, "version": None, "basis": None, "status": "unavailable",
              "reason": None, "source": None, "snapshot": None}
         packages.append(p)
-        found = _installed(sites, key)
+        found = installed_map.get(key)
         if found is None:
-            p["reason"] = "no installed copy in .venv, venv or $VIRTUAL_ENV"
+            p["reason"] = NOT_INSTALLED
             continue
         site, dist = found
-        installed = _metadata_version(dist)
-        p["version"] = installed
-        direct = c.load_json(dist / "direct_url.json", None)
-        if isinstance(direct, dict) and (direct.get("dir_info") or {}).get("editable"):
-            p["reason"] = "editable install, not a released version"
+        if not _settle_version(p, dist, spec, locked):
             continue
-        if key in locked:
-            p["basis"] = "locked"
-            if locked[key] != installed:
-                p["reason"] = f"installed {installed}, the lock says {locked[key]}"
-                continue
-        elif spec.startswith("==") and "," not in spec and "*" not in spec:
-            p["basis"] = "pinned"
-            if spec[2:] != installed:
-                p["reason"] = f"installed {installed}, pinned at {spec[2:]}"
-                continue
-        else:
-            p["basis"] = "declared_range"
-            try:
-                ok = Version(installed) in SpecifierSet(spec, prereleases=True)
-            except (InvalidSpecifier, InvalidVersion):
-                p["reason"] = f'declared range "{spec}" could not be checked'
-                continue
-            if not ok:
-                p["reason"] = f'installed {installed} does not satisfy the declared "{spec}"'
-                continue
         files = []
         for line in (dist / "RECORD").read_text(encoding="utf-8", errors="replace").splitlines():
             rel = line.split(",", 1)[0]
             if rel.endswith((".py", ".pyi")) and not rel.startswith("..") and ".dist-info/" not in rel:
                 files.append(rel)
         p.update(status="available", source=str(site), files=sorted(files))
-    return packages, []
+    reached, warnings = reached_pypi(declared, pypi_declared_extras(repo), sites, locked, _own_names(repo))
+    return packages + reached, warnings
 
 
 NPM_SUFFIXES = (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts")
@@ -630,7 +799,9 @@ def main(argv: list[str] | None = None) -> int:
     index = snapshot(repo, discover(repo))
     write_index(repo, index)
     ok = sum(1 for p in index["packages"] if p["status"] == "available")
-    print(f"dependency source: {ok} of {len(index['packages'])} declared packages available")
+    reached = sum(1 for p in index["packages"] if p.get("reached_via"))
+    print(f"dependency source: {ok} of {len(index['packages'])} packages available "
+          f"({len(index['packages']) - reached} declared, {reached} reached through them)")
     return 0
 
 

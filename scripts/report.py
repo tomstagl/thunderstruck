@@ -94,9 +94,12 @@ def verification_block(run: dict | None, index: dict | None) -> tuple[dict, list
         warnings += list((index or {}).get("warnings") or []) + list(run.get("warnings") or [])
         for p in packages:
             if p["status"] != "available":
-                declared = next((q.get("declared") for q in index["packages"] if q["id"] == p["id"]), "")
+                q = next((q for q in index["packages"] if q["id"] == p["id"]), {})
+                declared, via = q.get("declared"), q.get("reached_via")
                 warnings.append(f"Dependency source not available for {p['id']}"
                                 + (f" (declared {declared})" if declared else "")
+                                + (f" (not declared by the project; reached through {', '.join(map(str, via))})"
+                                   if isinstance(via, list) and via else "")
                                 + f": {p['reason']}. Verification continued without it.")
     block = {"ran": run is not None, "model": (run or {}).get("model"),
              "checked": (run or {}).get("checked", 0), "reused": (run or {}).get("reused", 0),
@@ -204,7 +207,9 @@ def collect(repo: Path) -> dict[str, Any]:
         clean + failed)
     failed_ids = {e["hotspot_id"] for e in failed}
     usage, usage_warnings = _usage(out, hotspots["generated_at"])
-    block, dependency_warnings = verification_block(run, deps.load_index(repo))
+    index = deps.load_index(repo)
+    mark_reached(findings + refuted, index)
+    block, dependency_warnings = verification_block(run, index)
     return {"refuted": refuted, "verification": block,
             "dependency_warnings": dependency_warnings, "duplicates_merged": len(absorbed),
             "hotspots": hotspots, "findings": findings,
@@ -487,6 +492,33 @@ def _set_urls(findings: list[dict], result: "links.LinkResult | None", repo: Pat
             at["url"] = _location_url(ctx, at["location"], repo) if ctx else None
 
 
+def mark_reached(findings: list[dict], index: dict | None) -> None:
+    """Set `reached_via` on every check evidence item that cites a package the project
+    does not declare but a declared one pulls in (#101 spec §2.4), from the deps
+    index only; a value the verdict wrote is dropped, like a `url`."""
+    reached = {(p.get("id"), p.get("version")): [str(v) for v in p["reached_via"]]
+               for p in (index or {}).get("packages") or []
+               if isinstance(p, dict) and isinstance(p.get("reached_via"), list) and p["reached_via"]}
+    for f in findings:
+        for ev in _evidence(f):
+            ev.pop("reached_via", None)  # an investigator cites no dependency
+        check = f.get("check") if isinstance(f.get("check"), dict) else {}
+        for ev in _check_evidence(check):
+            ev.pop("reached_via", None)
+            m = deps.DEP_REF.match(str(ev.get("ref") or "").strip())
+            if m and (via := reached.get((f"{m['eco']}:{m['name']}", m["version"]))):
+                ev["reached_via"] = via
+
+
+def _ref_link(ev: dict) -> str:
+    """An evidence ref, linked by the tool, with the reached-package mark when it has one."""
+    out = _linked(str(ev.get("ref")), ev.get("url"))
+    via = ev.get("reached_via")
+    if isinstance(via, list) and via:
+        out += f" (not declared by the project; reached through {md.text(', '.join(map(str, via)))})"
+    return out
+
+
 def _ref_url(ctx: "links.LinkContext | None", ref) -> str | None:
     if deps.DEP_REF.match(str(ref or "").strip()):
         return None  # a dependency ref is never linked (#37 Decision 7)
@@ -541,7 +573,7 @@ def _evidence_ref(ev: dict) -> str:
             out += (f" — “{md.text(subject)}”"
                     if isinstance(subject, str) else " — (subject unavailable)")
         return out
-    return _linked(str(ev.get("ref")), url)
+    return _ref_link(ev)
 
 
 # --------------------------------------------------------------------------
@@ -665,8 +697,7 @@ def _evidence_refs(check: dict, idx: list) -> str:
     out = []
     for i in idx if isinstance(idx, list) else []:
         if isinstance(i, int) and 0 <= i < len(items):
-            ev = items[i]
-            out.append(_linked(str(ev.get("ref")), ev.get("url")))
+            out.append(_ref_link(items[i]))
     return "; ".join(out)
 
 
@@ -838,7 +869,7 @@ def _cited(evidence: list[dict], idx, sep: str) -> str:
     out = []
     for i in idx if isinstance(idx, list) else []:
         if isinstance(i, int) and not isinstance(i, bool) and 0 <= i < len(evidence):
-            out.append(_linked(str(evidence[i].get("ref")), evidence[i].get("url")))
+            out.append(_ref_link(evidence[i]))
     return sep.join(out)
 
 

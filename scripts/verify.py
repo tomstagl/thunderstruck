@@ -226,11 +226,15 @@ def render_brief(finding: dict, others: list[dict], deps_index: dict | None,
     L += [x for sha, text in messages for x in _block(f"commit {sha}", text)] or ["None cited.", ""]
     L += ["## Dependency source", ""]
     packages = (deps_index or {}).get("packages") or []
-    for p in packages:
+    # declared first, then what they pull in (#101 spec §2.4); the index order inside each
+    for p in sorted(packages, key=lambda p: bool(p.get("reached_via"))):
+        via = p.get("reached_via") or []
+        mark = ("; reached via " + ", ".join(f"`{v}`" for v in via)
+                + ", not declared by the project") if via else ""
         if p.get("status") == "available":
-            L.append(f"- `{p['id']}@{p['version']}` ({p['basis']}): read it under `{p['snapshot']}/`")
+            L.append(f"- `{p['id']}@{p['version']}` ({p['basis']}): read it under `{p['snapshot']}/`{mark}")
         else:
-            L.append(f"- `{p['id']}`: not available ({p.get('reason')})")
+            L.append(f"- `{p['id']}`: not available ({p.get('reason')}){mark}")
     if not packages:
         L.append("None available for this repository.")
     L += ["", "## Other findings in this scan (the investigators')", ""]
@@ -289,9 +293,11 @@ def _cmd_prepare(args) -> int:
     acts = [e["action"] for e in plan["findings"]]
     index = deps.load_index(repo) or {"packages": []}
     ok = sum(1 for p in index["packages"] if p["status"] == "available")
+    reached = sum(1 for p in index["packages"] if p.get("reached_via"))
     print(f"verification: {len(acts)} findings, {acts.count('check')} to check, "
           f"{acts.count('reuse')} reused; dependency source: {ok} of {len(index['packages'])} "
-          f"declared packages available (see .thunderstruck/deps/index.json)")
+          f"packages available, {reached} of them reached through a declared one "
+          f"(see .thunderstruck/deps/index.json)")
     return 0
 
 
