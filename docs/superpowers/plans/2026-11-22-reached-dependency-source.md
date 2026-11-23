@@ -25,9 +25,9 @@
 
 **Files:** `scripts/deps.py`, `tests/test_deps_reached.py`.
 
-- [ ] Failing tests from spec §5 with a synthetic `site-packages` built in `tmp_path` (a `*.dist-info/METADATA` with `Requires-Dist`, a `RECORD`, one `.py` per package): reached through a hard requirement and through a requested extra, not through an unrequested one; depth cap 2; cap of 40 with a warning; cycle; sorted order; marker not evaluable.
-- [ ] Implement `reached_pypi(declared, extras, sites)` returning the entries of spec §2.3 and warnings, using `packaging.requirements.Requirement` and `Marker.evaluate({"extra": e})` (both already imported lazily in `deps.py`: keep the imports inside the function, so module level stays stdlib and `_common`). `discover_pypi` appends them after the declared entries.
-- [ ] Commit by path. `AC-1, AC-2, AC-3`, `Task: 2`.
+- [x] Failing tests from spec §5 with a synthetic `site-packages` built in `tmp_path` (a `*.dist-info/METADATA` with `Requires-Dist`, a `RECORD`, one `.py` per package): reached through a hard requirement and through a requested extra, not through an unrequested one; depth cap 2; cap of 40 with a warning; cycle; sorted order; marker not evaluable.
+- [x] Implement `reached_pypi(declared, extras, sites)` returning the entries of spec §2.3 and warnings, using `packaging.requirements.Requirement` and `Marker.evaluate({"extra": e})` (both already imported lazily in `deps.py`: keep the imports inside the function, so module level stays stdlib and `_common`). `discover_pypi` appends them after the declared entries.
+- [x] Commit by path. `AC-1, AC-2, AC-3`, `Task: 2`.
 
 ## Task 3: basis, lock and editable (AC-2)
 

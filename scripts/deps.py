@@ -328,24 +328,137 @@ def site_packages(repo: Path, env: dict[str, str]) -> list[Path]:
     return [p for p in out if p.is_dir()]
 
 
-def _installed(sites: list[Path], key: str) -> tuple[Path, Path] | None:
-    """(site-packages, dist-info) of the first environment holding the package."""
+def _metadata_head(dist: Path) -> list[str]:
+    """The header lines of a dist-info's METADATA (the body after the blank line is prose)."""
+    return (dist / "METADATA").read_text(encoding="utf-8", errors="replace").split("\n\n", 1)[0].splitlines()
+
+
+def _installed_map(sites: list[Path]) -> dict[str, tuple[Path, Path]]:
+    """{normalised name: (site-packages, dist-info)}, the first environment holding each."""
+    out: dict[str, tuple[Path, Path]] = {}
     for site in sites:
         for dist in sorted(site.glob("*.dist-info")):
-            meta = dist / "METADATA"
-            if meta.is_file():
-                head = meta.read_text(encoding="utf-8", errors="replace").split("\n\n", 1)[0]
-                name = next((l.split(":", 1)[1].strip() for l in head.splitlines()
+            if (dist / "METADATA").is_file():
+                name = next((l.split(":", 1)[1].strip() for l in _metadata_head(dist)
                              if l.lower().startswith("name:")), "")
-                if pep503(name) == key:
-                    return site, dist
-    return None
+                out.setdefault(pep503(name), (site, dist))
+    return out
+
+
+def _installed(sites: list[Path], key: str) -> tuple[Path, Path] | None:
+    """(site-packages, dist-info) of the first environment holding the package."""
+    return _installed_map(sites).get(key)
 
 
 def _metadata_version(dist: Path) -> str:
     head = (dist / "METADATA").read_text(encoding="utf-8", errors="replace").split("\n\n", 1)[0]
     return next((l.split(":", 1)[1].strip() for l in head.splitlines()
                  if l.lower().startswith("version:")), "")
+
+
+REACH_DEPTH = 2     # hops from a declared package (#101 spec §2.2)
+REACH_MAX = 40      # reached packages per scan; the rest are named in warnings
+REACH_VIA_MAX = 3   # parents listed in `reached_via`
+NOT_INSTALLED = "no installed copy in .venv, venv or $VIRTUAL_ENV"
+
+
+def _requires_dist(dist: Path) -> list[str]:
+    """The `Requires-Dist` values of an installed package's METADATA, as written."""
+    return [l.split(":", 1)[1].strip() for l in _metadata_head(dist) if l.lower().startswith("requires-dist:")]
+
+
+def _record_files(dist: Path) -> tuple[list[str], str | None]:
+    """The package's own .py/.pyi files from its RECORD, or why there are none to read."""
+    record = dist / "RECORD"
+    if not record.is_file():
+        return [], "no RECORD in its dist-info, so its files are unknown"
+    files = []
+    for line in record.read_text(encoding="utf-8", errors="replace").splitlines():
+        rel = line.split(",", 1)[0]
+        if rel.endswith((".py", ".pyi")) and not rel.startswith("..") and ".dist-info/" not in rel:
+            files.append(rel)
+    return sorted(files), (None if files else "no .py files in its RECORD")
+
+
+def reached_pypi(declared, extras: dict[str, list[str]],
+                 sites: list[Path]) -> tuple[list[dict], list[str]]:
+    """Packages a declared, installed package pulls in, from installed metadata (#101 spec §2.2).
+
+    Breadth first from the declared names in sorted order, at most REACH_DEPTH
+    hops and REACH_MAX packages. A requirement under `extra == "x"` is followed
+    only when the requirement that reached its parent names `x` (for a declared
+    parent: any of the project's own declarations of it). Reads metadata as data;
+    nothing is imported, run or fetched.
+    """
+    from packaging.markers import InvalidMarker, UndefinedComparison, UndefinedEnvironmentName
+    from packaging.requirements import InvalidRequirement, Requirement
+
+    installed = _installed_map(sites)
+    entries: dict[str, dict] = {}
+    over: list[str] = []
+    warnings: list[str] = []
+    level = [(k, set(extras.get(k) or [])) for k in sorted(declared) if k in installed]
+    for _ in range(REACH_DEPTH):
+        nxt: dict[str, set[str]] = {}
+        for parent, wanted in level:
+            try:
+                lines = _requires_dist(installed[parent][1])
+            except (OSError, ValueError) as exc:
+                warnings.append(f"pypi:{parent}: its METADATA could not be read ({exc}); "
+                                "the packages it requires were not followed.")
+                continue
+            reqs = []
+            for line in lines:
+                try:
+                    reqs.append(Requirement(line))
+                except InvalidRequirement:
+                    continue
+            for req in sorted(reqs, key=lambda r: (pep503(r.name), str(r))):
+                key, why = pep503(req.name), None
+                if key == parent or key in declared:
+                    continue
+                if req.marker is not None:
+                    try:
+                        ok = any(req.marker.evaluate({"extra": e}) for e in ["", *sorted(wanted)])
+                    except (InvalidMarker, UndefinedComparison, UndefinedEnvironmentName) as exc:
+                        ok, why = False, (f'required by {parent} as "{req}", whose marker could not be '
+                                          f"evaluated ({exc}); not followed")
+                    if not ok and why is None:
+                        continue
+                if key in entries:
+                    via = entries[key]["reached_via"]
+                    if why is None and parent not in via and len(via) < REACH_VIA_MAX:
+                        via.append(parent)
+                    if why is None and key in nxt:
+                        nxt[key] |= {pep503(e) for e in req.extras}
+                    continue
+                if key in over:
+                    continue
+                if len(entries) >= REACH_MAX:
+                    over.append(key)
+                    continue
+                p = entries[key] = {
+                    "id": f"pypi:{key}", "ecosystem": "pypi", "name": key, "declared": None,
+                    "declared_in": [], "reached_via": [parent], "version": None, "basis": None,
+                    "status": "unavailable", "reason": why, "source": None, "snapshot": None}
+                if why:
+                    continue
+                if key not in installed:
+                    p["reason"] = NOT_INSTALLED
+                    continue
+                site, dist = installed[key]
+                p["version"], p["basis"] = _metadata_version(dist), "installed"
+                files, missing = _record_files(dist)
+                if missing:
+                    p["reason"] = missing
+                    continue
+                p.update(status="available", source=str(site), files=files)
+                nxt[key] = {pep503(e) for e in req.extras}
+        level = sorted(nxt.items())
+    if over:
+        warnings.append(f"{len(over)} packages reached past the cap of {REACH_MAX} were not snapshotted: "
+                        + ", ".join(over) + ".")
+    return list(entries.values()), warnings
 
 
 def discover_pypi(repo: Path, env: dict[str, str]) -> tuple[list[dict], list[str]]:
@@ -356,15 +469,16 @@ def discover_pypi(repo: Path, env: dict[str, str]) -> tuple[list[dict], list[str
     if not declared:
         return [], []
     locked, sites = pypi_locked(repo), site_packages(repo, env)
+    installed_map = _installed_map(sites)
     packages: list[dict] = []
     for key, (spec, where) in sorted(declared.items()):
         p = {"id": f"pypi:{key}", "ecosystem": "pypi", "name": key, "declared": spec,
              "declared_in": where, "version": None, "basis": None, "status": "unavailable",
              "reason": None, "source": None, "snapshot": None}
         packages.append(p)
-        found = _installed(sites, key)
+        found = installed_map.get(key)
         if found is None:
-            p["reason"] = "no installed copy in .venv, venv or $VIRTUAL_ENV"
+            p["reason"] = NOT_INSTALLED
             continue
         site, dist = found
         installed = _metadata_version(dist)
@@ -399,7 +513,8 @@ def discover_pypi(repo: Path, env: dict[str, str]) -> tuple[list[dict], list[str
             if rel.endswith((".py", ".pyi")) and not rel.startswith("..") and ".dist-info/" not in rel:
                 files.append(rel)
         p.update(status="available", source=str(site), files=sorted(files))
-    return packages, []
+    reached, warnings = reached_pypi(declared, pypi_declared_extras(repo), sites)
+    return packages + reached, warnings
 
 
 NPM_SUFFIXES = (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts")
