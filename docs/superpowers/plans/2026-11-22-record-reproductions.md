@@ -12,17 +12,17 @@
 
 ## Task 0: anchors (no AC)
 
-- [ ] Read the spec. Confirm: `report.py` `render_index` (`:1460` region) and what it writes per finding; `guardrail.py` around `:247`; the verify skill's Scope paragraph; `c.tracked_file_problem` in `_common.py`.
-- [ ] Find how earlier additive finding fields were added to `report.json`: `git log --oneline -S'"impact"' -- scripts/report.py` and whether `REPORT_SCHEMA_VERSION` moved. Follow that practice for the `reproduction` key; if a bump is needed, stop and amend the spec first, because a bump changes #98's scan identity.
-- [ ] Run `tests/test_guardrail.py`, `tests/test_report*.py`, `tests/test_no_execution.py`: note they pass.
+- [x] Read the spec. Confirm: `report.py` `render_index` (`:1460` region) and what it writes per finding; `guardrail.py` around `:247`; the verify skill's Scope paragraph; `c.tracked_file_problem` in `_common.py`.
+- [x] Find how earlier additive finding fields were added to `report.json`: `git log --oneline -S'"impact"' -- scripts/report.py` and whether `REPORT_SCHEMA_VERSION` moved. Follow that practice for the `reproduction` key; if a bump is needed, stop and amend the spec first, because a bump changes #98's scan identity.
+- [x] Run `tests/test_guardrail.py`, `tests/test_report*.py`, `tests/test_no_execution.py`: note they pass.
 
 ## Task 1: the script and its record (AC-1)
 
 **Files:** `scripts/reproduction.py` (new, stdlib and `_common`), `tests/test_reproduction.py` (new), `tests/test_no_execution.py`.
 
-- [ ] Failing tests of spec §5 for the script (each status, each refusal, hash and head stored, never runs the command, a trapped `conftest.py`).
-- [ ] Implement `record`, and `show --key K` printing the record. Add `reproduction.py` to the stage list `test_no_execution.py` expects, as that test dictates.
-- [ ] Commit `scripts/reproduction.py`, `tests/test_reproduction.py`, `tests/test_no_execution.py` by path. `AC-1`, `Task: 1`.
+- [x] Failing tests of spec §5 for the script (each status, each refusal, hash and head stored, never runs the command, a trapped `conftest.py`).
+- [x] Implement `record`, and `show --key K` printing the record. Add `reproduction.py` to the stage list `test_no_execution.py` expects, as that test dictates.
+- [x] Commit `scripts/reproduction.py`, `tests/test_reproduction.py`, `tests/test_no_execution.py` by path. `AC-1`, `Task: 1`.
 
 ## Task 2: current or stale (AC-1, AC-5)
 

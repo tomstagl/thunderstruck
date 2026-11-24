@@ -161,7 +161,15 @@ def test_no_stage_runs_anything_from_a_trapped_repository(validated_repo, valida
     for step in steps:
         subprocess.run([sys.executable, str(SCRIPTS / step[0]), *step[1:], "--repo", str(validated_repo)],
                        capture_output=True, text=True, cwd=str(validated_repo), env=env)
-    payload = {"tool_name": "Edit", "cwd": str(validated_repo), "session_id": "s",
+    # #103: recording a reproduction of the trapped conftest.py hashes it and runs nothing
+    report_json = json.loads((validated_repo / ".thunderstruck" / "report.json").read_text())
+    recorded = subprocess.run(
+        [sys.executable, str(SCRIPTS / "reproduction.py"), "record", "--repo", str(validated_repo),
+         "--key", report_json["findings"][0]["key"], "--status", "fails_as_predicted",
+         "--test", "conftest.py", "--command", "pytest conftest.py"],
+        capture_output=True, text=True, cwd=str(validated_repo), env=env)
+    assert recorded.returncode == 0, recorded.stderr
+    payload ={"tool_name": "Edit", "cwd": str(validated_repo), "session_id": "s",
                "tool_input": {"file_path": str(validated_repo / "src/sync/collection.ts")}}
     subprocess.run([sys.executable, str(SCRIPTS / "guardrail.py")], input=json.dumps(payload),
                    capture_output=True, text=True, cwd=str(validated_repo), env=env)
