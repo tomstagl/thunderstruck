@@ -5,7 +5,7 @@
      Regenerate with:  uv run scripts/gen_sample_report.py -->
 <html lang="en">
 <head>
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-8FoLI3CbG6M0U1qwJyINpaMF9dtVNvJGEVQhBCmKgl4='; style-src 'unsafe-inline'; img-src 'none'; connect-src 'none'; font-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-ahXd7bUtHzpVOVuLZaTLDYR14JzfPKdbLXHwoALUerY='; style-src 'unsafe-inline'; img-src 'none'; connect-src 'none'; font-src 'none'; base-uri 'none'; form-action 'none'">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>thunderstruck report</title>
@@ -414,6 +414,14 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
       var ck = f.check || {}, kids = [h("p", { text: checkText(f) })];
       if ((ck.status === "narrowed" || ck.status === "upheld") && ck.holds)
         kids.push(h("p", { text: "What still holds: " + ck.holds }));
+      var rp = f.reproduction;
+      if (rp && typeof rp === "object" && rp.sentence) {
+        kids.push(h("p", { text: "Reproduction — " + rp.sentence + "." }));
+        if (rp.state !== "unreadable")
+          kids.push(h("p", { class: "small" }, ["Recorded with the command ", h("span", { class: "mono", text: String(rp.command || "") }),
+            rp.recorded_head ? " at commit " + String(rp.recorded_head).slice(0, 12) : "",
+            rp.test_path && rp.status !== "fails_as_predicted" ? ", test " + rp.test_path : "", "."]));
+      }
       var claims = ck.refuted_claims || [];
       if (claims.length) {
         kids.push(h("p", { text: ck.status === "narrowed" ? "Refuted in part:" : "Refuted:" }));

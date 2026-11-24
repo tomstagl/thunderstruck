@@ -35,11 +35,11 @@
 
 **Files:** `scripts/report.py`, `scripts/report_html.py`, `templates/report.html`, `tests/test_report_reproduction.py` (new), `tests/test_report_html_browser.py`.
 
-- [ ] Failing tests: the additive `reproduction` key in `report.json`; the exact wording of spec §2.3 in `report.md` and `report.html`, through `mdtext` (a hostile `command` is inert); stale shown first; no record, no key, no line.
-- [ ] The no-effect test: with and without a record, `effective_confidence`, gates, ordering, every bundle and every skeptic brief are byte-identical.
-- [ ] Implement. Browser test: `THUNDERSTRUCK_REQUIRE_BROWSER=1` command from CLAUDE.md.
-- [ ] `uv run scripts/gen_sample_report.py --check` stays 0 (decide whether to show a record in the sample; if yes, regenerate in this task and say so in the commit).
-- [ ] Commit by path. `AC-2`, `Task: 3`.
+- [x] Failing tests: the additive `reproduction` key in `report.json`; the exact wording of spec §2.3 in `report.md` and `report.html`, through `mdtext` (a hostile `command` is inert); stale shown first; no record, no key, no line.
+- [x] The no-effect test: with and without a record, `effective_confidence`, gates, ordering, every bundle and every skeptic brief are byte-identical.
+- [x] Implement. Browser test: `THUNDERSTRUCK_REQUIRE_BROWSER=1` command from CLAUDE.md.
+- [x] `uv run scripts/gen_sample_report.py --check` stays 0 (decide whether to show a record in the sample; if yes, regenerate in this task and say so in the commit).
+- [x] Commit by path. `AC-2`, `Task: 3`.
 
 ## Task 4: the guardrail (AC-3)
 

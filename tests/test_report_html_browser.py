@@ -429,3 +429,30 @@ def test_a_guarantee_the_check_added_is_shown_when_the_investigator_listed_none(
     body = p.page.text_content("#doc")
     assert "None stated by the investigator, who was not required to for these patterns." in body
     assert "Added by the check: callers share a slot — removed by: a second pool" in body
+
+
+def test_dossier_shows_a_recorded_reproduction_beside_the_check(page, scanned_copy, plugin_root):
+    """#103 AC-2: the sentence report.py built, and the command, as text."""
+    report = _report(scanned_copy, plugin_root)
+    sentence = ("Stale: a failing test was recorded by /thunderstruck-verify (the scan did not run "
+                "it): tests/test_x.py, stale: the test file changed")
+    report["findings"][0]["reproduction"] = {
+        "status": "fails_as_predicted", "state": "stale", "test_path": "tests/test_x.py",
+        "command": "pytest " + HOSTILE, "recorded_head": "a" * 40,
+        "stale_because": ["the test file changed"], "sentence": sentence}
+    p = page(report)
+    p.page.keyboard.press("j")
+    body = p.page.text_content("#doc")
+    assert "Reproduction — " + sentence + "." in body
+    assert "pytest " + HOSTILE in body
+    assert body.index("Reproduction — ") > body.index("No one has tried to refute this claim")
+    assert p.page.evaluate("window.pwned") is None
+    for sel in ("#pwn", "#pwn-img", "#pwn-b", "img"):
+        assert p.page.query_selector(sel) is None, sel
+    assert p.errors == [] and p.requests == [p.url]
+
+
+def test_no_reproduction_no_line(page, scanned_copy, plugin_root):
+    p = page(_report(scanned_copy, plugin_root))
+    p.page.keyboard.press("j")
+    assert "Reproduction — " not in p.page.text_content("#doc")

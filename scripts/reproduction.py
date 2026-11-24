@@ -158,6 +158,35 @@ def summaries(repo: Path, findings: list[dict[str, Any]]) -> dict[str, dict[str,
     return out
 
 
+# The wording of spec §2.3, built from stored values only. A stale
+# `fails_as_predicted` leads with "Stale" and never says reproduced.
+SENTENCES = {
+    "fails_as_predicted": "Reproduced by a failing test (recorded by /thunderstruck-verify; "
+                          "the scan did not run it)",
+    "fails_as_predicted_stale": "Stale: a failing test was recorded by /thunderstruck-verify "
+                                "(the scan did not run it)",
+    "passes": "A recorded reproduction passed: the hypothesis did not hold as tested",
+    "blocked": "A reproduction was attempted and blocked",
+    "unreadable": "A recorded reproduction is unreadable",
+}
+
+
+def sentence_parts(summary: dict[str, Any]) -> tuple[str, str | None, str]:
+    """(lead, test path or None, tail): the sentence is lead[: path]tail."""
+    if summary.get("state") == "unreadable":
+        return SENTENCES["unreadable"], None, ""
+    status, stale = summary["status"], summary.get("state") == "stale"
+    tail = (", stale: " + " and ".join(summary.get("stale_because") or [])) if stale else ""
+    if status == "fails_as_predicted":
+        return SENTENCES[status + ("_stale" if stale else "")], summary.get("test_path"), tail
+    return SENTENCES[status], None, tail
+
+
+def sentence(summary: dict[str, Any]) -> str:
+    lead, path, tail = sentence_parts(summary)
+    return lead + (f": {path}" if path else "") + tail
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="reproduction.py", description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
