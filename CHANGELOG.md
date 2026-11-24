@@ -4,7 +4,9 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 0.18.0
+
+A re-scan keeps what it replaces, a reproduction is recorded, and a missing result says why (#96, #97, #98, #100, #101, #103).
 
 ### Added
 
@@ -13,7 +15,6 @@ All notable changes to thunderstruck are recorded here. The format follows
 - **The capture hook says that it ran** (#96). Each invocation for the plugin's own agents appends one line to `.thunderstruck/hook-trace.jsonl`: a time, the agent type, the payload's key names and an outcome. It never holds the message, a path or repository text, stops at 64 KiB, and is written only when `.thunderstruck/` exists.
 - **`--check` says why a result is missing.** `save_finding.py --check` and `verify.py check` add a reason after `missing`: the hook did not run in this scan, it ran for other agents only, or it ran and recorded an outcome.
 - **The report says it once.** When most results were saved by the orchestrator, Run warnings state how many the hook delivered and why not.
-
 - **Verification reads the source of packages a declared package pulls in** (#101). For PyPI, `deps.py` follows the installed `Requires-Dist` of each declared, installed package, two hops at most and at most 40 packages, following an extra only when the project's own requirement names it (`kombu[sqlalchemy]` reaches SQLAlchemy, `kombu` alone does not). A reached package is snapshotted like a declared one, with basis `locked` when a lock lists it and `installed` otherwise, and lists the packages it was reached through. A skeptic can cite it as `dependency` evidence; the brief lists it after the declared packages and the report marks the citation "not declared by the project; reached through …". A scan with a populated environment gets new briefs once, so its verdicts are checked again once.
 
 ### Changed
