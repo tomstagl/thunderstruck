@@ -79,10 +79,29 @@ Run the test. Then say plainly which happened:
   goes red.
 - **It cannot be written** — say what blocks it and what would unblock it.
 
+## Step 6 — record the outcome
+
+After the user's test run, record what it gave, with the finding's `key`, the
+test file and the exact command that was run:
+
+```bash
+uv run "${CLAUDE_PLUGIN_ROOT}/scripts/reproduction.py" record --key <key> --status <status> --test <path/to/test> --command "<the command that was run>"
+```
+
+The status is `fails_as_predicted` (it failed for the reason the finding
+names), `passes` (the hypothesis did not hold as tested) or `blocked` (the test
+could not be made to run). The script runs nothing: it stores the test file's
+hash, the commit and the finding's hash in `.thunderstruck/reproductions/`, and
+the report shows the record next to the check, as stale once the test or the
+finding changes. Record only an outcome the run actually gave. If the script
+refuses (an unknown key, a test path outside the repository), say why and do
+not write the outcome anywhere else instead.
+
 ## Scope
 
 This skill runs the project's tests because you asked, under Claude Code's
-permission prompts; it is not part of a scan, and nothing it produces feeds one.
+permission prompts; it is not part of a scan, and nothing it produces changes what a scan finds, ranks or checks.
+`report.py` reads the recorded reproduction for display only.
 
 This skill writes tests. It does not fix the code. If the user wants the fix
 too, that is a separate request — diagnosis and remedy are kept apart on

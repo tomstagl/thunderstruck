@@ -50,7 +50,7 @@
 
 ## Task 5: the verify skill and docs (AC-4)
 
-- [ ] `skills/thunderstruck-verify/SKILL.md`: call `reproduction.py record` after the user's run; amend the Scope sentence per spec §2.5. Pin both in a test beside `test_skeptic_contract.py`.
-- [ ] README, CLAUDE.md (the report and guardrail paragraphs: the record is display only), `report-format.md` if it lists finding fields. `CHANGELOG.md` under `## Unreleased`.
-- [ ] Full suite (CLAUDE.md command, with the browser tests), both `--check` generators, `uv run scripts/validate_plugin.py`. All pass before any push.
-- [ ] Commit. `AC-4`, `Task: 5`.
+- [x] `skills/thunderstruck-verify/SKILL.md`: call `reproduction.py record` after the user's run; amend the Scope sentence per spec §2.5. Pin both in a test beside `test_skeptic_contract.py`.
+- [x] README, CLAUDE.md (the report and guardrail paragraphs: the record is display only), `report-format.md` if it lists finding fields. `CHANGELOG.md` under `## Unreleased`.
+- [x] Full suite (CLAUDE.md command, with the browser tests), both `--check` generators, `uv run scripts/validate_plugin.py`. All pass before any push.
+- [x] Commit. `AC-4`, `Task: 5`.

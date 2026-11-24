@@ -106,6 +106,14 @@ replaces a finished, different one first copies it into `.thunderstruck/previous
 (`previous.py`, #98): copied, never moved, because `findings/` is the checkpoint;
 three kept; nothing a scan reads ever reads it.
 
+A reproduction `/thunderstruck-verify` recorded (`reproduction.py`, #103) lives in
+`.thunderstruck/reproductions/<key>.json`, which no scan replaces or archives.
+`report.py` reads it **for display only**: beside the check in `report.md` and
+`report.html`, and in `index.json` for the guardrail, marked stale when the test
+file or the finding's `content_hash` changed. It never changes a rank, a
+confidence, a check status, a gate, a bundle or a brief, and the script runs
+nothing: it records what the verify session says the user's run gave.
+
 ### Things that will bite you
 
 **Bundles must stay byte-identical across runs on an unchanged repo.** That is
@@ -291,6 +299,10 @@ Two real false positives caught during the build, worth internalising:
 - phrase `additionalContext` as **statements of fact, not instructions** —
   imperative, system-command-shaped text trips Claude's own prompt-injection
   defences and gets surfaced to the user instead of used
+
+It states a current recorded reproduction by its test path, a stale or passing
+one as that, and keeps "hypotheses from a past scan, not verified defects" for
+every finding without a current one (#103). The record is display only there too.
 
 `scripts/capture_finding.py` (the `SubagentStop` hook) has the same contract
 and adds one more: it **says that it ran** (#96). Each invocation for the

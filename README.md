@@ -87,6 +87,7 @@ Written to `.thunderstruck/` in the scanned repository:
 | `hotspots.json` | The deterministic layer's output, inspectable |
 | `bundles/` | Exactly what each investigator was shown; source lines carry their own file line numbers |
 | `findings/` | Per-hotspot results, keyed by bundle hash |
+| `reproductions/<key>.json` | The outcome of a `/thunderstruck-verify` test run, recorded by script: shown beside the check, and as stale once the test or the finding changes. Display only; a re-scan keeps it |
 | `previous/<date>-<head>/` | A copy of the finished scan a new, different scan replaced: its report, findings, verdicts and usage. The last three are kept; a re-run of the same scan copies nothing. `--since previous` repeats the earlier scan's window |
 
 The scan offers to add `.thunderstruck/` to your `.gitignore` on the first
@@ -451,7 +452,10 @@ scans.** It starts `git`, and the service-catalog command you approved by
 hash; even when that command is a script in the repository, it runs only as
 approved. Its hooks start Python with `-S`, so an active project virtual
 environment's `.pth` files never run in them. `/thunderstruck-verify` runs a
-test only when you ask it to, under Claude Code's permission prompts.
+test only when you ask it to, under Claude Code's permission prompts, and
+records the outcome (`fails_as_predicted`, `passes` or `blocked`) with the test
+file's hash, the command and the commit. The report and the guardrail show that
+record; it changes no rank, confidence or check status.
 
 ## Repository content is data, not instruction
 
