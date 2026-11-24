@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>thunderstruck replay</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root {
+    --bg:#0a0e14; --panel:#0f1620; --line:#243044; --text:#dbe2ee; --muted:#7a869a;
+    --node:#162033; --node-line:#2b3b55; --red:#ff5252; --amber:#ffb020; --green:#35d07f; --accent:#7cc4ff;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); overflow: hidden; }
+  body { font-family: var(--sans); color: var(--text); }
+  #stage { position: relative; background: var(--bg); overflow: hidden; }
+  #arch { position: absolute; }
+  #arch svg { width: 100%; height: 100%; display: block; }
+  #panel { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 26px 30px; overflow: hidden; }
+  #caption { position: absolute; display: flex; align-items: center; justify-content: center; text-align: center; font-weight: 600; letter-spacing: .1px; }
+  #badge { position: absolute; color: var(--muted); font-size: 15px; font-family: var(--mono); }
+  #end { position: absolute; inset: 0; background: rgba(10,14,20,.94); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; opacity: 0; gap: 22px; padding: 0 60px; }
+  #end h1 { font-size: 64px; line-height: 1.12; font-weight: 750; }
+  #end .name { font-family: var(--mono); color: var(--red); font-size: 34px; letter-spacing: 1px; }
+  #end .sub { color: var(--muted); font-size: 28px; font-family: var(--mono); }
+  .mono { font-family: var(--mono); }
+  .row { margin-bottom: 16px; opacity: 0; }
+  .k { color: var(--muted); font-size: 0.62em; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; margin-bottom: 4px; }
+  .v { line-height: 1.32; }
+  .hl { color: var(--red); font-weight: 700; }
+  .ok { color: var(--green); }
+  .tag { display: inline-block; font-family: var(--mono); background: #2a1417; color: var(--red); border: 1px solid #5a2429; border-radius: 6px; padding: 2px 9px; margin-right: 10px; }
+  .chip { display: inline-block; font-family: var(--mono); border-radius: 8px; padding: 8px 14px; margin: 0 10px 10px 0; background: #11281d; color: var(--green); border: 1px solid #1f5a3c; }
+  .term { font-family: var(--mono); line-height: 1.55; white-space: pre-wrap; }
+  .diff { font-family: var(--mono); line-height: 1.5; white-space: pre; }
+  .diff .d { color: var(--red); } .diff .a { color: var(--green); } .diff .f { color: var(--accent); }
+  .cursor { display: inline-block; width: .55em; background: var(--text); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="arch"></div>
+  <div id="panel"></div>
+  <div id="caption"></div>
+  <div id="badge"></div>
+  <div id="end">
+    <div class="name">thunderstruck</div>
+    <h1>Find the thundering herd<br>before it finds you.</h1>
+    <div class="sub">Claude Code plugin · open source · MIT</div>
+    <div class="sub" style="color:#dbe2ee">github.com/tomstagl/thunderstruck</div>
+  </div>
+</div>
+
+<script>
+const q = new URLSearchParams(location.search);
+const W = +q.get("w") || 1920, H = +q.get("h") || 1080;
+const WIDE = W >= H * 1.3;
+const stage = document.getElementById("stage");
+stage.style.width = W + "px"; stage.style.height = H + "px";
+
+// ---- layout ---------------------------------------------------------------
+const L = WIDE
+  ? { arch:[40, 40, 1090, 820], panel:[1160, 40, 720, 820], cap:[40, 884, 1840, 130], badge:[40, 1036], font:27, capFont:40 }
+  : { arch:[20, 20, 1040, 470], panel:[30, 500, 1020, 470], cap:[30, 985, 1020, 80], badge:[30, 1056], font:25, capFont:32 };
+const place = (el, [x, y, w, h]) => { Object.assign(el.style, { left:x+"px", top:y+"px", width:w+"px", height:h+"px" }); };
+place(document.getElementById("arch"), L.arch);
+place(document.getElementById("panel"), L.panel);
+place(document.getElementById("caption"), L.cap);
+document.getElementById("caption").style.fontSize = L.capFont + "px";
+document.getElementById("panel").style.fontSize = L.font + "px";
+const badge = document.getElementById("badge");
+badge.style.left = L.badge[0] + "px"; badge.style.top = L.badge[1] + "px";
+badge.style.fontSize = (WIDE ? 15 : 14) + "px";
+badge.textContent = "Illustrative · replay of the sample report on a fixture repo";
+
+// ---- helpers --------------------------------------------------------------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const ease = x => { x = clamp(x); return x * x * (3 - 2 * x); };
+const seg = (t, a, b) => ease((t - a) / (b - a));       // 0..1 between a and b
+const lerp = (a, b, x) => a + (b - a) * x;
+const hex = c => c.startsWith("#") ? [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)) : c.match(/\d+/g).slice(0, 3).map(Number);
+const mix = (c1, c2, x) => { const a = hex(c1), b = hex(c2); return "rgb(" + a.map((v, i) => Math.round(lerp(v, b[i], x))).join(",") + ")"; };
+const typed = (s, t, a, cps = 38) => s.slice(0, Math.max(0, Math.floor((t - a) * cps)));
+const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+function rng(seed) { let s = seed >>> 0; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); }
+
+// ---- architecture (illustrative; names from the fixture's sample report) ---
+const FILES = [
+  { id:"releases",  label:"releases.ts",        y:92,  heat:1.00 },
+  { id:"retry",     label:"retry-wrapper.ts",   y:172, heat:0.45 },
+  { id:"api",       label:"api.ts",             y:252, heat:0.80 },
+  { id:"sched",     label:"scheduler.ts",       y:332, heat:0.85 },
+  { id:"coll",      label:"collection.ts",      y:412, heat:0.75 },
+  { id:"artists",   label:"artists.ts",         y:492, heat:0.10 },
+];
+const FX = 300, FW = 320, FH = 58;
+const NODES = [
+  { id:"web",   label:"web-frontend", x:20,  y:130, w:170, h:64 },
+  { id:"bff",   label:"mobile-bff",   x:20,  y:340, w:170, h:64 },
+  { id:"mesh",  label:"mesh",         sub:"VirtualService", x:715, y:245, w:120, h:100 },
+  { id:"rel",   label:"releases-api", x:850, y:130, w:150, h:64 },
+  { id:"pay",   label:"payments-api", x:850, y:420, w:150, h:64 },
+];
+const CRACKS = [
+  "M 262 318 L 300 292 L 292 270 L 336 244 L 330 222 L 378 196 L 372 170",
+  "M 650 250 L 612 276 L 622 300 L 580 326 L 590 352 L 548 378 L 556 404",
+];
+// the retry herd runs releases.ts -> mesh -> releases-api
+const PATH = [[620, 121], [715, 295], [850, 162]];
+const pathAt = u => {                       // u in 0..1 along the polyline
+  const segs = [[PATH[0], PATH[1]], [PATH[1], PATH[2]]];
+  const lens = segs.map(([a, b]) => Math.hypot(b[0] - a[0], b[1] - a[1]));
+  let d = clamp(u) * (lens[0] + lens[1]);
+  for (let i = 0; i < 2; i++) { if (d <= lens[i] || i === 1) { const x = clamp(d / lens[i]); const [a, b] = segs[i]; return [lerp(a[0], b[0], x), lerp(a[1], b[1], x)]; } d -= lens[i]; }
+};
+
+function fileColor(f, t) {
+  const base = "#162033";
+  let heatColor = mix("#ffb020", "#ff5252", clamp((f.heat - 0.4) / 0.6));
+  let c = mix(base, heatColor, seg(t, 5, 8) * (0.25 + 0.75 * f.heat));
+  if (f.heat >= 0.75) c = mix(c, "#ff5252", seg(t, 8, 9.5));
+  if (f.id === "releases") {                              // fixed at the end
+    c = mix(c, "#ffb020", seg(t, 28.2, 29.6));
+    c = mix(c, "#35d07f", seg(t, 30.2, 31.8));
+  }
+  return c;
+}
+
+function archSVG(t) {
+  const appear = seg(t, 0.2, 2.2);
+  const hot = seg(t, 8, 9.5);
+  const fixed = seg(t, 30.2, 31.8);
+  // catalog beat: the neighbours and their edges come from the service catalog, 2.4-5s
+  const cat = seg(t, 2.6, 4.2);
+  const catOn = seg(t, 2.4, 3) * (1 - seg(t, 9.2, 10));
+  const EC = mix("#2b3b55", "#4aa3ff", catOn);
+  let s = `<svg viewBox="0 0 1010 600" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" style="opacity:${appear}">`;
+  // service box
+  s += `<rect x="262" y="40" width="396" height="520" rx="18" fill="#0d1523" stroke="${mix("#2b3b55", "#ff5252", hot * (1 - fixed * 0.0))}" stroke-width="2"/>`;
+  s += `<text x="282" y="68" fill="#7a869a" font-family="ui-monospace,Menlo,monospace" font-size="16" letter-spacing="1.4">FIXTURE-APP</text>`;
+  // edges
+  const edge = (x1, y1, x2, y2, col = "#2b3b55", w = 2) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${col}" stroke-width="${w}"/>`;
+  if (cat > 0.01) {
+    s += `<g opacity="${cat}">`;
+    s += edge(190, 162, 262, 162, EC, 2 + catOn) + edge(190, 372, 262, 372, EC, 2 + catOn);
+    s += edge(620, 121, 715, 295, EC, 2 + catOn) + edge(835, 295, 850, 162, EC, 2 + catOn) + edge(620, 441, 850, 452, EC, 2 + catOn);
+    s += `</g>`;
+  }
+  if (catOn > 0.01) {
+    const lab = (x, y, txt, a = "middle") => `<text x="${x}" y="${y}" text-anchor="${a}" fill="#4aa3ff" opacity="${catOn}" font-family="ui-monospace,Menlo,monospace" font-size="12">${txt}</text>`;
+    s += lab(257, 152, "calls you", "end") + lab(257, 362, "calls you", "end") + lab(735, 438, "you call") + lab(838, 232, "you call", "end");
+    s += `<rect x="262" y="4" width="396" height="28" rx="14" fill="#0d1523" stroke="#4aa3ff" stroke-opacity="${catOn}" opacity="${catOn}"/>`;
+    s += `<text x="460" y="23" text-anchor="middle" fill="#4aa3ff" opacity="${catOn}" font-family="ui-monospace,Menlo,monospace" font-size="15">from your service catalog</text>`;
+  }
+  // the herd edge glows while the finding is on screen
+  const glow = seg(t, 15.2, 16) * (1 - seg(t, 28, 29.5));
+  if (glow > 0.01) s += `<polyline points="${PATH.map(p => p.join(",")).join(" ")}" fill="none" stroke="#ff5252" stroke-opacity="${0.55 * glow}" stroke-width="6" stroke-linecap="round"/>`;
+  // files
+  for (const f of FILES) {
+    const col = fileColor(f, t);
+    const pulse = f.id === "releases" ? 1 + 0.015 * Math.sin(t * 7) * glow : 1;
+    s += `<g transform="translate(${FX + FW / 2},${f.y + FH / 2}) scale(${pulse}) translate(${-FX - FW / 2},${-f.y - FH / 2})">`;
+    s += `<rect x="${FX}" y="${f.y}" width="${FW}" height="${FH}" rx="10" fill="${col}" stroke="${mix("#2b3b55", "#ffffff", 0.0)}" stroke-width="1.5" stroke-opacity=".8"/>`;
+    s += `<text x="${FX + 22}" y="${f.y + 36}" fill="#e8eef8" font-family="ui-monospace,Menlo,monospace" font-size="22">${f.label}</text></g>`;
+  }
+  for (const n of NODES) {
+    s += `<g opacity="${cat}"><rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="12" fill="#162033" stroke="#2b3b55" stroke-width="1.5"/>`;
+    s += `<text x="${n.x + n.w / 2}" y="${n.y + (n.sub ? n.h / 2 - 2 : n.h / 2 + 7)}" text-anchor="middle" fill="#dbe2ee" font-family="ui-monospace,Menlo,monospace" font-size="${n.id === "mesh" ? 22 : 17}">${n.label}</text>`;
+    if (n.sub) s += `<text x="${n.x + n.w / 2}" y="${n.y + n.h / 2 + 22}" text-anchor="middle" fill="#7a869a" font-family="ui-monospace,Menlo,monospace" font-size="13">${n.sub}</text>`;
+    s += `</g>`;
+  }
+  // fracture planes
+  const crack = seg(t, 8.2, 9.6) * (1 - seg(t, 30.2, 31.8) * 0.0);
+  for (const d of CRACKS) {
+    s += `<path d="${d}" fill="none" stroke="#ff5252" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="${1 - crack}" style="filter:drop-shadow(0 0 7px #ff5252)"/>`;
+  }
+  // request herd on the releases edge
+  if (t >= 15.5) s += herd(t);
+  // counter
+  if (t >= 19 && t < 29.5) {
+    const n = t < 28 ? Math.round(lerp(1, 20, seg(t, 19, 21.5))) : Math.round(lerp(20, 3, seg(t, 28, 29.5)));
+    const col = n > 3 ? "#ff5252" : "#35d07f";
+    s += `<text x="700" y="548" fill="${col}" font-family="ui-monospace,Menlo,monospace" font-size="58" font-weight="700" text-anchor="start">${n}×</text>`;
+    s += `<text x="700" y="578" fill="#7a869a" font-family="ui-monospace,Menlo,monospace" font-size="15">requests per caller</text>`;
+  }
+  s += `</svg>`;
+  return s;
+}
+
+function herd(t) {
+  let s = "";
+  const before = t < 27.8;
+  const N = before ? 20 : 3, CALLERS = 5;
+  const rnd = rng(7);
+  const bursts = before ? [16, 18, 20, 22, 24, 26] : [];
+  if (before) {
+    for (const b of bursts) {
+      const age = t - b;
+      if (age < 0 || age > 0.9) continue;
+      for (let i = 0; i < N; i++) {
+        const u = age / 0.9 - (i % 4) * 0.012;
+        const [x, y] = pathAt(u);
+        s += `<circle cx="${x + (i % 5) * 2.5}" cy="${y + Math.floor(i / 5) * 3}" r="4.6" fill="#ff5252" opacity="${0.95 * (1 - Math.abs(u - 0.5) * 0.4)}"/>`;
+      }
+    }
+  } else {
+    // after the fix: a few requests, spread out by jitter
+    const r2 = rng(11);
+    for (let k = 0; k < 14; k++) {
+      const start = 28.2 + k * 0.42 + r2() * 0.35;
+      const age = t - start;
+      if (age < 0 || age > 0.9) continue;
+      const [x, y] = pathAt(age / 0.9);
+      s += `<circle cx="${x}" cy="${y}" r="4.6" fill="#35d07f" opacity=".95"/>`;
+    }
+  }
+  return s;
+}
+
+// ---- panel ----------------------------------------------------------------
+const TERM = [
+  [10.2, "$ /thunderstruck-scan"],
+  [11.5, "12 files considered · 11 hotspots"],
+  [12.3, "ranking  churn × complexity × leads"],
+  [13.1, "H01  src/client/releases.ts   1.86"],
+  [14.0, "reading the code and its git history…"],
+];
+const FINDING_TITLE = "Release fetches retry on a fixed 2s schedule through two stacked retry layers, so one upstream blip becomes 20 requests per caller arriving in lockstep";
+const ROWS = [
+  [17.0, "Trigger", "The releases API returns 5xx or times out for more than two seconds while several callers are active"],
+  [19.0, "Amplifier", "The loop retries 5 times and the mesh route retries each 5xx up to 3 more times; attempts multiply to <span class=hl>5 × 4 = 20</span> rather than adding."],
+  [22.0, "Sustaining effect", "Every client waits exactly SLEEP_MS and returns together, so the upstream is re-saturated the moment it starts recovering — the herd re-forms on its own schedule"],
+];
+const EVID = [
+  [24.2, "src/client/releases.ts:16"],
+  [25.0, "src/client/retry-wrapper.ts:1"],
+  [25.8, "deploy/releases-virtualservice.yaml:13"],
+  [26.5, "commit 32ec95a"],
+];
+const DIFF = [
+  [28.8, "f", "src/client/releases.ts"],
+  [29.1, "d", "- const SLEEP_MS = 2000;"],
+  [29.4, "a", "+ const BASE = 200, CAP = 10_000, TRIES = 3;"],
+  [29.7, "d", "- for (… attempt < 5 …) { await withRetry(fetch)"],
+  [30.0, "a", "+ for (… attempt < TRIES …) { await fetch(url)"],
+  [30.3, "d", "-   await sleep(SLEEP_MS);"],
+  [30.6, "a", "+   await sleep(jitter(BASE, attempt, CAP));"],
+  [30.9, "f", "deploy/releases-virtualservice.yaml"],
+  [31.2, "d", "- retries: { attempts: 3, retryOn: 5xx }"],
+];
+
+function panelHTML(t) {
+  if (t < 10) return "";
+  if (t < 15.4) {
+    let out = `<div class="term">`;
+    TERM.forEach(([a, line], i) => {
+      if (t < a) return;
+      const shown = i === 0 ? typed(line, t, a, 22) : line;
+      const col = i === 3 ? "color:#ffb020" : (i === 0 ? "color:#7cc4ff" : "color:#dbe2ee");
+      out += `<div style="${col}">${esc(shown)}</div>`;
+    });
+    out += `</div>`;
+    return out;
+  }
+  if (t < 27.4) {
+    const op = seg(t, 15.4, 16);
+    let out = `<div style="opacity:${op}"><div style="margin-bottom:16px"><span class="tag">FR-001</span><span class="mono" style="color:#7a869a;font-size:.7em">src/client/releases.ts:16-28</span></div>`;
+    out += `<div style="font-weight:700;line-height:1.28;margin-bottom:22px;font-size:${WIDE ? 1.0 : 0.92}em">${esc(FINDING_TITLE)}</div>`;
+    for (const [a, k, v] of ROWS) {
+      out += `<div class="row" style="opacity:${seg(t, a, a + 0.5)};font-size:${WIDE ? .86 : .78}em"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+    }
+    if (t >= 24) {
+      out += `<div class="row" style="opacity:${seg(t, 24, 24.4)};font-size:${WIDE ? .8 : .74}em"><div class="k">Evidence, every ref resolved</div>`;
+      for (const [a, e] of EVID) if (t >= a) out += `<div class="mono" style="color:#dbe2ee"><span class="ok">✓</span> ${esc(e)}</div>`;
+      out += `</div>`;
+    }
+    return out + `</div>`;
+  }
+  // fix
+  let out = `<div style="opacity:${seg(t, 27.4, 28)}">`;
+  out += `<div class="k" style="font-size:.62em">The pattern it is missing</div><div style="margin-bottom:14px">`;
+  if (t >= 27.6) out += `<span class="chip" style="opacity:${seg(t, 27.6, 28.0)}">S02 · capped backoff, full jitter</span>`;
+  if (t >= 28.1) out += `<span class="chip" style="opacity:${seg(t, 28.1, 28.5)}">S10 · one retry layer, with a budget</span>`;
+  out += `</div>`;
+  if (t >= 28.7) {
+    out += `<div class="diff" style="font-size:${WIDE ? .66 : .62}em;background:#0b111a;border:1px solid #1d2a3f;border-radius:10px;padding:16px 18px;opacity:${seg(t, 28.7, 29.0)}">`;
+    for (const [a, c, line] of DIFF) if (t >= a) out += `<div class="${c}">${esc(line)}</div>`;
+    out += `</div>`;
+    if (t >= 31.6) out += `<div style="margin-top:12px;color:#7a869a;font-size:.58em">The shape the catalog names. Yours or Claude's to write — thunderstruck diagnoses, it does not fix.</div>`;
+  }
+  return out + `</div>`;
+}
+
+// ---- captions -------------------------------------------------------------
+const CAPS = [
+  [0, 2.5, "Your service, as a diagram."],
+  [2.5, 5, "Connect your service catalog: who calls you, who you call."],
+  [5, 10, "Churn × complexity × missing stability patterns. The fracture planes turn red."],
+  [10, 15.2, "thunderstruck ranks them, then reads the code and its git history."],
+  [15.2, 22, "It writes the failure down: trigger, amplifier, what keeps it going."],
+  [22, 27.4, "Every claim resolves to a real file:line and commit."],
+  [27.4, 33.0, "Then the fix, in the shape of the pattern that is missing."],
+];
+
+// ---- render(t) ------------------------------------------------------------
+function render(t) {
+  document.getElementById("arch").innerHTML = archSVG(t);
+  const panel = document.getElementById("panel");
+  panel.style.opacity = t < 10 ? 0 : seg(t, 10, 10.5) * (1 - seg(t, 33.0, 33.6));
+  panel.innerHTML = panelHTML(t);
+  const cap = CAPS.find(([a, b]) => t >= a && t < b);
+  const capEl = document.getElementById("caption");
+  capEl.textContent = cap ? cap[2] : "";
+  capEl.style.opacity = cap ? Math.min(seg(t, cap[0], cap[0] + 0.4), 1 - seg(t, cap[1] - 0.3, cap[1])) : 0;
+  const end = document.getElementById("end");
+  end.style.opacity = seg(t, 33.0, 33.8);
+  if (!WIDE) { end.querySelector("h1").style.fontSize = "54px"; }
+  return true;
+}
+window.render = render;
+render(+q.get("t") || 0);
+</script>
+</body>
+</html>
