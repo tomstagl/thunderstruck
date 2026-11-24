@@ -160,3 +160,79 @@ def test_recording_never_runs_the_test_or_imports_the_repository(repo, tmp_path)
                           capture_output=True, text=True, cwd=str(repo))
     assert proc.returncode == 0, proc.stderr
     assert sorted(p.name for p in sentinels.iterdir()) == []
+
+
+# --------------------------------------------------------------------------
+# Task 2: current or stale (AC-1, AC-5)
+# --------------------------------------------------------------------------
+
+
+def _finding(repo: Path) -> dict:
+    return json.loads((repo / ".thunderstruck" / "report.json").read_text())["findings"][0]
+
+
+def test_a_fresh_record_is_current(repo):
+    _record(repo)
+    got = reproduction.summaries(repo, [_finding(repo)])
+    assert got == {KEY: {"status": "fails_as_predicted", "state": "current",
+                         "test_path": "tests/test_sync.py", "command": "pytest tests/test_sync.py -q",
+                         "recorded_head": _git(repo, "rev-parse", "HEAD"), "stale_because": []}}
+
+
+def test_stale_when_the_test_changes(repo):
+    _record(repo)
+    (repo / "tests" / "test_sync.py").write_text("def test_sync():\n    assert True\n")
+    got = reproduction.summaries(repo, [_finding(repo)])[KEY]
+    assert (got["state"], got["stale_because"]) == ("stale", ["the test file changed"])
+
+
+def test_stale_when_the_finding_changes(repo):
+    _record(repo)
+    finding = {**_finding(repo), "content_hash": "sha256:" + "0" * 64}
+    got = reproduction.summaries(repo, [finding])[KEY]
+    assert (got["state"], got["stale_because"]) == ("stale", ["the finding changed"])
+
+
+def test_stale_when_the_test_file_is_gone(repo):
+    _record(repo)
+    (repo / "tests" / "test_sync.py").unlink()
+    finding = {**_finding(repo), "content_hash": "sha256:" + "0" * 64}
+    got = reproduction.summaries(repo, [finding])[KEY]
+    assert (got["state"], got["stale_because"]) == ("stale", ["the test file is gone",
+                                                              "the finding changed"])
+
+
+def test_a_record_for_an_absent_key_is_ignored_and_kept(repo):
+    _record(repo)
+    other = {**_finding(repo), "key": "other"}
+    assert reproduction.summaries(repo, [other]) == {}
+    assert (repo / ".thunderstruck" / "reproductions" / f"{KEY}.json").is_file()
+
+
+def test_no_directory_is_no_records(repo):
+    assert reproduction.summaries(repo, [_finding(repo)]) == {}
+
+
+@pytest.mark.parametrize("body", ["{not json", "[]", json.dumps({"schema": "x"}),
+                                  json.dumps({"schema": reproduction.SCHEMA, "key": "other",
+                                              "status": "passes", "test": {"path": "t", "sha256": "s"}})])
+def test_a_malformed_record_is_unreadable(repo, body):
+    d = repo / ".thunderstruck" / "reproductions"
+    d.mkdir()
+    (d / f"{KEY}.json").write_text(body)
+    got = reproduction.summaries(repo, [_finding(repo)])
+    assert got == {KEY: {"status": None, "state": "unreadable", "test_path": None, "command": None,
+                         "recorded_head": None, "stale_because": []}}
+
+
+def test_a_rescan_keeps_the_records(scanned_copy, plugin_root):
+    """AC-5: nothing a scan does deletes reproductions/, and #98's archive does not copy it."""
+    d = scanned_copy / ".thunderstruck" / "reproductions"
+    d.mkdir()
+    (d / f"{KEY}.json").write_text('{"kept": true}\n')
+    proc = subprocess.run([sys.executable, str(plugin_root / "scripts" / "signals.py"),
+                           "--repo", str(scanned_copy), "--top", "5", "--since", "24m"],
+                          capture_output=True, text=True, cwd=str(scanned_copy))
+    assert proc.returncode == 0, proc.stderr
+    assert (d / f"{KEY}.json").read_text() == '{"kept": true}\n'
+    assert not list((scanned_copy / ".thunderstruck").glob("previous/*/reproductions"))

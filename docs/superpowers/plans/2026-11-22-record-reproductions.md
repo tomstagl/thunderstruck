@@ -28,8 +28,8 @@
 
 **Files:** `scripts/_common.py` or `scripts/reproduction.py` (a `state(repo, record, finding)` function), tests.
 
-- [ ] Failing tests: current; stale by test change; stale by finding `content_hash` change; test file gone; record for an absent key ignored and kept.
-- [ ] Implement. Commit. `AC-1, AC-5`, `Task: 2`.
+- [x] Failing tests: current; stale by test change; stale by finding `content_hash` change; test file gone; record for an absent key ignored and kept.
+- [x] Implement. Commit. `AC-1, AC-5`, `Task: 2`.
 
 ## Task 3: the report (AC-2)
 
