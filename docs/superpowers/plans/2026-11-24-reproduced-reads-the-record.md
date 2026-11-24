@@ -29,7 +29,7 @@ Where a step gives an old text and a new text, the old text occurs exactly once 
 ## Global Constraints
 
 - **The report's word is the source.** A state is read from `finding["reproduction"]`; nothing here opens a record file to learn one (§3.1). `record_on_disk` is one `is_file()`, only when `--status Reproduced` was asked, only on a key that passed `KEY_SHAPE` (§3.3).
-- **Fail closed.** Only `status == "fails_as_predicted"` with `state == "current"` is a recorded reproduction. Every other value, known or not, is refused (§3.2).
+- **Fail closed.** Only `status == "fails_as_predicted"` with `state == "current"` is a recorded reproduction. Every other value, known or not, is refused, and a `reproduction` object this version does not recognise reads as unreadable (`_normalised`), so the header and the gate agree and a hand-edited report cannot crash the ticket (§3.2).
 - **A refusal writes nothing** and leaves an earlier ticket alone. Every message begins `status Reproduced refused for finding <key>: ` and ends `No ticket was written.` (§3.2).
 - **`report.render_reproduction` is called, not copied** (§3.4). No recorded value reaches the ticket except through it or through the scrubbed finding (§4).
 - **`Hypothesis` stays the default, and `Fix proposed` and `Fix reviewed` stay the requester's word** (§3.5, ticket).
@@ -70,6 +70,7 @@ python3 - <<'EOF' || A=1
 import subprocess, sys
 ANCHORS = [
     ("scripts/finding_ticket.py", "from validate import CODE_REF  # noqa: E402"),
+    ("scripts/finding_ticket.py", "def _normalised(finding: dict) -> dict:"),
     ("scripts/finding_ticket.py", "def recorded_reproduction(finding: dict) -> dict | None:"),
     ("scripts/finding_ticket.py", "def require_status(status: str, finding: dict) -> None:"),
     ("scripts/finding_ticket.py", "        require_status(args.status, finding)"),
@@ -82,7 +83,7 @@ ANCHORS = [
     ("tests/test_finding_ticket.py", '    assert "`Reproduced` is refused until a reproduction is recorded" in readme'),
     ("README.md", "`Reproduced` is refused\n  until a reproduction is recorded (#103)."),
     ("CLAUDE.md", "- **Only `Reproduced` is gated.** `recorded_reproduction` returns `None` until #103"),
-    ("skills/thunderstruck-ticket/SKILL.md", "`Reproduced` is refused\nuntil a reproduction is recorded: relay the refusal, never work around it."),
+    ("skills/thunderstruck-ticket/SKILL.md", "Add `--status\n\"Fix proposed\"` or `--status \"Fix reviewed\"` only when the user says the\nfinding is at that stage; the default is Hypothesis. `Reproduced` is refused\nuntil a reproduction is recorded: relay the refusal, never work around it."),
     ("CHANGELOG.md", "namespaced or not.\n\n### Fixed\n\n- The skeptic's model is `claude-haiku-5-5`"),
 ]
 bad = 0
@@ -180,16 +181,19 @@ becomes
 ```python
 # --- #143: Reproduced reads the record --------------------------------------
 
-REFUSALS = [
-    ("none recorded", None, False, "no reproduction is recorded for it"),
-    ("not in the report yet", None, True, "does not show it yet"),
-    ("passed", reproduction_summary(status="passes"), False, "the recorded reproduction passed"),
-    ("blocked", reproduction_summary(status="blocked"), False, "the recorded reproduction was blocked"),
+REFUSALS = [    # name, the record in the report, a file on disk, why, what to do
+    ("none recorded", None, False, "no reproduction is recorded for it", "Run `/thunderstruck-verify`"),
+    ("not in the report yet", None, True, "does not show it yet", "Rebuild the report"),
+    ("passed", reproduction_summary(status="passes"), False, "the recorded reproduction passed",
+     "Ask for Hypothesis"),
+    ("blocked", reproduction_summary(status="blocked"), False, "the recorded reproduction was blocked",
+     "Ask for Hypothesis"),
     ("stale", reproduction_summary(state="stale",
                                    stale_because=["the test file changed", "the finding changed"]),
-     False, "stale: the test file changed and the finding changed"),
-    ("unreadable", reproduction_summary(status=None, state="unreadable"), False, "is unreadable"),
-    ("unrecognised", reproduction_summary(status="maybe"), False, "unrecognised result ('maybe')"),
+     False, "stale: the test file changed and the finding changed",
+     "Run it again with `/thunderstruck-verify`"),
+    ("unreadable", reproduction_summary(status=None, state="unreadable"), False, "is unreadable",
+     "Record it again with `/thunderstruck-verify`"),
 ]
 
 
@@ -201,9 +205,9 @@ def test_reproduced_is_accepted_on_a_current_failing_reproduction(tmp_path, caps
     assert "- **Status** — Reproduced" in section(ticket_path(repo).read_text(), "Header")
 
 
-@pytest.mark.parametrize("name, rep, on_disk, reason", REFUSALS, ids=[r[0] for r in REFUSALS])
+@pytest.mark.parametrize("name, rep, on_disk, reason, todo", REFUSALS, ids=[r[0] for r in REFUSALS])
 def test_reproduced_is_refused_with_the_reason_for_each_state_of_the_record(
-        tmp_path, capsys, name, rep, on_disk, reason):
+        tmp_path, capsys, name, rep, on_disk, reason, todo):
     repo = make_repo(tmp_path)
     make_report(repo, [make_finding(repo, **({} if rep is None else {"reproduction": rep}))])
     if on_disk:
@@ -212,7 +216,7 @@ def test_reproduced_is_refused_with_the_reason_for_each_state_of_the_record(
         record.write_text("{}")
     code, out, err = run_main(capsys, repo, "--key", KEY, "--status", "Reproduced")
     assert code == 2 and out == "" and f"status Reproduced refused for finding {KEY}" in err
-    assert reason in err and "No ticket was written." in err
+    assert reason in err and todo in err and "No ticket was written." in err
     assert not (repo / ".thunderstruck" / "tickets").exists()
 
 
@@ -223,11 +227,39 @@ def test_a_record_file_with_an_unsafe_name_is_never_looked_up(tmp_path):
     (repo / ".thunderstruck" / "reproductions" / "..%2fx.json").write_text("{}")
     assert ft.record_on_disk(repo, "../x") is False and ft.record_on_disk(repo, "") is False
     assert ft.record_on_disk(repo, KEY) is False
+
+
+# Values a hand-edited or foreign report.json could hold. `_normalised` reads each as unreadable.
+ODD_RECORDS = [
+    ("an unknown status", reproduction_summary(status="maybe")),
+    ("no status", {"state": "current"}),
+    ("an unknown state", reproduction_summary(state="current-ish")),
+    ("reasons that are not text", reproduction_summary(state="stale", stale_because=[1, 2])),
+    ("reasons that are one string", reproduction_summary(state="stale", stale_because="the test file changed")),
+    ("a stale record with no reason", reproduction_summary(state="stale", stale_because=[])),
+    ("a command that is not text", reproduction_summary(command=5)),
+]
+
+
+@pytest.mark.parametrize("name, rep", ODD_RECORDS, ids=[o[0] for o in ODD_RECORDS])
+def test_a_record_this_version_does_not_know_is_refused_as_unreadable(tmp_path, capsys, name, rep):
+    """A hand-edited report.json can neither be taken for a reproduction nor crash the ticket."""
+    repo = make_repo(tmp_path)
+    make_report(repo, [make_finding(repo, reproduction=rep)])
+    code, out, err = run_main(capsys, repo, "--key", KEY, "--status", "Reproduced")
+    assert code == 2 and out == "" and "is unreadable" in err and "No ticket was written." in err
+    assert not (repo / ".thunderstruck" / "tickets").exists()
+
+
+def test_the_refusal_fails_closed_on_a_record_it_is_handed_unnormalised():
+    """Called directly, without find_finding's normalising, an unknown result is still refused."""
+    why = ft.reproduction_refusal({"key": KEY, "reproduction": reproduction_summary(status="maybe")})
+    assert why is not None and "unrecognised result ('maybe')" in why
 ```
 
-- [ ] **Step 2: Run the file and see 12 fail.** They are `test_only_a_current_failing_test_is_a_recorded_reproduction` (the current case), `test_a_finding_with_no_reproduction_key_has_none_recorded`, `test_reproduced_is_accepted_on_a_current_failing_reproduction`, all seven of `test_reproduced_is_refused_with_the_reason_for_each_state_of_the_record`, `test_a_record_file_with_an_unsafe_name_is_never_looked_up` (no `record_on_disk` yet) and `test_reproduced_is_refused_and_writes_nothing`. Each fails for the reason it names; a failure of setup (an import, a missing helper) is a stop.
+- [ ] **Step 2: Run the file and see 19 fail.** They are `test_only_a_current_failing_test_is_a_recorded_reproduction` (the current case), `test_a_finding_with_no_reproduction_key_has_none_recorded`, `test_reproduced_is_accepted_on_a_current_failing_reproduction`, all six of `test_reproduced_is_refused_with_the_reason_for_each_state_of_the_record`, `test_a_record_file_with_an_unsafe_name_is_never_looked_up` (no `record_on_disk` yet), all seven of `test_a_record_this_version_does_not_know_is_refused_as_unreadable`, `test_the_refusal_fails_closed_on_a_record_it_is_handed_unnormalised` (no `reproduction_refusal` yet) and `test_reproduced_is_refused_and_writes_nothing`. Each fails for the reason it names; a failure of setup (an import, a missing helper) is a stop.
 
-- [ ] **Step 3: The code.** In `scripts/finding_ticket.py`, three edits.
+- [ ] **Step 3: The code.** In `scripts/finding_ticket.py`, four edits.
 
 The import:
 
@@ -312,7 +344,8 @@ def reproduction_refusal(finding: dict, on_disk: bool = False) -> str | None:
                 f"`/thunderstruck-verify`. {REBUILD}")
     if status == "passes":
         return ("the recorded reproduction passed: the hypothesis did not hold as tested, and a "
-                "test that passes does not reproduce a failure.")
+                "test that passes does not reproduce a failure. Ask for Hypothesis, or write a test "
+                "that fails for the reason the finding names and record it.")
     if status == "blocked":
         return ("the recorded reproduction was blocked: no test could be made to run. Ask for "
                 "Hypothesis, or get a test to fail and record it.")
@@ -336,6 +369,49 @@ def require_status(status: str, finding: dict, on_disk: bool = False) -> None:
                    "No ticket was written.")
 ```
 
+The normalising, so a `reproduction` object the report could not have made reads as unreadable (§3.2):
+
+Old text (occurs exactly once):
+
+```python
+def _normalised(finding: dict) -> dict:
+    """A copy with the `check` report.collect gives every finding, so the renderers
+    can index it: a missing or unrecognised status reads as unchecked."""
+    f = copy.deepcopy(finding)
+    stored = f.get("check") if isinstance(f.get("check"), dict) else {}
+    f["check"] = {"by": None, "reason": None, **stored, "status": c.check_status(f)}
+    return f
+```
+
+New text:
+
+```python
+def _recognised(rep: dict) -> bool:
+    """A `reproduction` object in the vocabulary `reproduction.summaries` gives it (#103)."""
+    state, status = rep.get("state"), rep.get("status")
+    because = rep.get("stale_because", [])
+    return (state in ("current", "stale", "unreadable")
+            and (status is None) == (state == "unreadable")
+            and (status is None or status in reproduction.STATUSES)
+            and isinstance(because, list) and all(isinstance(b, str) for b in because)
+            and (state == "stale") == bool(because)
+            and all(rep.get(k) is None or isinstance(rep.get(k), str)
+                    for k in ("test_path", "command", "recorded_head")))
+
+
+def _normalised(finding: dict) -> dict:
+    """A copy with the `check` report.collect gives every finding, so the renderers
+    can index it: a missing or unrecognised status reads as unchecked. A `reproduction`
+    object this version does not recognise reads as unreadable, so a hand-edited report
+    can neither be taken for a reproduction nor crash the renderer."""
+    f = copy.deepcopy(finding)
+    stored = f.get("check") if isinstance(f.get("check"), dict) else {}
+    f["check"] = {"by": None, "reason": None, **stored, "status": c.check_status(f)}
+    if isinstance(f.get("reproduction"), dict) and not _recognised(f["reproduction"]):
+        f["reproduction"] = {"status": None, "state": "unreadable"}
+    return f
+```
+
 The call in `main`:
 
 Old text (occurs exactly once):
@@ -351,14 +427,14 @@ New text:
                        record_on_disk(repo, finding["key"]) if args.status == "Reproduced" else False)
 ```
 
-- [ ] **Step 4: Run the file: 240 passed** (the count drifts with `main`; the rule is zero failures). Run `uv run scripts/gen_sample_report.py --check` and see exit 0.
+- [ ] **Step 4: Run the file: 247 passed** (the count drifts with `main`; the rule is zero failures). Run `uv run scripts/gen_sample_report.py --check` and see exit 0.
 
 - [ ] **Step 5: Commit.**
 
 ```bash
 git add scripts/finding_ticket.py tests/test_finding_ticket.py
 git commit -m "Ticket: Reproduced reads the recorded reproduction (#143)" \
-  -m "AC-1, AC-2, AC-5" -m "Task: 1" -m "red: 12 failed in tests/test_finding_ticket.py, among them test_reproduced_is_accepted_on_a_current_failing_reproduction: status Reproduced refused for finding a1b2c3d4e5f6: no failing reproduction is recorded for it"
+  -m "AC-1, AC-2, AC-5" -m "Task: 1" -m "red: 19 failed in tests/test_finding_ticket.py, among them test_reproduced_is_accepted_on_a_current_failing_reproduction: status Reproduced refused for finding a1b2c3d4e5f6: no failing reproduction is recorded for it"
 ```
 
 ## Task 2: The ticket shows the record
@@ -399,8 +475,25 @@ def test_a_recorded_reproduction_is_shown_whatever_status_is_asked(tmp_path, cap
     text = ticket_path(repo).read_text()
     assert lead in _plain(section(text, "Header")) and lead in _plain(section(text, "Reproduce"))
     assert "No reproduction is recorded" not in text
+    reproduce = section(text, "Reproduce")
+    if rep["state"] == "unreadable":
+        assert "Recorded with the command" not in reproduce
+    else:                                  # the test, the command and the commit, for every state
+        assert "tests/test_releases.py" in reproduce
+        assert "`pytest tests/test_releases.py -q` at commit `" + "a" * 12 + "`" in reproduce
     if not args:
         assert "- **Status** — Hypothesis" in section(text, "Header")
+
+
+@pytest.mark.parametrize("name, rep", ODD_RECORDS, ids=[o[0] for o in ODD_RECORDS])
+def test_a_record_this_version_does_not_know_is_shown_as_unreadable(tmp_path, capsys, name, rep):
+    repo = make_repo(tmp_path)
+    make_report(repo, [make_finding(repo, reproduction=rep)])
+    code, _, err = run_main(capsys, repo, "--key", KEY)
+    assert code == 0, err
+    text = ticket_path(repo).read_text()
+    assert "A recorded reproduction is unreadable" in _plain(section(text, "Header"))
+    assert "Recorded with the command" not in section(text, "Reproduce")
 
 
 def test_the_recorded_command_is_inert_and_free_of_machine_values(tmp_path, capsys, monkeypatch):
@@ -465,7 +558,7 @@ def test_a_record_the_report_was_not_rebuilt_for_says_to_rebuild_it(reported, ca
     assert code == 2 and "does not show it yet" in err and "Rebuild the report" in err
 ```
 
-- [ ] **Step 2: Run the file and see 9 fail:** `test_a_recorded_reproduction_is_shown_in_the_header_and_the_reproduce_section`, all six of `test_a_recorded_reproduction_is_shown_whatever_status_is_asked`, `test_the_recorded_command_is_inert_and_free_of_machine_values` and `test_a_reproduction_recorded_and_reported_for_real_makes_a_reproduced_ticket`. The byte-identical test and the stale and not-rebuilt tests already pass, because Task 1 built what they pin; they stay, because they are what keeps it built.
+- [ ] **Step 2: Run the file and see 16 fail:** `test_a_recorded_reproduction_is_shown_in_the_header_and_the_reproduce_section`, all six of `test_a_recorded_reproduction_is_shown_whatever_status_is_asked`, all seven of `test_a_record_this_version_does_not_know_is_shown_as_unreadable`, `test_the_recorded_command_is_inert_and_free_of_machine_values` and `test_a_reproduction_recorded_and_reported_for_real_makes_a_reproduced_ticket`. The byte-identical test and the stale and not-rebuilt tests already pass, because Task 1 built what they pin; they stay, because they are what keeps it built.
 
 - [ ] **Step 3: The code.** In `render`, three edits.
 
@@ -513,14 +606,14 @@ New text:
           *(repro or ["No reproduction is recorded for this finding.", ""])]
 ```
 
-- [ ] **Step 4: Run the file: 252 passed.** Run `uv run scripts/gen_sample_report.py --check` and see exit 0: the sample shows the no-record sentence, which did not change.
+- [ ] **Step 4: Run the file: 266 passed.** Run `uv run scripts/gen_sample_report.py --check` and see exit 0: the sample shows the no-record sentence, which did not change.
 
 - [ ] **Step 5: Commit.**
 
 ```bash
 git add scripts/finding_ticket.py tests/test_finding_ticket.py
 git commit -m "Ticket: show a recorded reproduction in the header and Reproduce (#143)" \
-  -m "AC-1, AC-3, AC-4, AC-6" -m "Task: 2" -m "red: 9 failed in tests/test_finding_ticket.py, among them test_a_recorded_reproduction_is_shown_in_the_header_and_the_reproduce_section: assert '- **Reproduction** — Reproduced by a failing test' in header"
+  -m "AC-1, AC-3, AC-4, AC-6" -m "Task: 2" -m "red: 16 failed in tests/test_finding_ticket.py, among them test_a_recorded_reproduction_is_shown_in_the_header_and_the_reproduce_section: assert '- **Reproduction** — Reproduced by a failing test' in header"
 ```
 
 ## Task 3: The words
@@ -565,6 +658,7 @@ def test_the_docs_say_when_reproduced_is_accepted():
     assert "returns `None` until #103" not in claude
     skill = _flat()
     assert "`Reproduced` is accepted only when a failing test is recorded for the finding" in skill
+    assert '`--status "Reproduced"`' in skill
     assert "only once the report is rebuilt" in skill
 ```
 
@@ -607,7 +701,8 @@ New text:
   object `report.py` attaches (#103) and accepts only a failing test whose state is
   `current`. Every other state is refused with its own reason, and a record file the
   report does not show yet says to rebuild the report. The state is the report's, read
-  as it is, like the check status; the ticket does not derive it again.
+  as it is, like the check status; the ticket does not derive it again. A record this
+  version does not recognise reads as unreadable (`_normalised`).
 ```
 
 `skills/thunderstruck-ticket/SKILL.md`:
@@ -615,6 +710,8 @@ New text:
 Old text (occurs exactly once):
 
 ```markdown
+It writes `.thunderstruck/tickets/<key>.md` and nothing else. Add `--status
+"Fix proposed"` or `--status "Fix reviewed"` only when the user says the
 finding is at that stage; the default is Hypothesis. `Reproduced` is refused
 until a reproduction is recorded: relay the refusal, never work around it.
 ```
@@ -622,13 +719,16 @@ until a reproduction is recorded: relay the refusal, never work around it.
 New text:
 
 ```markdown
-finding is at that stage; the default is Hypothesis. `Reproduced` is accepted only
-when a failing test is recorded for the finding and the record is current: relay a
-refusal and its reason, never work around it. A reproduction recorded after the last
-report shows in the ticket only once the report is rebuilt.
+It writes `.thunderstruck/tickets/<key>.md` and nothing else. Add `--status
+"Reproduced"`, `--status "Fix proposed"` or `--status "Fix reviewed"` only when
+the user says the finding is at that stage; the default is Hypothesis.
+`Reproduced` is accepted only when a failing test is recorded for the finding and
+the record is current: relay a refusal and its reason, never work around it. A
+reproduction recorded after the last report shows in the ticket only once the
+report is rebuilt.
 ```
 
-- [ ] **Step 4: Run the file: 253 passed.**
+- [ ] **Step 4: Run the file: 267 passed.**
 
 - [ ] **Step 5: Commit.**
 
@@ -691,8 +791,8 @@ git commit -m "Changelog: a ticket can say Reproduced (#143)" -m "AC-7" -m "Task
 | AC | Tasks | Proof |
 |---|---|---|
 | AC-1 | 1, 2 | `test_reproduced_is_accepted_on_a_current_failing_reproduction`, the rule test, `test_a_reproduction_recorded_and_reported_for_real_makes_a_reproduced_ticket` |
-| AC-2 | 1 | `test_reproduced_is_refused_with_the_reason_for_each_state_of_the_record` (seven states), and the stale and not-rebuilt tests on the real chain |
-| AC-3 | 2 | the header and Reproduce tests, for a current record and for each other state, for two statuses |
+| AC-2 | 1 | `test_reproduced_is_refused_with_the_reason_for_each_state_of_the_record` (six states, each with its reason and what to do), the seven records this version does not know, and the stale and not-rebuilt tests on the real chain |
+| AC-3 | 2 | the header tests, and the Reproduce tests for the test, the command and the commit, for a current record and for each other state, for two statuses |
 | AC-4 | 2 | `test_the_recorded_command_is_inert_and_free_of_machine_values` |
 | AC-5 | 1 | `test_a_finding_with_no_reproduction_key_has_none_recorded`, and the rule test's non-object cases |
 | AC-6 | 2 | `test_the_ticket_with_a_recorded_reproduction_is_byte_identical_twice` |
