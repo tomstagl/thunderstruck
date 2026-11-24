@@ -154,6 +154,21 @@ open}` over the reported findings. `index.json` gives a finding
 schemas stay `thunderstruck.report/v2` and `thunderstruck.index/v1`: the
 additions are optional.
 
+## Reproductions
+
+`/thunderstruck-verify` records the outcome of the user's test run with
+`reproduction.py record` in `.thunderstruck/reproductions/<key>.json`
+(`thunderstruck.reproduction/v1`: `key`, `status` `fails_as_predicted` |
+`passes` | `blocked`, `test` `{path, sha256}`, `command`, `head`,
+`finding_hash`, `recorded_at`). No scan replaces or archives that directory.
+A finding with a record carries `reproduction` in `report.json`: `status`,
+`state` (`current`, `stale` or `unreadable`), `test_path`, `command`,
+`recorded_head`, `stale_because` (`the test file changed`, `the test file is
+gone`, `the finding changed`) and the `sentence` both reports print. `index.json`
+carries `status`, `state`, `test_path` and `stale_because`. A record is display
+only: it changes no rank, confidence, check status, gate, bundle or brief, and
+the scan did not run the test. Without a record the key is absent.
+
 ## Verification
 
 Step 4b (`verify.py`) gives each validated finding to one read-only skeptic

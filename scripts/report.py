@@ -35,6 +35,7 @@ import deps  # noqa: E402
 import finding_shape  # noqa: E402
 import links  # noqa: E402
 import mdtext as md  # noqa: E402
+import reproduction  # noqa: E402
 from validate import CODE_REF, DETECTOR_REF, _count_lines  # noqa: E402
 
 CONFIDENCE_RANK = {"high": 0, "medium": 1, "low": 2}
@@ -194,6 +195,12 @@ def collect(repo: Path) -> dict[str, Any]:
                       f"reported as unchecked" for f in findings if f.pop("_check_fallback")]
     for f in refuted:
         f.pop("_check_fallback")
+    # #103: a recorded reproduction is attached after ranking and numbering,
+    # for display only; it feeds no confidence, gate, order, bundle or brief
+    for key, summary in reproduction.summaries(repo, findings).items():
+        for f in findings:
+            if f.get("key") == key:
+                f["reproduction"] = {**summary, "sentence": reproduction.sentence(summary)}
     _attach_commit_subjects(repo, findings)
     shared = shared_code(findings)
     for f in findings:
@@ -654,6 +661,23 @@ def render_check(f: dict) -> list[str]:
         L += ["Refuted in part:" if status == "narrowed" else "Refuted:", "", *claims, ""]
     if (provenance := _provenance(check)):
         L += [*provenance, ""]
+    return L
+
+
+def render_reproduction(f: dict) -> list[str]:
+    """The recorded reproduction, beside the check (#103). Display only."""
+    rep = f.get("reproduction")
+    if not isinstance(rep, dict):
+        return []
+    lead, path, tail = reproduction.sentence_parts(rep)
+    line = f"**Reproduction** — {md.text(lead)}" + (f": {md.code(path)}" if path else "") \
+        + (md.text(tail) if tail else "") + "."
+    L = [line, ""]
+    if rep.get("state") != "unreadable":
+        L += [f"Recorded with the command {md.code(rep.get('command') or '')}"
+              + (f" at commit {md.code(str(rep['recorded_head'])[:12])}" if rep.get("recorded_head") else "")
+              + (f", test {md.code(rep['test_path'])}" if rep.get("test_path") and not path else "")
+              + ".", ""]
     return L
 
 
@@ -1278,7 +1302,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
             for ev in f.get("evidence") or []:
                 note = f" — {md.text(ev['note'])}" if ev.get("note") else ""
                 L.append(f"- _{md.text(ev.get('type'))}_ {_evidence_ref(ev)}{note}")
-            L += ["", *render_check(f), *render_impact(f), *render_guarantees(f),
+            L += ["", *render_check(f), *render_reproduction(f), *render_impact(f), *render_guarantees(f),
                   *render_not_checked(f), *render_preconditions(f), *render_history(f),
                   f"**Verify** — {md.text(f.get('how_to_verify', '—'))}  ",
                   f"**Why this confidence** — {md.text(f.get('confidence_rationale', '—'))}  "]
@@ -1463,6 +1487,9 @@ def render_index(data: dict) -> dict:
             item["sustaining_effect"] = f["sustaining_effect"]
         if f.get("catalog_evidence"):
             item["catalog_evidence"] = f["catalog_evidence"]
+        if isinstance(f.get("reproduction"), dict):   # #103: display only
+            item["reproduction"] = {k: f["reproduction"].get(k)
+                                    for k in ("status", "state", "test_path", "stale_because")}
         entry["findings"].append(item)
         for cited in _cited_code_files(f):
             if cited != path:
