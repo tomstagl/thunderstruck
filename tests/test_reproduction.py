@@ -236,3 +236,15 @@ def test_a_rescan_keeps_the_records(scanned_copy, plugin_root):
     assert proc.returncode == 0, proc.stderr
     assert (d / f"{KEY}.json").read_text() == '{"kept": true}\n'
     assert not list((scanned_copy / ".thunderstruck").glob("previous/*/reproductions"))
+
+
+def test_a_missing_test_says_it_does_not_exist(repo):
+    with pytest.raises(c.ThunderstruckError, match="does not exist"):
+        _record(repo, test="tests/never_written.py")
+
+
+def test_an_unreadable_test_is_refused_not_stored_without_a_hash(repo, monkeypatch):
+    monkeypatch.setattr(c, "sha256_file", lambda p: None)
+    with pytest.raises(c.ThunderstruckError, match="cannot be read"):
+        _record(repo)
+    assert not (repo / ".thunderstruck" / "reproductions").exists()

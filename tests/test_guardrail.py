@@ -394,3 +394,25 @@ def test_index_json_carries_the_reproduction_summary(scanned_copy, plugin_root):
     assert items and all(it["reproduction"] == {
         "status": "fails_as_predicted", "state": "current", "test_path": "tests/test_repro.py",
         "stale_because": []} for it in items)
+
+
+def test_a_file_changed_since_the_scan_keeps_the_hypotheses_sentence(project):
+    (project / "src" / "flagged.ts").write_text("const a = 2;\n")
+    _with_reproduction(project, "src/flagged.ts", 0, _rep())
+    context = _context(project, "src/flagged.ts")
+    assert "This file has changed since the scan" in context
+    assert "was recorded as reproducing it before this file changed" in context
+    assert "is reproduced by a recorded failing test" not in context
+    assert context.endswith(HYPOTHESES)
+
+
+def test_the_closing_line_names_only_findings_it_listed():
+    sys.path.insert(0, str(GUARDRAIL.parent))
+    import guardrail
+    rep = {"status": "fails_as_predicted", "state": "current", "test_path": "t.py"}
+    shown = [{"id": f"FR-00{n}"} for n in range(1, 4)]
+    hidden = {"id": "FR-009", "reproduction": rep}
+    line = guardrail.closing_line(shown, 4)
+    assert "FR-009" not in line and line.endswith("These are hypotheses from a past scan, not verified defects.")
+    line = guardrail.closing_line([{**shown[0], "reproduction": rep}, *shown[1:]], 4 + len([hidden]))
+    assert "FR-001 is reproduced" in line and "The others are hypotheses" in line

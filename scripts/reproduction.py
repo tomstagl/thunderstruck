@@ -58,7 +58,10 @@ def _finding(repo: Path, key: str) -> dict[str, Any]:
 
 def _test_path(repo: Path, test: str) -> str:
     rel = c.ref_path(test)
-    problem = c.path_problem(rel) or c.tracked_file_problem(repo, rel, "100644")
+    problem = c.path_problem(rel)
+    if not problem and not (repo / rel).exists() and not (repo / rel).is_symlink():
+        problem = "does not exist in the repository (paths are relative to its root)"
+    problem = problem or c.tracked_file_problem(repo, rel, "100644")
     if problem:
         raise c.ThunderstruckError(f"test path {test!r} {problem}.")
     return rel
@@ -79,8 +82,11 @@ def record(repo: Path, key: str, status: str, test: str, command: str,
         raise c.ThunderstruckError(f"{key!r} is not a finding in the current report.json.")
     finding = _finding(repo, key)
     rel = _test_path(repo, test)
+    digest = c.sha256_file(repo / rel)
+    if digest is None:
+        raise c.ThunderstruckError(f"test path {rel!r} cannot be read, so it cannot be hashed.")
     rec = {"schema": SCHEMA, "key": key, "status": status,
-           "test": {"path": rel, "sha256": c.sha256_file(repo / rel)},
+           "test": {"path": rel, "sha256": digest},
            "command": command,
            "head": c.git(repo, "rev-parse", "HEAD").strip(),
            "finding_hash": finding.get("content_hash"),

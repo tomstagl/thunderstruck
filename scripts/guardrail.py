@@ -138,10 +138,13 @@ def reproduced_path(f: dict) -> str | None:
     return None
 
 
-def reproduction_line(f: dict) -> str | None:
+def reproduction_line(f: dict, file_changed: bool = False) -> str | None:
     rep = _reproduction(f)
     if rep is None:
         return None
+    if file_changed and reproduced_path(f):
+        return (f"A failing test ({reproduced_path(f)}) was recorded as reproducing it "
+                "before this file changed.")
     if rep["state"] == "stale":
         because = [_one_line(b, 60) for b in rep.get("stale_because") or [] if isinstance(b, str)]
         return "A recorded reproduction is stale: " + (" and ".join(because) or "it no longer applies") + "."
@@ -153,15 +156,17 @@ def reproduction_line(f: dict) -> str | None:
     return "A reproduction was attempted and blocked."
 
 
-def closing_line(findings: list[dict]) -> str:
+def closing_line(shown: list[dict], total: int, file_changed: bool = False) -> str:
     """The closing statement: the hypotheses sentence stays for every finding
-    without a current reproduction (#103 spec §2.4)."""
+    without a current reproduction (#103 spec §2.4). Names only findings the
+    context listed; a file changed since the scan keeps the sentence for all."""
     head = "The full report is at .thunderstruck/report.md."
-    done = [(f.get("id", "?"), reproduced_path(f)) for f in findings if reproduced_path(f)]
+    done = [] if file_changed else [(f.get("id", "?"), reproduced_path(f))
+                                    for f in shown if reproduced_path(f)]
     if not done:
         return f"{head} These are hypotheses from a past scan, not verified defects."
     parts = [f"{fid} is reproduced by a recorded failing test ({path})." for fid, path in done]
-    if len(done) < len(findings):
+    if len(done) < total:
         parts.append("The others are hypotheses from a past scan, not verified defects.")
     return " ".join([head, *parts])
 
@@ -277,7 +282,7 @@ def build_context(entry: dict, rel: str, stale: bool) -> str | None:
         lines.append(f"- {f.get('id', '?')}{where}: {f.get('failure_mode', '')}")
         lines.append(f"  missing patterns: {pats}; confidence: {f['_confidence']}; "
                      f"check status: {f['_status']}.")
-        for fact in (reproduction_line(f), precondition_line(f), holds_line(f), guarantee_line(f),
+        for fact in (reproduction_line(f, stale), precondition_line(f), holds_line(f), guarantee_line(f),
                      not_checked_line(f), history_line(f)):
             if fact:
                 lines.append(fact if fact.startswith("  ") else f"  {fact}")
@@ -290,7 +295,7 @@ def build_context(entry: dict, rel: str, stale: bool) -> str | None:
         lines.append("")
         lines += neighbours
     lines.append("")
-    lines.append(closing_line(findings))
+    lines.append(closing_line(shown, len(findings), stale))
     return "\n".join(lines)
 
 
