@@ -119,6 +119,53 @@ def holds_line(f: dict) -> str | None:
     return f"  What still holds, per a check: {' '.join(holds.split())[:300]}."
 
 
+def _reproduction(f: dict) -> dict | None:
+    """The finding's recorded reproduction (#103), or None for none or an
+    unreadable one. Absent from an index written before it."""
+    rep = f.get("reproduction")
+    if not isinstance(rep, dict) or rep.get("state") not in ("current", "stale"):
+        return None
+    if rep.get("status") not in ("fails_as_predicted", "passes", "blocked"):
+        return None
+    return rep
+
+
+def reproduced_path(f: dict) -> str | None:
+    """The test path of a current reproduction that failed as predicted."""
+    rep = _reproduction(f)
+    if rep and rep["state"] == "current" and rep["status"] == "fails_as_predicted":
+        return _one_line(rep.get("test_path") or "?", 200)
+    return None
+
+
+def reproduction_line(f: dict) -> str | None:
+    rep = _reproduction(f)
+    if rep is None:
+        return None
+    if rep["state"] == "stale":
+        because = [_one_line(b, 60) for b in rep.get("stale_because") or [] if isinstance(b, str)]
+        return "A recorded reproduction is stale: " + (" and ".join(because) or "it no longer applies") + "."
+    if rep["status"] == "fails_as_predicted":
+        return (f"It is reproduced by a recorded failing test ({reproduced_path(f)}); "
+                "the scan did not run the test.")
+    if rep["status"] == "passes":
+        return "A recorded reproduction passed: the hypothesis did not hold as tested."
+    return "A reproduction was attempted and blocked."
+
+
+def closing_line(findings: list[dict]) -> str:
+    """The closing statement: the hypotheses sentence stays for every finding
+    without a current reproduction (#103 spec §2.4)."""
+    head = "The full report is at .thunderstruck/report.md."
+    done = [(f.get("id", "?"), reproduced_path(f)) for f in findings if reproduced_path(f)]
+    if not done:
+        return f"{head} These are hypotheses from a past scan, not verified defects."
+    parts = [f"{fid} is reproduced by a recorded failing test ({path})." for fid, path in done]
+    if len(done) < len(findings):
+        parts.append("The others are hypotheses from a past scan, not verified defects.")
+    return " ".join([head, *parts])
+
+
 def _project_dir(hook_input: dict) -> Path | None:
     for candidate in (os.environ.get("CLAUDE_PROJECT_DIR"), hook_input.get("cwd"), os.getcwd()):
         if not candidate:
@@ -230,8 +277,8 @@ def build_context(entry: dict, rel: str, stale: bool) -> str | None:
         lines.append(f"- {f.get('id', '?')}{where}: {f.get('failure_mode', '')}")
         lines.append(f"  missing patterns: {pats}; confidence: {f['_confidence']}; "
                      f"check status: {f['_status']}.")
-        for fact in (precondition_line(f), holds_line(f), guarantee_line(f), not_checked_line(f),
-                     history_line(f)):
+        for fact in (reproduction_line(f), precondition_line(f), holds_line(f), guarantee_line(f),
+                     not_checked_line(f), history_line(f)):
             if fact:
                 lines.append(fact if fact.startswith("  ") else f"  {fact}")
         if f.get("sustaining_effect"):
@@ -243,8 +290,7 @@ def build_context(entry: dict, rel: str, stale: bool) -> str | None:
         lines.append("")
         lines += neighbours
     lines.append("")
-    lines.append("The full report is at .thunderstruck/report.md. These are "
-                 "hypotheses from a past scan, not verified defects.")
+    lines.append(closing_line(findings))
     return "\n".join(lines)
 
 

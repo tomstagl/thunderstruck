@@ -45,8 +45,8 @@
 
 **Files:** `scripts/report.py` (`render_index`), `scripts/guardrail.py`, `tests/test_guardrail.py`.
 
-- [ ] Failing tests: `index.json` carries the summary; the guardrail says `reproduced by a recorded failing test (<path>)` for a current one, says stale or passes as that, keeps the old sentence for findings without a record; the text is not imperative (reuse the existing phrasing test); latency under budget; stdlib-only AST check.
-- [ ] Implement. Commit. `AC-3`, `Task: 4`.
+- [x] Failing tests: `index.json` carries the summary; the guardrail says `reproduced by a recorded failing test (<path>)` for a current one, says stale or passes as that, keeps the old sentence for findings without a record; the text is not imperative (reuse the existing phrasing test); latency under budget; stdlib-only AST check.
+- [x] Implement. Commit. `AC-3`, `Task: 4`.
 
 ## Task 5: the verify skill and docs (AC-4)
 

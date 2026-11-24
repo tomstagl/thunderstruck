@@ -1487,6 +1487,9 @@ def render_index(data: dict) -> dict:
             item["sustaining_effect"] = f["sustaining_effect"]
         if f.get("catalog_evidence"):
             item["catalog_evidence"] = f["catalog_evidence"]
+        if isinstance(f.get("reproduction"), dict):   # #103: display only
+            item["reproduction"] = {k: f["reproduction"].get(k)
+                                    for k in ("status", "state", "test_path", "stale_because")}
         entry["findings"].append(item)
         for cited in _cited_code_files(f):
             if cited != path:
