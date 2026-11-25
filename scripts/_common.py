@@ -20,7 +20,7 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Iterable
 
-from context_extract import ATTRIBUTE_VALUE, DIRECTIONS, ENTITY_REF, LABEL, RELATION_TYPE
+from context_extract import ATTRIBUTE_VALUE, DIRECTIONS, ENTITY_REF, LABEL, OWN_HOST, RELATION_TYPE
 from finding_shape import FINDING_SCHEMA_VERSION  # noqa: F401  (re-exported)
 
 OUTPUT_DIRNAME = ".thunderstruck"
@@ -343,6 +343,9 @@ def _well_formed_context(doc: dict[str, Any]) -> bool:
         return False
     edges = doc.get("edges")
     if not isinstance(edges, list) or not all(_well_formed_edge(e) for e in edges):
+        return False
+    own = doc.get("own_hosts", [])
+    if not isinstance(own, list) or not all(isinstance(h, str) and OWN_HOST.match(h) for h in own):
         return False
     truncated = doc.get("truncated")
     return isinstance(truncated, dict) and all(

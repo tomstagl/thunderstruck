@@ -16,6 +16,7 @@ import time
 import uuid
 
 MAIN = "component:default/fixture-app"
+OWN_HOSTS_KEY = "thunderstruck.io/own-hosts"
 
 
 def neighbour(name: str, tier: str) -> dict:
@@ -81,6 +82,12 @@ def main(argv: list[str]) -> int:
         return 0
 
     entity = json.loads(json.dumps(ENTITIES.get(ref) or neighbour(ref.rsplit("/", 1)[-1], "3")))
+    if ref == MAIN and "FAKE_CATALOG_OWN_HOSTS" in os.environ:
+        annotations = entity["metadata"]["annotations"]
+        key = os.environ.get("FAKE_CATALOG_OWN_HOSTS_KEY", OWN_HOSTS_KEY)
+        annotations.pop(OWN_HOSTS_KEY, None)
+        if os.environ["FAKE_CATALOG_OWN_HOSTS"]:
+            annotations[key] = os.environ["FAKE_CATALOG_OWN_HOSTS"]
     if ref == MAIN:
         extra = int(os.environ.get("FAKE_CATALOG_EXTRA_DEPENDENTS", "0"))
         entity["relations"] += [

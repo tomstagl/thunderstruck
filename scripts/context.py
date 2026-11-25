@@ -41,7 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _common as c  # noqa: E402
 from context_extract import (DIRECTIONS, ENTITY_REF, LABEL, RELATION_TYPE,  # noqa: E402
                              context_hash, detect_entity_ref, extract_attributes,
-                             extract_edges)
+                             extract_edges, extract_own_hosts)
 
 DEFAULT_TIMEOUT_S = 20
 MAX_TIMEOUT_S = 60
@@ -49,6 +49,21 @@ DEFAULT_MAX_AGE_DAYS = 30
 TRUST_ENV = "THUNDERSTRUCK_TRUST_CONTEXT"
 KINDS = ("command",)
 EXTRACTORS = ("backstage-relations",)
+DEFAULT_OWN_HOSTS_ANNOTATION = "thunderstruck.io/own-hosts"
+_ANNOTATION_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9./_-]{0,252}\Z")
+
+
+def own_hosts_annotation(profile: dict) -> str:
+    """The annotation the service's own hosts are read from (#6, spec §2.6).
+
+    From `[observed] own_hosts_annotation`, which runs no command and so stays
+    out of config_hash. observed.py warns about an invalid value; here it falls
+    back to the default."""
+    section = profile.get("observed") if isinstance(profile, dict) else None
+    value = section.get("own_hosts_annotation") if isinstance(section, dict) else None
+    if isinstance(value, str) and _ANNOTATION_KEY.match(value):
+        return value
+    return DEFAULT_OWN_HOSTS_ANNOTATION
 
 
 # --------------------------------------------------------------------------
@@ -269,6 +284,7 @@ class SourceResult:
     truncated: dict[str, int] = field(default_factory=lambda: {"inbound": 0, "outbound": 0})
     warnings: list[str] = field(default_factory=list)
     raws: dict[str, str] = field(default_factory=dict)
+    own_hosts: list[str] = field(default_factory=list)
     error: str | None = None
 
 
@@ -291,7 +307,8 @@ def cap_edges(edges: list[dict]) -> tuple[list[dict], dict[str, int]]:
     return kept, truncated
 
 
-def fetch_source(entity_ref: str, source: dict, cwd: Path, budget_s: float) -> SourceResult:
+def fetch_source(entity_ref: str, source: dict, cwd: Path, budget_s: float,
+                 annotation: str = DEFAULT_OWN_HOSTS_ANNOTATION) -> SourceResult:
     deadline = time.monotonic() + budget_s
 
     def allowance() -> float:
@@ -307,6 +324,11 @@ def fetch_source(entity_ref: str, source: dict, cwd: Path, budget_s: float) -> S
 
     edges, truncated = cap_edges(extract_edges(main.doc, source["edge_types"], source["name"]))
     result = SourceResult(edges=edges, truncated=truncated, raws={entity_ref: main.raw})
+    result.own_hosts, bad_hosts = extract_own_hosts(
+        main.doc if isinstance(main.doc, dict) else {}, annotation)
+    if bad_hosts:
+        result.warnings.append(
+            f"{bad_hosts} entry(ies) of the {annotation} annotation dropped: not a host name")
     if any(truncated.values()):
         result.warnings.append(
             f"service context shows the first {c.MAX_NEIGHBOURS_PER_DIRECTION} neighbours "
@@ -372,7 +394,7 @@ def _reusable(previous: Any, chash: str) -> bool:
         return False
     try:
         recomputed = context_hash(previous.get("entity_ref"), previous["edges"],
-                                  previous.get("truncated"))
+                                  previous.get("truncated"), previous.get("own_hosts"))
     except (TypeError, ValueError):
         return False
     return recomputed == previous.get("context_hash")
@@ -420,13 +442,17 @@ def resolve(repo: Path, profile: dict, previous: Any, *, now: datetime,
     if age is not None and not refresh and age < cfg["max_age_days"]:
         return {**previous, "status": "cached", "warnings": kept}
 
-    result = fetch_source(cfg["entity_ref"], cfg["sources"][0], repo, budget_s)
+    result = fetch_source(cfg["entity_ref"], cfg["sources"][0], repo, budget_s,
+                          own_hosts_annotation(profile))
     if result.error is None:
         _write_raw(repo, result.raws)
         doc = _doc("fresh", cfg, chash, result.warnings)
-        doc.update(context_hash=context_hash(cfg["entity_ref"], result.edges, result.truncated),
+        doc.update(context_hash=context_hash(cfg["entity_ref"], result.edges, result.truncated,
+                                             result.own_hosts),
                    fetched_at=now.isoformat(timespec="seconds"),
                    edges=result.edges, truncated=result.truncated)
+        if result.own_hosts:   # absent otherwise, so context.json is unchanged without it
+            doc["own_hosts"] = result.own_hosts
         return doc
     if age is not None and age < 2 * cfg["max_age_days"]:
         return {**previous, "status": "stale", "warnings": [

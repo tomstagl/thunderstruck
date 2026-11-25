@@ -23,6 +23,9 @@ RELATION_TYPE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,63}\Z")
 ATTRIBUTE_VALUE = re.compile(r"^[A-Za-z0-9_.:-]{1,32}\Z")
 LABEL = re.compile(r"^[a-z][a-z0-9_]{0,31}\Z")
 DIRECTIONS = ("inbound", "outbound")
+# A host name (observed-dependencies spec §2.1), with an optional leading `*.`.
+OWN_HOST = re.compile(
+    r"^(?:\*\.)?[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)*\Z")
 
 
 def _target_ref(relation: dict) -> str | None:
@@ -74,9 +77,36 @@ def extract_attributes(entity: dict[str, Any],
     return attributes, rejected
 
 
-def context_hash(entity_ref: str, edges: list[dict], truncated: dict[str, int]) -> str:
-    canonical = json.dumps({"entity_ref": entity_ref, "edges": edges, "truncated": truncated},
-                           sort_keys=True, separators=(",", ":"))
+def extract_own_hosts(entity: dict[str, Any], annotation: str) -> tuple[list[str], int]:
+    """The service's own hosts from one annotation on its own entity (#6, §2.6):
+    the valid entries, sorted and deduplicated, and how many were rejected.
+    A rejected entry is counted, never kept, so its text can't reach any output."""
+    metadata = entity.get("metadata")
+    annotations = metadata.get("annotations") if isinstance(metadata, dict) else None
+    value = annotations.get(annotation) if isinstance(annotations, dict) else None
+    if value is None:
+        return [], 0
+    if not isinstance(value, str):
+        return [], 1
+    hosts: set[str] = set()
+    rejected = 0
+    for part in value.split(","):
+        host = part.strip().lower().rstrip(".")
+        if not host:
+            continue
+        if len(host) <= 253 and OWN_HOST.match(host):
+            hosts.add(host)
+        else:
+            rejected += 1
+    return sorted(hosts), rejected
+
+
+def context_hash(entity_ref: str, edges: list[dict], truncated: dict[str, int],
+                 own_hosts: list[str] | None = None) -> str:
+    body: dict[str, Any] = {"entity_ref": entity_ref, "edges": edges, "truncated": truncated}
+    if own_hosts:   # absent unless present, so a team without it keeps its hash
+        body["own_hosts"] = own_hosts
+    canonical = json.dumps(body, sort_keys=True, separators=(",", ":"))
     return "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
