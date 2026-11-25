@@ -370,6 +370,93 @@ def add_service_context(repo: Path, python: str, stub: Path) -> None:
     profile.write_text(existing + "\n".join(lines), encoding="utf-8")
 
 
+# #6: one call per resolution the drift section reports. Only the shipped
+# TypeScript forms (a destructured env var into fetch or a gRPC client), so
+# every planted dependency is an env var.
+OBSERVED_APPENDS: list[tuple[str, str]] = [
+    ("src/client/releases.ts", """
+const { RELEASES_API_URL = '' } = process.env;
+
+export async function listReleases(): Promise<Release[]> {
+  const res = await fetch(`${RELEASES_API_URL}/v1/releases`);
+  return res.json();
+}
+"""),
+    ("src/sync/collection.ts", """
+const { FX_RATES_URL = '' } = process.env;
+const { LEDGER_ADDR = '' } = process.env;
+
+export const ledger = new LedgerServiceClient(LEDGER_ADDR, ChannelCredentials.createInsecure());
+
+export async function latestRates() {
+  const res = await fetch(`${FX_RATES_URL}/v1/latest`);
+  return res.json();
+}
+"""),
+    ("src/sync/scheduler.ts", """
+const { REPORTING_JOB_URL = '', ANALYTICS_COLLECTOR_URL = '' } = process.env;
+
+export async function announceSyncDone() {
+  await fetch(`${REPORTING_JOB_URL}/hooks/sync-done`, { method: "POST" });
+  await fetch(`${ANALYTICS_COLLECTOR_URL}/events`, { method: "POST" });
+}
+"""),
+]
+
+SEARCH_EXTERNAL_SECRET = """\
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: search
+spec:
+  data:
+    - secretKey: token
+      remoteRef:
+        key: secret/data/search-api
+"""
+
+OBSERVED_PROFILE = """
+[[observed.map]]
+entity = "component:default/ledger"
+env = ["LEDGER_ADDR"]
+
+[[observed.map]]
+entity = "component:default/legacy-billing"
+hosts = ["billing.internal"]
+
+[[observed.ignore]]
+env = "ANALYTICS_COLLECTOR_URL"
+reason = "third-party analytics; tracked outside the catalog"
+"""
+
+
+def add_observed_dependencies(repo: Path) -> None:
+    """Plant one dependency per drift case (#6). observed.py reads tracked files
+    only, so the code is committed: one commit dated a day after the last, made
+    only where service context is added. The profile entries stay untracked."""
+    for rel, body in OBSERVED_APPENDS:
+        with (repo / rel).open("a", encoding="utf-8") as fh:
+            fh.write(body)
+    secret = repo / "deploy" / "search-externalsecret.yaml"
+    secret.parent.mkdir(parents=True, exist_ok=True)
+    secret.write_text(SEARCH_EXTERNAL_SECRET, encoding="utf-8")
+    run(repo, "add", *(rel for rel, _ in OBSERVED_APPENDS), "deploy/search-externalsecret.yaml")
+    last = subprocess.run(["git", "-C", str(repo), "log", "-1", "--format=%cI"], check=True,
+                          capture_output=True, text=True, env=isolated_git_env()).stdout.strip()
+    when = (datetime.fromisoformat(last) + timedelta(days=1)).isoformat()
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m",
+                    "feat: call the ledger, rates and reporting services"],
+                   check=True, capture_output=True, text=True,
+                   env={**isolated_git_env(), "GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when,
+                        "GIT_AUTHOR_NAME": "Fixture Author",
+                        "GIT_AUTHOR_EMAIL": "fixture@example.com",
+                        "GIT_COMMITTER_NAME": "Fixture Author",
+                        "GIT_COMMITTER_EMAIL": "fixture@example.com"})
+    profile = repo / ".thunderstruck.toml"
+    existing = profile.read_text(encoding="utf-8") if profile.is_file() else ""
+    profile.write_text(existing + OBSERVED_PROFILE, encoding="utf-8")
+
+
 def isolated_git_env(base: dict | None = None) -> dict:
     """The environment every fixture git call runs in.
 

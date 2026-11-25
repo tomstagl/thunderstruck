@@ -54,9 +54,10 @@ FAKE_CATALOG = ROOT / "tests" / "fixtures" / "fake_catalog.py"
 def context_repo_template(tmp_path_factory) -> Path:
     """The fixture repo with catalog-info.yaml and a [context] table pointing
     at the stub catalog CLI. Copy it before changing anything."""
-    from build_fixture import add_service_context, build
+    from build_fixture import add_observed_dependencies, add_service_context, build
     repo = build(tmp_path_factory.mktemp("ctx") / "fixture")
     add_service_context(repo, python=sys.executable, stub=FAKE_CATALOG)
+    add_observed_dependencies(repo)
     return repo
 
 
@@ -91,7 +92,7 @@ def context_scanned_repo(context_repo_template, context_env, run_steps,
     repo = tmp_path_factory.mktemp("ctxscan") / "fixture"
     shutil.copytree(context_repo_template, repo, symlinks=True)
     run_steps(repo, context_env, ["signals.py", "--top", "10", "--since", "24m"],
-              ["context.py"], ["bundle.py"])
+              ["context.py"], ["observed.py"], ["bundle.py"])
     return repo
 
 
