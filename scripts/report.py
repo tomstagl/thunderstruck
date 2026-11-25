@@ -926,6 +926,9 @@ def _claim_lines(check: dict) -> list[str]:
             where = _linked(str(s.get("default_ref")), s.get("default_url"))
             line += (f". Needs {md.code(s.get('setting'))} set to {md.code(s.get('value'))}; default "
                      f"{md.code(s.get('default'))}, registered at {where}.")
+        elif rc.get("gate_problem"):
+            line += (f" The check says a setting must be changed but names none it can use "
+                     f"({md.text(rc['gate_problem'])}), so this finding is not gated.")
         L.append(line)
     return L
 

@@ -721,3 +721,94 @@ def test_the_default_skeptic_model_scores_as_recorded():
     counts = json.loads(out)["runs"][0]["measures"]["verdicts"]["counts"]
     assert counts["correct refuted"] == 0
     assert counts["same"] == same
+
+
+# --- #144: a gate without a usable setting ------------------------------------
+import mdtext as md  # noqa: E402
+
+
+def _gate_verdict(repo: Path, key: str, **claim) -> dict:
+    wait = _line(repo, "src/client/api.ts", "setTimeout(resolve, 5000)")
+    rc = {"field": "preconditions", "claim": c.MISSING_GATE_PHRASE, "fact": "It needs S on.", "evidence": [0]}
+    rc.update(claim)
+    return _v(key, "narrowed", holds="It happens with S on.", refuted_claims=[rc],
+              evidence=[{"type": "code", "ref": f"src/client/api.ts:{wait}", "note": "n"}])
+
+
+def _settle_gate(repo: Path, env: dict, tmp_path: Path, **claim) -> tuple[dict, dict]:
+    e = _entry(_prepare(repo, env), "api.ts")
+    _save(repo, env, tmp_path, _gate_verdict(repo, e["key"], **claim))
+    check = _apply(repo, env)[e["key"]]
+    # the fixture's own preconditions gate this finding; only the check's gate is under test
+    return {**_finding(repo, e["key"]), "preconditions": []}, check
+
+
+OK_SETTING = {"setting": "S", "default": "False", "default_ref": "src/client/api.ts:1", "value": "True"}
+KEYS_PROBLEM = "setting needs the keys setting, default, default_ref, value, each a non-empty string"
+
+
+@pytest.mark.parametrize("claim, problem", [
+    ({}, "names no setting"),
+    ({"setting": None}, "names no setting"),
+    ({"setting": "S"}, KEYS_PROBLEM),
+    ({"setting": ["S"]}, KEYS_PROBLEM),
+    ({"setting": {k: v for k, v in OK_SETTING.items() if k != "value"}}, KEYS_PROBLEM),
+    ({"setting": {**OK_SETTING, "needs": "changed"}}, KEYS_PROBLEM),
+    ({"setting": {**OK_SETTING, "default": "  "}}, KEYS_PROBLEM),
+    ({"setting": {**OK_SETTING, "value": None}}, KEYS_PROBLEM),
+    ({"setting": {**OK_SETTING, "value": float("inf")}}, KEYS_PROBLEM),
+    ({"setting": {**OK_SETTING, "setting": True}}, KEYS_PROBLEM),
+    ({"setting": {**OK_SETTING, "default_ref": 7}}, KEYS_PROBLEM),
+])
+def test_a_gate_without_a_usable_setting_is_named_and_never_gates(
+        validated_repo, validated_env, tmp_path, claim, problem):
+    finding, check = _settle_gate(validated_repo, validated_env, tmp_path, **claim)
+    (rc,) = check["refuted_claims"]
+    assert check["status"] == "narrowed"
+    assert rc["gate_problem"] == problem and "setting" not in rc
+    assert f"refuted_claims[0] {problem}" in check["reason"]
+    assert c.finding_gate(finding) == "none" and c.skeptic_settings(finding) == []
+    assert verify.run_verdict(finding, check) == "narrowed"
+
+
+def test_a_setting_whose_default_ref_does_not_resolve_is_named(validated_repo, validated_env, tmp_path):
+    finding, check = _settle_gate(validated_repo, validated_env, tmp_path,
+                                  setting={**OK_SETTING, "default_ref": "src/client/api.ts:9999"})
+    (rc,) = check["refuted_claims"]
+    assert "9999" in rc["gate_problem"] and "setting" not in rc
+    assert rc["gate_problem"] in check["reason"]
+    assert c.finding_gate(finding) == "none"
+
+
+@pytest.mark.parametrize("default, value, stored", [
+    (False, True, ("False", "True")), (0, 1.5, ("0", "1.5")), ("off", "on", ("off", "on"))])
+def test_a_scalar_setting_value_is_normalised_and_gates(validated_repo, validated_env, tmp_path, default, value, stored):
+    finding, check = _settle_gate(validated_repo, validated_env, tmp_path,
+                                  setting={**OK_SETTING, "default": default, "value": value})
+    (rc,) = check["refuted_claims"]
+    assert (rc["setting"]["default"], rc["setting"]["value"]) == stored and "gate_problem" not in rc
+    assert c.finding_gate(finding) == "non_default_setting"
+    assert verify.run_verdict(finding, check) == "upheld_but_gated"
+
+
+def test_a_verdict_cannot_write_a_gate_problem(validated_repo, validated_env, tmp_path):
+    _, check = _settle_gate(validated_repo, validated_env, tmp_path, setting=dict(OK_SETTING), gate_problem="x")
+    assert check["status"] == "inconclusive" and check["refuted_claims"] == []
+
+
+def test_other_fields_carry_no_gate_problem(validated_repo, validated_env, tmp_path):
+    _, check = _settle_gate(validated_repo, validated_env, tmp_path, field="amplifier",
+                            claim="immediately schedules another")
+    (rc,) = check["refuted_claims"]
+    assert "gate_problem" not in rc and "setting" not in rc
+
+
+def test_the_report_says_a_gate_names_no_usable_setting():
+    rc = {"field": "preconditions", "claim": "on default settings", "fact": "It needs S on.", "evidence": [],
+          "gate_problem": "names [no](http://x.invalid) setting"}
+    (line,) = report._claim_lines({"refuted_claims": [rc], "evidence": []})
+    assert "The check says a setting must be changed but names none it can use" in line
+    assert line.endswith("so this finding is not gated.")
+    assert md.text(rc["gate_problem"]) in line and rc["gate_problem"] not in line
+    (plain,) = report._claim_lines({"refuted_claims": [{**rc, "gate_problem": None}], "evidence": []})
+    assert "not gated" not in plain
