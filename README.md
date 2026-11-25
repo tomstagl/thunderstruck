@@ -392,6 +392,39 @@ context definition on that machine. It is meant for CI, where the
 `.thunderstruck.toml` that defines the command is reviewed in the repository
 like any other code; do not set it on a workstation.
 
+#### Catalog drift
+
+With service context, every scan also observes where the code reaches other
+systems: env vars used in a request or gRPC client call, env names in
+Kubernetes and YAML configuration, and secret references. The report's
+**Catalog drift** section lists what the code reaches that the catalog
+doesn't document, documented dependencies with no observation, and those it
+can't tell about because nothing maps them. A finding may cite an observation
+as `observed` evidence, checked like any other ref. These are leads, never
+findings on their own.
+
+Exact names link service-to-service calls (`PAYMENTS_API_URL` to
+`payments-api`). Databases, queues and other infrastructure are linked by
+declaring which env vars, hosts or secrets reach them; ignore rules need a
+reason and are printed with their hits:
+
+```toml
+[[observed.map]]
+entity = "resource:default/orders-db"
+env    = ["ORDERS_DB_URL"]
+
+[[observed.ignore]]
+env    = "ANALYTICS_COLLECTOR_URL"
+reason = "third-party analytics; tracked outside the catalog"
+```
+
+Known gaps: a value passed through more than one variable, through an object
+field or across files; vendor SDK clients; hosts held only in configuration
+tables. Only forms a calibration run has measured are observed
+([`docs/calibration/observed-dependencies.md`](docs/calibration/observed-dependencies.md)):
+today TypeScript and JavaScript calls and YAML env names, and no host. No
+secret store is contacted and no secret value is read.
+
 ### Source links
 
 Every file:line, detector and commit ref in `report.md` links to the code

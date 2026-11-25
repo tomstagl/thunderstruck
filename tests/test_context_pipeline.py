@@ -62,7 +62,7 @@ def test_bundles_stay_within_budget_at_the_neighbour_cap(context_scanned_copy, c
     run_steps(context_scanned_copy, env, ["context.py", "--refresh"], ["bundle.py"])
     ctx = _context(context_scanned_copy)
     assert sum(e["direction"] == "inbound" for e in ctx["edges"]) == 25
-    assert ctx["truncated"] == {"inbound": 7, "outbound": 0}
+    assert ctx["truncated"] == {"inbound": 8, "outbound": 0}
     index = _index(context_scanned_copy)
     assert index["bundles"]
     for entry in index["bundles"]:

@@ -1077,7 +1077,9 @@ def test_the_readme_privacy_section_says_lessons_reach_the_model():
 
 
 def test_the_changelog_records_the_lessons_and_the_rules_version():
-    top = text_of("CHANGELOG.md").split("\n## ", 2)[1]
+    # Anchored on the version, not on "the first heading", as for 0.17.0's entry
+    # (maintainer's decision, 2026-11-22); the two assertions are unchanged.
+    top = text_of("CHANGELOG.md").split("\n## 0.19.0\n", 1)[1].split("\n## ", 1)[0]
     assert "(#106)" in top and NAME in top
     assert f"Validation rules version {c.VALIDATION_RULES}" in top
 

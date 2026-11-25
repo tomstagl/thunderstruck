@@ -89,6 +89,25 @@ Show the status line, the edges in `.thunderstruck/context.json` and any
 warnings. Ask whether the neighbours look right. If they don't, adjust the
 relation types or the entity and repeat from step 3.
 
+## 6. Link dependencies to the code (optional)
+
+Each scan also observes where the code reaches other systems and reports
+**Catalog drift**: what the code calls that the catalog doesn't list, and the
+reverse. Exact names link only service-to-service calls (`PAYMENTS_API_URL`
+to `payments-api`). Databases, queues and other infrastructure are linked by
+an `[[observed.map]]` entry naming the env vars, hosts or secret references
+that reach the entity; offer to write one per such dependency. An observation
+the team doesn't want listed goes in `[[observed.ignore]]` with a reason. The
+shape is in the example file.
+
+The service's own hosts come from the annotation `thunderstruck.io/own-hosts`
+on its own catalog entry (a comma-separated list, `*.` for subdomains), or
+the key named by `[observed] own_hosts_annotation`. It takes effect on the
+next catalog fetch: run step 5 again to refresh. A team that can't annotate
+its entry adds `[[observed.ignore]] host = "*.own-domain"` with a reason.
+
+None of this runs a command, so changing it never needs approval again.
+
 ## Declining or switching off
 
 If the user does not want service context, write:

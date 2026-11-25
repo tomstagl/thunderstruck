@@ -1,0 +1,9 @@
+spring:
+  application:
+    name: recommendation
+catalog:
+  address: ${PRODUCT_CATALOG_ADDR:localhost:3550}
+  # target: ${COMMENTED_ADDR}
+logging:
+  level: ${LOG_LEVEL:info}
+  legacy: ${LEDGER_ADDRESS}

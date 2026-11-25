@@ -36,8 +36,8 @@ PLAN_SCHEMA = "thunderstruck.check-plan/v1"
 VERDICTS_SCHEMA = "thunderstruck.verdicts/v1"
 LEDGER_SCHEMA = "thunderstruck.check-ledger/v1"
 RUN_SCHEMA = "thunderstruck.check-run/v1"
-OWNED = ("key", "content_hash", "catalog_evidence", "evidence_hashes", "check", "history",
-         "confidence_claimed")
+OWNED = ("key", "content_hash", "catalog_evidence", "observed_evidence", "evidence_hashes",
+         "check", "history", "confidence_claimed")
 WITHHELD = ("confidence", "confidence_rationale", "notes", "history", "check")
 MAX_MESSAGES = 12
 MAX_MESSAGE_CHARS = 2000

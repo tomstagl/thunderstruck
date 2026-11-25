@@ -1,0 +1,4 @@
+logging:
+  level: ${LOG_LEVEL:info}
+  legacy: ${LEDGER_ADDRESS}
+key: ${API_KEY}

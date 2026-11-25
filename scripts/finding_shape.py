@@ -23,8 +23,8 @@ _PATH_LINES = re.compile(r"^(?P<file>.+?):(?P<lines>[0-9]+(?:-[0-9]+)?)\Z")
 _COMMIT_PREFIX = re.compile(r"^(?:commit|sha)\s*[:=]\s*", re.IGNORECASE)
 _TYPE_ALIASES = {"git": "commit", "sha": "commit"}
 # Written by validate.py or a later stage, never by a model (spec §3.4).
-OWNED_FINDING_KEYS = ("key", "content_hash", "catalog_evidence", "evidence_hashes",
-                      "check", "history", "confidence_claimed")
+OWNED_FINDING_KEYS = ("key", "content_hash", "catalog_evidence", "observed_evidence",
+                      "evidence_hashes", "check", "history", "confidence_claimed")
 
 
 def _lines_of(obj: dict) -> str | None:

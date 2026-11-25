@@ -151,6 +151,60 @@ def test_overview_has_every_report_md_section(page, scanned_copy, plugin_root):
     assert p.text("details.warn summary") == ["1 run warning"]
 
 
+DRIFT = {
+    "observed_not_documented": [
+        {"kind": "env", "value": "FX_URL", "occurrences": 5, "resolution": "unmatched",
+         "entity": None, "where": [{"file": "src/a.ts", "line": n, "url": None}
+                                   for n in range(1, 5)]},
+        {"kind": "env", "value": "LEDGER_ADDR", "occurrences": 1,
+         "resolution": "mapped_undocumented", "entity": "component:default/ledger",
+         "where": [{"file": "src/b.ts", "line": 7, "url": "https://github.com/acme/x/blob/s/src/b.ts#L7"}]}],
+    "ambiguous": [{"kind": "env", "value": "PAY_URL", "occurrences": 1,
+                   "candidates": ["dependsOn component:a/pay", "dependsOn component:b/pay"],
+                   "where": [{"file": "src/c.ts", "line": 2, "url": None}]}],
+    "dependent_only": [{"kind": "env", "value": "JOB_URL", "occurrences": 1,
+                        "edge": "dependencyOf component:default/job",
+                        "where": [{"file": "src/d.ts", "line": 3, "url": None}]}],
+    "not_observed": ["dependsOn component:default/legacy"],
+    "no_mapping": ["dependsOn resource:default/orders-db"],
+    "ignored": [{"rule": "env ANALYTICS_URL", "reason": "vendor <b>x</b>", "hits": 2}],
+    "own_hosts_known": False, "truncated": {"observations": 0, "catalog_edges": 1},
+    "partial": True, "unobserved_languages": ["python", "java"], "hosts_observed": False}
+
+
+def test_the_overview_shows_catalog_drift_after_service_context(page, scanned_copy, plugin_root):
+    report = _report(scanned_copy, plugin_root)
+    report["service_context"] = {"status": "fresh", "entity_ref": "component:default/app",
+                                 "context_hash": "sha256:abc", "fetched_at": "2026-01-01",
+                                 "edges": [], "truncated": {"inbound": 0, "outbound": 0}}
+    report["catalog_drift"] = DRIFT
+    p = page(report)
+    sections = p.text("h2")
+    assert sections.index("Catalog drift") == sections.index("Service context") + 1
+    body = p.page.inner_text("#doc")
+    for text in ("Observed, not in the catalog (2)", "Documented only as a dependent (1)",
+                 "Ambiguous (1)", "Documented, not observed (1)", "No mapping declared (1)",
+                 "Ignored by the profile", "LEDGER_ADDR (declared as component:default/ledger)",
+                 "dependsOn component:a/pay, dependsOn component:b/pay",
+                 "src/a.ts:1, src/a.ts:2, src/a.ts:3 +2",
+                 "env ANALYTICS_URL — vendor <b>x</b> (2 hits)",
+                 "No env or host form is measured yet for python, java files.",
+                 "own hosts are unknown", "beyond that cap", "this section is partial",
+                 "dependsOn component:default/legacy: none of its mapped values appear",
+                 "dependsOn resource:default/orders-db: no observation could be linked"):
+        assert text in body, text
+    assert p.page.eval_on_selector_all("#doc b", "els => els.length") == 0
+    links = p.page.eval_on_selector_all("#doc a", "els => els.map(e => e.textContent)")
+    assert "src/b.ts:7" in links and "src/a.ts:1" not in links
+    assert not p.errors and all(u.startswith("file:") for u in p.requests)
+
+
+def test_no_drift_no_section(page, scanned_copy, plugin_root):
+    report = _report(scanned_copy, plugin_root)
+    assert report["catalog_drift"] is None
+    assert "Catalog drift" not in page(report).text("h2")
+
+
 @pytest.mark.parametrize("clean,incomplete,expected", [
     (2, 0, "No findings: all 2 investigated hotspots came back clean."),
     (1, 2, "No findings, but 2 of 3 hotspots could not be analysed. See Incomplete."),

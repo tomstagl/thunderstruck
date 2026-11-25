@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _common as c  # noqa: E402
 import lessons  # noqa: E402
+import mdtext as md  # noqa: E402
 from detectors import Boundary, find_boundaries  # noqa: E402
 
 DEFAULT_BUDGET_TOKENS = 8000
@@ -155,6 +156,59 @@ def section_service_context(ctx: dict | None) -> str:
                        f"(cap {c.MAX_NEIGHBOURS_PER_DIRECTION})")
         out.append("")
     return "\n".join(out)
+
+
+MAX_OBSERVED_LINES = 15
+
+
+def _observed_outcome(res: dict | None) -> str:
+    """The fixed wording for one resolution (#6, spec §6). Only the edge and
+    the entity are values, and both are code spans."""
+    if not res:
+        return "matches no documented dependency"
+    kind = res.get("resolution")
+    if kind == "documented":
+        how = "matched by name" if res.get("via") == "name" else "declared in the profile"
+        return f"documented: {md.code(res.get('edge'))} ({how})"
+    if kind == "dependent_only":
+        return f"documented only as a dependent: {md.code(res.get('edge'))}"
+    if kind == "mapped_undocumented":
+        return f"not in the catalog (declared as {md.code(res.get('entity'))})"
+    if kind == "ambiguous":
+        return "could be any of " + ", ".join(md.code(r) for r in res.get("candidates") or [])
+    if kind == "ignored":
+        return f"ignored by the profile: {md.text(res.get('reason'))}"
+    return "matches no documented dependency"
+
+
+def section_observed(obs_doc: dict | None, rel: str) -> str:
+    """The dependencies observed in this hotspot's file (#6, AC-1). Empty when
+    there are none, so such a bundle keeps its bytes."""
+    if not obs_doc:
+        return ""
+    mine = sorted((o for o in obs_doc.get("observations") or [] if o.get("file") == rel),
+                  key=lambda o: o["ref"])
+    if not mine:
+        return ""
+    by_value = {(r.get("kind"), r.get("value")): r for r in obs_doc.get("resolutions") or []}
+    out = ["## Dependencies observed in this file", "",
+           "Found deterministically in this file's code and config. Cite one as `observed` "
+           "evidence by copying its ref verbatim, only alongside `code` evidence. A value "
+           "that matches no documented dependency is a lead, not a finding.", ""]
+    for o in mine[:MAX_OBSERVED_LINES]:
+        out.append(f"- {md.code(o['ref'])} → {_observed_outcome(by_value.get((o['kind'], o['value'])))}")
+    if len(mine) > MAX_OBSERVED_LINES:
+        out.append(f"- … and {len(mine) - MAX_OBSERVED_LINES} more observed in this file")
+    out.append("")
+    return "\n".join(out)
+
+
+def usable_observed(repo: Path, ctx: dict | None) -> dict | None:
+    """observed.json when it is ok and was made from this context, else None."""
+    if not ctx:
+        return None
+    doc = c.load_observed(repo)
+    return doc if doc and doc.get("context_hash") == ctx.get("context_hash") else None
 
 
 def section_boundaries(text: str, rel: str, lang: str, catalog: dict,
@@ -478,22 +532,25 @@ def section_related(repo: Path, hs: dict, all_hotspots: list[dict], budget: int)
 
 def build_bundle(repo: Path, hs: dict, data: dict, catalog: dict, profile: dict,
                  budget: int, commits: int, all_hotspots: list[dict],
-                 ctx: dict | None = None) -> str:
+                 ctx: dict | None = None, obs: dict | None = None) -> str:
     text = c.read_text(repo / hs["file"]) or ""
     own = data.get("own_packages")
     own = own if isinstance(own, dict) else None  # None: gated boundary rules skipped
     service = section_service_context(ctx)
+    observed = section_observed(obs, hs["file"])
     # The lessons that apply to this hotspot (#106): empty unless one does, so a
     # hotspot none applies to keeps its bytes, and its cached finding.
     kept = lessons.investigator_section(*lessons.for_hotspot(data, hs["id"]))
-    # The service and lessons sections are never trimmed (the lessons have a cap
-    # of their own); the other sections share what is left.
-    fixed = (c.estimate_tokens(service) if service else 0) + (c.estimate_tokens(kept) if kept else 0)
+    # The service, observed and lessons sections are never trimmed (the observed
+    # and lessons sections have caps of their own); the other sections share
+    # what is left.
+    fixed = sum(c.estimate_tokens(p) for p in (service, observed, kept) if p)
     rest = max(budget - fixed, budget // 2) if fixed else budget
     parts = [
         section_header(hs, data),
         section_profile(profile),
         service,
+        observed,
         kept,
         section_boundaries(text, hs["file"], hs["language"], catalog, own),
         section_detectors(hs, catalog),
@@ -620,6 +677,7 @@ def main(argv: list[str] | None = None) -> int:
         catalog = c.load_catalog()
         profile = c.load_profile(repo)
         ctx = c.load_service_context(repo)
+        obs = usable_observed(repo, ctx)
     except c.ThunderstruckError as exc:
         c.die(str(exc))
         return 2
@@ -641,7 +699,7 @@ def main(argv: list[str] | None = None) -> int:
     validator = None  # built once, only if some cached file needs a re-check
     for hs in hotspots + dormant:
         body = build_bundle(repo, hs, data, catalog, profile,
-                            args.budget, args.commits, hotspots, ctx)
+                            args.budget, args.commits, hotspots, ctx, obs)
         path = dest_dir / f"{hs['id']}.md"
         path.write_text(body, encoding="utf-8")
         if f"## Call sites elsewhere in the repo\n\n{CALL_SITES_NOT_SEARCHED}" in body:
@@ -659,9 +717,13 @@ def main(argv: list[str] | None = None) -> int:
             if validator is None:
                 from validate import Validator
                 ctx_hash = ctx["context_hash"] if ctx else None
+                obs_hash = obs["observed_hash"] if obs else None
                 validator = Validator(repo, data, catalog, context=ctx,
                                       bundle_context={h["id"]: ctx_hash
                                                       for h in hotspots + dormant},
+                                      observed=obs,
+                                      bundle_observed={h["id"]: obs_hash
+                                                       for h in hotspots + dormant},
                                       extra_fix=c.profile_fix_keywords(profile))
             cached = _still_valid(validator, cached_doc)
             requeued += not cached
@@ -673,6 +735,7 @@ def main(argv: list[str] | None = None) -> int:
                       "score": hs["scores"]["score"],
                       "cached": cached,
                       "context_hash": ctx["context_hash"] if ctx else None,
+                      "observed_hash": obs["observed_hash"] if obs else None,
                       "findings_path": str(findings_dir / f"{hs['id']}.json")})
         if args.verbose:
             flag = "cached" if cached else "     "
@@ -687,6 +750,7 @@ def main(argv: list[str] | None = None) -> int:
     c.write_json(c.out_dir(repo) / "bundles" / "index.json",
                  {"schema": "thunderstruck.bundles/v1", "budget": args.budget,
                   "context_hash": ctx["context_hash"] if ctx else None,
+                  "observed_hash": obs["observed_hash"] if obs else None,
                   "bundles": index})
     total = sum(b["tokens_estimated"] for b in index)
     todo = [b for b in index if not b["cached"]]

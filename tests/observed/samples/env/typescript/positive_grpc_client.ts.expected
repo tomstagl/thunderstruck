@@ -1,0 +1,3 @@
+# forms: ts.read.destructure, ts.connect.grpc-client, ts.request.fetchlike
+env:CART_ADDR:7
+env:SHIPPING_ADDR:10

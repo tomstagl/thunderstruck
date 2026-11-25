@@ -357,6 +357,11 @@ def test_template_field_labels_match_report():
     assert _js_object("FIELD_LABELS") == report.FIELD_LABELS
 
 
+def test_template_drift_text_matches_report():
+    """The drift section's fixed sentences have one source: report.DRIFT_TEXT (#6)."""
+    assert _js_object("DRIFT_TEXT") == {k: v.replace("`", "") for k, v in report.DRIFT_TEXT.items()}
+
+
 def test_template_renders_verification_through_named_functions():
     template = _template()
     for name in ("function verificationLine(", "function checkRows(", "function refutedGroup("):

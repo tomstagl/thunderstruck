@@ -38,9 +38,13 @@ def test_fetch_extracts_edges_and_attributes(tmp_path):
     assert result.error is None
     by_ref = {e["ref"]: e for e in result.edges}
     assert sorted(by_ref) == ["dependencyOf component:default/mobile-bff",
+                              "dependencyOf component:default/reporting-job",
                               "dependencyOf component:default/web-frontend",
+                              "dependsOn component:default/legacy-billing",
                               "dependsOn component:default/payments-api",
-                              "dependsOn component:default/releases-api"]
+                              "dependsOn component:default/releases-api",
+                              "dependsOn component:default/search-api",
+                              "dependsOn resource:default/orders-db"]
     assert by_ref["dependencyOf component:default/web-frontend"]["attributes"] == {"tier": "2"}
     assert by_ref["dependencyOf component:default/mobile-bff"]["attributes"] == {}
     assert any("attribute value rejected" in w and "mobile-bff tier" in w
@@ -86,8 +90,8 @@ def test_neighbours_are_capped_per_direction(tmp_path, monkeypatch):
     result = context.fetch_source(MAIN, src(neighbour_attributes={}), tmp_path, 60)
     inbound = [e for e in result.edges if e["direction"] == "inbound"]
     assert len(inbound) == 25
-    assert result.truncated == {"inbound": 7, "outbound": 0}
-    assert any("7 inbound and 0 outbound are not listed" in w for w in result.warnings)
+    assert result.truncated == {"inbound": 8, "outbound": 0}
+    assert any("8 inbound and 0 outbound are not listed" in w for w in result.warnings)
 
 
 def test_total_budget_bounds_the_run(tmp_path, monkeypatch):
@@ -97,7 +101,7 @@ def test_total_budget_bounds_the_run(tmp_path, monkeypatch):
     result = context.fetch_source(MAIN, src(), tmp_path, 1.5)
     assert time.monotonic() - start < 4
     assert result.error is None
-    assert len(result.edges) == 27
+    assert len(result.edges) == 30
     assert any("not fetched within the 1.5s context budget" in w for w in result.warnings)
 
 
@@ -295,7 +299,7 @@ def test_cli_reports_status_and_warnings(context_repo, tmp_path):
            "XDG_CONFIG_HOME": str(tmp_path / "xdg")}
     proc = _cli(context_repo, env=env)
     assert proc.returncode == 0, proc.stderr
-    assert "service context: fresh — 4 edge(s) for component:default/fixture-app" in proc.stdout
+    assert "service context: fresh — 8 edge(s) for component:default/fixture-app" in proc.stdout
     assert "warning: attribute value rejected" in proc.stdout
 
 

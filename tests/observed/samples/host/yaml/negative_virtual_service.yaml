@@ -1,0 +1,18 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: checkout
+spec:
+  hosts:
+    - checkout.internal
+  http:
+    - route:
+        - destination:
+            host: checkout.internal
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: checkout
+spec:
+  host: checkout.internal

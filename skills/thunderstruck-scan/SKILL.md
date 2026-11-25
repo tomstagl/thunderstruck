@@ -97,6 +97,18 @@ Pass `--refresh` when the user gave `--refresh-context`. The first line is
 This step never stops the scan. Without usable context, the rest of the scan
 runs exactly as it would have without it.
 
+## Step 1c — observed dependencies
+
+```bash
+uv run "${CLAUDE_PLUGIN_ROOT}/scripts/observed.py"
+```
+
+Run it in every scan, right after step 1b. It reads the tracked files and the
+service context, never the network, and writes `observed.json`. The first
+line is `observed: …`; relay any warnings as in step 1. Without usable
+context it prints `observed: skipped` and nothing downstream changes. This
+step never stops the scan.
+
 ## Step 2 — bundles
 
 ```bash

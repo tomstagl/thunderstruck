@@ -5,6 +5,7 @@
 ```
 signals.py   →  hotspots.json          deterministic: churn, complexity, detectors, coupling
 context.py   →  context.json           deterministic: runs the approved catalog command, if configured
+observed.py  →  observed.json          deterministic: the dependencies the tracked files reach, matched to the catalog
 bundle.py    →  bundles/*.md           deterministic: one briefing per hotspot
 investigator →  (final message)        the only LLM step
 capture_finding.py → findings/*.json    SubagentStop hook: saves each result, records agents/*.json and one line of hook-trace.jsonl

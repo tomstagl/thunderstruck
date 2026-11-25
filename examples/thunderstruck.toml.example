@@ -118,6 +118,24 @@ extractor = "backstage-relations"
 edge_types = { dependsOn = "outbound", dependencyOf = "inbound" }
 neighbour_attributes = { tier = "example.com/criticality-tier" }
 
+# Observed dependencies (optional; needs [context]). Each scan observes where
+# the code reaches other systems and reports Catalog drift. Exact names link
+# service-to-service calls; databases, queues and other infrastructure need a
+# map entry. Nothing here runs a command, so it never needs approval.
+#
+# [observed]
+# own_hosts_annotation = "thunderstruck.io/own-hosts"   # the default
+#
+# [[observed.map]]
+# entity  = "resource:default/orders-db"
+# env     = ["ORDERS_DB_URL"]
+# hosts   = ["orders-db.internal"]
+# secrets = ["secret/data/orders-db"]
+#
+# [[observed.ignore]]
+# env    = "ANALYTICS_COLLECTOR_URL"      # or host = "*.vendor.example" / secret = "..."
+# reason = "third-party analytics; tracked outside the catalog"
+
 
 # --------------------------------------------------------------------------
 # Source links
