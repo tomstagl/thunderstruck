@@ -79,6 +79,9 @@ CONTEXT_SCHEMA = "thunderstruck.context/v1"
 CONTEXT_FILENAME = "context.json"
 CONTEXT_USABLE = ("fresh", "cached", "stale")
 MAX_NEIGHBOURS_PER_DIRECTION = 25
+OBSERVED_SCHEMA = "thunderstruck.observed/v1"
+OBSERVED_FILENAME = "observed.json"
+OBSERVED_HASHED = ("observations", "resolutions", "not_observed", "no_mapping", "truncated")
 
 # Files that are churn-heavy or complexity-heavy for reasons that say nothing
 # about fragility. Scanning them wastes subagents on noise. Each entry carries
@@ -358,6 +361,32 @@ def load_service_context(repo_root: Path) -> dict[str, Any] | None:
     if isinstance(doc, dict) and doc.get("status") in CONTEXT_USABLE and _well_formed_context(doc):
         return doc
     return None
+
+
+def observed_hash(doc: dict[str, Any]) -> str:
+    """sha256 of what a finding can cite and the drift section shows (#6, spec §5).
+    Never warnings or files_scanned, so a new warning can't force re-investigation."""
+    body = {k: doc.get(k) for k in OBSERVED_HASHED}
+    return sha256_text(json.dumps(body, sort_keys=True, separators=(",", ":"),
+                                  ensure_ascii=False))
+
+
+def load_observed(repo_root: Path) -> dict[str, Any] | None:
+    """observed.json when it is `ok` and its content still matches its hash, else None.
+
+    A document edited by hand without recomputing the hash is treated as missing,
+    so no observation can be cited from it."""
+    doc = load_json(out_dir(repo_root) / OBSERVED_FILENAME)
+    if not (isinstance(doc, dict) and doc.get("schema") == OBSERVED_SCHEMA
+            and doc.get("status") == "ok" and isinstance(doc.get("observations"), list)
+            and isinstance(doc.get("resolutions"), list)):
+        return None
+    try:
+        if observed_hash(doc) != doc.get("observed_hash"):
+            return None
+    except (TypeError, ValueError):
+        return None
+    return doc
 
 
 def effective_patterns(catalog: dict[str, Any], profile: dict[str, Any]) -> dict[str, dict]:

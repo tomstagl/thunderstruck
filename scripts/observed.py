@@ -780,3 +780,167 @@ def resolve(observations: list[dict], edges: list[dict], cfg: dict, rules: dict)
                       for r in cfg["ignore"]), key=lambda x: x["rule"])
     return {"resolutions": resolutions, "not_observed": sorted(not_observed),
             "no_mapping": sorted(no_mapping), "ignored": ignored}
+
+
+# --------------------------------------------------------------------------
+# the document (§5)
+# --------------------------------------------------------------------------
+
+DEFAULT_LIMIT = 3000
+MAX_OBSERVATIONS = 2000
+MAX_PER_VALUE = 20
+SKIP_NO_CONTEXT = "no usable service context"
+
+
+def _skipped(reason: str) -> dict:
+    return {"schema": c.OBSERVED_SCHEMA, "status": "skipped", "reason": reason}
+
+
+def _scope(repo: Path, profile: dict, warnings: list[str]) -> tuple[c.Filters, set[str]]:
+    """The scan's own scope (§2.5) and the files it ranks."""
+    hotspots = c.load_json(c.out_dir(repo) / "hotspots.json")
+    if not isinstance(hotspots, dict):
+        warnings.append("no hotspots.json, so the whole repository was read for observed "
+                        "dependencies; run signals.py first to follow the scan's scope")
+        return c.Filters.from_profile(profile), set()
+    config = hotspots.get("config") if isinstance(hotspots.get("config"), dict) else {}
+    path = config.get("path") if isinstance(config.get("path"), str) else None
+    filters = c.Filters.from_profile(profile, path_prefix=path,
+                                     include_tests=bool(config.get("include_tests")) or None)
+    ranked = {h["file"] for key in ("hotspots", "dormant")
+              for h in hotspots.get(key) or [] if isinstance(h, dict) and isinstance(h.get("file"), str)}
+    return filters, ranked
+
+
+def _cap(observations: list[dict], ranked: set[str]) -> tuple[list[dict], int]:
+    """At most MAX_OBSERVATIONS and MAX_PER_VALUE per value; observations in a
+    ranked file are kept first and never dropped (§5)."""
+    kept: list[dict] = []
+    per_value: dict[tuple[str, str], int] = {}
+    first = [o for o in observations if o["file"] in ranked]
+    rest = [o for o in observations if o["file"] not in ranked]
+    for o in first:
+        key = (o["kind"], o["value"])
+        per_value[key] = per_value.get(key, 0) + 1
+        kept.append(o)
+    dropped = 0
+    for o in rest:
+        key = (o["kind"], o["value"])
+        if len(kept) >= MAX_OBSERVATIONS or per_value.get(key, 0) >= MAX_PER_VALUE:
+            dropped += 1
+            continue
+        per_value[key] = per_value.get(key, 0) + 1
+        kept.append(o)
+    kept.sort(key=lambda o: (o["file"], o["line"], o["kind"], o["value"]))
+    return kept, dropped
+
+
+def run(repo: Path, limit: int = DEFAULT_LIMIT) -> dict:
+    out = c.out_dir(repo) / c.OBSERVED_FILENAME
+    try:
+        profile = c.load_profile(repo)
+    except c.ThunderstruckError:
+        profile = None
+    ctx = c.load_service_context(repo)
+    if profile is None or ctx is None:
+        doc = _skipped(SKIP_NO_CONTEXT)
+        c.write_json(out, doc)
+        return doc
+
+    warnings: list[str] = []
+    cfg, cfg_warnings = load_config(profile)
+    warnings += cfg_warnings
+    rules = load_rules()
+    catalog = c.load_catalog()
+    langmap = c.language_map(catalog)
+    filters, ranked = _scope(repo, profile, warnings)
+    own_hosts = list(ctx.get("own_hosts") or [])
+
+    index = c.tracked_index(repo)
+    files = sorted(p for p, mode in index.items()
+                   if c.detect_language(p, langmap) is not None and not filters.excludes_path(p)
+                   and c.is_utf8(p) and not c.path_problem(p)
+                   and not c.tracked_file_problem(repo, p, mode))
+    if len(files) > limit:
+        warnings.append(f"observed dependencies: stopped after {limit} files (--limit); "
+                        f"{len(files) - limit} more were not read, so the drift section is partial")
+        files = files[:limit]
+
+    observations: list[dict] = []
+    dropped = {k: 0 for k in KINDS}
+    excluded_own = unreadable = yaml_failed = 0
+    for rel in files:
+        try:
+            text = (repo / rel).read_bytes().decode("utf-8")
+        except (OSError, UnicodeDecodeError):
+            unreadable += 1
+            continue
+        ex = observe_text(text, c.detect_language(rel, langmap), rel, rules, own_hosts)
+        observations += ex.observations
+        for k, n in ex.dropped.items():
+            dropped[k] += n
+        excluded_own += ex.excluded_own_host
+        yaml_failed += ex.yaml_failed
+    if unreadable:
+        warnings.append(f"{unreadable} file(s) could not be read as UTF-8; "
+                        f"no dependencies were observed in them")
+    if yaml_failed:
+        warnings.append(f"{yaml_failed} YAML file(s) could not be parsed; their structural forms "
+                        f"(container env names, secret references) were skipped")
+
+    observations.sort(key=lambda o: (o["file"], o["line"], o["kind"], o["value"]))
+    resolved = resolve(observations, ctx["edges"], cfg, rules)
+    kept, capped = _cap(observations, ranked)
+    if capped:
+        warnings.append(f"{capped} observation(s) beyond the caps ({MAX_OBSERVATIONS} in total, "
+                        f"{MAX_PER_VALUE} per value) are not listed; the drift section still "
+                        f"counts them")
+    truncated = ctx.get("truncated") or {}
+    doc: dict[str, Any] = {
+        "schema": c.OBSERVED_SCHEMA, "status": "ok", "context_hash": ctx["context_hash"],
+        "map_hash": map_hash(cfg), "observed_hash": None, "files_scanned": len(files) - unreadable,
+        "observations": [{"ref": ref(o), **o} for o in kept],
+        "resolutions": resolved["resolutions"],
+        "not_observed": resolved["not_observed"], "no_mapping": resolved["no_mapping"],
+        "ignored": resolved["ignored"], "own_hosts_known": bool(own_hosts),
+        "truncated": {"observations": capped,
+                      "catalog_edges": sum(n for n in truncated.values() if isinstance(n, int))},
+        "dropped": dropped, "excluded": {"own_host": excluded_own}, "warnings": warnings}
+    doc["observed_hash"] = c.observed_hash(doc)
+    c.write_json(out, doc)
+    return doc
+
+
+def summary(doc: dict) -> str:
+    if doc.get("status") != "ok":
+        return f"observed: skipped ({doc.get('reason')})"
+    by = [r["resolution"] for r in doc["resolutions"]]
+    not_in_catalog = sum(r in ("unmatched", "mapped_undocumented") for r in by)
+    return (f"observed: {len(doc['observations'])} observation(s), {by.count('documented')} "
+            f"documented, {not_in_catalog} not in the catalog, {len(doc['not_observed'])} not "
+            f"observed, {len(doc['no_mapping'])} no mapping")
+
+
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+
+    ap = argparse.ArgumentParser(prog="observed.py",
+                                 description="observe outbound dependencies in tracked files")
+    ap.add_argument("--repo", default=None)
+    ap.add_argument("--limit", type=int, default=DEFAULT_LIMIT,
+                    help="read at most this many files")
+    args = ap.parse_args(argv)
+    try:
+        repo = c.find_repo_root(args.repo)
+        doc = run(repo, limit=max(1, args.limit))
+    except c.ThunderstruckError as exc:
+        c.die(str(exc))
+        return 2
+    print(summary(doc))
+    for warning in doc.get("warnings") or []:
+        print(f"warning: {warning}", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
