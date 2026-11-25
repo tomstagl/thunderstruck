@@ -281,3 +281,90 @@ the changed skeptic prompt.
 |---|---:|---:|---:|---:|
 | #37 Haiku baseline | 1,736 | 160,374 | 4,374,189 | 588,440 |
 | #57 with branch-condition check | 446 | 207,426 | 5,498,841 | 598,863 |
+
+## Missing gate setting (#144)
+
+Spec: `docs/superpowers/specs/2026-11-25-missing-gate-setting-design.md` §7.
+The prediction was committed at `0547ded` before any run was scored.
+
+- **Arms.** *Before*: plugin 0.20.0 at `0547ded`, whose skeptic prompt is
+  `main`'s. *After*: `c5b6b7a`. What a skeptic is given differs in
+  `agents/thunderstruck-skeptic.md` alone. All twelve runs are settled with
+  the `verify.py` of `c5b6b7a`.
+- **Runs.** Three per arm on Celery (`508c1129`, 21 findings) and on the
+  holdout (`84919159`, 15 findings), 2026-11-25, Claude Code 2.1.332, each a
+  fresh headless session (orchestrator `claude-sonnet-5-5`) that ran step 4b's
+  skeptic loop on `verify.py prepare --frozen`. One skeptic per finding, none
+  re-spawned, every skeptic on `claude-haiku-5-5`. Runs of a set share the
+  frozen scan's `generated_at`, so a run is named by its session and start.
+- **Dependency source.** Celery: 8 of 84 packages available (amqp 5.4.0,
+  billiard 4.3.0, kombu 5.7.0a1, packaging 26.3, pyyaml 6.0.3, redis 8.1.0,
+  SQLAlchemy 2.1.3, vine 5.1.0), four of them reached (#101). Holdout: 0 of
+  18. Not comparable with the runs above: the prompt, the plugin and the
+  dependency source all changed since 0.14.0.
+- **Cost** at list price, orchestrator and skeptics: about $11 for the twelve runs.
+
+| Run | Session | Started (UTC) | Same | Correct refuted | `high` above deserved | Gated verdicts | `preconditions` claims | naming a usable setting |
+|---|---|---|---:|---:|---:|---:|---:|---:|
+| before 1 | `ca9ca7f7` | 07:55 | 10/21 | 1 | 0 | 0 | 5 | 0 |
+| before 2 | `5f904ab8` | 08:07 | 9/21 | 0 | 0 | 0 | 5 | 0 |
+| before 3 | `6a5c83f8` | 08:18 | 8/21 | 1 | 0 | 0 | 2 | 0 |
+| after 1 | `fe6abd10` | 08:30 | 8/21 | 0 | 0 | 0 | 4 | 4 |
+| after 2 | `4e7bc467` | 08:46 | 10/21 | 0 | 0 | 0 | 3 | 3 |
+| after 3 | `6ca80128` | 08:57 | 11/21 | 0 | 0 | 1 | 6 | 4 |
+
+A finding without a verdict counts as not agreeing. Labels: 21
+`claude-fable-5-1` (20 executed, 1 read). Exports:
+`correctness/celery/runs/missing-gate-{before,after}-{1,2,3}.json`.
+
+| Arm, set | Mean same | Range | 95% Wilson of the mean | Correct refuted | Gated | naming a setting |
+|---|---|---|---|---|---|---|
+| before, Celery | 9.00/21 | 8–10 | 24.5–63.5% | 2 | 0 | 0 of 12 |
+| after, Celery | 9.67/21 | 8–11 | 27.0–66.3% | 0 | 1 | 11 of 13 |
+| before, holdout | 7.33/15 | 6–8 | 26.5–71.7% | 2 | 0 | 0 of 5 |
+| after, holdout | 7.67/15 | 6–10 | 28.3–73.5% | 0 | 1 | 6 of 9 |
+
+The holdout is totals only; nothing was revealed. `high` above deserved is 0
+in all twelve runs. Holdout labels: 15 `claude-opus-5-5` (8 executed, 7 read).
+
+**Against the prediction.** (1) and (2) held: the mean moved by +0.67, inside
+the spread of either arm, and is below 15. (3) held as worded, and the wording
+was too weak: the one gated Celery verdict is on FR-003, labelled
+`partially_correct`, so it scores *wrong direction*. 0 of the 4 findings
+labelled `correct_but_gated` was scored as gated in any of the six runs. (4)
+predicted nothing. The fall in *correct refuted* is not shown to be an effect
+at these counts.
+
+**What the marks were.** Any `preconditions` claim with a setting on a narrowed
+finding marks the whole finding (#37 §14). The three after runs marked nine
+Celery findings:
+
+| Finding | Label | Runs | Setting the check named | Needed, per the executed review |
+|---|---|---:|---|---|
+| FR-011 | `correct_but_gated` | 2 | `task_acks_late` | yes |
+| FR-015 | `wrong` | 3 | `result_backend_always_retry` | yes: wrong on defaults, partly right when opted in |
+| FR-003 | `partially_correct` | 1 | `worker_deduplicate_successful_tasks` | yes |
+| FR-014 | `correct` | 3 | `result_backend_always_retry` | **no** |
+
+FR-014 is a false mark in every run. Its failure happens on defaults, and the
+check's own `holds` says so (run 1: "On default settings, every task result
+write … fails"). The setting belongs to one refuted detail, a retry count, not
+to the failure. The report would list a correct default-path finding after the
+gated ones and say it needs a setting changed. Before the change no check
+did that, because none named a setting. The marks cannot be broken down
+on the holdout without revealing it.
+
+**`gate_problem`.** Two of 13 kept claims (FR-007 and FR-010, run 3) named no
+setting; both checks say so, and neither finding is marked by its check.
+
+**#54 AC-2 is not met.** In the three after runs no `high` is above its
+deserved confidence and no correct finding is refuted, but the mean same-class
+count is 9.67 of 21 and its interval starts at 27.0%, not 50%. Verification is
+also off by default, so a default scan gives no verdict at all.
+
+**Saved results.** On this Claude Code a subagent returns through a
+`SubagentHandback` call. The capture hook saw no message (`no_message` in
+`hook-trace.jsonl`), so the orchestrator retyped nearly every result. Compared
+with the skeptics' own messages, 9 of 216 saved results differ (1 before, 8
+after), in `evidence` notes, `guarantees`, `not_checked` or evidence indexes.
+Settling all twelve runs from the skeptics' own messages gives the same table.

@@ -4,6 +4,17 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- **The skeptic is shown how to name the setting a failure needs** (#144), and that a failure which still happens once the setting is changed is `narrowed`, never `refuted`.
+- **A gate without a usable setting is visible.** A `preconditions` claim that names none, or one the script cannot use, keeps its place in the check with `gate_problem`, the reports say why it does not gate, and a JSON scalar in a setting is read as the value it stands for.
+
+### Measured
+
+- On Celery the mean same-class count is 9.67 of 21 after the change and 9.00 before, three runs each, inside the spread. Checks now name settings (11 of 13 claims, from 0 of 12), but one correct default-path finding is marked as needing one in every run: `docs/calibration/verification.md`, "Missing gate setting (#144)".
+
 ## 0.20.0
 
 Outbound dependencies are linked to the files that call them, and the report shows catalog drift (#6).

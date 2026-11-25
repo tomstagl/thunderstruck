@@ -1,0 +1,347 @@
+{
+  "schema": "thunderstruck.benchmark-run/v1",
+  "commit": "508c1129269d2b1baffc516d8f5c05da06273ef0",
+  "produced_by": {
+    "stage": "skeptic",
+    "model": "claude-haiku-5-5",
+    "source": "verify.py export-run over checks/verdicts.json (#144, after arm, run 1, session fe6abd10-ece4-45d1-82e9-61d9f24e12d2); confidence by _common.effective_confidence"
+  },
+  "findings": {
+    "25300c62e151": {
+      "verdict": "upheld",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "task_always_eager",
+          "default": "False",
+          "confirmation": "confirmed"
+        }
+      ],
+      "confidence": "medium"
+    },
+    "293417791dc2": {
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "task_send_sent_event",
+          "default": "False",
+          "confirmation": "unconfirmed"
+        },
+        {
+          "setting": "task_publish_retry",
+          "default": "True",
+          "confirmation": "confirmed"
+        }
+      ],
+      "confidence": "low"
+    },
+    "2b1793902d2d": {
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "worker_pool",
+          "default": "prefork",
+          "confirmation": "unconfirmed"
+        },
+        {
+          "setting": "task_acks_late",
+          "default": "False",
+          "confirmation": "confirmed"
+        }
+      ],
+      "confidence": "low"
+    },
+    "34e3742160f1": {
+      "verdict": "narrowed",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "interval",
+          "default": "0.5",
+          "confirmation": "unconfirmed"
+        }
+      ],
+      "confidence": "low"
+    },
+    "39e3d9a88104": {
+      "verdict": "upheld",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "mandatory",
+          "default": "False",
+          "confirmation": "confirmed"
+        }
+      ],
+      "confidence": "low"
+    },
+    "50df890ef774": {
+      "verdict": "upheld",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "default_retry_delay",
+          "default": "180",
+          "confirmation": "confirmed"
+        },
+        {
+          "setting": "max_retries",
+          "default": "3",
+          "confirmation": "confirmed"
+        }
+      ],
+      "confidence": "low"
+    },
+    "5fc6c6cb450e": {
+      "verdict": "refuted",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "use_eventloop",
+          "default": "True",
+          "confirmation": "unconfirmed"
+        }
+      ],
+      "confidence": "low"
+    },
+    "6105880fd01e": {
+      "verdict": "narrowed",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "result_backend_always_retry",
+          "default": "False",
+          "confirmation": "confirmed"
+        },
+        {
+          "setting": "task_acks_late",
+          "default": "False",
+          "confirmation": "unconfirmed"
+        }
+      ],
+      "confidence": "low"
+    },
+    "6345778fa223": {
+      "verdict": "narrowed",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "result_backend_always_retry",
+          "default": "False",
+          "confirmation": "unconfirmed"
+        },
+        {
+          "setting": "result_backend_max_retries",
+          "default": "inf",
+          "confirmation": "unconfirmed"
+        },
+        {
+          "setting": "result_backend_base_sleep_between_retries_ms",
+          "default": "10",
+          "confirmation": "confirmed"
+        },
+        {
+          "setting": "result_backend_max_sleep_between_retries_ms",
+          "default": "10000",
+          "confirmation": "confirmed"
+        }
+      ],
+      "confidence": "low"
+    },
+    "6bd1a259060b": {
+      "verdict": "upheld",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "task_reject_on_worker_lost",
+          "default": "None",
+          "confirmation": "confirmed"
+        },
+        {
+          "setting": "task_acks_late",
+          "default": "False",
+          "confirmation": "confirmed"
+        }
+      ],
+      "confidence": "medium"
+    },
+    "8196e104b15a": {
+      "verdict": "narrowed",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "result_backend_always_retry",
+          "default": "False",
+          "confirmation": "unconfirmed"
+        },
+        {
+          "setting": "result_backend_max_retries",
+          "default": "inf",
+          "confirmation": "unconfirmed"
+        }
+      ],
+      "confidence": "low"
+    },
+    "8bcddcb49b5d": {
+      "verdict": "narrowed",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "result_backend_always_retry",
+          "default": "False",
+          "confirmation": "confirmed"
+        },
+        {
+          "setting": "result_backend_max_retries",
+          "default": "float('inf')",
+          "confirmation": "confirmed"
+        }
+      ],
+      "confidence": "low"
+    },
+    "9be5cf13811a": {
+      "verdict": "upheld",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "task_publish_retry",
+          "default": "True",
+          "confirmation": "confirmed"
+        },
+        {
+          "setting": "task_publish_retry_policy",
+          "default": "{'max_retries': 3, 'interval_start': 0, 'interval_max': 1, 'interval_step': 0.2}",
+          "confirmation": "confirmed"
+        }
+      ],
+      "confidence": "medium"
+    },
+    "a0ba5bc31036": {
+      "verdict": "narrowed",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "acks_on_timeout",
+          "default": "None",
+          "confirmation": "unconfirmed"
+        },
+        {
+          "setting": "acks_late",
+          "default": "False",
+          "confirmation": "unconfirmed"
+        }
+      ],
+      "confidence": "medium"
+    },
+    "a4b8d7590c34": {
+      "verdict": "upheld",
+      "duplicate_of": null,
+      "confidence": "medium"
+    },
+    "b1af3746845c": {
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "worker_deduplicate_successful_tasks",
+          "default": "False",
+          "confirmation": "unconfirmed"
+        },
+        {
+          "setting": "task_acks_late (task acks_late)",
+          "default": "False",
+          "confirmation": "unconfirmed"
+        }
+      ],
+      "confidence": "medium"
+    },
+    "bb3600c042ef": {
+      "verdict": "narrowed",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "retry_policy.max_retries",
+          "default": "20",
+          "confirmation": "confirmed"
+        }
+      ],
+      "confidence": "low"
+    },
+    "c15996fba8db": {
+      "verdict": "upheld",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "task_send_sent_event",
+          "default": "False",
+          "confirmation": "confirmed"
+        },
+        {
+          "setting": "buffer_while_offline",
+          "default": "True",
+          "confirmation": "confirmed"
+        }
+      ],
+      "confidence": "medium"
+    },
+    "d710c0302beb": {
+      "verdict": "upheld",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "task_publish_retry_policy",
+          "default": "{'max_retries': 3, 'interval_start': 0, 'interval_max': 1, 'interval_step': 0.2}",
+          "confirmation": "confirmed"
+        }
+      ],
+      "confidence": "medium"
+    },
+    "df2cb49b3e2c": {
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "max_retries / interval_step / interval_max (backend retry_policy)",
+          "default": "max_retries=20, interval_start=0, interval_step=1, interval_max=1",
+          "confirmation": "unconfirmed"
+        },
+        {
+          "setting": "backend_transport_options",
+          "default": "{}",
+          "confirmation": "confirmed"
+        }
+      ],
+      "confidence": "medium"
+    },
+    "f62fb0c3468b": {
+      "verdict": "narrowed",
+      "duplicate_of": null,
+      "preconditions": [
+        {
+          "setting": "broker_pool_acquire_timeout",
+          "default": "None",
+          "confirmation": "confirmed"
+        },
+        {
+          "setting": "ignore_result",
+          "default": "False",
+          "confirmation": "confirmed"
+        },
+        {
+          "setting": "broker_pool_limit",
+          "default": "10",
+          "confirmation": "confirmed"
+        },
+        {
+          "setting": "result_backend retry_policy max_retries",
+          "default": "20",
+          "confirmation": "unconfirmed"
+        },
+        {
+          "setting": "redis_socket_timeout",
+          "default": "120.0",
+          "confirmation": "unconfirmed"
+        }
+      ],
+      "confidence": "medium"
+    }
+  }
+}

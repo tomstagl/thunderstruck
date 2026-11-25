@@ -72,7 +72,7 @@ Nothing new can fail a scan. A malformed `setting` of any JSON type ends in a `g
 
 **Arms.** *Before* is the skeptic prompt of `main` at the release the branch starts from. *After* differs from it in `agents/thunderstruck-skeptic.md` alone. Both arms' saved skeptic output is settled with the same `verify.py`, the one of this branch, so a difference is the prompt's.
 
-**Runs.** Three per arm and per set: Celery (21 findings) and the holdout (15). A run is one fresh headless Claude Code session that carries out step 4b of the scan on `verify.py prepare --frozen <set>/scan`, with the plugin under test installed as a local-directory marketplace, one skeptic per finding on the default skeptic model, at most four at a time, none re-spawned, `checks/` deleted first. Each run is named by its session id and its plan's `generated_at`. A run whose session did not spawn one skeptic per finding is reported as that and not scored.
+**Runs.** Three per arm and per set: Celery (21 findings) and the holdout (15). A run is one fresh headless Claude Code session that carries out step 4b of the scan on `verify.py prepare --frozen <set>/scan`, with the plugin under test installed as a local-directory marketplace, one skeptic per finding on the default skeptic model, at most four at a time, none re-spawned, `checks/` deleted first. Each run is named by its session id and start time (a frozen run's `generated_at` is the frozen scan's, so every run of a set shares it). A run whose session did not spawn one skeptic per finding is reported as that and not scored.
 
 **Reported per run:** same-class count of the set (a finding without a verdict counts as not agreeing), correct refuted, `high` above deserved confidence, gated verdicts, `preconditions` claims, and how many name a usable setting. Per arm: the mean, the range and the 95% Wilson interval of the mean. For the holdout, totals only, without `--reveal`.
 
@@ -87,4 +87,4 @@ Nothing new can fail a scan. A malformed `setting` of any JSON type ends in a `g
 
 ## 9. Open design questions
 
-None.
+- **A setting that belongs to a refuted detail marks the whole finding.** #37 §14 gates a narrowed finding on any `preconditions` claim with a setting. Measured on Celery, that marks FR-014 although the failure happens on defaults (`docs/calibration/verification.md`, "Missing gate setting"). Candidates: tell the skeptic that the claim is about the failure and not a detail; or gate only when every kept refuted claim is a gate, as `run_verdict` does. Neither is chosen, and either needs its own prediction and runs.
