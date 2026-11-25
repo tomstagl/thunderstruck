@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-20-fracture-planes-design.md`
 **Ticket:** #112. Tasks name the `AC-n` they satisfy; the criteria are in the parent ticket.
-**Branch:** `agent/112-fracture-planes` (continue on the existing parent implementation branch on resume; never push to `main`).
+**Branch:** `feat/112-fracture-planes`, built in an interactive session while #112 carries `agent:in-progress`. Not `agent/112-…`: the nightly picker resumes a draft PR on such a branch (never push to `main`).
 
 | Subticket | Tasks |
 |---|---|
@@ -30,12 +30,13 @@ Tasks 0 and 11 belong to #112. These are tracking subtickets, not separate night
 - Plane text is plugin content. Nothing in the scanned repository can add or alter a plane.
 - A plane that fails to load at run time is skipped and named in `warnings`; it never fails a scan.
 - Selection reads at most `MAX_READ_BYTES = 65536` bytes of a file and examines at most `MAX_RULE_FILES = 25` files per rule.
-- Section limits: a pattern section ≤ 700 characters, `## General` ≤ 800; no ATX heading, setext underline or code fence (backtick or tilde) inside a body. Bundle cap for the section: 12% of the bundle budget, applied by omitting whole sections. `rest = budget`, minus `tokens(service)` if a service section exists, minus `tokens(planes)` if a plane section exists, floored at `budget // 2` only when either exists: with neither, `rest == budget` exactly, as today (`estimate_tokens("")` is 1, so an unguarded subtraction would change every bundle).
+- Section limits: a pattern section ≤ 700 characters, `## General` ≤ 800; no ATX heading, setext underline or code fence (backtick or tilde) inside a body. Bundle cap for the section: 12% of the bundle budget, applied by omitting whole sections. The plane section joins `service`, `observed` and `kept` in `build_bundle`'s existing `fixed = sum(c.estimate_tokens(p) for p in (...) if p)`; `rest = max(budget - fixed, budget // 2) if fixed else budget` is unchanged (`estimate_tokens("")` is 1, so the `if p` guard stays).
 - `load_planes(directory=None)` takes the planes directory itself (default: the module function `planes_dir()`, called through the module global so a monkeypatch of `fracture_planes.planes_dir` works; the parameter is deliberately not named `planes_dir`); `check_planes(..., repo_root=None)` takes the plugin root for `docs/calibration/planes/`. Run-time tests inject a directory by monkeypatching `fracture_planes.planes_dir` and call `signals.build`, `bundle.main` and `verify.prepare` in-process.
 - Everything reading `hotspots.json["planes"]` uses `.get("planes") or []`.
 - Languages are compared after `_common.detector_language(catalog, lang)` on both sides; a plane's `languages` may not contain an alias key.
 - Every `scripts/*.py` carries a module docstring (`test_every_script_has_a_docstring`), including `fracture_planes.py` and `gen_plane_docs.py`.
-- Versions agree across `plugin.json`, `marketplace.json`, `pyproject.toml` and the top `CHANGELOG.md` heading. The planned next minor is `0.15.0` from `0.14.0`; recheck current `main` in Task 10.
+- Versions agree across `plugin.json`, `marketplace.json`, `pyproject.toml` and the top `CHANGELOG.md` heading. The planned next minor is `0.21.0` from `0.20.0`; recheck current `main` in Task 10.
+- Stage explicit paths in every commit, new files included, also where a step below says `git commit -am`. Never `git add tests/` or another directory.
 - Test command: `uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/ -q`. Below, `PYTEST` means `uv run --with pytest --with pyyaml --with lizard pytest`.
 
 ## Review Focus
@@ -100,7 +101,7 @@ Input classes the spec implies and no task's happy path exercises, most likely f
 - [ ] **Step 2:** Run `PYTEST tests/test_planes.py -q`. Expected: FAIL, `ModuleNotFoundError: fracture_planes`.
 - [ ] **Step 3:** Implement the dataclasses and `load_planes` in `scripts/fracture_planes.py`. Parse `rubric.md` by splitting on lines that match `^## (General|S\d+)\s*$`; `## General` fills `Plane.general`, each `## S<digits>` a `RubricEntry`. Any other line beginning `## ` is a load problem, `planes/<id>/rubric.md: unrecognised heading '<text>'`, so `## S01 — Timeouts` can never be swallowed into the section above it. Import yaml inside the function, as `_common.load_catalog` does.
 - [ ] **Step 4:** Run `PYTEST tests/test_planes.py -q`. Expected: PASS.
-- [ ] **Step 5:** Commit: `git add scripts/fracture_planes.py tests/test_planes.py tests/planes && git commit -m "Planes: the manifest and its loader (#112)"`.
+- [ ] **Step 5:** Commit: `git add <each changed file> && git commit -m "Planes: the manifest and its loader (#112)"`.
 
 ---
 
@@ -143,7 +144,7 @@ Input classes the spec implies and no task's happy path exercises, most likely f
 - [ ] **Step 2:** Run both. Expected: FAIL, script missing.
 - [ ] **Step 3:** Implement `render` and the CLI. Mirror `gen_catalog_docs.py`'s structure and `--check`. Run `uv run scripts/gen_plane_docs.py` to produce the file.
 - [ ] **Step 4:** Add a CI step after "Generated docs are in sync": `Plane matrix is in sync`, running `uv run --python ${{ matrix.python }} scripts/gen_plane_docs.py --check`.
-- [ ] **Step 5:** Run both tests. Expected: PASS. Commit: `git add scripts/gen_plane_docs.py skills/stability-catalog/references/planes.md tests .github && git commit -m "Planes: a generated matrix, checked in CI (#112)"`.
+- [ ] **Step 5:** Run both tests. Expected: PASS. Commit: `git add <each changed file> && git commit -m "Planes: a generated matrix, checked in CI (#112)"`.
 
 ---
 
@@ -158,7 +159,7 @@ Input classes the spec implies and no task's happy path exercises, most likely f
 - Produces: `@dataclass(frozen=True) class Selected: plane_id: str; matched_by: str; rubric_hash: str`.
   `glob_to_regex(pattern: str) -> re.Pattern[str]` (separate from `_common._glob_to_re`, which has no `**/`): `*` matches within a path segment, `**/` spans zero or more directories, everything else is literal.
   `head_reader(repo: Path) -> Callable[[str], str | None]`: returns the first `MAX_READ_BYTES` bytes decoded as UTF-8 with `errors="replace"`, or `None` on `OSError` or `ValueError` (a path from `tracked_index` can carry a surrogate-escaped byte; `open` then raises `FileNotFoundError` or `UnicodeEncodeError`).
-  `select(index: Iterable[str], read: Callable[[str], str | None], planes: dict[str, Plane], usable: Callable[[str], bool] = lambda p: True) -> tuple[list[Selected], list[str]]`: the selection sorted by `plane_id`, and warnings. A rule examines at most `MAX_RULE_FILES` matching paths in `(depth, path)` order; when it had more candidates a warning `plane <id>: rule <file> had N candidates, examined 25` is returned. `matched_by` is the first path that matched. A plane named in another active plane's `supersedes` is dropped. `select` applies `usable(path)` only to paths that already match a rule's `file` glob, so the per-path `lstat` is not spent on the whole index. `signals.py` passes `usable = lambda p: c.tracked_file_problem(repo, p, index[p]) is None and filters.exclusion_reason(p) in (None, "path")`: the `--path` restriction must not hide a repository-root manifest.
+  `select(index: Iterable[str], read: Callable[[str], str | None], planes: dict[str, Plane], usable: Callable[[str], bool] = lambda p: True) -> tuple[list[Selected], list[str]]`: the selection sorted by `plane_id`, and warnings. A rule examines at most `MAX_RULE_FILES` matching paths in `(depth, path)` order; when it had more candidates a warning `plane <id>: rule <file> had N candidates, examined 25` is returned. `matched_by` is the first path that matched. A plane named in another active plane's `supersedes` is dropped. `select` applies `usable(path)` only to paths that already match a rule's `file` glob, so the per-path `lstat` is not spent on the whole index. `signals.py` passes `usable = lambda p: plane_usable(repo, p, index[p], filters)`, with `signals.plane_usable(repo: Path, rel: str, mode: str, filters) -> bool` being `c.is_utf8(rel) and not c.path_problem(rel) and c.tracked_file_problem(repo, rel, mode) is None and filters.exclusion_reason(rel) in (None, "path")`: the `--path` restriction must not hide a repository-root manifest.
   `hotspots.json` gains `"planes": [{"id", "matched_by", "rubric_hash"}]`, sorted by id; always present, `[]` when none.
 
 - [ ] **Step 1: Write the failing tests:**
@@ -170,6 +171,7 @@ Input classes the spec implies and no task's happy path exercises, most likely f
   - `test_supersedes_drops_the_superseded_plane`.
   - `test_a_pom_under_a_test_directory_does_not_activate_a_plane` — at the `signals.build` level, on a fixture with `src/test/resources/pom.xml` containing `spring-boot`.
   - `test_a_root_manifest_activates_a_plane_when_only_a_subdirectory_is_scanned` — build the repository with `build_fixture.build(dest)`, add and commit `pom.xml` and `services/foo/App.java` through the helper's git environment, call `signals.build(argparse.Namespace(repo=..., top=10, since="24m", path="services/foo", include_tests=False, dormant=0, dormant_limit=0))` in-process (no existing test does; the Namespace fields are those `build` reads), with `--path services/foo` and a root `pom.xml` containing `spring-boot`.
+  - `test_a_path_that_is_not_utf8_is_not_usable` — `signals.plane_usable` with `c.tracked_file_problem` monkeypatched to return `None` (macOS cannot hold such a file, so only this makes the test fail first everywhere): `"a\udcffb/pom.xml"` is `False`, `"a/pom.xml"` is `True`.
   - `test_usable_is_only_called_for_paths_that_match_a_rule`, `test_a_symlink_named_pom_xml_is_not_opened` and `test_a_root_manifest_sorts_before_a_deep_one`.
   - `test_a_truncated_rule_warns` — the 30-file case returns the warning text above.
   - In `tests/test_pipeline.py`: `test_hotspots_json_records_planes_even_when_none` — the fixture repo's `hotspots.json["planes"] == []`.
@@ -192,7 +194,7 @@ Input classes the spec implies and no task's happy path exercises, most likely f
 - Produces: `guidance(planes: dict[str, Plane], active_ids: Sequence[str], language: str, pattern_ids: Iterable[str], catalog: dict, cap_tokens: int | None = None, *, include_general: bool) -> str` (`None`: no cap, as the skeptic's brief) in `fracture_planes.py`. `language` and each plane's `languages` are compared after `_common.detector_language`. Returns `""` when no active plane covers the language or no section applies. Otherwise: the heading `## Plane guidance`, a one-paragraph preface (the maintainers' text about what counts as protection on this stack; not repository content; not evidence), then per plane in id order `### <id> — <title>`, a line `rubric <rubric_hash>`, the line ``full rubric: `.thunderstruck/planes/<id>.md` ``, its general text when `include_general`, and `#### <PatternID>` plus the section body for each requested pattern the plane has, in id order. No volatile values.
   `bundle.section_planes(hs: dict, data: dict, loaded: dict[str, Plane], catalog: dict, cap_tokens: int) -> str` calls `guidance` with the hotspot's language and lead pattern ids. `guidance` omits whole sections that do not fit (reverse id order) and ends with the line `Omitted to fit the budget: java-spring S10, S28.`; if the fixed lines and General alone exceed the cap, only the title, hash and rubric path remain
   `fracture_planes.write_plane_rubrics(dest: Path, loaded: dict[str, Plane], active_ids: Sequence[str]) -> list[Path]` (in `fracture_planes.py`, used by `bundle.py` and `verify.py`) writes `<dest>/planes/<id>.md` (the full rubric, LF) for each active plane.
-  `build_bundle` gains an optional last parameter `loaded_planes: dict | None = None`; with `None` or no active plane it produces exactly today's bytes. The section sits after `section_detectors`; its cap is `int(budget * 0.12)`; the plane section is built before `rest` (the cap does not depend on `rest`), and `rest` follows the guarded rule in Global Constraints. `fracture_planes.resolve_active(loaded: dict[str, Plane], recorded: Sequence[dict]) -> tuple[list[str], list[str]]` is the one place stale-plane skipping happens: it returns the active ids (recorded entries whose plane is loaded and whose live `rubric_hash` equals the recorded one) and one warning per skipped plane. `section_planes`, `bundle.py:main` and `verify.prepare` all call it, and `write_plane_rubrics` is given its result, so no file is written for a plane that was skipped. `write_plane_rubrics` first deletes any existing `<dest>/planes/` directory. `data.get("planes") or []`; when the key is absent, `bundle.py:main` warns on stderr "hotspots.json records no planes (written before this version); re-run signals.py", as it does for `own_packages`. `build_bundle` and `bundle.py:main` take their active ids from `resolve_active`; `main` prints its warnings to stderr.
+  `build_bundle` gains an optional last parameter `loaded_planes: dict | None = None`, after `ctx` and `obs` and passed by keyword (`bundle.main` and `tests/test_lessons.py` call it positionally up to those); with `None` or no active plane it produces exactly today's bytes. The section sits after `section_detectors`; its cap is `int(budget * 0.12)`; the plane section is built before `rest` (the cap does not depend on `rest`), and `rest` follows the guarded rule in Global Constraints. `fracture_planes.resolve_active(loaded: dict[str, Plane], recorded: Sequence[dict]) -> tuple[list[str], list[str]]` is the one place stale-plane skipping happens: it returns the active ids (recorded entries whose plane is loaded and whose live `rubric_hash` equals the recorded one) and one warning per skipped plane. `section_planes`, `bundle.py:main` and `verify.prepare` all call it, and `write_plane_rubrics` is given its result, so no file is written for a plane that was skipped. `write_plane_rubrics` first removes what is at `<dest>/planes`: `shutil.rmtree` when `c.is_real_dir`, else `unlink` for a symlink or file (spec §4), never through a link. `data.get("planes") or []`; when the key is absent, `bundle.py:main` warns on stderr "hotspots.json records no planes (written before this version); re-run signals.py", as it does for `own_packages`. `build_bundle` and `bundle.py:main` take their active ids from `resolve_active`; `main` prints its warnings to stderr.
 
 - [ ] **Step 1: Write the failing tests:**
   - `test_guidance_is_empty_for_a_language_no_active_plane_covers` — Review Focus 1: a `python` hotspot with only a `java` plane active returns `""`.
@@ -203,10 +205,11 @@ Input classes the spec implies and no task's happy path exercises, most likely f
   - `test_a_rubric_edit_changes_the_bundle_of_every_hotspot_the_plane_covers_and_no_other` — two covered hotspots, one in another language; editing a section no hotspot has a lead on still changes the two covered bundles, not the third.
   - `test_the_cap_holds_at_every_budget_and_a_plane_that_cannot_fit_is_left_out_with_a_warning` — at `--budget 1000` the guidance is at most `int(1000 * 0.12)` tokens, or empty with the warning.
   - `test_whole_sections_are_omitted_to_fit_the_cap_and_the_omission_is_named` — with a small `cap_tokens` no section is cut mid-body and the closing line names exactly the dropped ids.
-  - `test_with_neither_section_the_bundle_is_the_bytes_the_old_formula_gave` — on a synthetic hotspot, recompute the body with the pre-change expression `rest = max(budget - tokens(service), budget // 2) if service else budget` inline and assert byte equality with `build_bundle(..., loaded_planes=None)` and with a no-plane-covering load. This is the guard against today's output; it is not new-code-against-new-code.
-  - `test_the_source_budget_shrinks_by_the_plane_share_and_the_floor_holds` — with a plane section and no service section, `rest == budget - tokens(planes)`; with both, the floor `budget // 2` holds.
+  - `test_with_neither_section_the_bundle_is_the_bytes_the_old_formula_gave` — on a synthetic hotspot, recompute the body with the pre-change expression (`fixed` over `service`, `observed` and `kept`; `rest = max(budget - fixed, budget // 2) if fixed else budget`) inline and assert byte equality with `build_bundle(..., loaded_planes=None)` and with a no-plane-covering load. This is the guard against today's output; it is not new-code-against-new-code.
+  - `test_the_source_budget_shrinks_by_the_plane_share_and_the_floor_holds` — with a plane section and no service, observed or lessons section, `rest == budget - tokens(planes)`; with all four, `fixed` counts each once and the floor `budget // 2` holds.
   - `test_a_hotspots_json_without_a_planes_key_does_not_crash_bundle` (and warns).
   - `test_a_stale_plane_file_is_removed_on_the_next_bundle_run`.
+  - `test_a_symlink_at_the_planes_directory_is_replaced_and_never_followed` — the link's target keeps its files and gains none.
   - `test_a_plane_edited_after_signals_is_skipped_with_a_warning` (Review Focus 7), `test_resolve_active_skips_unloaded_and_changed_planes_and_names_them`, `test_a_broken_plane_does_not_stop_bundle_main` (monkeypatched `planes_dir`, `bundle.main` exits 0 with the warning on stderr).
   - `test_write_plane_rubrics_writes_each_active_plane_deterministically`, `test_a_dormant_bundle_gets_guidance_on_the_same_rule`, `test_a_yaml_hotspot_gets_guidance_only_from_a_plane_that_lists_yaml`.
   - `test_a_covered_bundle_stays_within_budget` — a synthetic plane at the gate's maximum section sizes keeps `tokens_estimated <= budget * 1.1`, the existing bound.
@@ -225,14 +228,16 @@ Input classes the spec implies and no task's happy path exercises, most likely f
 
 **Interfaces:**
 - Consumes: `fracture_planes.guidance` (called with `cap_tokens=None`), `fracture_planes.load_planes`; `hotspots.json["planes"]` ids; the finding's `location.file` and `missing_patterns`; `c.detect_language`, `c.language_map`.
-- Produces: `render_brief(finding, others, deps_index, messages, guidance_text: str = "")`. Preserve the existing Defaults to confirm block and confirmation settlement from #57. A non-empty `guidance_text` is inserted before `## Your output`; it is the output of `fracture_planes.guidance` (heading `## Plane guidance`, as in the bundle) with `include_general=False`, the finding's file language (`c.detect_language(file, c.language_map(catalog))`; `prepare` loads the catalog) and its `missing_patterns` that are Tier A/B.
-  `reusable(entry, finding, repo, deps_index, guidance_hash: str | None = None)` additionally requires `entry.get("guidance_hash", c.sha256_text("")) == (guidance_hash if guidance_hash is not None else c.sha256_text(""))`; the existing four-argument call in `tests/test_verification.py` and the one in `prepare` keep working. The plan entry carries `guidance_hash`; `apply` builds a `{key: guidance_hash}` lookup from `plan["findings"]` and writes it into each new ledger entry (ledger entries are built from `checks`, not from plan entries). `prepare` also calls `fracture_planes.write_plane_rubrics` so the rubric path in a brief always exists. `hotspots.json` read with `.get("planes") or []`, so a frozen run on an old file is unaffected. `reusable()` is called in `prepare`'s first loop, before any brief exists, so compute the guidance text and its hash once per finding there, store `guidance_hash` on every plan entry (`skip` and `reuse` included), and have `apply` read a missing value (an old `plan.json`) as `c.sha256_text("")`; a brief is rendered later from the same text. `prepare` takes its active ids from `resolve_active` and records its warnings in a new `warnings` list on the plan (`plan.json` gains that key; nothing else reads it).
+- Produces: `render_brief(finding, others, deps_index, messages, lessons_for=([], []), guidance_text: str = "")`: `lessons_for` (#106) keeps its place as the fifth parameter. Preserve the existing Defaults to confirm block and confirmation settlement from #57. A non-empty `guidance_text` is inserted before `## Your output`, after the lessons and other-findings sections; it is the output of `fracture_planes.guidance` (heading `## Plane guidance`, as in the bundle) with `include_general=False`, the finding's file language (`c.detect_language(file, c.language_map(catalog))`; `prepare` loads the catalog) and its `missing_patterns` that are Tier A/B.
+  `reusable(entry, finding, repo, deps_index, guidance_hash: str | None = None)` additionally requires `entry.get("guidance_hash", c.sha256_text("")) == (guidance_hash if guidance_hash is not None else c.sha256_text(""))`; the existing four-argument call in `tests/test_verification.py` and the one in `prepare` keep working. The plan entry carries `guidance_hash`; `apply` builds a `{key: guidance_hash}` lookup from `plan["findings"]` and writes it into each new ledger entry (ledger entries are built from `checks`, not from plan entries). `prepare` also calls `fracture_planes.write_plane_rubrics` so the rubric path in a brief always exists. `hotspots.json` read with `.get("planes") or []`, so a frozen run on an old file is unaffected; on a current file a frozen run gets the guidance (spec §4). `reusable()` is called in `prepare`'s first loop, before any brief exists, so compute the guidance text and its hash once per finding there, store `guidance_hash` on every plan entry (`skip` and `reuse` included), and have `apply` read a missing value (an old `plan.json`) as `c.sha256_text("")`; a brief is rendered later from the same text. `prepare` takes its active ids from `resolve_active` and records its warnings in a new `warnings` list on the plan (`plan.json` gains that key). `apply` adds them to `run.json`'s `warnings` after the ledger warning, and reads a missing list (an old `plan.json`) as empty; `report.py` already prints `run.json`'s warnings.
 
 - [ ] **Step 1: Write the failing tests:**
   - `test_brief_carries_the_rubric_for_the_findings_patterns` — a finding with `missing_patterns: ["S01"]` in a `.java` file, `java` plane active: the brief contains the `S01` section text and not an `S02` one.
-  - `test_brief_without_an_active_plane_has_no_plane_section` — a brief rendered from a synthetic finding with `guidance_text=""` equals the output of `render_brief` called with the four original arguments and does not contain `Plane guidance`.
+  - `test_brief_without_an_active_plane_has_no_plane_section` — a brief rendered from a synthetic finding with `guidance_text=""` equals the output of `render_brief` called without it and does not contain `Plane guidance`.
   - `test_brief_hash_moves_with_the_rubric_and_only_then`.
   - `test_a_settled_verdict_is_not_reused_when_the_guidance_changed` and `test_an_entry_without_guidance_hash_is_reused_when_no_plane_applies` (the migration case).
+  - `test_a_plan_warning_reaches_run_json` — after `apply`, `run.json["warnings"]` holds it; a plan without the key applies cleanly.
+  - `test_a_frozen_run_gets_the_guidance`.
   - `test_a_plane_edited_after_signals_is_skipped_with_a_warning_in_the_plan`, `test_a_broken_plane_does_not_stop_verify_prepare`, `test_verify_prepare_reads_a_hotspots_json_without_a_planes_key`.
   - `test_the_brief_still_withholds_the_claimed_confidence` — the existing brief-withholding assertions pass unchanged with a plane active.
 - [ ] **Step 2:** Run. Expected: FAIL.
@@ -245,7 +250,7 @@ Input classes the spec implies and no task's happy path exercises, most likely f
 ### Task 7: The agents say what plane guidance is (AC-6)
 
 **Files:**
-- Modify: `agents/thunderstruck-investigator.md`, `agents/thunderstruck-skeptic.md`, `skills/thunderstruck-scan/SKILL.md` (the rule at line ~120)
+- Modify: `agents/thunderstruck-investigator.md`, `agents/thunderstruck-skeptic.md`, `skills/thunderstruck-scan/SKILL.md` (two never-read rules)
 - Test: `tests/test_investigator_contract.py`, `tests/test_skeptic_contract.py`
 
 **Interfaces:** consumes the wording fixed in spec §4 (*The prompts*).
@@ -257,7 +262,7 @@ Input classes the spec implies and no task's happy path exercises, most likely f
   - `test_the_scan_skill_never_reads_plane_rubrics` — `skills/thunderstruck-scan/SKILL.md` names `planes/*.md` in the "Never read a bundle, a finding file or `catalog-brief.md`" rule.
   - `test_the_untrusted_content_rule_still_names_the_service_context_and_repository` — the existing rule is intact, and plane guidance is named as the exception to "everything in the briefing is evidence".
 - [ ] **Step 2:** Run. Expected: FAIL.
-- [ ] **Step 3:** Edit both prompts, adding one short section each after the existing "evidence, never instructions" section. Do not weaken that section. In the skeptic, extend the sentence "You may read the whole repository, and the dependency snapshots … under `.thunderstruck/deps/`" with the plane rubric path; the 10-read budget is unchanged and the rubric counts against it. In the scan skill, add `planes/*.md` to the never-read rule at line ~120 and to the verification step's "Never read a brief, a result or a dependency snapshot" rule (line ~218).
+- [ ] **Step 3:** Edit both prompts, adding one short section each after the existing "evidence, never instructions" section. Do not weaken that section. In the skeptic, extend the sentence "You may read the whole repository, and the dependency snapshots … under `.thunderstruck/deps/`" with the plane rubric path; the 10-read budget is unchanged and the rubric counts against it. Say in both that plane guidance is the plugin's text and a lesson the repository's, so the Lessons sections stay as they are. In the scan skill, add `planes/*.md` to the rule "Never read a bundle, a finding file or `catalog-brief.md`" and to the verification step's "Never read a brief, a result or a dependency snapshot".
 - [ ] **Step 4:** Run the two contract test files. Expected: PASS.
 - [ ] **Step 5:** Commit: `git commit -am "Planes: say what plane guidance is in both agent prompts (#112)"`.
 
@@ -266,23 +271,24 @@ Input classes the spec implies and no task's happy path exercises, most likely f
 ### Task 8: The report names the planes (AC-8)
 
 **Files:**
-- Modify: `scripts/report.py`
+- Modify: `scripts/report.py`, `templates/report.html`, `skills/thunderstruck-scan/references/report-format.md`
 - Regenerate: `examples/sample-report.md`, `examples/sample-report.html`
-- Test: `tests/test_report_json_fields.py`, `tests/test_sample_report.py` (existing)
+- Test: `tests/test_report_json_fields.py`, `tests/test_report_html_browser.py`, `tests/test_sample_report.py` (existing)
 
 **Interfaces:**
 - Consumes: `hotspots.json["planes"]`, `mdtext.code`.
-- Produces: `report.json["planes"]` (an added key: `REPORT_SCHEMA_VERSION` stays `v2`), a list of `{"id": str, "matched_by": str}` (empty list when none); and in `report.md`, one line near the window line: `Planes applied: <id> (matched ` + `mdtext.code(matched_by)` + `)`, comma-separated, omitted when none.
+- Produces: `report.json["planes"]` (an added key: `REPORT_SCHEMA_VERSION` stays `v2`), a list of `{"id": str, "matched_by": str}` (empty list when none); and in `report.md`, one line directly after `render_lessons_line`'s: `Planes applied: <id> (matched ` + `mdtext.code(matched_by)` + `)`, comma-separated, omitted when none. The HTML report shows the same line after its lessons line, as text nodes; `report-format.md` documents `planes` in `report.json` and `hotspots.json`, and `plan.json`'s `warnings` and `guidance_hash`.
 
 - [ ] **Step 1: Write the failing tests** using the existing helpers in that file, with a hand-edited `hotspots.json`:
   - `test_report_json_lists_the_planes_applied` and `test_report_md_names_each_plane_with_its_matched_file`.
   - `test_a_matched_path_is_rendered_inert` — a `matched_by` of `[x](https://example.com)` renders as inert code, not a link (use the helper the existing inert tests use).
+  - In `tests/test_report_html_browser.py`: `test_the_planes_line_is_shown_inert_and_absent_without_planes` — the same two cases in Chromium, with a `matched_by` holding markup.
   - `test_no_planes_leaves_the_report_unchanged` — `report.md` has no `Planes applied` line and `report.json["planes"] == []`.
 - [ ] **Step 2:** Run. Expected: FAIL.
-- [ ] **Step 3:** Implement in `report.py`: `planes` in `render_json` beside `degraded`, and the line beside the window line in `render_markdown`. Render the plane ID with `mdtext.code` too; leave the existing Defaults summary intact. Read the inert-render helper in `tests/test_inert_report.py` before writing the inert test.
+- [ ] **Step 3:** Implement in `report.py`: `planes` in `render_json` beside `degraded`, and the line after the lessons line in `render_markdown`. Render the plane ID with `mdtext.code` too; leave the existing Defaults summary intact. Read the inert-render helper in `tests/test_inert_report.py` before writing the inert test.
 - [ ] **Step 4:** `report_html.embed` embeds the whole `report.json`, so the HTML sample changes. The Markdown sample can be unchanged if the fixture has no active plane. Run `uv run scripts/gen_sample_report.py`, then `uv run scripts/gen_sample_report.py --check` (expected exit 0).
-- [ ] **Step 5:** Run `PYTEST tests/test_report_json_fields.py tests/test_inert_report.py tests/test_sample_report.py -q`. Expected: PASS.
-- [ ] **Step 6:** Commit: `git add scripts examples tests && git commit -m "Planes: the report names the planes it applied (#112)"`.
+- [ ] **Step 5:** Run `PYTEST tests/test_report_json_fields.py tests/test_inert_report.py tests/test_sample_report.py -q`, then the browser test with the command in `CLAUDE.md`. Expected: PASS, none skipped.
+- [ ] **Step 6:** Commit: `git add <each changed file> && git commit -m "Planes: the report names the planes it applied (#112)"`.
 
 ---
 
@@ -303,7 +309,7 @@ Input classes the spec implies and no task's happy path exercises, most likely f
 - [ ] **Step 2:** Run. Expected: FAIL (no `planes/java-spring`).
 - [ ] **Step 3:** Write the two files. Each rubric section has `**Counts as protection.**` and `**Does not count.**`, with a `**Baseline.**` where the Java design gives one (for example `.block()` from Spring MVC; `synchronized` around in-memory work). Stay under the section limits. List every other Tier A/B pattern under `cells` as `planned` with the reason `not yet written`. Regenerate the matrix with `uv run scripts/gen_plane_docs.py`.
 - [ ] **Step 4:** Run `PYTEST tests/test_planes.py -q` and `uv run scripts/gen_plane_docs.py --check`. Expected: PASS, exit 0.
-- [ ] **Step 5:** Commit: `git add planes skills tests && git commit -m "Planes: a seed plane, java-spring (#112)"`.
+- [ ] **Step 5:** Commit: `git add <each changed file> && git commit -m "Planes: a seed plane, java-spring (#112)"`.
 
 ---
 
@@ -315,7 +321,7 @@ Input classes the spec implies and no task's happy path exercises, most likely f
 
 - [ ] **Step 1:** `CONTRIBUTING.md`: after "Adding a language", add "Adding a plane": the directory layout, the four cell states, what `seed` and `calibrated` require, and the command `uv run scripts/gen_plane_docs.py`. Add one line to "Adding a language" saying a language's idioms belong in a plane rubric once a pattern's meaning differs on that stack.
 - [ ] **Step 2:** `CLAUDE.md`: add to "Things that will bite you" a paragraph: plane text is plugin content selected by `fracture_planes.select`, never by the model, embedded in the bundle and the brief so both hashes cover it, and a bundle with no active plane is byte-identical to before; and the word *profile* is `.thunderstruck.toml` only. Add `fracture_planes.py` and `gen_plane_docs.py` to the Commands and Generated-files lists.
-- [ ] **Step 3:** Bump to the next minor above current `main` (`0.15.0` if still on `0.14.0`) in the three manifests and add the matching heading and an *Added* list to `CHANGELOG.md`: planes, the gate, the matrix, the seed plane, the report line. Add a *Changed* note: repositories where `java-spring` is active re-investigate their Java hotspots on the first scan after upgrading, because the bundles now carry plane guidance; repositories with no active plane are unaffected.
+- [ ] **Step 3:** Bump to the next minor above current `main` (`0.21.0` if still on `0.20.0`) in the three manifests, turn `CHANGELOG.md`'s `## Unreleased` into the matching heading, keeping its entries (#144), and add to its *Added* list: planes, the gate, the matrix, the seed plane, the report line. Add a *Changed* note: repositories where `java-spring` is active re-investigate their Java hotspots on the first scan after upgrading, because the bundles now carry plane guidance; repositories with no active plane are unaffected.
 - [ ] **Step 4:** Run `PYTEST tests/test_docs_in_sync.py -q`. Expected: PASS.
 - [ ] **Step 5:** Commit: `git commit -am "Planes: document and version the feature (#112)"`.
 
