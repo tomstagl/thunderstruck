@@ -78,6 +78,10 @@ does not reach the report.
   `hotspots.json` exactly. A catalog ref is `<relation type> <entity ref>`,
   copied from the bundle's Service context section. It must be an edge in
   `context.json`, from the same snapshot the finding's bundle was built from.
+  An `observed` ref is `observed <kind>:<value> <file>:<line>`, copied from
+  the bundle's Dependencies observed in this file section. It must be an
+  observation in `observed.json`, from the snapshot the bundle was built
+  from, in the finding's file or a file it cites as `code` evidence.
 - **`missing_patterns` ⊆ catalog IDs ∪ {`OTHER`}.**
 - **`preconditions` is required and may be `[]`.** Each item is one setting
   the failure depends on, with exactly the keys `setting` (non-empty, unique
@@ -283,6 +287,28 @@ shown in bundles and the report.
 
 Catalog evidence never stands alone: the `code` rule still applies, and
 the edges describe the component, not a file.
+
+## Catalog drift
+
+With usable service context, `observed.py` writes `observed.json`: where the
+tracked files reach other systems (env vars used in a call, env names in
+configuration, secret references), each matched to the catalog by a
+`[[observed.map]]` entry first, then by exact name. Without usable context it
+is `skipped` and nothing below appears.
+
+- `report.md` gains a **Catalog drift** section after Service context: observed
+  but not in the catalog, documented only as a dependent, ambiguous,
+  documented but not observed, no mapping declared, and every
+  `[[observed.ignore]]` rule with its hits. These are leads, not findings.
+- `report.json` gains `catalog_drift` (or `null`): `observed_not_documented`,
+  `ambiguous` and `dependent_only` (each `{kind, value, occurrences, where:
+  [{file, line, url}]}` plus `resolution`/`entity`, `candidates` or `edge`),
+  `not_observed` and `no_mapping` (edge refs), `ignored` (`{rule, reason,
+  hits}`), `own_hosts_known`, `truncated`, `partial`, `unobserved_languages`
+  and `hosts_observed`. Every finding that cites an observation carries
+  `observed_evidence: [{ref, kind, value, resolution, edge}]`, resolved from
+  `observed.json` by `validate.py`.
+- `index.json` does not change.
 
 ## Findings that share cited code
 

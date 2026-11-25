@@ -214,9 +214,11 @@ def collect(repo: Path) -> dict[str, Any]:
     if not isinstance(context_doc, dict):
         context_doc = {}
     raw_warnings = context_doc.get("warnings")
+    service_context = c.load_service_context(repo)
+    drift = catalog_drift(_usable_observed(repo, service_context))
     link_meta, link_warnings, hotspot_links = link_refs(
         repo, hotspots["repo"]["head"], findings + refuted, hotspots["hotspots"] + dormant,
-        clean + failed)
+        clean + failed, drift_locations(drift))
     failed_ids = {e["hotspot_id"] for e in failed}
     usage, usage_warnings = _usage(out, hotspots["generated_at"])
     index = deps.load_index(repo)
@@ -228,8 +230,9 @@ def collect(repo: Path) -> dict[str, Any]:
             "failed": failed, "clean": clean, "validation": validation,
             # what an investigator actually read: briefed, and not incomplete
             "read": [h for h in investigated if h["id"] not in failed_ids],
-            "context": c.load_service_context(repo),
+            "context": service_context,
             "context_warnings": _context_warnings(raw_warnings),
+            "catalog_drift": drift,
             "links": link_meta, "link_warnings": link_warnings,
             "hotspot_links": hotspot_links,
             "usage": usage, "usage_warnings": usage_warnings,
@@ -356,7 +359,8 @@ def shared_code(findings: list[dict]) -> dict[str, list[dict]]:
 
 
 def link_refs(repo: Path, head: str, findings: list[dict], hotspots: list[dict] | None = None,
-              listed: list[dict] | None = None) -> tuple[dict | None, list[str], dict]:
+              listed: list[dict] | None = None,
+              located: list[dict] | None = None) -> tuple[dict | None, list[str], dict]:
     """Set a `url` on every finding location and evidence item, and on every
     listed (clean or incomplete) entry, in place; return the hotspot links.
 
@@ -364,12 +368,14 @@ def link_refs(repo: Path, head: str, findings: list[dict], hotspots: list[dict] 
     signals.py ranked; a `url` the investigator wrote is overwritten. Linking
     never fails the report.
     """
-    hotspots, listed = hotspots or [], listed or []
-    if not (findings or hotspots or listed):
+    hotspots, listed, located = hotspots or [], listed or [], located or []
+    if not (findings or hotspots or listed or located):
         return None, [], {}
 
     def unlinked(warnings: list[str]) -> tuple[None, list[str], dict]:
         _set_urls(findings, None, repo)
+        for loc in located:
+            loc["url"] = None
         return None, warnings, _set_file_urls(hotspots, listed, None)
 
     try:
@@ -377,7 +383,7 @@ def link_refs(repo: Path, head: str, findings: list[dict], hotspots: list[dict] 
             profile = c.load_profile(repo)
         except (c.ThunderstruckError, ValueError):  # ValueError covers non-UTF-8 bytes
             return unlinked([f"{links.NOT_LINKED}.thunderstruck.toml could not be read"])
-        paths: set[str] = {str(e["file"]) for e in [*hotspots, *listed] if e.get("file")}
+        paths: set[str] = {str(e["file"]) for e in [*hotspots, *listed, *located] if e.get("file")}
         commits: set[str] = set()
         for f in findings:
             loc = f.get("location")
@@ -413,6 +419,9 @@ def link_refs(repo: Path, head: str, findings: list[dict], hotspots: list[dict] 
                     paths.add(str(at["location"]["file"]))
         result = links.link_context(repo, profile, head, paths, commits)
         _set_urls(findings, result, repo)
+        for loc in located:   # an observation's file:line (#6), linked by the tool only
+            loc["url"] = (result.ctx.code(loc["file"], loc["line"], loc["line"])
+                          if result.ctx and not c.path_problem(str(loc["file"])) else None)
         hotspot_links = _set_file_urls(hotspots, listed, result.ctx)
         ctx = result.ctx
         warnings = list(result.warnings)
@@ -634,6 +643,147 @@ def render_service_context(ctx: dict | None, now: datetime) -> list[str]:
         L += ["", f"_… and {', '.join(hidden)} not listed "
                   f"(cap {c.MAX_NEIGHBOURS_PER_DIRECTION} per direction)._"]
     L.append("")
+    return L
+
+
+# --------------------------------------------------------------------------
+# catalog drift (#6, observed-dependencies spec §8)
+# --------------------------------------------------------------------------
+
+DRIFT_LOCATIONS = 3
+DRIFT_INTRO = ("Compares the dependencies this scan observed in the code and configuration with "
+               "the service catalog. These are leads to check, not findings.")
+DRIFT_GAPS = ("Not observed: hosts held only in configuration tables, env values passed through "
+              "more than one variable or across files, and vendor SDK clients.")
+NOT_OBSERVED_SENTENCE = ("none of its mapped values appear in the scanned files. It may be called "
+                         "through a shared client library, generated code or configuration "
+                         "outside this repository.")
+NO_MAPPING_SENTENCE = ("no observation could be linked to it, so this scan can't tell whether the "
+                       "code uses it. An `[[observed.map]]` entry naming its hosts, env vars or "
+                       "secrets would let it tell.")
+PARTIAL_WARNING = "observed dependencies: stopped after"
+
+
+def _usable_observed(repo: Path, ctx: dict | None) -> dict | None:
+    """observed.json when it is ok and was made from the current context."""
+    if not ctx:
+        return None
+    doc = c.load_observed(repo)
+    return doc if doc and doc.get("context_hash") == ctx.get("context_hash") else None
+
+
+def catalog_drift(obs: dict | None) -> dict | None:
+    """report.json's `catalog_drift`, from observed.json alone; None without it."""
+    if not obs:
+        return None
+    where: dict[tuple[str, str], list[dict]] = {}
+    for o in obs.get("observations") or []:
+        where.setdefault((o["kind"], o["value"]), []).append({"file": o["file"], "line": o["line"]})
+
+    def row(r: dict, *extra: str) -> dict:
+        return {"kind": r["kind"], "value": r["value"], "occurrences": r["occurrences"],
+                **{k: r.get(k) for k in extra}, "where": where.get((r["kind"], r["value"]), [])}
+
+    res = obs.get("resolutions") or []
+    return {
+        "observed_not_documented": [row(r, "resolution", "entity") for r in res
+                                    if r["resolution"] in ("unmatched", "mapped_undocumented")],
+        "ambiguous": [row(r, "candidates") for r in res if r["resolution"] == "ambiguous"],
+        "dependent_only": [row(r, "edge") for r in res if r["resolution"] == "dependent_only"],
+        "not_observed": list(obs.get("not_observed") or []),
+        "no_mapping": list(obs.get("no_mapping") or []),
+        "ignored": list(obs.get("ignored") or []),
+        "own_hosts_known": bool(obs.get("own_hosts_known")),
+        "truncated": dict(obs.get("truncated") or {}),
+        "partial": any(str(w).startswith(PARTIAL_WARNING) for w in obs.get("warnings") or []),
+        **_drift_coverage(),
+    }
+
+
+def _drift_coverage() -> dict:
+    """Which languages and kinds the shipped forms reach, from catalog/observed.yaml."""
+    import observed
+
+    try:
+        languages = list((c.load_catalog().get("languages") or {}))
+        missing, hosts = observed.coverage(observed.load_rules(), languages)
+    except (OSError, c.ThunderstruckError, KeyError, ValueError):
+        return {}
+    return {"unobserved_languages": missing, "hosts_observed": hosts}
+
+
+def drift_locations(drift: dict | None) -> list[dict]:
+    """Every location the drift section shows, for link_refs to give a `url`."""
+    if not drift:
+        return []
+    return [loc for key in ("observed_not_documented", "ambiguous", "dependent_only")
+            for r in drift[key] for loc in r["where"][:DRIFT_LOCATIONS]]
+
+
+def _drift_where(r: dict) -> str:
+    shown = [_linked(f"{loc['file']}:{loc['line']}", loc.get("url"), cell=True)
+             for loc in r["where"][:DRIFT_LOCATIONS]]
+    more = r["occurrences"] - len(shown)
+    return ", ".join(shown) + (f" +{more}" if more > 0 else "") if shown else "—"
+
+
+def render_catalog_drift(drift: dict | None) -> list[str]:
+    if not drift:
+        return []
+    notes = [DRIFT_GAPS]
+    if drift.get("unobserved_languages"):
+        notes.append(f"No form is measured yet for {', '.join(drift['unobserved_languages'])} "
+                     f"files, so they are not observed.")
+    if drift.get("hosts_observed") is False:
+        notes.append("No host form is measured yet, so only env vars and secret references "
+                     "are observed.")
+    if not drift["own_hosts_known"]:
+        notes.append("The service's own hosts are unknown, so its own URLs may be listed.")
+    if drift["truncated"].get("catalog_edges"):
+        notes.append(f"The service context lists at most {c.MAX_NEIGHBOURS_PER_DIRECTION} per "
+                     f"direction, so a value below may match an edge beyond that cap.")
+    if drift["partial"]:
+        notes.append("The file limit stopped the walk, so this section is partial.")
+    L = ["## Catalog drift", "", DRIFT_INTRO, "", f"_{' '.join(notes)}_", ""]
+    if (rows := drift["observed_not_documented"]):
+        L += [f"**Observed, not in the catalog** ({len(rows)})", "",
+              "| Kind | Value | Where | Occurrences |", "|---|---|---|---|"]
+        for r in rows:
+            value = md.code(r["value"], cell=True)
+            if r.get("resolution") == "mapped_undocumented":
+                value += f" (declared as {md.code(r['entity'], cell=True)})"
+            L.append(f"| {md.text(r['kind'], cell=True)} | {value} | {_drift_where(r)} "
+                     f"| {r['occurrences']} |")
+        L.append("")
+    if (rows := drift["dependent_only"]):
+        L += [f"**Documented only as a dependent** ({len(rows)})", "",
+              "| Kind | Value | Edge | Where | Occurrences |", "|---|---|---|---|---|"]
+        L += [f"| {md.text(r['kind'], cell=True)} | {md.code(r['value'], cell=True)} | "
+              f"{md.code(r['edge'], cell=True)} | {_drift_where(r)} | {r['occurrences']} |"
+              for r in rows]
+        L.append("")
+    if (rows := drift["ambiguous"]):
+        L += [f"**Ambiguous** ({len(rows)})", "",
+              "| Kind | Value | Could be | Where | Occurrences |", "|---|---|---|---|---|"]
+        L += [f"| {md.text(r['kind'], cell=True)} | {md.code(r['value'], cell=True)} | "
+              f"{', '.join(md.code(e, cell=True) for e in r.get('candidates') or [])} | "
+              f"{_drift_where(r)} | {r['occurrences']} |" for r in rows]
+        L.append("")
+    if (edges := drift["not_observed"]):
+        L += [f"**Documented, not observed** ({len(edges)})", ""]
+        L += [f"- {md.code(e)}: {NOT_OBSERVED_SENTENCE}" for e in edges]
+        L.append("")
+    if (edges := drift["no_mapping"]):
+        L += [f"**No mapping declared** ({len(edges)})", ""]
+        L += [f"- {md.code(e)}: {NO_MAPPING_SENTENCE}" for e in edges]
+        L.append("")
+    if (rules := drift["ignored"]):
+        L += ["**Ignored by the profile**", ""]
+        for r in rules:
+            kind, _, value = str(r["rule"]).partition(" ")
+            L.append(f"- {md.text(kind)} {md.code(value)} — {md.text(r['reason'])} "
+                     f"({r['hits']} hits)")
+        L.append("")
     return L
 
 
@@ -1276,6 +1426,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
     L += render_consumption(data.get("usage"), data["verification"]["reused"])
     L += render_not_scanned(hs.get("coverage_gaps"))
     L += render_service_context(data.get("context"), now or datetime.now(timezone.utc))
+    L += render_catalog_drift(data.get("catalog_drift"))
 
     # ---- lead table
     L += [f"## {LEADS_HEADING}", "", LEADS_INTRO, "",
@@ -1447,6 +1598,7 @@ def render_json(data: dict) -> dict:
                              ("status", "entity_ref", "context_hash", "fetched_at",
                               "edges", "truncated")}
                             if data.get("context") else None),
+        "catalog_drift": data.get("catalog_drift"),
         "pattern_coverage": hs["pattern_coverage"],
         "coverage_rows": coverage_rows(data),
         "files_affected": _files_affected(data["findings"]),

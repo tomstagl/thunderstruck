@@ -93,6 +93,15 @@ def load_rules(root: Path | None = None) -> dict:
     }
 
 
+def coverage(rules: dict, languages: list[str]) -> tuple[list[str], bool]:
+    """(the catalog languages no shipped form covers, whether any host form shipped)."""
+    covered = [lang for lang in languages if _forms(rules, lang)]
+    hosts = any(("request" in k and "response" in k) or "mesh" in k
+                or any(f[0] == "config.host.key" for f in k.get("config", []))
+                for k in rules["forms"].values())
+    return [lang for lang in languages if lang not in covered], hosts
+
+
 def _forms(rules: dict, lang: str) -> dict[str, list]:
     return rules["forms"].get(rules["aliases"].get(lang, lang), {})
 

@@ -255,3 +255,30 @@ def test_hostile_lesson_text_never_reaches_the_report_and_what_does_is_inert(sca
     assert "Lessons (" in markdown and "1 lesson applied to" in markdown
     saved = json.loads((out / "report.json").read_text())
     assert "evil.example" not in json.dumps(saved["lessons"]) and "statement" not in json.dumps(saved["lessons"])
+
+
+def test_hostile_observed_values_stay_inert(scanned_copy, plugin_root):
+    """#6 AC-12: every value from the scanned repository in the drift section is inert."""
+    hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
+    _write_finding(scanned_copy, hid, doc)
+    assert _validate(scanned_copy, plugin_root).returncode == 0
+    data = report.collect(scanned_copy)
+    evil = "evil`](x)<b>"
+    where = [{"file": f"src/{evil}.ts", "line": 3, "url": None}]
+    data["catalog_drift"] = {
+        "observed_not_documented": [
+            {"kind": f"env {HOSTILE}", "value": evil, "occurrences": 1,
+             "resolution": "mapped_undocumented", "entity": f"component:default/{evil}",
+             "where": where}],
+        "ambiguous": [{"kind": "env", "value": evil, "occurrences": 1,
+                       "candidates": [f"dependsOn {evil}"], "where": where}],
+        "dependent_only": [{"kind": "env", "value": evil, "occurrences": 1,
+                            "edge": f"dependencyOf {evil}", "where": where}],
+        "not_observed": [f"dependsOn {evil}"], "no_mapping": [f"dependsOn {HOSTILE}"],
+        "ignored": [{"rule": f"host {evil}", "reason": HOSTILE, "hits": 1}],
+        "own_hosts_known": False, "truncated": {"observations": 0, "catalog_edges": 1},
+        "partial": True}
+    markdown = report.render_markdown(data, scanned_copy)
+    assert "## Catalog drift" in markdown
+    _assert_inert(markdown)
+    assert render(markdown).tags.count("h1") == 1
