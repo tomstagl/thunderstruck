@@ -522,7 +522,8 @@ def test_the_verdict_contract_gains_exactly_the_three_keys():
 def test_the_prompt_example_shows_both_item_shapes():
     import re as _re
     text = (ROOT / "agents" / "thunderstruck-skeptic.md").read_text()
-    example = json.loads(_re.search(r"```json\n(\{.*?\})\n```", text, _re.S)[1])
+    blocks = [json.loads(b) for b in _re.findall(r"```json\n(\{.*?\})\n```", text, _re.S)]
+    (example,) = [b for b in blocks if "verdict" in b]
     assert example["guarantees"] and example["not_checked"]
     assert all(set(g) <= set(verify.VERDICT_GUARANTEE_KEYS) for g in example["guarantees"])
     assert any(g["of"] is None for g in example["guarantees"]) and any(g["of"] == 0 for g in example["guarantees"])
