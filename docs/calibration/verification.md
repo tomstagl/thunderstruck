@@ -287,6 +287,10 @@ the changed skeptic prompt.
 Spec: `docs/superpowers/specs/2026-11-25-missing-gate-setting-design.md` §7.
 The prediction was committed at `0547ded` before any run was scored.
 
+**What ships is the *before* prompt** with the `verify.py` all twelve runs were
+settled with. The *after* prompt (`e268b57`, pull request #148) was taken out
+again because of the false marks below; #144 AC-1 is not met.
+
 - **Arms.** *Before*: plugin 0.20.0 at `0547ded`, whose skeptic prompt is
   `main`'s. *After*: `c5b6b7a`. What a skeptic is given differs in
   `agents/thunderstruck-skeptic.md` alone. All twelve runs are settled with
@@ -349,22 +353,27 @@ Celery findings:
 FR-014 is a false mark in every run. Its failure happens on defaults, and the
 check's own `holds` says so (run 1: "On default settings, every task result
 write … fails"). The setting belongs to one refuted detail, a retry count, not
-to the failure. The report would list a correct default-path finding after the
-gated ones and say it needs a setting changed. Before the change no check
-did that, because none named a setting. The marks cannot be broken down
+to the failure. The report would have listed a correct default-path finding after the
+gated ones and said it needs a setting changed. With the *before* prompt no check
+does that, because none names a setting. The marks cannot be broken down
 on the holdout without revealing it.
 
 **`gate_problem`.** Two of 13 kept claims (FR-007 and FR-010, run 3) named no
 setting; both checks say so, and neither finding is marked by its check.
 
-**#54 AC-2 is not met.** In the three after runs no `high` is above its
-deserved confidence and no correct finding is refuted, but the mean same-class
-count is 9.67 of 21 and its interval starts at 27.0%, not 50%. Verification is
+**#54 AC-2 is not met, by either prompt.** With the prompt that ships, the mean
+same-class count is 9.00 of 21, its interval starts at 24.5%, not 50%, and a
+correct finding is refuted in two of the three runs. With the *after* prompt no
+correct finding is refuted, but the mean is 9.67 and the interval starts at
+27.0%. No `high` is above its deserved confidence in any run. Verification is
 also off by default, so a default scan gives no verdict at all.
 
 **Saved results.** On this Claude Code a subagent returns through a
-`SubagentHandback` call. The capture hook saw no message (`no_message` in
-`hook-trace.jsonl`), so the orchestrator retyped nearly every result. Compared
-with the skeptics' own messages, 9 of 216 saved results differ (1 before, 8
-after), in `evidence` notes, `guarantees`, `not_checked` or evidence indexes.
-Settling all twelve runs from the skeptics' own messages gives the same table.
+`SubagentHandback` call. The capture hook saved 39 of 216 results (Celery 31 of
+126, the holdout 8 of 90) and logged `no_message` in `hook-trace.jsonl` for the
+rest; the orchestrator retyped those 177. In the Celery transcripts the 31 are
+exactly the skeptics that wrote the result as text before handing it back.
+Compared with the skeptics' own messages, 9 of 216 saved results differ (1
+before, 8 after), in `evidence` notes, `guarantees`, `not_checked` or evidence
+indexes. Settling all twelve runs from the skeptics' own messages gives the same
+table.

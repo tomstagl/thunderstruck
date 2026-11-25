@@ -12,7 +12,9 @@ The verdict contract lets a `preconditions` claim carry a `setting` object, and 
 - A skeptic that finds a gate writes the claim without the object. `_decide` keeps the claim and says nothing about the missing object, so the check reads as a plain narrowing.
 - A skeptic that writes the object with a JSON scalar (`"default": false`) loses it: the value must be a string. #57 already normalises such scalars for `confirmations`; `setting` was left out.
 
-## 2. The instructions
+## 2. The instructions (measured, not shipped)
+
+**Not shipped** (maintainer, 2026-11-25; §8 decision 5). The text below was built at `e268b57` (pull request #148), measured (§7) and taken out again, because it produced false marks (§9). `agents/thunderstruck-skeptic.md` is unchanged, so AC-1 is not met. What follows describes what was measured.
 
 `agents/thunderstruck-skeptic.md` changes in two places, and nowhere else.
 
@@ -55,8 +57,8 @@ Nothing new can fail a scan. A malformed `setting` of any JSON type ends in a `g
 
 ## 6. Tests
 
-- The prompt's example object is read from the agent file, put into a verdict on the fixture (with its file created there), settled by the real `verify.py`, and must gate the finding: status `narrowed`, `finding_gate` `non_default_setting`, `run_verdict` `upheld_but_gated` (AC-1).
-- The example's words appear in no frozen finding or bundle of either set. The holdout is compared by its `scan/` files only; no label is read.
+- Measured version only, removed with §2: the prompt's example object is read from the agent file, put into a verdict on the fixture (with its file created there), settled by the real `verify.py`, and must gate the finding: status `narrowed`, `finding_gate` `non_default_setting`, `run_verdict` `upheld_but_gated` (AC-1).
+- Measured version only, removed with §2: the example's words appear in no frozen finding or bundle of either set. The holdout is compared by its `scan/` files only; no label is read.
 - `_decide`, parametrised over `setting`: absent, `null`, a string, a list, a missing key, an extra key, an empty string, a `default_ref` that does not resolve; each keeps the claim, sets `gate_problem`, names it in `reason`, and gates nothing (AC-2). A scalar `default` and `value` are normalised and gate.
 - A verdict that writes `gate_problem` itself has that claim dropped.
 - `report.md` and the HTML report show the sentence, inert.
@@ -84,7 +86,8 @@ Nothing new can fail a scan. A malformed `setting` of any JSON type ends in a `g
 2. **Name the problem on the claim, not as a new status.** A status is settled in one place and feeds confidence; a missing object is a defect of the output, not a verdict.
 3. **No repair round.** Skeptics get none (#37).
 4. **`VERIFY_BY_DEFAULT` is out of scope here** and stays as measured.
+5. **The instructions of §2 are not shipped; §3 and §4 are** (maintainer, 2026-11-25). In three of three runs they marked a correct default-path finding as needing a setting changed, and a false positive on correct code is a worse bug than a missed detection. Without them a skeptic rarely writes the object (0 of 12 claims), so almost no check gates a finding; §3 makes that visible in the report.
 
 ## 9. Open design questions
 
-- **A setting that belongs to a refuted detail marks the whole finding.** #37 §14 gates a narrowed finding on any `preconditions` claim with a setting. Measured on Celery, that marks FR-014 although the failure happens on defaults (`docs/calibration/verification.md`, "Missing gate setting"). Candidates: tell the skeptic that the claim is about the failure and not a detail; or gate only when every kept refuted claim is a gate, as `run_verdict` does. Neither is chosen, and either needs its own prediction and runs.
+- **A setting that belongs to a refuted detail marks the whole finding.** #37 §14 gates a narrowed finding on any `preconditions` claim with a setting. Measured on Celery, that marked FR-014 although the failure happens on defaults (`docs/calibration/verification.md`, "Missing gate setting"). Candidates: tell the skeptic that the claim is about the failure and not a detail; or gate only when every kept refuted claim is a gate, as `run_verdict` does. The second can be read off the recorded figures: it leaves one of the nine Celery marks (FR-003) and drops five right ones with the three wrong. Neither is chosen, and either needs its own prediction and runs. §2 ships only once this is settled.

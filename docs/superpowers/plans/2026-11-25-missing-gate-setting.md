@@ -28,6 +28,8 @@
 
 ## Task 3: the instructions show the setting (AC-1)
 
+Built, measured, then removed (Task 6): AC-1 is not met.
+
 **Files:** `agents/thunderstruck-skeptic.md`, `tests/test_skeptic_contract.py`.
 
 - [x] Failing tests: the example settles to a gate; its words are in no frozen scan.
@@ -43,4 +45,11 @@
 
 - [x] Settle all twelve runs with this branch's `verify.py`; `benchmark.py` on each export.
 - [x] Record spec §7's table beside the prediction, whatever it shows. Check in the Celery exports; the holdout is totals only.
+- [x] Whole suite, catalog and sample checks, `validate_plugin.py`.
+
+## Task 6: ship without the instructions (spec §8 decision 5)
+
+**Files:** `agents/thunderstruck-skeptic.md`, `tests/test_skeptic_contract.py`, `tests/test_fix_impact.py` (all back to `main`'s), `docs/calibration/verification.md`, `CHANGELOG.md`.
+
+- [x] Spec first; then the three files, the record and the changelog.
 - [ ] Whole suite, catalog and sample checks, `validate_plugin.py`.
