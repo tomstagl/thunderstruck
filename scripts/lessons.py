@@ -325,11 +325,13 @@ def for_hotspot(data: Any, hid: str) -> tuple[list[dict], list[str]]:
         lesson, problems = check_entry(raw, None)
         if lesson and not problems:
             by_id.setdefault(lesson["id"], lesson)
-    names = [i for i in entry.get("shown") or [] if isinstance(i, str)]
+    # an id is shown once, and never also named as left out
+    names = list(dict.fromkeys(i for i in entry.get("shown") or [] if isinstance(i, str)))
     shown, extra = select([by_id[i] for i in names if i in by_id])
     left = [l["id"] for l in extra]
     left += [i for i in entry.get("left_out") or [] if isinstance(i, str) and ID_RE.match(i)]
-    return shown, left
+    seen = {l["id"] for l in shown}
+    return shown, [i for i in dict.fromkeys(left) if i not in seen]
 
 
 def _section(intro: str, shown: list[dict], left_out: list[str]) -> str:

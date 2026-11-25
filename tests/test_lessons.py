@@ -1080,3 +1080,13 @@ def test_the_changelog_records_the_lessons_and_the_rules_version():
     top = text_of("CHANGELOG.md").split("\n## ", 2)[1]
     assert "(#106)" in top and NAME in top
     assert f"Validation rules version {c.VALIDATION_RULES}" in top
+
+
+# --- Review -----------------------------------------------------------------
+def test_for_hotspot_shows_a_repeated_id_once_and_never_as_both_shown_and_left_out():
+    accepted = norm(lesson("L-001", ["all"]), lesson("L-002", ["all"]))
+    record = {"accepted": accepted, "applied": {"H01": {
+        "shown": ["L-001", "L-001", "L-002", "L-001"], "left_out": ["L-001", "L-009", "L-009"]}}}
+    shown, left = lessons.for_hotspot({"lessons": record}, "H01")
+    assert [l["id"] for l in shown] == ["L-001", "L-002"]
+    assert left == ["L-009"]
