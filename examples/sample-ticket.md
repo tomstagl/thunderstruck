@@ -9,12 +9,12 @@
 
 ## Header
 
-- **Location** — [`src/client/releases.ts:16-28`](https://github.example.com/acme/fixture/blob/4edc250939e0c138c081863bebe9bc0d696919e9/src/client/releases.ts#L16-L28) · `fetchRelease`
+- **Location** — [`src/client/releases.ts:16-28`](https://github.example.com/acme/fixture/blob/56b70bb9e14a1b1182bbb6d0a2e38200deb17574/src/client/releases.ts#L16-L28) · `fetchRelease`
 - **Confidence** — high
 - **Check status** — upheld
 - **Status** — Hypothesis
 - **Key** — `483fd943cc43`
-- **Scan date** — 2025-09-15
+- **Scan date** — 2025-09-16
 - **Links** — built from the repository's link settings; they open the cited lines at the scanned commit.
 
 ## Summary
@@ -35,7 +35,7 @@
 
 ### Step 1
 
-[`src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/4edc250939e0c138c081863bebe9bc0d696919e9/src/client/releases.ts#L16)
+[`src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/56b70bb9e14a1b1182bbb6d0a2e38200deb17574/src/client/releases.ts#L16)
 
 ```
     await new Promise(resolve => setTimeout(resolve, SLEEP_MS));
@@ -45,7 +45,7 @@ What to notice: setTimeout(resolve, SLEEP\_MS)
 
 ### Step 2
 
-[`src/client/retry-wrapper.ts:1`](https://github.example.com/acme/fixture/blob/4edc250939e0c138c081863bebe9bc0d696919e9/src/client/retry-wrapper.ts#L1)
+[`src/client/retry-wrapper.ts:1`](https://github.example.com/acme/fixture/blob/56b70bb9e14a1b1182bbb6d0a2e38200deb17574/src/client/retry-wrapper.ts#L1)
 
 ```
 export async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
@@ -55,7 +55,7 @@ What to notice: the inner retry layer: 3 attempts, only when fetch throws
 
 ### Step 3
 
-[`deploy/releases-virtualservice.yaml:13`](https://github.example.com/acme/fixture/blob/4edc250939e0c138c081863bebe9bc0d696919e9/deploy/releases-virtualservice.yaml#L13)
+[`deploy/releases-virtualservice.yaml:13`](https://github.example.com/acme/fixture/blob/56b70bb9e14a1b1182bbb6d0a2e38200deb17574/deploy/releases-virtualservice.yaml#L13)
 
 ```
         attempts: 3
@@ -73,7 +73,7 @@ What to notice: the mesh layer: up to 4 tries per request, outside the code
 
 **Traced impact** — each item cites the code the investigator says it followed to reach it; each cited line is checked to exist, not to connect to the next.
 
-- Every feature that resolves a release waits on this loop, and on the inner retry layer under it — cites: [`src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/4edc250939e0c138c081863bebe9bc0d696919e9/src/client/releases.ts#L16), [`src/client/retry-wrapper.ts:1`](https://github.example.com/acme/fixture/blob/4edc250939e0c138c081863bebe9bc0d696919e9/src/client/retry-wrapper.ts#L1)
+- Every feature that resolves a release waits on this loop, and on the inner retry layer under it — cites: [`src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/56b70bb9e14a1b1182bbb6d0a2e38200deb17574/src/client/releases.ts#L16), [`src/client/retry-wrapper.ts:1`](https://github.example.com/acme/fixture/blob/56b70bb9e14a1b1182bbb6d0a2e38200deb17574/src/client/retry-wrapper.ts#L1)
 
 **Inferred impact** — each item rests on a catalog edge or an assumption, not on cited code.
 
@@ -83,7 +83,7 @@ What to notice: the mesh layer: up to 4 tries per request, outside the code
 
 **Implicit guarantees** — what this code provides without saying so, as the investigator stated it.
 
-- A single transient 5xx or timeout never reaches the caller: the loop absorbs it and the caller gets a result — provided by [`src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/4edc250939e0c138c081863bebe9bc0d696919e9/src/client/releases.ts#L16) — removed by: removing either retry layer, or capping the loop at one attempt — confirmed by the check: [`src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/4edc250939e0c138c081863bebe9bc0d696919e9/src/client/releases.ts#L16)
+- A single transient 5xx or timeout never reaches the caller: the loop absorbs it and the caller gets a result — provided by [`src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/56b70bb9e14a1b1182bbb6d0a2e38200deb17574/src/client/releases.ts#L16) — removed by: removing either retry layer, or capping the loop at one attempt — confirmed by the check: [`src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/56b70bb9e14a1b1182bbb6d0a2e38200deb17574/src/client/releases.ts#L16)
 
 ## Evidence status
 
@@ -93,17 +93,18 @@ Checked by `canned (no model ran)`
 
 **Evidence**
 
-- _code_ [`src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/4edc250939e0c138c081863bebe9bc0d696919e9/src/client/releases.ts#L16) — setTimeout(resolve, SLEEP\_MS)
-- _code_ [`src/client/retry-wrapper.ts:1`](https://github.example.com/acme/fixture/blob/4edc250939e0c138c081863bebe9bc0d696919e9/src/client/retry-wrapper.ts#L1) — the inner retry layer: 3 attempts, only when fetch throws
-- _code_ [`deploy/releases-virtualservice.yaml:13`](https://github.example.com/acme/fixture/blob/4edc250939e0c138c081863bebe9bc0d696919e9/deploy/releases-virtualservice.yaml#L13) — the mesh layer: up to 4 tries per request, outside the code
+- _code_ [`src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/56b70bb9e14a1b1182bbb6d0a2e38200deb17574/src/client/releases.ts#L16) — setTimeout(resolve, SLEEP\_MS)
+- _code_ [`src/client/retry-wrapper.ts:1`](https://github.example.com/acme/fixture/blob/56b70bb9e14a1b1182bbb6d0a2e38200deb17574/src/client/retry-wrapper.ts#L1) — the inner retry layer: 3 attempts, only when fetch throws
+- _code_ [`deploy/releases-virtualservice.yaml:13`](https://github.example.com/acme/fixture/blob/56b70bb9e14a1b1182bbb6d0a2e38200deb17574/deploy/releases-virtualservice.yaml#L13) — the mesh layer: up to 4 tries per request, outside the code
 - _commit_ [`bc017ce`](https://github.example.com/acme/fixture/commit/bc017cead1ed84c5c4592c98ce6eebe3122ed7a2) — “fix: release fetch still times out under load” — most recent fix to this file
-- _detector_ [`S02@src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/4edc250939e0c138c081863bebe9bc0d696919e9/src/client/releases.ts#L16) — lead confirmed against the code
+- _detector_ [`S02@src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/56b70bb9e14a1b1182bbb6d0a2e38200deb17574/src/client/releases.ts#L16) — lead confirmed against the code
+- _observed_ `observed env:RELEASES_API_URL src/client/releases.ts:34` — this file calls the releases API through it (not linked: no link could be built)
 - _catalog_ `dependencyOf component:default/web-frontend` — listed in the service catalog as depending on this component (not linked: catalog data has no source location)
 
 **Cited by the check**
 
-- _code_ [`src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/4edc250939e0c138c081863bebe9bc0d696919e9/src/client/releases.ts#L16) — the loop that absorbs the failure
-- _code_ [`src/sync/scheduler.ts:30`](https://github.example.com/acme/fixture/blob/4edc250939e0c138c081863bebe9bc0d696919e9/src/sync/scheduler.ts#L30) — userLookup calls fetchRelease once
+- _code_ [`src/client/releases.ts:16`](https://github.example.com/acme/fixture/blob/56b70bb9e14a1b1182bbb6d0a2e38200deb17574/src/client/releases.ts#L16) — the loop that absorbs the failure
+- _code_ [`src/sync/scheduler.ts:30`](https://github.example.com/acme/fixture/blob/56b70bb9e14a1b1182bbb6d0a2e38200deb17574/src/sync/scheduler.ts#L30) — userLookup calls fetchRelease once
 
 **History** — a signal of how often this code changed, not of whether the claim holds.
 
@@ -113,7 +114,7 @@ Checked by `canned (no model ran)`
 
 **Not checked** — what the investigator did not read or test, and how to check it.
 
-- Whether any caller of fetchRelease retries again above it — how to check: Grep the callers of fetchRelease and read what each does on failure — resolved by a check: Both callers, batchSync and userLookup, call fetchRelease once through submit and neither retries. — evidence: [`src/sync/scheduler.ts:30`](https://github.example.com/acme/fixture/blob/4edc250939e0c138c081863bebe9bc0d696919e9/src/sync/scheduler.ts#L30)
+- Whether any caller of fetchRelease retries again above it — how to check: Grep the callers of fetchRelease and read what each does on failure — resolved by a check: Both callers, batchSync and userLookup, call fetchRelease once through submit and neither retries. — evidence: [`src/sync/scheduler.ts:30`](https://github.example.com/acme/fixture/blob/56b70bb9e14a1b1182bbb6d0a2e38200deb17574/src/sync/scheduler.ts#L30)
 - How long one mesh attempt may take before it is retried — how to check: Read the route's per-try timeout in `deploy/releases-virtualservice.yaml`, or the mesh default — still open after a check: The repository sets no per-try timeout on the route; the mesh default is not readable from here.
 
 **Why this confidence** — Both retry layers on the 5xx path are visible in the code and the mesh configuration, and five separate 'fix timeout' commits on this file in the window show the cause was never addressed
@@ -164,10 +165,10 @@ How to fix: [`fix-agent-instructions.md`](https://github.com/tomstagl/thunderstr
 
 ## Provenance
 
-- Generated by thunderstruck from a scan of commit `4edc250939e0c138c081863bebe9bc0d696919e9` at `2025-09-15T00:00:00+00:00`.
+- Generated by thunderstruck from a scan of commit `56b70bb9e14a1b1182bbb6d0a2e38200deb17574` at `2025-09-16T00:00:00+00:00`.
 - Finding `483fd943cc43` · hotspot H01 · report schema `thunderstruck.report/v2`.
 - Verification ran for this scan.
-- Proposals: Fix options, Acceptance criteria, Out of scope, Rollout and rollback drafted by a model from this finding (file `sha256:aea56b419e350ea349b5d68f8d557440c389d7d273b429f1698d605309e7b206`).
+- Proposals: Fix options, Acceptance criteria, Out of scope, Rollout and rollback drafted by a model from this finding (file `sha256:86f541e95b0d6e2d0797c6cc46ebf95676a52e709368a0a4c7f471a0f240220e`).
 
 ## Disclaimer
 

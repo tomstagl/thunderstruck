@@ -4,6 +4,23 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.20.0
+
+Outbound dependencies are linked to the files that call them, and the report shows catalog drift (#6).
+
+### Added
+
+- **`scripts/observed.py`**, a deterministic step after `context.py` in every scan. With usable service context it reads the tracked files the scan covers and writes `.thunderstruck/observed.json`: env vars used in a request or gRPC client call, env names in Kubernetes and YAML configuration, and secret references, each matched to the catalog by a declared `[[observed.map]]` entry first, then by exact name. Without usable context it writes a `skipped` document and nothing else changes. No network, no secret store, no secret value, and only a URL's host is ever kept.
+- **Only measured forms ship.** `catalog/observed.yaml` holds the five forms the calibration runs measured (`docs/calibration/observed-dependencies.md`); a test fails on any other. No host form was measured, so no host is observed yet.
+- **A bundle lists the dependencies observed in its file**, and a finding may cite one as `observed` evidence: it must be an observation of this scan, from the snapshot the bundle was built from, in the finding's file or a file it cites as code. A finding still needs code evidence.
+- **The report's Catalog drift section**: observed but not in the catalog, documented only as a dependent, ambiguous, documented but not observed, no mapping declared, and every ignore rule with its hits. `report.json` gains `catalog_drift`, and findings carry `observed_evidence`. `index.json` and the guardrail don't change.
+- **The `[observed]` profile table**: `[[observed.map]]` and `[[observed.ignore]]` entries, validated like `[[suppress]]`. It runs no command, so changing it never asks for approval again.
+- **The service's own hosts** from the `thunderstruck.io/own-hosts` annotation on its own catalog entry (or `[observed] own_hosts_annotation`). `context.json` gains `own_hosts` only for an entry with the annotation, so `context_hash` is unchanged without it.
+
+### Changed
+
+- Enabling it re-investigates, once, only the hotspots whose file calls something: their bundles gain a section. Every other bundle keeps its bytes and its cached finding.
+
 ## 0.19.0
 
 Lessons a repository keeps reach every later briefing (#106), part of #104.

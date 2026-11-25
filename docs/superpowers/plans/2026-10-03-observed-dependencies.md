@@ -105,29 +105,29 @@ This task needs hand-written ground truth and a person to review the sample. The
   - `ref(obs: dict) -> str`: `f"observed {kind}:{value} {file}:{line}"`.
   - `is_own_host(host: str, own_hosts: list[str]) -> bool`.
 
-- [ ] Write `catalog/observed.yaml` with schema `thunderstruck.observed-rules/v2`:
+- [x] Write `catalog/observed.yaml` with schema `thunderstruck.observed-rules/v2`:
   - `forms`: per language, per kind (`request`, `response`, `connect`, `read`, `config`, `mesh`), a list of `{id, pattern}`. **Only the ids in the calibration doc's *Measured forms* table**, with the patterns from Task 0's candidate table. `javascript` is covered by the catalog's `aliases`.
   - `api_name`: `(?i)(?:\b\w*(?:api|base|endpoint)\w*\s*[:=]\s*|new\s+URL\(\s*)` (§2.1 rule 2, matched against the 60 characters before the literal's opening quote).
   - `config_env_suffixes: [_URL, _URI, _HOST, _HOSTNAME, _ENDPOINT, _ADDR, _DSN, _CONNECT, _SERVER]`.
   - `config_host_key_words: [url, uri, endpoint, host, base, api]`.
   - `generic_first_labels: [api, www, app, cdn, static]` (used by Task 4).
   - `secret_calls`, `exclude_hosts` (`exact`, `suffix`, `prefix: [docs.]`, `ipv4_loopback: true`) unchanged from the spec's §2.3–§2.4 lists.
-- [ ] Write `tests/observed/test_measured_forms.py`: `test_only_measured_forms_ship` parses the `## Measured forms` table of `docs/calibration/observed-dependencies.md` and asserts every form id in `observed.yaml` is in it; `test_every_form_has_a_positive_sample` asserts each id appears in at least one sample's `.expected` provenance (see the next step).
-- [ ] Add the host and secret samples. **No host form shipped** (Task 0): no response form, no `config.host.key`, no `mesh.service-entry`. So there are no host positives and `observed.yaml` lists no host forms; the host machinery below (gate, URL, normalisation, exclusions, own hosts) is still built, so a measured form later is a data change. The host negatives run as negatives, and the own-host and secret-safety tests that need a host pass `observe_text` a rules dict with a test-only request and response form added in the test, never in `observed.yaml`. Layout: `tests/observed/samples/<kind>/<language>/{positive,negative}_<topic>.<ext>`. Every positive has a sibling `<file>.expected` with one `<kind>:<value>:<line>` per line, sorted, and a first comment line `# forms: <id>, <id>` naming the forms it exercises. A negative yields no observation of its directory's kind. Only samples for shipped forms exist. At minimum (§11, Review Focus 1–2):
+- [x] Write `tests/observed/test_measured_forms.py`: `test_only_measured_forms_ship` parses the `## Measured forms` table of `docs/calibration/observed-dependencies.md` and asserts every form id in `observed.yaml` is in it; `test_every_form_has_a_positive_sample` asserts each id appears in at least one sample's `.expected` provenance (see the next step).
+- [x] Add the host and secret samples. **No host form shipped** (Task 0): no response form, no `config.host.key`, no `mesh.service-entry`. So there are no host positives and `observed.yaml` lists no host forms; the host machinery below (gate, URL, normalisation, exclusions, own hosts) is still built, so a measured form later is a data change. The host negatives run as negatives, and the own-host and secret-safety tests that need a host pass `observe_text` a rules dict with a test-only request and response form added in the test, never in `observed.yaml`. Layout: `tests/observed/samples/<kind>/<language>/{positive,negative}_<topic>.<ext>`. Every positive has a sibling `<file>.expected` with one `<kind>:<value>:<line>` per line, sorted, and a first comment line `# forms: <id>, <id>` naming the forms it exercises. A negative yields no observation of its directory's kind. Only samples for shipped forms exist. At minimum (§11, Review Focus 1–2):
   - `host` positives, once a host form ships (none now): `fetchWithRetry("https://ledger.internal/v1/x")` then `.json()`; `const apiBase = "https://ledger.internal"` with a `fetch(` and `.ok` in the file; `new URL("https://ledger.internal")`; the userinfo URLs `postgres://app:hunter2@db.internal/app` and `postgres://u:p@ss/w@db.internal/x` in a requesting file, each expecting only `db.internal`; the same URL commented out on the line above the call, expecting only the call's line; `yaml/positive_key.yaml` (`payments.base-url: https://payments-api.internal/v1`) if `config.host.key` shipped; `yaml/positive_service_entry.yaml` if `mesh.service-entry` shipped.
   - `host` negatives: a press/footer link table (`https://news-site.internal/review/1`) in a file with no request form; the same table in a requesting file but as bare hosts with no path or API name; a URL in a file that requests but reads no response; a `VirtualService` and a `DestinationRule`; an own host and its subdomain (`own_hosts=["fixture-app.internal"]`, passed by the test); `localhost`, `127.0.0.2`, `example.com`, `svc.test`, `json-schema.org`, `docs.python.org`, `${HOST}`, `{{ .Values.host }}`; a commented-out URL alone.
   - `secret`: as specified before the amendment: `yaml/positive_externalsecret.yaml` (`data[].remoteRef.key`, `dataFrom[].extract.key`), `yaml/positive_vault_annotation.yaml`, `yaml/positive_csi.yaml`, one code positive per language; negatives a 40-character `[A-Za-z0-9]` literal passed to `getSecretValue` and a secret call in a comment.
-- [ ] Write `tests/observed/test_observed_samples.py`: discover samples from the tree; each positive's projection to `kind:value:line` equals `.expected`; each negative yields nothing of its kind; `test_every_kind_has_both_samples` for every `(kind, language)` that has at least one shipped form (aliases excluded as before); a secret-safety test that `hunter2`, `p@ss`, the 40-character literal and any URL path appear in no serialised `observe_text` output; an own-host test that the excluded host is counted in `excluded_own_host` and never returned.
-- [ ] Run them; they fail with `ModuleNotFoundError: observed`.
-- [ ] Implement host and secret extraction in `scripts/observed.py`:
+- [x] Write `tests/observed/test_observed_samples.py`: discover samples from the tree; each positive's projection to `kind:value:line` equals `.expected`; each negative yields nothing of its kind; `test_every_kind_has_both_samples` for every `(kind, language)` that has at least one shipped form (aliases excluded as before); a secret-safety test that `hunter2`, `p@ss`, the 40-character literal and any URL path appear in no serialised `observe_text` output; an own-host test that the excluded host is counted in `excluded_own_host` and never returned.
+- [x] Run them; they fail with `ModuleNotFoundError: observed`.
+- [x] Implement host and secret extraction in `scripts/observed.py`:
   - Blank comments with `c.strip_comments(text, lang)`; string contents stay.
   - File gate (§2.1 rule 1): the blanked text matches at least one shipped `request` and one shipped `response` pattern of the language. YAML and properties have no gate; they use `config.host.key` and `mesh.service-entry` only.
   - URL: `(?P<scheme>[a-z][a-z0-9+.-]{1,15})://(?:[^\s/'"`@]*@)*(?P<host>[^\s/'"`:?#\]\[]+)(?::\d+)?(?P<path>/[^\s'"`]*)?`. Rule 2: `path` is longer than `/`, or `api_name` matches the 60 characters before the opening quote. `path` is read and discarded.
   - Normalise (lowercase, strip port and trailing dot), the §2.1 pattern and 253-character check, the §2.4 exclusions, then `is_own_host` (equal, or ends with `.` + entry; a `*.x` entry matches subdomains of `x` only).
   - YAML structural forms via `yaml.compose_all`; a scalar's line is `node.start_mark.line + 1`. On `yaml.YAMLError`, skip structural forms and set `yaml_failed`. `config.host.key` is a line form: `^\s*([\w.-]+)\s*[:=]\s*['"]?<URL>`.
   - Secret forms as §2.3. A value failing its kind's pattern increments `dropped[kind]` and is never returned.
-- [ ] Run the sample tests, then the full suite.
-- [ ] Commit: `Observe hosts at call sites and secret references in tracked files (#6)`.
+- [x] Run the sample tests, then the full suite.
+- [x] Commit: `Observe hosts at call sites and secret references in tracked files (#6)`.
 
 ### Task 2: Env vars by use and by name (AC-9)
 
@@ -137,21 +137,21 @@ This task needs hand-written ground truth and a person to review the sample. The
 - Consumes: Task 1's `load_rules`, `Extraction`, the shipped `request` and `connect` forms.
 - Produces: `observe_text` also returns `env` observations; `call_spans(blanked: str, rules: dict, lang: str) -> list[tuple[int, int]]` (start and end offsets of each request or connect call's argument list).
 
-- [ ] Write failing tests in `test_env_use.py` and env samples (each `.expected` names its forms):
+- [x] Write failing tests in `test_env_use.py` and env samples (each `.expected` names its forms):
   - The only shipped read form is `ts.read.destructure`; `process.env.NAME` and `process.env["NAME"]` are not observed (Task 0). Pin that: `fetch(process.env.AUTH_SERVER)` → nothing;
   - one variable: `const { AUTH_SERVER } = process.env;` then on line 9 ``fetch(`${AUTH_SERVER}/verify`)`` → `env:AUTH_SERVER` at line 9, not at the read's line; a name used in three calls → three observations;
   - destructuring: `const { CART_ADDR = '' } = process.env;` then `new CartServiceClient(CART_ADDR, ChannelCredentials.createInsecure())` → `env:CART_ADDR` at the client line; `const { SHIPPING_ADDR: ship } = process.env;` then ``fetch(`${ship}/get-quote`)`` → `env:SHIPPING_ADDR`; `new FooClient(X_ADDR)` without credentials → nothing;
   - config by name: a container `env[].name: LEDGER_ADDR` and `${PRODUCT_CATALOG_ADDR:localhost:3550}` in YAML observed; `${LEDGER_ADDRESS}` and `${LOG_LEVEL}` not; the same placeholder in a `.properties` file and `@Value("${payments.base-url}")` → nothing (unmeasured forms);
   - not observed (the §2.2 gaps, pinned), each with a destructured read: `LOG_LEVEL` never used in a call; `new S3Client({ endpoint: S3_URL })`; a second hop (`const b = S3_URL + "/v1"; fetch(b)`); an object field (`cfg.auth = AUTH_URL; fetch(cfg.auth)`); `export const X = X_URL` used by no call in the file;
   - Review Focus 3: `const { X_URL } = process.env;` then a 3000-character single-line call with an unbalanced `(` containing `X_URL` → no observation, no exception, no warning.
-- [ ] Run; they fail.
-- [ ] Implement:
+- [x] Run; they fail.
+- [x] Implement:
   - `call_spans`: for each shipped `request` or `connect` match, scan from its `(` to the balancing `)` in the blanked text, counting only parentheses outside string literals; give up after 2000 characters. `ts.connect.grpc-client` keeps a span only if it matches `ChannelCredentials|credentials\.`.
   - Reads: every shipped `read` match with its offset. Bindings: a read that is the whole right-hand side of `(?:const|let|var)\s+(\w+)\s*=`, `^\s*(\w+)\s*=` (Python) or `\b\w+\s+(\w+)\s*=` (Java) binds that name; `ts.read.destructure` binds each `NAME`, or its alias after `:`, with an optional `= default`.
   - Observations: a read whose offset lies inside a span → at the read's line. A bound name matching `\bname\b` inside a later span → at that occurrence's line, valued with the env var's name. A read not used either way yields nothing.
   - Config forms: `config.env.*` with the `config_env_suffixes` rule; Spring keys `.`/`-` → `_`, uppercase.
-- [ ] Run the tests, then the full suite.
-- [ ] Commit: `Observe env vars by their use in a call, and by name in configuration (#6)`.
+- [x] Run the tests, then the full suite.
+- [x] Commit: `Observe env vars by their use in a call, and by name in configuration (#6)`.
 
 ### Task 3: The service's own hosts from its catalog entry (§2.6)
 
@@ -164,17 +164,17 @@ This task needs hand-written ground truth and a person to review the sample. The
   - `context.json` gains `own_hosts: [...]` only when non-empty.
   - `context.DEFAULT_OWN_HOSTS_ANNOTATION = "thunderstruck.io/own-hosts"`, read from the profile's `[observed] own_hosts_annotation`.
 
-- [ ] Write failing tests:
+- [x] Write failing tests:
   - an entity with `thunderstruck.io/own-hosts: "shop.internal, *.api.shop.internal"` → `own_hosts == ["*.api.shop.internal", "shop.internal"]` in a `fresh` `context.json`;
   - a bad entry (`"shop.internal, not a host!"`) is dropped with one warning that names the annotation and contains no part of the bad value;
   - without the annotation, `context.json` has no `own_hosts` key and `context_hash` equals the value `main` computes for the same edges (call `context_hash` without the argument and compare);
   - `[observed] own_hosts_annotation = "example.com/hosts"` reads that key instead, and changing it does not change `config_hash` (no re-approval);
   - a `cached` document keeps its `own_hosts`, and `_reusable` recomputes the hash including them;
   - `c.load_service_context` accepts a document with `own_hosts` and rejects one where it is not a list of strings.
-- [ ] Run; they fail.
-- [ ] Implement: in `fetch_source`, after extracting edges, call `extract_own_hosts(main.doc, annotation)` (the annotation passed in from `resolve`, which reads it from `profile.get("observed", {})`); carry the hosts on `SourceResult`; pass them to `context_hash` and into the document in `resolve` and `_reusable`; extend `_well_formed_context`. Each entry must match the §2.1 host pattern with an optional leading `*.`.
-- [ ] Run the tests, then the context suites (`tests/test_context_*.py`) and the full suite.
-- [ ] Commit: `Read the service's own hosts from one catalog annotation (#6)`.
+- [x] Run; they fail.
+- [x] Implement: in `fetch_source`, after extracting edges, call `extract_own_hosts(main.doc, annotation)` (the annotation passed in from `resolve`, which reads it from `profile.get("observed", {})`); carry the hosts on `SourceResult`; pass them to `context_hash` and into the document in `resolve` and `_reusable`; extend `_well_formed_context`. Each entry must match the §2.1 host pattern with an optional leading `*.`.
+- [x] Run the tests, then the context suites (`tests/test_context_*.py`) and the full suite.
+- [x] Commit: `Read the service's own hosts from one catalog annotation (#6)`.
 
 ### Task 4: Matching and the `[observed]` profile table (AC-4, AC-5, AC-6, AC-7)
 
@@ -188,7 +188,7 @@ This task needs hand-written ground truth and a person to review the sample. The
   - `match_name(kind: str, value: str, rules: dict) -> str | None`: the §3 rule 3 name, or `None` for a generic first label.
   - `resolve(observations: list[dict], edges: list[dict], cfg: dict, rules: dict) -> dict`: `{"resolutions", "not_observed", "no_mapping", "ignored"}` in the §5 shapes, sorted per §5.
 
-- [ ] Write failing unit tests (§11 "Matching unit tests", "Config validation"):
+- [x] Write failing unit tests (§11 "Matching unit tests", "Config validation"):
   - ignore beats map, map beats name; an ignored observation's resolution is `ignored` and it stays in the input list (Task 5 keeps it in `observations`);
   - `host` first label: `payments-api.prod.svc.cluster.local` → `payments-api`; `payments.internal` doesn't match `payments-api`; `api.vendor.internal` → `None`, even with a neighbour called `api`;
   - `env`: `PAYMENTS_API_URL` → `payments-api`, `CART_ADDR` → `cart`, `DB_CONNECT` → `db`, `LEDGER_ADDRESS` → `ledger-address` (not a suffix any more), `AUTH` → `auth`;
@@ -198,10 +198,10 @@ This task needs hand-written ground truth and a person to review the sample. The
   - an outbound edge with a map entry and no observation → `not_observed`; without a map entry → `no_mapping`; an edge reached by an exact-name match without a map entry → in neither list;
   - `ignored` carries `rule` (`"host api.vendor.internal"`), `reason`, `hits`; `*.vendor.internal` matches `a.vendor.internal`, not `vendor.internal`;
   - config: a bad entity ref, a value in two map entries (the second dropped), an ignore rule with two kinds, one without a reason, and a non-string `own_hosts_annotation` each yield one warning and leave the rest working.
-- [ ] Run; they fail.
-- [ ] Implement `load_config`, `map_hash`, `match_name` and `resolve`. Neighbour names are the part after `/` in the entity ref, lowercased. The entity-ref check uses `context_extract.ENTITY_REF`.
-- [ ] Run the tests, then the full suite.
-- [ ] Commit: `Match observations by declared map first, then exact name (#6)`.
+- [x] Run; they fail.
+- [x] Implement `load_config`, `map_hash`, `match_name` and `resolve`. Neighbour names are the part after `/` in the entity ref, lowercased. The entity-ref check uses `context_extract.ENTITY_REF`.
+- [x] Run the tests, then the full suite.
+- [x] Commit: `Match observations by declared map first, then exact name (#6)`.
 
 ### Task 5: `observed.py` writes `observed.json` (AC-10, AC-11)
 
@@ -211,7 +211,7 @@ This task needs hand-written ground truth and a person to review the sample. The
 - Consumes: Tasks 1–4; `c.load_service_context`, `c.tracked_index`, `c.path_problem`, `c.tracked_file_problem`, `c.is_utf8`, `c.Filters.from_profile`, `c.language_map`, `c.detect_language`; `hotspots.json` (`config.path`, `config.include_tests`, the ranked files).
 - Produces: `run(repo: Path, limit: int = 3000) -> dict` and `main(argv) -> int`; `.thunderstruck/observed.json` with schema `thunderstruck.observed/v1` and exactly the §5 fields (including `no_mapping`, `own_hosts_known`, `excluded`); `OBSERVED_FILENAME = "observed.json"` and `OBSERVED_SCHEMA` in `_common.py`; `c.load_observed(repo) -> dict | None`, returning the document only when `status == "ok"`, the schema matches and `observed_hash` equals the hash recomputed from its content.
 
-- [ ] Write failing tests over a small `tmp_path` git repository built with `isolated_git_env()`, a hand-written `context.json` (status `fresh`, a valid `context_hash`) and a hand-written `hotspots.json`:
+- [x] Write failing tests over a small `tmp_path` git repository built with `isolated_git_env()`, a hand-written `context.json` (status `fresh`, a valid `context_hash`) and a hand-written `hotspots.json`:
   - no `context.json`, or status `untrusted`: `{"schema", "status": "skipped", "reason"}` and nothing else;
   - `ok`: the §5 fields; observations sorted by `(file, line, kind, value)`; `observed_hash` covers exactly `observations`, `resolutions`, `not_observed`, `no_mapping`, `truncated`; an ignored observation is in `observations`;
   - `own_hosts_known` is false without `own_hosts` in `context.json`; `excluded.own_host` counts an own-host URL that is never listed;
@@ -223,10 +223,10 @@ This task needs hand-written ground truth and a person to review the sample. The
   - `c.load_observed` returns `None` for a document edited without recomputing `observed_hash` (Review Focus 5);
   - `truncated.outbound > 0` in `context.json` sets `truncated.catalog_edges`;
   - no file under `.thunderstruck/` contains `hunter2` or a URL path after scanning `fetch("postgres://app:hunter2@db.internal/app/secret-path")` (§11 "Secret safety").
-- [ ] Run; they fail.
-- [ ] Implement the walk (§2.5): files from `c.tracked_index(repo)`, the acceptance checks `signals.py` applies to ranked files, the `hotspots.json` path and test scope, a language from `language_map`, sorted, stopped at `--limit`. Then caps (hotspot files first), `resolve`, hashes and `c.write_json`. Print one line: `observed: <n> observation(s), <d> documented, <u> not in the catalog, <m> not observed, <k> no mapping` or `observed: skipped (<reason>)`.
-- [ ] Run the tests, then the full suite.
-- [ ] Commit: `Write observed.json from tracked files and the service context (#6)`.
+- [x] Run; they fail.
+- [x] Implement the walk (§2.5): files from `c.tracked_index(repo)`, the acceptance checks `signals.py` applies to ranked files, the `hotspots.json` path and test scope, a language from `language_map`, sorted, stopped at `--limit`. Then caps (hotspot files first), `resolve`, hashes and `c.write_json`. Print one line: `observed: <n> observation(s), <d> documented, <u> not in the catalog, <m> not observed, <k> no mapping` or `observed: skipped (<reason>)`.
+- [x] Run the tests, then the full suite.
+- [x] Commit: `Write observed.json from tracked files and the service context (#6)`.
 
 ### Task 6: Fixture with planted dependencies (success measure "after the build")
 
@@ -237,8 +237,8 @@ This task needs hand-written ground truth and a person to review the sample. The
 
 The additions use only the shipped TypeScript forms (`ts.request.fetchlike`, `ts.read.destructure`, `ts.connect.grpc-client`). No host form shipped, so every planted dependency is an env var, and the own-host annotation is planted but nothing in the code can match it.
 
-- [ ] In `fake_catalog.py`, add to the main entity three outbound edges (`component:default/search-api`, `component:default/legacy-billing`, `resource:default/orders-db`) and one inbound edge (`component:default/reporting-job`), each with a `neighbour(...)` entry, and the annotation `"thunderstruck.io/own-hosts": "fixture-app.internal"`.
-- [ ] Add `add_observed_dependencies` to `build_fixture.py`. It appends to the three top-ranked files, writes `deploy/search-externalsecret.yaml` (an `external-secrets.io/v1beta1` `ExternalSecret` named `search` whose `spec.data[0]` is `{secretKey: token, remoteRef: {key: secret/data/search-api}}`), commits them in one commit dated one day after the last (as `add_service_context`'s neighbours do, with the fixture author), and appends the untracked profile entries. The planted lines:
+- [x] In `fake_catalog.py`, add to the main entity three outbound edges (`component:default/search-api`, `component:default/legacy-billing`, `resource:default/orders-db`) and one inbound edge (`component:default/reporting-job`), each with a `neighbour(...)` entry, and the annotation `"thunderstruck.io/own-hosts": "fixture-app.internal"`.
+- [x] Add `add_observed_dependencies` to `build_fixture.py`. It appends to the three top-ranked files, writes `deploy/search-externalsecret.yaml` (an `external-secrets.io/v1beta1` `ExternalSecret` named `search` whose `spec.data[0]` is `{secretKey: token, remoteRef: {key: secret/data/search-api}}`), commits them in one commit dated one day after the last (as `add_service_context`'s neighbours do, with the fixture author), and appends the untracked profile entries. The planted lines:
 
 | File | Appended code | Expect |
 |---|---|---|
@@ -248,10 +248,10 @@ The additions use only the shipped TypeScript forms (`ts.request.fetchlike`, `ts
 | `src/sync/scheduler.ts` | `const { REPORTING_JOB_URL = '', ANALYTICS_COLLECTOR_URL = '' } = process.env;` and fetches of ``${REPORTING_JOB_URL}/hooks/sync-done`` and ``${ANALYTICS_COLLECTOR_URL}/events`` | `dependent_only`; `ignored` |
 
   Profile entries: a map `entity = "component:default/ledger"`, `env = ["LEDGER_ADDR"]`; a map `entity = "component:default/legacy-billing"`, `host = ["billing.internal"]`; the ignore rule `env = "ANALYTICS_COLLECTOR_URL"` with its reason.
-- [ ] In `conftest.py`, call `add_observed_dependencies(repo)` in `context_repo_template` after `add_service_context`, and add `["observed.py"]` to `context_scanned_repo` after `["context.py"]`. `fixture_repo` and `scanned_repo` don't change.
-- [ ] Write `tests/test_observed_fixture.py` over `context_scanned_repo`, asserting the table's resolutions exactly, plus: `secret:secret/data/search-api` documented; `not_observed == ["dependsOn component:default/legacy-billing"]`; `no_mapping == ["dependsOn resource:default/orders-db"]`; `ignored` has the analytics rule with `hits == 1`; `excluded.own_host == 0` and `own_hosts_known` is true; no observation of `api.example.com` or `legacy.example.com`.
-- [ ] Run; the new test fails until the fixture change is in. Then the full suite: the existing context tests pass unchanged except those that pin the context fixture's edge list or `context_hash`, which get the new edges and annotation. `releases.ts` stays H01; check `test_malformed_hotspot_id_is_rejected_not_crashed`.
-- [ ] Commit: `Plant observed dependencies in the context fixture (#6)`.
+- [x] In `conftest.py`, call `add_observed_dependencies(repo)` in `context_repo_template` after `add_service_context`, and add `["observed.py"]` to `context_scanned_repo` after `["context.py"]`. `fixture_repo` and `scanned_repo` don't change.
+- [x] Write `tests/test_observed_fixture.py` over `context_scanned_repo`, asserting the table's resolutions exactly, plus: `secret:secret/data/search-api` documented; `not_observed == ["dependsOn component:default/legacy-billing"]`; `no_mapping == ["dependsOn resource:default/orders-db"]`; `ignored` has the analytics rule with `hits == 1`; `excluded.own_host == 0` and `own_hosts_known` is true; no observation of `api.example.com` or `legacy.example.com`.
+- [x] Run; the new test fails until the fixture change is in. Then the full suite: the existing context tests pass unchanged except those that pin the context fixture's edge list or `context_hash`, which get the new edges and annotation. `releases.ts` stays H01; check `test_malformed_hotspot_id_is_rejected_not_crashed`.
+- [x] Commit: `Plant observed dependencies in the context fixture (#6)`.
 
 ### Task 7: Bundles brief each hotspot with its file's observations (AC-1, AC-10, AC-11)
 
@@ -261,7 +261,7 @@ The additions use only the shipped TypeScript forms (`ts.request.fetchlike`, `ts
 - Consumes: `c.load_observed(repo)`, `observed.ref`.
 - Produces: `section_observed(obs_doc: dict | None, rel: str) -> str`; `bundles/index.json` gains `observed_hash` per bundle and at the top level (`null` when skipped).
 
-- [ ] Write failing tests over `context_scanned_repo`:
+- [x] Write failing tests over `context_scanned_repo`:
   - H01 (`src/client/releases.ts`) has `## Dependencies observed in this file` directly after the Service context section, with its one ref (`RELEASES_API_URL`) in the §6 wording for its resolution;
   - H02 (`src/sync/collection.ts`) shows `not in the catalog (declared as \`component:default/ledger\`)` and `matches no documented dependency`;
   - the scheduler's analytics ref is listed as `ignored by the profile: third-party analytics; tracked outside the catalog`;
@@ -270,10 +270,10 @@ The additions use only the shipped TypeScript forms (`ts.request.fetchlike`, `ts
   - 16 observations in one file render 15 lines and `… and 1 more observed in this file` (call `section_observed` directly);
   - two `observed.py` + `bundle.py` runs give byte-identical bundles (AC-11);
   - over `scanned_repo` (no context), `observed.json` is `skipped` and every bundle hash equals the one before this task (`test_no_context_means_no_section`, `test_bundles_are_within_budget_and_deterministic`; AC-10).
-- [ ] Run; they fail.
-- [ ] Implement `section_observed` (§6 wording verbatim, `md.code` for every ref and edge) and add it to `build_bundle` right after `service`, inside the never-trimmed part. Load the document once in `main` with `c.load_observed`, and write `observed_hash` into the index next to `context_hash`.
-- [ ] Run the tests, then the full suite.
-- [ ] Commit: `Brief each hotspot with the dependencies observed in its file (#6)`.
+- [x] Run; they fail.
+- [x] Implement `section_observed` (§6 wording verbatim, `md.code` for every ref and edge) and add it to `build_bundle` right after `service`, inside the never-trimmed part. Load the document once in `main` with `c.load_observed`, and write `observed_hash` into the index next to `context_hash`.
+- [x] Run the tests, then the full suite.
+- [x] Commit: `Brief each hotspot with the dependencies observed in its file (#6)`.
 
 ### Task 8: `observed` evidence and validation (AC-2)
 
@@ -283,7 +283,7 @@ The additions use only the shipped TypeScript forms (`ts.request.fetchlike`, `ts
 - Consumes: `c.load_observed`, the index's per-bundle `observed_hash`.
 - Produces: `EVIDENCE_TYPES` gains `"observed"`; `Validator(..., observed: dict | None = None, bundle_observed: dict[str, str | None] | None = None)`; `observed_evidence(finding, by_ref) -> list[dict]` stamping `{ref, kind, value, resolution, edge}`.
 
-- [ ] Write failing tests, mirroring the `catalog` ones in `tests/test_context_pipeline.py`, one per rule in §7's order:
+- [x] Write failing tests, mirroring the `catalog` ones in `tests/test_context_pipeline.py`, one per rule in §7's order:
   - a finding on H01 citing `code` plus `observed env:RELEASES_API_URL src/client/releases.ts:<line>` validates and is stamped (resolution `documented`, edge `dependsOn component:default/releases-api`);
   - a finding citing the ignored analytics observation validates (ignored stays citable, §6);
   - rule 1: over `scanned_copy` (skipped) → "this scan observed no dependencies, so none can be cited";
@@ -292,11 +292,11 @@ The additions use only the shipped TypeScript forms (`ts.request.fetchlike`, `ts
   - rule 4: a finding on H01 citing H02's `FX_RATES_URL` ref without citing `src/sync/collection.ts` as code → rejected; with it → accepted;
   - only `observed` evidence → rejected by the existing code-evidence rule;
   - `save_finding.py` strips an investigator-supplied `observed_evidence`.
-- [ ] Run; they fail.
-- [ ] Implement: the evidence branch in `Validator.check_evidence` (rules 1–4, first failure reported); `_bundle_observed(repo)` beside `_bundle_context`; the stamp beside `catalog_evidence`; `"observed_evidence"` in `save_finding.py`'s owned fields; `bundle.py`'s re-validation passes the same two arguments; the `observed` row in `validate.py`'s example map.
-- [ ] In `agents/thunderstruck-investigator.md`, add the `observed` row to the evidence table and the §7 rule: an undocumented dependency is not by itself a finding.
-- [ ] Run the tests, then the full suite. `tests/test_investigator_contract.py` must still pass.
-- [ ] Commit: `Let a finding cite an observed dependency as checked evidence (#6)`.
+- [x] Run; they fail.
+- [x] Implement: the evidence branch in `Validator.check_evidence` (rules 1–4, first failure reported); `_bundle_observed(repo)` beside `_bundle_context`; the stamp beside `catalog_evidence`; `"observed_evidence"` in `save_finding.py`'s owned fields; `bundle.py`'s re-validation passes the same two arguments; the `observed` row in `validate.py`'s example map.
+- [x] In `agents/thunderstruck-investigator.md`, add the `observed` row to the evidence table and the §7 rule: an undocumented dependency is not by itself a finding.
+- [x] Run the tests, then the full suite. `tests/test_investigator_contract.py` must still pass.
+- [x] Commit: `Let a finding cite an observed dependency as checked evidence (#6)`.
 
 ### Task 9: The Catalog drift report section (AC-3, AC-4, AC-5, AC-6, AC-12)
 
@@ -306,7 +306,7 @@ The additions use only the shipped TypeScript forms (`ts.request.fetchlike`, `ts
 - Consumes: `c.load_observed`; location URLs as `_location_url` builds them.
 - Produces: `render_catalog_drift(obs: dict | None, ...) -> list[str]`; `report.json` top-level `catalog_drift` (`null` when skipped) with `observed_not_documented`, `ambiguous`, `dependent_only`, `not_observed`, `no_mapping`, `ignored`, `own_hosts_known`, `truncated`; findings carry `observed_evidence`. `index.json` doesn't change.
 
-- [ ] Write failing tests over the context fixture's report:
+- [x] Write failing tests over the context fixture's report:
   - `## Catalog drift` follows `## Service context`, with the §8 intro sentence and the fixed note on what is not observed (configuration tables, more than one variable or across files, vendor SDK clients);
   - *Observed, not in the catalog* lists `FX_RATES_URL` and `LEDGER_ADDR` (with `(declared as \`component:default/ledger\`)`), each with kind, value, linked locations and count;
   - *Documented only as a dependent* lists `REPORTING_JOB_URL`;
@@ -318,20 +318,20 @@ The additions use only the shipped TypeScript forms (`ts.request.fetchlike`, `ts
   - a value with more than 3 locations shows 3 and `+N`; `truncated.catalog_edges > 0` prints the 25-per-direction note;
   - over `scanned_copy`, no `Catalog drift` heading and `catalog_drift` is `null` (AC-10; `test_report_without_context_is_unchanged` still passes);
   - in `tests/test_inert_report.py`, an injected value `` evil`](x)<b> `` renders inert (AC-12).
-- [ ] Run; they fail.
-- [ ] Implement `render_catalog_drift` (every value through `md.code`, every location through `md.linked`), call it right after `render_service_context`, add `catalog_drift` to `render_json`, and document the fields in `report-format.md`.
-- [ ] Run the tests, then the full suite.
-- [ ] Commit: `Report catalog drift in both directions (#6)`.
+- [x] Run; they fail.
+- [x] Implement `render_catalog_drift` (every value through `md.code`, every location through `md.linked`), call it right after `render_service_context`, add `catalog_drift` to `render_json`, and document the fields in `report-format.md`.
+- [x] Run the tests, then the full suite.
+- [x] Commit: `Report catalog drift in both directions (#6)`.
 
 ### Task 10: Scan skill, setup skill, sample report, docs and version
 
 **Files:** `skills/thunderstruck-scan/SKILL.md`, `skills/thunderstruck-scan/references/orchestration.md`, `skills/thunderstruck-context-config/SKILL.md`, `scripts/gen_sample_report.py`, `examples/sample-report.md` and `examples/sample-report.html` (generated), `examples/thunderstruck.toml.example`, `README.md`, `CLAUDE.md` (Commands, Architecture), `CHANGELOG.md`, and the version in `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `pyproject.toml`.
 
-- [ ] Add **Step 1c — observed dependencies** to the scan skill, after Step 1b: `uv run "${CLAUDE_PLUGIN_ROOT}/scripts/observed.py"`; relay its warnings; it never stops the scan. Mirror it in `orchestration.md`. Run `tests/test_plugin_paths.py`.
-- [ ] In the context-config skill, state that databases, queues and other infrastructure are linked by `[[observed.map]]` entries (§3), explain the `thunderstruck.io/own-hosts` annotation, that it takes effect on the next catalog fetch, and the `[[observed.ignore]] host = "*.own-domain"` fallback (§2.6).
-- [ ] In `gen_sample_report.py`, call `add_observed_dependencies(repo)` after `add_service_context`, run `observed.py` between `context.py` and `bundle.py`, and give the `client/releases.ts` canned finding an `"observed": ["env:RELEASES_API_URL"]` entry that the generator turns into the full ref with `_line_of(repo, hs["file"], "${RELEASES_API_URL}")`. Leave `"observed"` out of the finding item next to `"catalog"`. Fail generation if `## Catalog drift` is missing.
-- [ ] Regenerate: `uv run scripts/gen_sample_report.py`, then `uv run scripts/gen_sample_report.py --check` exits 0. This is the one intended change to a generated file (§11).
-- [ ] Docs: `observed.py` in the CLAUDE.md architecture diagram and Commands block (`uv run scripts/observed.py --repo /path/to/repo`); a README paragraph on catalog drift, the map as the expected route, and the known gaps; the `[observed]` example, including `own_hosts_annotation`, in `examples/thunderstruck.toml.example`.
-- [ ] CHANGELOG: the next minor version after `main`'s, stating that enabling the feature re-investigates, once, only hotspots whose file calls something (§6), and that `context.json` gains `own_hosts` only for entries with the annotation. Update the three manifests; `test_versions_agree` passes.
-- [ ] Run the four checks from the ticket agent's step 7: the full suite, `gen_catalog_docs.py --check`, `gen_sample_report.py --check`, `uv run scripts/validate_plugin.py`.
-- [ ] Commit: `Run observed.py in every scan and show catalog drift in the sample (#6)`.
+- [x] Add **Step 1c — observed dependencies** to the scan skill, after Step 1b: `uv run "${CLAUDE_PLUGIN_ROOT}/scripts/observed.py"`; relay its warnings; it never stops the scan. Mirror it in `orchestration.md`. Run `tests/test_plugin_paths.py`.
+- [x] In the context-config skill, state that databases, queues and other infrastructure are linked by `[[observed.map]]` entries (§3), explain the `thunderstruck.io/own-hosts` annotation, that it takes effect on the next catalog fetch, and the `[[observed.ignore]] host = "*.own-domain"` fallback (§2.6).
+- [x] In `gen_sample_report.py`, call `add_observed_dependencies(repo)` after `add_service_context`, run `observed.py` between `context.py` and `bundle.py`, and give the `client/releases.ts` canned finding an `"observed": ["env:RELEASES_API_URL"]` entry that the generator turns into the full ref with `_line_of(repo, hs["file"], "${RELEASES_API_URL}")`. Leave `"observed"` out of the finding item next to `"catalog"`. Fail generation if `## Catalog drift` is missing.
+- [x] Regenerate: `uv run scripts/gen_sample_report.py`, then `uv run scripts/gen_sample_report.py --check` exits 0. This is the one intended change to a generated file (§11).
+- [x] Docs: `observed.py` in the CLAUDE.md architecture diagram and Commands block (`uv run scripts/observed.py --repo /path/to/repo`); a README paragraph on catalog drift, the map as the expected route, and the known gaps; the `[observed]` example, including `own_hosts_annotation`, in `examples/thunderstruck.toml.example`.
+- [x] CHANGELOG: the next minor version after `main`'s, stating that enabling the feature re-investigates, once, only hotspots whose file calls something (§6), and that `context.json` gains `own_hosts` only for entries with the annotation. Update the three manifests; `test_versions_agree` passes.
+- [x] Run the four checks from the ticket agent's step 7: the full suite, `gen_catalog_docs.py --check`, `gen_sample_report.py --check`, `uv run scripts/validate_plugin.py`.
+- [x] Commit: `Run observed.py in every scan and show catalog drift in the sample (#6)`.

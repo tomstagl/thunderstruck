@@ -105,6 +105,8 @@ CANNED: dict[str, list[dict]] = {
                         "user-facing lookups; the catalog lists web-frontend "
                         "as depending on this component",
         "catalog": ["dependencyOf component:default/web-frontend"],
+        # #6: the observation this file's own call makes, turned into its full ref
+        "observed": [("env:RELEASES_API_URL", "${RELEASES_API_URL}")],
         # evidence positions are named, not counted: "code" is the cited line, "also:N" the
         # N-th also_cite item and "catalog:N" the N-th catalog edge
         "implicit_guarantees": [{
@@ -383,13 +385,15 @@ def generate() -> str:
 def build_validated(dest: Path) -> tuple[Path, dict]:
     """The fixture at dest, scanned, with the canned findings saved and
     validated: (the repository, the env the pipeline ran with)."""
-    from build_fixture import add_remote, add_service_context, build, isolated_git_env
+    from build_fixture import (add_observed_dependencies, add_remote, add_service_context,
+                               build, isolated_git_env)
 
     root = ROOT
     scripts = root / "scripts"
     repo = build(dest, base_date=BASE_DATE)
     add_service_context(repo, python=sys.executable,
                         stub=root / "tests" / "fixtures" / "fake_catalog.py")
+    add_observed_dependencies(repo)
     # Report links: a reserved placeholder host (RFC 2606), so no sample
     # link can ever point at a real repository. It also exercises the
     # self-hosted path, which needs provider from the profile. Appended,
@@ -409,6 +413,7 @@ def build_validated(dest: Path) -> tuple[Path, dict]:
     _run([sys.executable, str(scripts / "signals.py"), "--repo", str(repo),
           "--top", "12", "--since", SINCE], repo, env)
     _run([sys.executable, str(scripts / "context.py"), "--repo", str(repo)], repo, env)
+    _run([sys.executable, str(scripts / "observed.py"), "--repo", str(repo)], repo, env)
     _run([sys.executable, str(scripts / "bundle.py"), "--repo", str(repo)], repo, env)
 
     data = json.loads((repo / ".thunderstruck" / "hotspots.json").read_text(encoding="utf-8"))
@@ -435,12 +440,17 @@ def build_validated(dest: Path) -> tuple[Path, dict]:
             if hit:
                 evidence.append({"type": "detector", "ref": hit["ref"],
                                  "note": "lead confirmed against the code"})
+            for value, anchor in spec.get("observed", []):
+                evidence.append({"type": "observed",
+                                 "ref": f"observed {value} {hs['file']}:"
+                                        f"{_line_of(repo, hs['file'], anchor)}",
+                                 "note": "this file calls the releases API through it"})
             for ref in spec.get("catalog", []):
                 evidence.append({"type": "catalog", "ref": ref,
                                  "note": "listed in the service catalog as "
                                          "depending on this component"})
             item = {k: v for k, v in spec.items()
-                    if k not in ("symbol", "anchor", "catalog", "also_cite",
+                    if k not in ("symbol", "anchor", "catalog", "observed", "also_cite",
                                  "preconditions", "implicit_guarantees", "blast_items")}
             # the symbol's span, clamped to the file: a range past the end
             # of the file is rejected by the validator (#25)
@@ -602,6 +612,9 @@ def generate_all() -> dict[str, str]:
         if "## Service context" not in report:
             raise SystemExit("the fixture's service context was not fetched (the stub "
                              "catalog failed or timed out); the sample needs it")
+        if "## Catalog drift" not in report:
+            raise SystemExit("the sample has no Catalog drift section; observed.py found "
+                             "nothing in the fixture")
         report = pin_dates(report, day)
         payload = pin_report_dates(
             json.loads((repo / ".thunderstruck" / "report.json").read_text(encoding="utf-8")), day)

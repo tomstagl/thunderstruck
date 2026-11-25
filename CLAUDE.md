@@ -47,6 +47,7 @@ claude plugin list          # must say "enabled", not "failed to load"
 
 # Run the deterministic pipeline by hand against any repo
 uv run scripts/signals.py --repo /path/to/repo --top 10 --since 12m   # --dormant N, --dormant-limit L
+uv run scripts/observed.py --repo /path/to/repo    # observed.json: dependencies the code reaches (#6)
 uv run scripts/bundle.py  --repo /path/to/repo      # --investigate-dormant N adds D bundles
 uv run scripts/validate.py --repo /path/to/repo    # exit 1 == repair round needed
 uv run scripts/report.py  --repo /path/to/repo
@@ -73,6 +74,7 @@ python3 tests/fixtures/build_fixture.py /tmp/fixture
 signals.py    deterministic   churn × complexity × (1+weight), coupling, detectors
 lessons.py    deterministic   .thunderstruck-lessons.toml → hotspots.json, called by signals.py; bundle, verify, report read the record
 context.py    deterministic   runs the approved catalog command → context.json (optional)
+observed.py   deterministic   tracked files + context.json → observed.json (catalog drift, #6)
 bundle.py     deterministic   one token-budgeted briefing per hotspot
 investigator  ← MODEL →       one read-only reader per hotspot
 validate.py   deterministic   resolves every evidence ref
@@ -247,6 +249,16 @@ The second set (`trigger-dev/`, #59) is a holdout: do not read its
 Celery's, and say why if a PR used `--reveal`.
 Adding a set is data only (`labelling.md`); changing a label fails the
 baseline tests on purpose.
+
+**Observed dependencies are leads, and only measured forms ship.** `observed.py`
+reads tracked files only, never the network or a secret store, and keeps a
+URL's host, never its userinfo or path. The forms it recognises are data in
+`catalog/observed.yaml`, and every one must be in the *Measured forms* table of
+`docs/calibration/observed-dependencies.md` (`test_only_measured_forms_ship`):
+adding one is a calibration run plus samples under `tests/observed/samples/`.
+An `observed` evidence ref resolves like a `catalog` ref, pinned by the
+bundle's `observed_hash`, and only in the finding's file or a cited one.
+Drift is a report section, never a finding.
 
 ## The catalog is the source of truth
 
