@@ -662,6 +662,22 @@ NO_MAPPING_SENTENCE = ("no observation could be linked to it, so this scan can't
                        "code uses it. An `[[observed.map]]` entry naming its hosts, env vars or "
                        "secrets would let it tell.")
 PARTIAL_WARNING = "observed dependencies: stopped after"
+# Every fixed sentence of the section, in one place: templates/report.html
+# carries the same object (without the Markdown backticks), and
+# test_template_drift_text_matches_report keeps the two equal.
+DRIFT_TEXT = {
+    "intro": DRIFT_INTRO,
+    "gaps": DRIFT_GAPS,
+    "languages": "No env or host form is measured yet for {} files.",
+    "no_hosts": ("No host form is measured yet, so only env vars and secret references "
+                 "are observed."),
+    "own_hosts": "The service's own hosts are unknown, so its own URLs may be listed.",
+    "truncated": (f"The service context lists at most {c.MAX_NEIGHBOURS_PER_DIRECTION} per "
+                  f"direction, so a value below may match an edge beyond that cap."),
+    "partial": "The file limit stopped the walk, so this section is partial.",
+    "not_observed": NOT_OBSERVED_SENTENCE,
+    "no_mapping": NO_MAPPING_SENTENCE,
+}
 
 
 def _usable_observed(repo: Path, ctx: dict | None) -> dict | None:
@@ -731,20 +747,18 @@ def _drift_where(r: dict) -> str:
 def render_catalog_drift(drift: dict | None) -> list[str]:
     if not drift:
         return []
-    notes = [DRIFT_GAPS]
+    T = DRIFT_TEXT
+    notes = [T["gaps"]]
     if drift.get("unobserved_languages"):
-        notes.append(f"No env or host form is measured yet for "
-                     f"{', '.join(drift['unobserved_languages'])} files.")
+        notes.append(T["languages"].format(", ".join(drift["unobserved_languages"])))
     if drift.get("hosts_observed") is False:
-        notes.append("No host form is measured yet, so only env vars and secret references "
-                     "are observed.")
+        notes.append(T["no_hosts"])
     if not drift["own_hosts_known"]:
-        notes.append("The service's own hosts are unknown, so its own URLs may be listed.")
+        notes.append(T["own_hosts"])
     if drift["truncated"].get("catalog_edges"):
-        notes.append(f"The service context lists at most {c.MAX_NEIGHBOURS_PER_DIRECTION} per "
-                     f"direction, so a value below may match an edge beyond that cap.")
+        notes.append(T["truncated"])
     if drift["partial"]:
-        notes.append("The file limit stopped the walk, so this section is partial.")
+        notes.append(T["partial"])
     L = ["## Catalog drift", "", DRIFT_INTRO, "", f"_{' '.join(notes)}_", ""]
     if (rows := drift["observed_not_documented"]):
         L += [f"**Observed, not in the catalog** ({len(rows)})", "",

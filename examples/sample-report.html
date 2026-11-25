@@ -5,7 +5,7 @@
      Regenerate with:  uv run scripts/gen_sample_report.py -->
 <html lang="en">
 <head>
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-DlP/reQZADUsygDyhoSGrvkWkBHIQREB0SdRgM789fM='; style-src 'unsafe-inline'; img-src 'none'; connect-src 'none'; font-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-a3n0EJ9dawoe7NItTcnDxq5IqnHuYnC4uB2kaXNm0OI='; style-src 'unsafe-inline'; img-src 'none'; connect-src 'none'; font-src 'none'; base-uri 'none'; form-action 'none'">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>thunderstruck report</title>
@@ -124,6 +124,7 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
 .tbl td{padding:7px 10px 7px 0;border-bottom:1px solid var(--line-1);vertical-align:top;overflow-wrap:anywhere}
 .tbl td.num{font-variant-numeric:tabular-nums}
 .foot-note{font-size:12px;color:var(--stone-1)}
+.sec h3{margin:6px 0 0;font-size:13px;font-weight:600;color:var(--ink-0)}
 .empty h1{font-size:22px}
 @media (max-width:860px){
   .app{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr);height:auto;min-height:100vh}
@@ -163,6 +164,7 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
   var BASIS_PHRASE = {"call_site_fallback": "stated where the setting is read", "contradicted": "contradicted by a check", "not_found": "not found by a check", "unresolved": "with a location that did not resolve", "not_checked": "not checked"};
   var IMPACT_SENTENCES = {"not_assessed": "not assessed: this finding was written before it was recorded", "traced": "each item cites the code the investigator says it followed to reach it; each cited line is checked to exist, not to connect to the next", "traced_none": "none: no item cites code it followed", "inferred": "each item rests on a catalog edge or an assumption, not on cited code", "inferred_none": "none", "guarantees": "what this code provides without saying so, as the investigator stated it", "guarantees_none": "none found, per the investigator", "guarantees_not_stated": "none stated by the investigator, who was not required to for these patterns", "not_checked": "what the investigator did not read or test, and how to check it", "not_checked_none": "none listed by the investigator", "unverified": "No check has confirmed this."};
   var FIELD_LABELS = {"failure_mode": "Failure mode", "trigger_condition": "Trigger", "amplifier": "Amplifier", "sustaining_effect": "Sustaining effect", "blast_radius": "Blast radius", "how_to_verify": "Verify", "prediction": "Prediction", "preconditions": "Preconditions"};
+  var DRIFT_TEXT = {"intro": "Compares the dependencies this scan observed in the code and configuration with the service catalog. These are leads to check, not findings.", "gaps": "Not observed: hosts held only in configuration tables, env values passed through more than one variable or across files, and vendor SDK clients.", "languages": "No env or host form is measured yet for {} files.", "no_hosts": "No host form is measured yet, so only env vars and secret references are observed.", "own_hosts": "The service's own hosts are unknown, so its own URLs may be listed.", "truncated": "The service context lists at most 25 per direction, so a value below may match an edge beyond that cap.", "partial": "The file limit stopped the walk, so this section is partial.", "not_observed": "none of its mapped values appear in the scanned files. It may be called through a shared client library, generated code or configuration outside this repository.", "no_mapping": "no observation could be linked to it, so this scan can't tell whether the code uses it. An [[observed.map]] entry naming its hosts, env vars or secrets would let it tell."};
 
   function h(tag, attrs, kids) {
     var el = document.createElement(tag);
@@ -722,6 +724,54 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
       ])]);
     }
     function patterns(ps) { return (ps || []).join(", ") || "—"; }
+    function mono(t) { return h("span", { class: "mono", text: t }); }
+
+    /* catalog drift (#6): the same lists and sentences as report.md */
+    function driftWhere(r) {
+      var locs = (r.where || []).slice(0, 3), kids = [];
+      locs.forEach(function (l, i) {
+        if (i) kids.push(", ");
+        kids.push(link(l.file + ":" + l.line, l.url, "mono"));
+      });
+      var more = (r.occurrences || 0) - locs.length;
+      if (more > 0) kids.push(" +" + more);
+      return kids.length ? h("span", null, kids) : null;
+    }
+    function driftKids(d) {
+      var T = DRIFT_TEXT, notes = [T.gaps];
+      if ((d.unobserved_languages || []).length) notes.push(T.languages.replace("{}", d.unobserved_languages.join(", ")));
+      if (d.hosts_observed === false) notes.push(T.no_hosts);
+      if (!d.own_hosts_known) notes.push(T.own_hosts);
+      if ((d.truncated || {}).catalog_edges) notes.push(T.truncated);
+      if (d.partial) notes.push(T.partial);
+      var kids = [para(T.intro), para(notes.join(" "), "foot-note")];
+      function group(title, n, body) { kids.push(h("h3", { text: title + (n == null ? "" : " (" + n + ")") }), body); }
+      var od = d.observed_not_documented || [];
+      if (od.length) group("Observed, not in the catalog", od.length, table(["Kind", "Value", "Where", "Occurrences"],
+        od.map(function (r) {
+          var value = h("span", null, [mono(r.value)].concat(r.resolution === "mapped_undocumented"
+            ? [" (declared as ", mono(r.entity), ")"] : []));
+          return [r.kind, value, driftWhere(r), r.occurrences];
+        }), { 3: 1 }));
+      var dep = d.dependent_only || [];
+      if (dep.length) group("Documented only as a dependent", dep.length, table(["Kind", "Value", "Edge", "Where", "Occurrences"],
+        dep.map(function (r) { return [r.kind, mono(r.value), mono(r.edge), driftWhere(r), r.occurrences]; }), { 4: 1 }));
+      var amb = d.ambiguous || [];
+      if (amb.length) group("Ambiguous", amb.length, table(["Kind", "Value", "Could be", "Where", "Occurrences"],
+        amb.map(function (r) {
+          return [r.kind, mono(r.value), mono((r.candidates || []).join(", ")), driftWhere(r), r.occurrences];
+        }), { 4: 1 }));
+      var no = d.not_observed || [];
+      if (no.length) group("Documented, not observed", no.length, list(no.map(function (e) { return [mono(e), ": " + T.not_observed]; })));
+      var nm = d.no_mapping || [];
+      if (nm.length) group("No mapping declared", nm.length, list(nm.map(function (e) { return [mono(e), ": " + T.no_mapping]; })));
+      var ig = d.ignored || [];
+      if (ig.length) group("Ignored by the profile", null, list(ig.map(function (r) {
+        var rule = String(r.rule || ""), sp = rule.indexOf(" ");
+        return [rule.slice(0, sp) + " ", mono(rule.slice(sp + 1)), " — " + r.reason + " (" + r.hits + " hits)"];
+      })));
+      return kids;
+    }
 
     function renderOverview(el) {
       var win = R.window || {}, counts = R.counts || {};
@@ -786,6 +836,8 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
           }))
         ].concat(hidden.length ? [para("… and " + hidden.join(", ") + " not listed.", "foot-note")] : [])));
       }
+
+      if (R.catalog_drift) el.appendChild(section("Catalog drift", driftKids(R.catalog_drift)));
 
       if (!legacy) {
         el.appendChild(section("Detector leads by pattern", [

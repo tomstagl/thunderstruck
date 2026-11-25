@@ -296,7 +296,7 @@ configuration, secret references), each matched to the catalog by a
 `[[observed.map]]` entry first, then by exact name. Without usable context it
 is `skipped` and nothing below appears.
 
-- `report.md` gains a **Catalog drift** section after Service context: observed
+- `report.md` and `report.html` gain a **Catalog drift** section after Service context: observed
   but not in the catalog, documented only as a dependent, ambiguous,
   documented but not observed, no mapping declared, and every
   `[[observed.ignore]]` rule with its hits. These are leads, not findings.
