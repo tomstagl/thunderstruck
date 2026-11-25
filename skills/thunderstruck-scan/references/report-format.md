@@ -199,7 +199,7 @@ Keys under `check`, all written by `verify.py apply`:
 | `by` | `"skeptic"`, or `null` when the pass did not reach the finding |
 | `reason` | One line: the skeptic's, or the script's when it downgrades or cannot settle a verdict |
 | `holds` | What still holds; required for `narrowed` |
-| `refuted_claims` | `[{field, claim, fact, evidence, setting?}]`: `claim` quotes the finding's `field`, `evidence` indexes into `check.evidence` |
+| `refuted_claims` | `[{field, claim, fact, evidence, setting? or gate_problem?}]`: `claim` quotes the finding's `field`, `evidence` indexes into `check.evidence`. A `preconditions` claim has one of the two: `setting`, which gates a narrowed finding, or `gate_problem`, why the setting it names is not usable, which never does |
 | `evidence` | `[{type, ref, note}]`, `type` one of `code`, `commit`, `dependency` (`ecosystem:name@version:path:lines`, into `.thunderstruck/deps/` only); every item resolved |
 | `model` | The model id the skeptic ran as |
 | `dependency_versions` | `{"pypi:kombu": "5.7.0a1"}`: the packages the skeptic read |

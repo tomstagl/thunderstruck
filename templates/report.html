@@ -430,6 +430,8 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
           var st = rc.setting;
           if (st && typeof st === "object") line = line.concat([". Needs " + st.setting + " set to " + st.value +
             "; default " + st["default"] + ", registered at ", link(String(st.default_ref || ""), st.default_url, "mono"), "."]);
+          else if (rc.gate_problem) line = line.concat([" The check says a setting must be changed but names none it can use (" +
+            rc.gate_problem + "), so this finding is not gated."]);
           return h("div", null, line);
         })));
       }

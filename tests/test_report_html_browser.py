@@ -334,7 +334,9 @@ def _with_verification(report: dict) -> dict:
                   "holds": "the retry part holds", "model": "claude-haiku-4-5",
                   "dependency_versions": {"pypi:x": "1"}, "reused_from": None, "duplicate_of": None,
                   "refuted_claims": [{"field": "amplifier", "claim": "loops forever",
-                                      "fact": "it stops after three", "evidence": [0, 1]}],
+                                      "fact": "it stops after three", "evidence": [0, 1]},
+                                     {"field": "preconditions", "claim": "on default settings",
+                                      "fact": "it needs S", "evidence": [0], "gate_problem": "names <b>no</b> setting"}],
                   "evidence": [{"type": "code", "ref": code_ref, "note": "n", "url": None},
                                {"type": "dependency", "ref": "pypi:x@1:x/y.py:1", "note": "n",
                                 "url": None}]}
@@ -364,6 +366,8 @@ def test_verification_in_the_overview_and_the_dossier(page, scanned_copy, plugin
     body = p.page.text_content("#doc")
     assert "What still holds: the retry part holds" in body
     assert "Amplifier: “loops forever”. it stops after three" in body
+    assert ("The check says a setting must be changed but names none it can use "
+            "(names <b>no</b> setting), so this finding is not gated.") in body
     assert any("part refuted, see Check" in t for t in p.text(".row .part"))
     assert "pypi:x@1:x/y.py:1" in body
     assert not any("pypi:x@1" in (a or "") for a in p.text("#doc a"))

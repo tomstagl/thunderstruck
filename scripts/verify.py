@@ -503,9 +503,7 @@ def resolve_confirmations(finding: dict, result: dict, resolver: "Resolver", ign
                 else:
                     ignored.append(f"{where}.stated_ref {sref!r} is not one of the finding's code refs")
         if item["found"] != "not_found":
-            value = item.get("default")
-            if isinstance(value, (bool, int)) or (isinstance(value, float) and math.isfinite(value)):
-                value = str(value)
+            value = _scalar(item.get("default"))
             if not isinstance(value, str) or not value.strip():
                 ignored.append(f"{where}.default must be the value found")
                 continue
@@ -628,6 +626,28 @@ def settle_not_checked(finding: dict, result: dict, resolved: dict[int, dict], i
             for i in range(count)]
 
 
+def _scalar(value):
+    """A JSON scalar as the string it stands for; any other value unchanged."""
+    if isinstance(value, (bool, int)) or (isinstance(value, float) and math.isfinite(value)):
+        return str(value)
+    return value
+
+
+def _gate_setting(raw, resolver: "Resolver") -> tuple[dict | None, str | None]:
+    """The setting a `preconditions` claim names, or why it cannot gate the finding
+    (#144 spec §3). Exactly one of the two is None."""
+    if raw is None:
+        return None, "names no setting"
+    if isinstance(raw, dict):
+        s = {k: _scalar(v) if k in ("default", "value") else v for k, v in raw.items()}
+        if set(s) == set(SETTING_KEYS) and all(_text(v) for v in s.values()):
+            errors: list[str] = []
+            if resolver.ref(s["default_ref"], "setting.default_ref", errors):
+                return {k: s[k] for k in SETTING_KEYS}, None
+            return None, errors[0] if errors else "setting.default_ref does not resolve"
+    return None, f"setting needs the keys {', '.join(SETTING_KEYS)}, each a non-empty string"
+
+
 UNCHECKED_NO_RESULT = "No verdict reached disk: the skeptic failed, stopped or its result was not saved."
 
 
@@ -691,15 +711,13 @@ def _decide(finding: dict, entry: dict, result: dict | None, resolver: Resolver,
             ignored.append(f"{where} has no evidence that resolved")
             continue
         kept = {"field": rc["field"], "claim": rc["claim"], "fact": str(rc.get("fact") or ""), "evidence": idx}
-        if rc["field"] == "preconditions" and isinstance(rc.get("setting"), dict):
-            s = rc["setting"]
-            errors: list[str] = []
-            if set(s) <= set(SETTING_KEYS) and all(isinstance(s.get(k), str) and s[k].strip()
-                                                   for k in SETTING_KEYS) \
-                    and resolver.ref(s["default_ref"], f"{where}.setting.default_ref", errors):
-                kept["setting"] = {k: s[k] for k in SETTING_KEYS}
+        if rc["field"] == "preconditions":
+            setting, problem = _gate_setting(rc.get("setting"), resolver)
+            if setting is not None:
+                kept["setting"] = setting
             else:
-                ignored.append(errors[0] if errors else f"{where}.setting needs {list(SETTING_KEYS)}")
+                kept["gate_problem"] = problem
+                ignored.append(f"{where} {problem}")
         claims.append(kept)
     items = resolve_confirmations(finding, result, resolver, ignored)
 
