@@ -30,6 +30,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _common as c  # noqa: E402
+import lessons  # noqa: E402
 import previous  # noqa: E402
 from detectors import run_detectors  # noqa: E402
 
@@ -583,7 +584,12 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         coverage[pid] = {"name": pattern["name"], "tier": pattern["tier"],
                          "files": len(files), "scanned": pattern["tier"] in ("A", "B")}
 
-    return {
+    # Lessons the repository keeps (#106): read once here, so every later stage
+    # sees one snapshot, and a bad lesson reaches the report's run warnings.
+    lessons_block, lesson_warnings = lessons.scan(repo, catalog, top + dormant)
+    warnings.extend(lesson_warnings)
+
+    payload = {
         "schema": HOTSPOTS_SCHEMA,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "repo": {"root": str(repo), "head": head, "branch": branch},
@@ -609,6 +615,9 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         "coupling": coupling[:50],
         "hotspots": top,
     }
+    if lessons_block is not None:
+        payload["lessons"] = lessons_block
+    return payload
 
 
 def resolve_since(args: argparse.Namespace, repo: Path) -> tuple[bool, str | None]:

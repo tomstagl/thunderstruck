@@ -416,3 +416,82 @@ def test_a_lesson_never_stops_a_scan_whatever_goes_wrong(tmp_path, monkeypatch):
     block, warnings = lessons.scan(tmp_path, c.load_catalog(ROOT), [])
     assert block["status"] == "not_loaded" and block["accepted"] == [] and block["applied"] == {}
     assert warnings == [f"{NAME} could not be applied (RuntimeError); no lessons were applied."]
+
+
+# --- Task 3 -----------------------------------------------------------------
+def run(script: str, repo: Path, *args: str) -> subprocess.CompletedProcess:
+    proc = subprocess.run([sys.executable, str(SCRIPTS / script), "--repo", str(repo), *args],
+                          capture_output=True, text=True, cwd=str(repo))
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    return proc
+
+
+def signals(repo: Path, *extra: str) -> subprocess.CompletedProcess:
+    return run("signals.py", repo, "--top", "10", "--since", "24m", *extra)
+
+
+def hotspots(repo: Path) -> dict:
+    return json.loads((repo / ".thunderstruck" / "hotspots.json").read_text(encoding="utf-8"))
+
+
+def test_without_a_lessons_file_hotspots_json_says_nothing_about_lessons(scanned_copy):
+    data = hotspots(scanned_copy)
+    assert "lessons" not in data
+    assert not [w for w in data["warnings"] if "lesson" in w.lower()]
+    signals(scanned_copy)
+    assert "lessons" not in hotspots(scanned_copy)
+
+
+def test_the_record_lists_which_lessons_apply_to_which_hotspots(scanned_copy):
+    write_lessons(scanned_copy, lesson("L-RETRY", ["S10"]), lesson("L-ANY", ["all"]),
+                  lesson("L-LOCK", ["S28"]))
+    signals(scanned_copy)
+    data = hotspots(scanned_copy)
+    block = data["lessons"]
+    assert block["file"] == NAME and block["status"] == "loaded" and block["skipped"] == 0
+    assert [l["id"] for l in block["accepted"]] == ["L-RETRY", "L-ANY", "L-LOCK"]
+    retry = [h for h in data["hotspots"] if "S10" in h["stability"]["patterns"]]
+    assert retry, "the fixture has a retry hotspot"
+    for h in data["hotspots"]:
+        shown = ["L-RETRY", "L-ANY"] if h in retry else ["L-ANY"]
+        assert block["applied"][h["id"]] == {"shown": shown, "left_out": []}, h["file"]
+    assert data["dormant"] and all(d["id"] in block["applied"] for d in data["dormant"])
+    assert "L-LOCK" not in json.dumps(block["applied"]), "no hotspot carries S28"
+    assert data["warnings"] == [w for w in data["warnings"] if "lesson" not in w.lower()]
+
+
+def test_a_lessons_file_never_changes_the_ranking(scanned_copy):
+    before = hotspots(scanned_copy)
+    write_lessons(scanned_copy, lesson("L-RETRY", ["S10"]), lesson("L-ANY", ["all"]))
+    signals(scanned_copy)
+    after = hotspots(scanned_copy)
+    for key in ("hotspots", "dormant", "counts", "pattern_coverage", "coupling", "suppressed",
+                "retry_layers", "degraded", "window", "own_packages", "coverage_gaps"):
+        assert after[key] == before[key], key
+
+
+def test_a_bad_lesson_reaches_the_warnings_and_the_scan_completes(scanned_copy):
+    write_lessons(scanned_copy, lesson("L-001"), lesson("L-002", applies_to=["S99"]))
+    proc = signals(scanned_copy)
+    data = hotspots(scanned_copy)
+    assert any("lesson L-002 (entry 2) skipped" in w for w in data["warnings"])
+    assert "lesson L-002 (entry 2) skipped" in proc.stderr, "and the scan prints it"
+    assert [l["id"] for l in data["lessons"]["accepted"]] == ["L-001"]
+    assert data["lessons"]["skipped"] == 1
+
+
+def test_a_broken_lessons_file_is_reported_and_the_scan_completes(scanned_copy):
+    (scanned_copy / NAME).write_text("lesson = [", encoding="utf-8")
+    proc = signals(scanned_copy)
+    data = hotspots(scanned_copy)
+    assert data["lessons"]["status"] == "not_loaded" and data["lessons"]["applied"] == {}
+    assert any("is not valid TOML" in w for w in data["warnings"]) and "is not valid TOML" in proc.stderr
+    assert data["hotspots"], "the ranking is the one a scan without the file makes"
+
+
+def test_the_record_covers_only_the_hotspots_the_scan_kept(scanned_copy):
+    write_lessons(scanned_copy, lesson("L-ANY", ["all"]))
+    signals(scanned_copy, "--top", "2")
+    data = hotspots(scanned_copy)
+    kept = {h["id"] for h in data["hotspots"]} | {d["id"] for d in data["dormant"]}
+    assert len(data["hotspots"]) == 2 and set(data["lessons"]["applied"]) == kept

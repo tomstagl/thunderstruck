@@ -1083,7 +1083,7 @@ git commit -m "Lessons: match a hotspot, bound a briefing, render it as data (#1
 **Interfaces:**
 - Consumes: `lessons.scan`. Produces: the `lessons` key of `hotspots.json` (§3), present only when the repository has the file.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
 
 ```python
 # --- Task 3 -----------------------------------------------------------------
@@ -1165,7 +1165,7 @@ def test_the_record_covers_only_the_hotspots_the_scan_kept(scanned_copy):
     assert len(data["hotspots"]) == 2 and set(data["lessons"]["applied"]) == kept
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -1173,7 +1173,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: FAIL. Four tests fail with `KeyError: 'lessons'` (the record, the bad lesson, the broken file, `--top`); the ones about no file and the ranking pass already.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 In `scripts/signals.py` (the imports), replace
 
@@ -1230,7 +1230,7 @@ with
     return payload
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass, then the neighbours, then the full suite**
+- [x] **Step 4: Run the tests to verify they pass, then the neighbours, then the full suite**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -1240,7 +1240,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: PASS, then `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/signals.py tests/test_lessons.py
