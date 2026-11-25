@@ -1258,7 +1258,7 @@ git commit -m "Lessons: signals.py records what applies to which hotspot (#106)"
 **Interfaces:**
 - Consumes: `lessons.for_hotspot`, `lessons.investigator_section`. Produces: the `## Lessons this repository keeps` section of a bundle (§5.1).
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
 
 ```````python
 # --- Task 4 -----------------------------------------------------------------
@@ -1424,7 +1424,7 @@ def test_a_hostile_lesson_cannot_break_out_of_its_block_or_forge_a_section(scann
                                     "### L-001 (applies to: every hotspot)"] + old[at:], hs["file"]
 ```````
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -1432,7 +1432,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: FAIL. Seven tests fail on a missing `## Lessons` section; the ones that hold with no section (a hotspot no lesson applies to, reproducibility) pass already.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 In `scripts/bundle.py` (the imports), replace
 
@@ -1479,7 +1479,7 @@ with
         kept,
 ```
 
-- [ ] **Step 4: Show that a repository without a lessons file is unchanged (AC-1).**
+- [x] **Step 4: Show that a repository without a lessons file is unchanged (AC-1).**
 
 ```bash
 rm -rf "$S/after" && mkdir -p "$S/after"
@@ -1490,7 +1490,7 @@ cmp "$S/baseline.json" "$S/after.json" && echo "ok: every bundle, brief and plan
 Expected: the `ok:` line. A difference means a no-lessons path changed: fix the code, not the baseline.
 
 
-- [ ] **Step 5: Run the tests to verify they pass, then the neighbours, then the full suite**
+- [x] **Step 5: Run the tests to verify they pass, then the neighbours, then the full suite**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -1500,7 +1500,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: PASS, then `exit=0`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/bundle.py tests/test_lessons.py
