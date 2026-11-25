@@ -1518,7 +1518,7 @@ git commit -m "Lessons: the applicable lessons in the investigator's bundle (#10
 **Interfaces:**
 - Consumes: `lessons.for_hotspot`, `lessons.skeptic_section`. Produces: `verify.render_brief(..., lessons_for)` and a `lessons` key on a `checks/plan.json` entry (§5.2).
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
 
 ```python
 # --- Task 5 -----------------------------------------------------------------
@@ -1622,7 +1622,7 @@ def test_a_verdict_saved_for_another_lesson_text_is_stale(validated_repo, valida
         "The only verdict on disk was for an earlier version of this finding."
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -1630,7 +1630,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: FAIL. Three tests fail (the lessons are not in the brief, the frozen test finds no `lessons` to exclude, a verdict is not stale).
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 In `scripts/verify.py` (the imports), replace
 
@@ -1707,7 +1707,7 @@ with
             e["lessons"] = {"shown": [l["id"] for l in shown], "left_out": left_out}
 ```
 
-- [ ] **Step 4: Show that a repository without a lessons file is unchanged (AC-1).**
+- [x] **Step 4: Show that a repository without a lessons file is unchanged (AC-1).**
 
 ```bash
 rm -rf "$S/after" && mkdir -p "$S/after"
@@ -1718,7 +1718,7 @@ cmp "$S/baseline.json" "$S/after.json" && echo "ok: every bundle, brief and plan
 Expected: the `ok:` line. A difference means a no-lessons path changed: fix the code, not the baseline.
 
 
-- [ ] **Step 5: Run the tests to verify they pass, then the neighbours, then the full suite**
+- [x] **Step 5: Run the tests to verify they pass, then the neighbours, then the full suite**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -1728,7 +1728,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: PASS, then `exit=0`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/verify.py tests/test_lessons.py
