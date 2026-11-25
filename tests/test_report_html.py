@@ -406,3 +406,25 @@ def test_gate_markers_include_the_unconfirmed_default():
     template = (ROOT / "templates" / "report.html").read_text()
     m = re.search(r"var GATE_MARKERS = (\{.*?\});", template)
     assert json.loads(m.group(1)) == c.GATE_MARKERS
+
+
+def test_hostile_lesson_text_stays_inside_the_data_block(scanned_copy, plugin_root):
+    """#106: a lesson never reaches the page as text; a warning about one does, inside the data block."""
+    from test_lessons import NAME, rebuild, toml_of
+    entries = [
+        {"id": "L-001", "applies_to": ["all"], "statement": HOSTILE_TEXT, "how_to_check": HOSTILE_TEXT,
+         "source": HOSTILE_TEXT[:150], "confirmed_by": HOSTILE_TEXT[:100]},
+        {"id": HOSTILE_TEXT, "applies_to": ["all"], "statement": "s", "how_to_check": "h",
+         "source": "o", "confirmed_by": "c"}]
+    (scanned_copy / NAME).write_text(toml_of(*entries), encoding="utf-8")
+    rebuild(scanned_copy)
+    _scan(scanned_copy, plugin_root)
+    assert _run(scanned_copy).returncode == 0
+    html = (scanned_copy / ".thunderstruck" / "report.html").read_text(encoding="utf-8")
+    outside = _outside_data(html)
+    for marker in ("pwn", "pwned", "evil.example", "onerror"):
+        assert marker not in outside, marker
+    assert html.count("<script") == 2 and html.count("</script>") == 2
+    page = _embedded(html)
+    assert page["lessons"]["applied_lessons"] == 1 and "pwn" not in json.dumps(page["lessons"])
+    assert any("skipped" in w for w in page["run_warnings"])

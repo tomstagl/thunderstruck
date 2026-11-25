@@ -351,3 +351,31 @@ def investigator_section(shown: list[dict], left_out: list[str]) -> str:
 
 def skeptic_section(shown: list[dict], left_out: list[str]) -> str:
     return _section(SKEPTIC_INTRO, shown, left_out)
+
+
+def summary(data: Any, investigated: set[str]) -> dict | None:
+    """What report.py prints and report.json carries: counts and ids, never
+    lesson text. None when the scan had no lessons file."""
+    block = data.get("lessons") if isinstance(data, dict) else None
+    if not isinstance(block, dict):
+        return None
+    by_hotspot: dict[str, dict] = {}
+    where = block.get("applied") if isinstance(block.get("applied"), dict) else {}
+    for hid, entry in sorted(where.items()):
+        if hid not in investigated or not isinstance(entry, dict):
+            continue
+        shown = [i for i in entry.get("shown") or [] if isinstance(i, str) and ID_RE.match(i)]
+        left = [i for i in entry.get("left_out") or [] if isinstance(i, str) and ID_RE.match(i)]
+        if shown or left:
+            by_hotspot[hid] = {"shown": shown, "left_out": left}
+    skipped = block.get("skipped")
+    return {
+        "file": NAME,
+        "status": "loaded" if block.get("status") == "loaded" else "not_loaded",
+        "accepted": len(block.get("accepted") or []),
+        "skipped": skipped if isinstance(skipped, int) and not isinstance(skipped, bool) else 0,
+        "applied_lessons": len({i for e in by_hotspot.values() for i in e["shown"]}),
+        "applied_hotspots": sum(1 for e in by_hotspot.values() if e["shown"]),
+        "left_out_lessons": len({i for e in by_hotspot.values() for i in e["left_out"]}),
+        "by_hotspot": by_hotspot,
+    }

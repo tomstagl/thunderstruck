@@ -1888,7 +1888,7 @@ git commit -m "Lessons: the validator refuses a reference into the lessons file 
 **Interfaces:**
 - Consumes: the record of Task 3. Produces: `lessons.summary(data, investigated_ids)`; in `report`: `LESSONS_NOT_READ`, `LESSONS_LEFT_OUT`, `LESSONS_SKIPPED`, `render_lessons_line(data)`, the `lessons` key of `collect()` and of `report.json`; the lessons line of `templates/report.html`.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py` (the other two files get one test each, below):
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py` (the other two files get one test each, below):
 
 ```python
 # --- Task 7 -----------------------------------------------------------------
@@ -2070,7 +2070,7 @@ def test_the_overview_says_how_many_lessons_applied(page, scanned_copy, plugin_r
             in page(report).page.text_content("#doc"))
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_inert_report.py tests/test_lessons.py tests/test_report_html.py tests/test_report_html_browser.py -q
@@ -2080,7 +2080,7 @@ Expected: FAIL. Ten tests fail, the two new inert tests among them: no line, no 
 
 The inert tests need the renderers the full-suite command installs (`markdown-it-py`, `linkify-it-py`, `cmarkgfm`); without them they skip, so use the commands as written. The browser test skips without Playwright and its browser; run it as `CLAUDE.md` says (`THUNDERSTRUCK_REQUIRE_BROWSER=1 uv run --with pytest --with pyyaml --with lizard --with playwright==1.56.0 pytest tests/test_report_html_browser.py -q`), using the Playwright version that matches the browser build the environment has, and record the version used. If there is no browser, record it as *not run*.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 Append to `scripts/lessons.py`:
 
@@ -2258,7 +2258,7 @@ with
       if (R.verification) el.appendChild(h("span", { class: "verif", text: verificationLine(R) }));
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass, then the neighbours, then the full suite**
+- [x] **Step 4: Run the tests to verify they pass, then the neighbours, then the full suite**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_inert_report.py tests/test_lessons.py tests/test_report_html.py tests/test_report_html_browser.py -q
@@ -2268,7 +2268,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: PASS, then `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/lessons.py scripts/report.py templates/report.html tests/test_inert_report.py tests/test_lessons.py tests/test_report_html.py tests/test_report_html_browser.py

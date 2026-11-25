@@ -835,3 +835,101 @@ def test_the_lessons_file_is_refused_whatever_the_case_of_its_name(repo):  # noq
     _git(repo, "commit", "-qm", "lessons, cased")
     errors = _validator(repo).check_document(_doc("src/a.ts", code_ref=f"{other}:2"))
     assert [e for e in errors if "is the repository's lessons file" in e], errors
+
+
+# --- Task 7 -----------------------------------------------------------------
+import report  # noqa: E402
+
+
+def make_report(repo: Path) -> tuple[str, dict]:
+    run("report.py", repo)
+    out = repo / ".thunderstruck"
+    return (out / "report.md").read_text(encoding="utf-8"), json.loads((out / "report.json").read_text())
+
+
+def lessons_line(markdown: str) -> str:
+    return next((l for l in markdown.splitlines() if l.startswith("Lessons (")), "")
+
+
+def test_a_scan_with_no_lessons_file_reports_nothing_about_lessons(scanned_copy):
+    markdown, doc = make_report(scanned_copy)
+    assert "Lessons" not in markdown and "lesson" not in markdown.lower()
+    assert "lessons" not in doc
+
+
+def test_the_report_says_how_many_lessons_applied_to_how_many_hotspots(scanned_copy):
+    write_lessons(scanned_copy, lesson("L-RETRY", ["S10"]), lesson("L-ANY", ["all"]), lesson("L-LOCK", ["S28"]))
+    data = rebuild(scanned_copy)
+    markdown, doc = make_report(scanned_copy)
+    n = len(data["hotspots"])
+    assert lessons_line(markdown) == f"Lessons (`{NAME}`): 2 lessons applied to {n} hotspots  "
+    block = doc["lessons"]
+    assert {k: block[k] for k in ("file", "status", "accepted", "skipped", "applied_lessons",
+                                  "applied_hotspots", "left_out_lessons")} == {
+        "file": NAME, "status": "loaded", "accepted": 3, "skipped": 0, "applied_lessons": 2,
+        "applied_hotspots": n, "left_out_lessons": 0}
+    retry = next(h for h in data["hotspots"] if "S10" in h["stability"]["patterns"])
+    assert block["by_hotspot"][retry["id"]] == {"shown": ["L-RETRY", "L-ANY"], "left_out": []}
+    assert len(block["by_hotspot"]) == n
+    assert "statement of" not in json.dumps(doc) and "statement of" not in markdown, "ids and counts, never text"
+
+
+def test_only_investigated_hotspots_count(scanned_copy):
+    write_lessons(scanned_copy, lesson("L-ANY", ["all"]))
+    data = rebuild(scanned_copy)
+    assert data["dormant"] and data["lessons"]["applied"].get(data["dormant"][0]["id"])
+    _, doc = make_report(scanned_copy)
+    assert data["dormant"][0]["id"] not in doc["lessons"]["by_hotspot"], "a dormant file nobody briefed"
+
+
+def test_a_skipped_lesson_is_named_in_the_run_warnings(scanned_copy):
+    write_lessons(scanned_copy, lesson("L-001", ["all"]), lesson("L-002", ["S99"]))
+    rebuild(scanned_copy)
+    markdown, doc = make_report(scanned_copy)
+    warnings = markdown.split("## Run warnings", 1)[1].split("\n## ", 1)[0]
+    assert "L\\-002" in warnings or "L-002" in warnings
+    assert any("lesson L-002 (entry 2) skipped" in w for w in doc["run_warnings"])
+    assert lessons_line(markdown).endswith("1 skipped, listed under Run warnings  ")
+
+
+def test_an_unreadable_file_is_reported_and_says_no_lesson_applied(scanned_copy):
+    (scanned_copy / NAME).write_text("lesson = [", encoding="utf-8")
+    rebuild(scanned_copy)
+    markdown, doc = make_report(scanned_copy)
+    assert lessons_line(markdown) == f"Lessons (`{NAME}`): none applied, the file was not read; see Run warnings.  "
+    assert any("is not valid TOML" in w for w in doc["run_warnings"])
+    assert doc["lessons"]["status"] == "not_loaded" and doc["lessons"]["applied_lessons"] == 0
+
+
+def test_the_report_counts_the_lessons_a_briefing_left_out(scanned_copy):
+    write_lessons(scanned_copy, *[lesson(f"L-{n:02d}", ["all"], statement="s" * 300) for n in range(1, 9)])
+    rebuild(scanned_copy)
+    markdown, doc = make_report(scanned_copy)
+    assert " · 2 lessons left out of a briefing by the cap" in lessons_line(markdown)
+    assert doc["lessons"]["applied_lessons"] == 6 and doc["lessons"]["left_out_lessons"] == 2
+
+
+def test_one_lesson_reads_in_the_singular():
+    line = report.render_lessons_line({"lessons": {
+        "file": NAME, "status": "loaded", "accepted": 1, "skipped": 0, "applied_lessons": 1,
+        "applied_hotspots": 1, "left_out_lessons": 1, "by_hotspot": {}}})
+    assert line == [f"Lessons (`{NAME}`): 1 lesson applied to 1 hotspot · 1 lesson left out of a briefing "
+                    f"by the cap  "]
+
+
+def test_the_html_template_carries_the_same_words():
+    template = (ROOT / "templates" / "report.html").read_text(encoding="utf-8")
+    for text in (report.LESSONS_NOT_READ, report.LESSONS_LEFT_OUT, report.LESSONS_SKIPPED):
+        assert text in template, text
+    assert " applied to " in template and "Lessons (" in template
+
+
+def test_summary_keeps_only_what_a_record_may_hold():
+    record = {"lessons": {"status": "loaded", "accepted": [1, 2], "skipped": True, "applied": {
+        "H01": {"shown": ["L-001", "x\n# heading", 5], "left_out": ["L-002"]},
+        "H02": {"shown": [], "left_out": []}, "H03": "junk", "D01": {"shown": ["L-009"], "left_out": []}}}}
+    s = lessons.summary(record, {"H01", "H02", "H03"})
+    assert s["by_hotspot"] == {"H01": {"shown": ["L-001"], "left_out": ["L-002"]}}
+    assert (s["accepted"], s["skipped"], s["applied_lessons"], s["applied_hotspots"],
+            s["left_out_lessons"]) == (2, 0, 1, 1, 1)
+    assert lessons.summary({}, set()) is None and lessons.summary({"lessons": "x"}, set()) is None
