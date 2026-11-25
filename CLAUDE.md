@@ -71,6 +71,7 @@ python3 tests/fixtures/build_fixture.py /tmp/fixture
 
 ```
 signals.py    deterministic   churn × complexity × (1+weight), coupling, detectors
+lessons.py    deterministic   .thunderstruck-lessons.toml → hotspots.json, called by signals.py; bundle, verify, report read the record
 context.py    deterministic   runs the approved catalog command → context.json (optional)
 bundle.py     deterministic   one token-budgeted briefing per hotspot
 investigator  ← MODEL →       one read-only reader per hotspot
@@ -207,6 +208,24 @@ brief (`checks/briefs/<key>.md`) carries the claim and its evidence, never
 `confidence`, `confidence_rationale`, `notes`, `history` or `check`, and no
 volatile value: `apply` tells a stale verdict from this scan's by the plan's
 `brief_hash`.
+
+**Lessons are hints, never evidence.** `.thunderstruck-lessons.toml` (repo root, committed) is
+read once, by `signals.py` through `lessons.scan`, and recorded in `hotspots.json` under
+`lessons`; `bundle.py`, `verify.py` and `report.py` read that record, never the file, so one
+scan sees one snapshot. A bad lesson is a run warning and is skipped; a broken file is a run
+warning and is ignored. Neither stops a scan, unlike a syntax error in `.thunderstruck.toml`.
+A lesson reaches only the bundle and the skeptic brief of a hotspot whose `stability.patterns`
+it names (or every hotspot, `applies_to = ["all"]`), flattened and capped by
+`lessons.check_entry`, inside a fence longer than any backtick run in it, and only as a
+section emitted on a match: a hotspot no lesson applies to keeps its bytes and its cached
+finding. A lesson touches no ranking, confidence, suppression or citation:
+`Validator._resolve` refuses a reference into the lessons file (any case), and `report.md`
+prints counts and ids, never lesson text. Steering text inside a lesson is the one exception
+to the rule that steering text becomes an `OTHER` finding: it goes to the investigator's
+`notes`, because the lessons file cannot be cited and an `OTHER` finding must quote its text
+as `code` evidence. Nothing mechanical stops a lesson from making an investigator leave a
+finding out; the instructions say it must not, and the evaluation under #104 watches for it.
+Changing what a lesson may do needs the spec changed first.
 
 **The plugin must not exhibit the patterns it hunts.** At most 4 subagents
 (investigators and skeptics together) in parallel, exactly one repair round

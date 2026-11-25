@@ -1037,3 +1037,46 @@ def test_copying_the_example_into_a_scanned_repository_loads_without_a_warning(s
     assert not [w for w in data["warnings"] if "lesson" in w.lower()]
     shown = {i for h in data["hotspots"] for i in data["lessons"]["applied"][h["id"]]["shown"]}
     assert shown >= {"L-002", "L-004", "L-005", "L-006", "L-007"}
+
+
+# --- Task 10 ----------------------------------------------------------------
+import re  # noqa: E402,F811
+
+
+def text_of(*parts: str) -> str:
+    return (ROOT.joinpath(*parts)).read_text(encoding="utf-8")
+
+
+def test_the_docs_describe_the_lessons_file():
+    readme = text_of("README.md")
+    assert NAME in readme and "examples/thunderstruck-lessons.toml.example" in readme
+    assert "none is on until you copy it" in " ".join(readme.split())
+    scan = text_of("skills", "thunderstruck-scan", "SKILL.md")
+    assert NAME in scan and "${CLAUDE_PLUGIN_ROOT}/examples/thunderstruck-lessons.toml.example" in scan
+    fmt = text_of("skills", "thunderstruck-scan", "references", "report-format.md")
+    assert "- `lessons`:" in fmt and "never lesson text" in fmt
+    assert NAME in text_of("skills", "thunderstruck-scan", "references", "orchestration.md")
+    claude = text_of("CLAUDE.md")
+    assert "**Lessons are hints, never evidence.**" in claude and NAME in claude
+    assert "lessons.py" in claude.split("## Architecture", 1)[1].split("```", 2)[1]
+    flat_claude = " ".join(claude.split())
+    assert "goes to the investigator's `notes`" in flat_claude and "cannot be cited" in flat_claude
+
+
+def test_the_readme_example_is_a_lesson_the_loader_accepts(tmp_path):
+    section = text_of("README.md").split("### Lessons a repository keeps", 1)[1].split("\n## ", 1)[0]
+    block = re.search(r"```toml\n(.*?)```", section, re.S)[1]
+    (tmp_path / NAME).write_text(block, encoding="utf-8")
+    loaded, warnings = load(tmp_path)
+    assert warnings == [] and [l["id"] for l in loaded["accepted"]] == ["L-001"]
+
+
+def test_the_readme_privacy_section_says_lessons_reach_the_model():
+    privacy = text_of("README.md").split("## Privacy", 1)[1].split("\n## ", 1)[0]
+    assert "lessons" in " ".join(privacy.split()).lower()
+
+
+def test_the_changelog_records_the_lessons_and_the_rules_version():
+    top = text_of("CHANGELOG.md").split("\n## ", 2)[1]
+    assert "(#106)" in top and NAME in top
+    assert f"Validation rules version {c.VALIDATION_RULES}" in top

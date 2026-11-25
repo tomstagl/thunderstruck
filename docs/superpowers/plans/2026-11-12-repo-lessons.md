@@ -2678,7 +2678,7 @@ git commit -m "Lessons: an example file of seven lessons, off by default (#106)"
 **Interfaces:**
 - Consumes: everything above. Produces the documentation, the version and the regenerated sample; changes no behaviour.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
 
 ````python
 # --- Task 10 ----------------------------------------------------------------
@@ -2724,7 +2724,7 @@ def test_the_changelog_records_the_lessons_and_the_rules_version():
     assert f"Validation rules version {c.VALIDATION_RULES}" in top
 ````
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -2732,7 +2732,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: FAIL. The README has no lessons section, the skill and the references do not name the file, `CLAUDE.md` has no lessons paragraph, and the changelog's top entry does not mention #106.
 
-- [ ] **Step 3: Write the documentation.**
+- [x] **Step 3: Write the documentation.**
 
 In `README.md` (before `## Privacy`), replace
 
@@ -2959,7 +2959,7 @@ Changing what a lesson may do needs the spec changed first.
 **The plugin must not exhibit the patterns it hunts.** At most 4 subagents
 ```
 
-- [ ] **Step 4: Version and CHANGELOG.** Read the current version from `pyproject.toml` on `origin/main` (`X.Y.Z`) and bump the minor to `X.(Y+1).0` in all four places: `pyproject.toml`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and the heading of a new top entry in `CHANGELOG.md` (`test_versions_agree` checks the four). Do not hard-code a number: another ticket of #104 may take the next one. Add, above the previous top entry, with `<version>` the new version and `<V>` the value `VALIDATION_RULES` now has in `scripts/_common.py` (Task 6):
+- [x] **Step 4: Version and CHANGELOG.** Read the current version from `pyproject.toml` on `origin/main` (`X.Y.Z`) and bump the minor to `X.(Y+1).0` in all four places: `pyproject.toml`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and the heading of a new top entry in `CHANGELOG.md` (`test_versions_agree` checks the four). Do not hard-code a number: another ticket of #104 may take the next one. Add, above the previous top entry, with `<version>` the new version and `<V>` the value `VALIDATION_RULES` now has in `scripts/_common.py` (Task 6):
 
 ```markdown
 ## <version>
@@ -2980,7 +2980,7 @@ Lessons a repository keeps reach every later briefing (#106), part of #104.
 - **Validation rules version <V>.** A reference into the lessons file is rejected in a finding, a precondition, a location and a verdict, so a lesson cannot stand in for a citation. Cached findings from earlier versions are checked again on the next scan and investigated again only if they cite it.
 ```
 
-- [ ] **Step 5: Regenerate the sample, once.** The template changed in Task 7, which changes the embedded script and its CSP hash; no lessons file is in the fixture, so the Markdown sample does not change.
+- [x] **Step 5: Regenerate the sample, once.** The template changed in Task 7, which changes the embedded script and its CSP hash; no lessons file is in the fixture, so the Markdown sample does not change.
 
 ```bash
 uv run scripts/gen_sample_report.py
@@ -2990,7 +2990,7 @@ git diff --stat -- examples/
 
 Expected: `exit=0`, and the diff names `examples/sample-report.html` only. Read its diff: the CSP hash and the lessons line of the template, nothing else. If `examples/sample-report.md` changed, a no-lessons path changed: find it before going on.
 
-- [ ] **Step 6: Show that a repository without a lessons file is unchanged (AC-1).**
+- [x] **Step 6: Show that a repository without a lessons file is unchanged (AC-1).**
 
 ```bash
 rm -rf "$S/after" && mkdir -p "$S/after"
@@ -3000,7 +3000,7 @@ cmp "$S/baseline.json" "$S/after.json" && echo "ok: every bundle, brief and plan
 
 Expected: the `ok:` line. A difference means a no-lessons path changed: fix the code, not the baseline.
 
-- [ ] **Step 7: Run the full suite and the generated-file and plugin checks**
+- [x] **Step 7: Run the full suite and the generated-file and plugin checks**
 
 ```bash
 THUNDERSTRUCK_REQUIRE_RENDERER=1 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/ -q; echo "exit=$?"
@@ -3013,7 +3013,7 @@ claude plugin marketplace add "$PWD" && claude plugin install thunderstruck@thun
 
 Expected: every `exit=0`; `test_versions_agree` passes; `claude plugin list` shows thunderstruck `enabled`, not `failed to load`. `validate_plugin.py` exit 2 means `claude` is not on `PATH`: record that check as *not run*, never as passed, and do the same for the install line. The browser line needs the browser build Playwright 1.56.0 expects; with another build, pass the Playwright version that matches it and record which, and with no browser record it as *not run*. The scan's own sample and `claude plugin validate` need no lessons file.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add README.md CLAUDE.md skills/thunderstruck-scan/SKILL.md skills/thunderstruck-scan/references/report-format.md skills/thunderstruck-scan/references/orchestration.md CHANGELOG.md .claude-plugin/plugin.json .claude-plugin/marketplace.json pyproject.toml examples/sample-report.html tests/test_lessons.py

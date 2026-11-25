@@ -418,6 +418,39 @@ URLs. See
 [`examples/thunderstruck.toml.example`](examples/thunderstruck.toml.example)
 for templates covering other hosts; custom templates get no history link.
 
+### Lessons a repository keeps
+
+A review finds what a finding never said: what the obvious fix would remove,
+what a mock cannot show, a number nobody resolved. Keep it where the next scan
+reads it: `.thunderstruck-lessons.toml` at the repository root, committed, so
+every lesson goes through the repository's normal review.
+
+```toml
+[[lesson]]
+id = "L-001"
+applies_to = ["S28"]                     # stability pattern ids, or ["all"] for every hotspot
+statement = "A lock also makes callers take turns; releasing it can remove that."
+how_to_check = "List what the lock guarantees besides exclusion; find what provides each after the change."
+source = "review of FR-001"
+confirmed_by = "a maintainer"
+```
+
+A lesson applies to a hotspot whose detector leads include a pattern it names.
+It is added to that hotspot's bundle, and to the skeptic's brief for each of its
+findings, as a hint to check: data inside a fence, never an instruction and
+never evidence. It cannot suppress a finding, raise a confidence or stand in
+for a citation, and a finding cannot cite the file. A hotspot no lesson applies
+to is briefed exactly as it would be without the file, and editing one lesson
+re-investigates only the hotspots it applies to.
+
+A lesson that breaks a rule is skipped and named in the report's run warnings;
+a file that cannot be read is ignored the same way, and the scan carries on. A
+briefing takes at most 6 lessons and about 3000 characters of them, most
+specific first, and names any it left out. The report says how many lessons
+applied. [`examples/thunderstruck-lessons.toml.example`](examples/thunderstruck-lessons.toml.example)
+holds seven starting points; none is on until you copy it to
+`.thunderstruck-lessons.toml`.
+
 ## Privacy
 
 **Nothing leaves your machine that Claude Code was not already going to see.**
@@ -435,7 +468,8 @@ The one thing that reaches a model is the bundles — source and commit history
 from your repository — read by the investigator subagents inside your existing
 Claude Code session. That is the same exposure as asking Claude to read those
 files directly. You can read exactly what was sent: it is sitting in
-`.thunderstruck/bundles/`.
+`.thunderstruck/bundles/`. A lessons file you keep in the repository is part of it: each lesson that applies to a hotspot
+is in that hotspot's bundle.
 
 Verification adds the skeptics' briefs (`.thunderstruck/checks/briefs/`) and
 the source of your declared dependencies. That source is read from what is
