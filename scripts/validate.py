@@ -17,6 +17,9 @@ So every ref is resolved mechanically:
   detector  S0x@path:line — copied exactly from a hit in hotspots.json
   catalog   <type> <entity ref> — an edge in context.json, from the same
             snapshot the finding's bundle was built from
+  observed  observed <kind>:<value> <file>:<line> — an observation in
+            observed.json, from the snapshot the bundle was built from, in
+            the finding's file or a file it cites as code evidence
   precondition  default_ref / doc_ref — path:line, resolved like a code ref
 
 Anything that fails gets one repair round with the error text, then it is
@@ -44,7 +47,7 @@ import deps  # noqa: E402
 VALIDATION_SCHEMA = "thunderstruck.validation/v1"
 MAX_FINDINGS_PER_HOTSPOT = 3
 CONFIDENCES = {"low", "medium", "high"}
-EVIDENCE_TYPES = {"code", "commit", "detector", "catalog"}
+EVIDENCE_TYPES = {"code", "commit", "detector", "catalog", "observed"}
 
 REQUIRED_FIELDS = [
     "location", "missing_patterns", "failure_mode", "trigger_condition",
@@ -75,6 +78,8 @@ REF_FORMS = {
     "commit": 'a bare SHA from the bundle\'s change history, e.g. "a1b2c3d" (no "commit:" prefix)',
     "detector": '"S05@path/to/file.ts:12", copied from the bundle\'s Detector leads',
     "catalog": '"dependencyOf component:default/web-frontend", copied from the bundle\'s Service context',
+    "observed": '"observed env:PAYMENTS_API_URL src/pay/client.ts:18", copied from the bundle\'s '
+                'Dependencies observed in this file',
 }
 VERDICT_EVIDENCE_TYPES = ("code", "commit", "dependency")
 REF_FORMS["dependency"] = deps.REF_FORM
@@ -122,7 +127,9 @@ class Validator:
                  context: dict | None = None,
                  bundle_context: dict[str, str | None] | None = None,
                  extra_fix: tuple[str, ...] = (),
-                 deps_index: dict | None = None) -> None:
+                 deps_index: dict | None = None,
+                 observed: dict | None = None,
+                 bundle_observed: dict[str, str | None] | None = None) -> None:
         self.repo = repo
         self.deps_index = deps_index
         self.catalog = catalog
@@ -141,6 +148,15 @@ class Validator:
             {e["ref"]: e for e in context.get("edges") or []} if context else {})
         self.bundle_context = bundle_context or {}
         self._pinned: str | None = None
+        # observed.json (#6): what a finding may cite, pinned like the context
+        self.observed_hash = observed.get("observed_hash") if observed else None
+        self.observations: dict[str, dict] = (
+            {o["ref"]: o for o in observed.get("observations") or []} if observed else {})
+        self.resolutions: dict[tuple[str, str], dict] = (
+            {(r["kind"], r["value"]): r for r in observed.get("resolutions") or []}
+            if observed else {})
+        self.bundle_observed = bundle_observed or {}
+        self._pinned_observed: str | None = None
         self._line_cache: dict[str, int | None] = {}
         self._sha_cache: dict[str, bool] = {}
         self._subject_cache: dict[str, str | None] = {}
@@ -289,6 +305,17 @@ class Validator:
                 errors.append(
                     f"{where}.ref {ref!r} — no detector produced that hit. Copy a "
                     f"ref verbatim from the 'Detector leads' section of the bundle.")
+        elif etype == "observed":
+            if self.observed_hash is None:
+                errors.append(f"{where}.ref {ref!r} — this scan observed no dependencies, so "
+                              f"none can be cited")
+            elif self._pinned_observed != self.observed_hash:
+                errors.append(f"{where}.ref {ref!r} — observations changed since bundling. "
+                              f"Re-run observed.py and bundle.py so the bundle and "
+                              f"observed.json agree.")
+            elif ref not in self.observations:
+                errors.append(f"{where}.ref {ref!r} — no such observation; copy a ref verbatim "
+                              f"from the bundle's 'Dependencies observed in this file' section")
         else:  # catalog
             if self.context_hash is None:
                 errors.append(
@@ -682,6 +709,7 @@ class Validator:
                  for i, ev in enumerate(evidence)]
         self.check_impact(f, where, errors, evidence, types)
         touching = self.check_commits_touch(f, evidence, types, where, errors)
+        self.check_observed_files(f, evidence, types, where, errors)
         if "code" not in types:
             errors.append(
                 f"{where}.evidence has no item of type 'code'. A detector hit on "
@@ -699,6 +727,38 @@ class Validator:
                     f"{where}.evidence[{i}] is cited as having introduced the cited code, but it "
                     f"wrote none of the cited lines (git blame). Use role \"changed\", or cite "
                     f"the commit that wrote them.")
+
+    def _cited_files(self, f: dict, evidence: list) -> list[str]:
+        """The finding's file and every file it cites as code evidence, as resolved."""
+        cited: list[str] = []
+        loc = f.get("location")
+        if isinstance(loc, dict) and loc.get("file"):
+            cited.append(loc["file"])
+        for ev in evidence:
+            if isinstance(ev, dict) and ev.get("type") == "code":
+                m = CODE_REF.match(str(ev.get("ref") or "").strip())
+                if m:
+                    cited.append(m.group("path"))
+        return list(dict.fromkeys(rel for rel, _, err in map(self._resolve, cited) if not err))
+
+    def check_observed_files(self, f: dict, evidence: list, types: list,
+                             where: str, errors: list[str]) -> None:
+        """Rule 4 (#6, spec §7): a finding about one file must not borrow a call
+        made in another, the same shape as the commit rule."""
+        if self.observed_hash is None or self._pinned_observed != self.observed_hash:
+            return
+        files: list[str] | None = None
+        for i, (ev, etype) in enumerate(zip(evidence, types)):
+            obs = self.observations.get(str(ev.get("ref") or "").strip()) \
+                if etype == "observed" else None
+            if obs is None:
+                continue  # not observed evidence, or already reported
+            files = self._cited_files(f, evidence) if files is None else files
+            if obs["file"] not in files:
+                errors.append(
+                    f"{where}.evidence[{i}].ref is an observation in {obs['file']}, which is "
+                    f"neither the finding's file nor a file it cites as code evidence. Cite "
+                    f"that file's code, or an observation in the finding's own file.")
 
     def check_commits_touch(self, f: dict, evidence: list, types: list,
                             where: str, errors: list[str]) -> list[str]:
@@ -740,6 +800,7 @@ class Validator:
             return ["top level is not a JSON object"]
         hid = doc.get("hotspot_id")
         self._pinned = self.bundle_context.get(hid) if isinstance(hid, str) else None
+        self._pinned_observed = self.bundle_observed.get(hid) if isinstance(hid, str) else None
         if not hid:
             errors.append("hotspot_id is missing")
         elif not isinstance(hid, str):
@@ -820,10 +881,34 @@ def catalog_evidence(finding: dict, edges: dict[str, dict]) -> list[dict]:
     return out
 
 
-def _bundle_context(repo: Path) -> dict[str, str | None]:
+def observed_evidence(finding: dict, observations: dict[str, dict],
+                      resolutions: dict[tuple[str, str], dict]) -> list[dict]:
+    """The cited observations, resolved from observed.json, so reports never take
+    a resolution from the investigator's own text (#6, spec §7)."""
+    out: list[dict] = []
+    for ev in finding.get("evidence") or []:
+        if isinstance(ev, dict) and ev.get("type") == "observed":
+            obs = observations.get(str(ev.get("ref") or "").strip())
+            if obs:
+                res = resolutions.get((obs["kind"], obs["value"])) or {}
+                out.append({"ref": obs["ref"], "kind": obs["kind"], "value": obs["value"],
+                            "resolution": res.get("resolution", "unmatched"),
+                            "edge": res.get("edge")})
+    return out
+
+
+def _bundle_index(repo: Path, key: str) -> dict[str, str | None]:
     index = c.load_json(c.out_dir(repo) / "bundles" / "index.json", {}) or {}
-    return {b["id"]: b.get("context_hash") for b in index.get("bundles", [])
+    return {b["id"]: b.get(key) for b in index.get("bundles", [])
             if isinstance(b, dict) and "id" in b}
+
+
+def _bundle_context(repo: Path) -> dict[str, str | None]:
+    return _bundle_index(repo, "context_hash")
+
+
+def _bundle_observed(repo: Path) -> dict[str, str | None]:
+    return _bundle_index(repo, "observed_hash")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -858,7 +943,9 @@ def main(argv: list[str] | None = None) -> int:
         extra_fix = ()  # an unreadable profile fails signals.py loudly; not here
     validator = Validator(repo, hotspots, catalog,
                           context=c.load_service_context(repo),
-                          bundle_context=_bundle_context(repo), extra_fix=extra_fix)
+                          bundle_context=_bundle_context(repo), extra_fix=extra_fix,
+                          observed=c.load_observed(repo),
+                          bundle_observed=_bundle_observed(repo))
     results, all_ok = [], True
     for path in paths:
         try:
@@ -878,6 +965,11 @@ def main(argv: list[str] | None = None) -> int:
                 f["content_hash"] = c.sha256_file(
                     repo / c.ref_path(f.get("location", {}).get("file", "")))
                 f["catalog_evidence"] = catalog_evidence(f, validator.catalog_edges)
+                observed_ev = observed_evidence(f, validator.observations, validator.resolutions)
+                if observed_ev:
+                    f["observed_evidence"] = observed_ev
+                else:
+                    f.pop("observed_evidence", None)
                 f["evidence_hashes"] = evidence_hashes(repo, f)
                 f["history"] = validator.history(f)
                 for p in f.get("preconditions") or []:

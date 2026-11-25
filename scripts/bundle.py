@@ -717,9 +717,13 @@ def main(argv: list[str] | None = None) -> int:
             if validator is None:
                 from validate import Validator
                 ctx_hash = ctx["context_hash"] if ctx else None
+                obs_hash = obs["observed_hash"] if obs else None
                 validator = Validator(repo, data, catalog, context=ctx,
                                       bundle_context={h["id"]: ctx_hash
                                                       for h in hotspots + dormant},
+                                      observed=obs,
+                                      bundle_observed={h["id"]: obs_hash
+                                                       for h in hotspots + dormant},
                                       extra_fix=c.profile_fix_keywords(profile))
             cached = _still_valid(validator, cached_doc)
             requeued += not cached
