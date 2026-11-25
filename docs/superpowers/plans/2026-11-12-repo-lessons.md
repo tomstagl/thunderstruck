@@ -2419,7 +2419,7 @@ git commit -m "Lessons: tell the investigator and the skeptic what a lesson is (
 **Interfaces:**
 - Produces: `examples/thunderstruck-lessons.toml.example`, seven lessons.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
 
 ```python
 # --- Task 9 -----------------------------------------------------------------
@@ -2488,7 +2488,7 @@ def test_copying_the_example_into_a_scanned_repository_loads_without_a_warning(s
     assert shown >= {"L-002", "L-004", "L-005", "L-006", "L-007"}
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -2498,7 +2498,7 @@ Expected: FAIL. Five tests fail with `FileNotFoundError` for the example.
 
 **The seven texts are drafts.** The source PRD gives AC-10's seven titles and nothing else; the maintainer's case text is not in this repository. Each statement and check was written generically from its title, each `source` says it comes from the case behind #104, and each `confirmed_by` says maintainer review is pending (spec §18, question 1: decided 2026-11-22, ship the drafts). Do not improve them from memory of any case, and do not change `confirmed_by`. The pull request description's *Not verifiable in CI* section says that the seven texts are drafts that need the maintainer's source.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 Create `examples/thunderstruck-lessons.toml.example`:
 
@@ -2649,7 +2649,7 @@ source = "Drafted from a lesson title in the case behind #104, which is not in t
 confirmed_by = "pending maintainer review"
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass, then the neighbours, then the full suite**
+- [x] **Step 4: Run the tests to verify they pass, then the neighbours, then the full suite**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -2659,7 +2659,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: PASS, then `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add examples/thunderstruck-lessons.toml.example tests/test_lessons.py

@@ -971,3 +971,69 @@ def test_the_skeptic_prompt_frames_lessons_as_hints_that_decide_nothing():
                    "let only what you read in the code decide it"):
         assert phrase in text, phrase
     assert "confidence_rationale" not in text, "it is never given, so never mentioned"
+
+
+# --- Task 9 -----------------------------------------------------------------
+EXAMPLE = ROOT / "examples" / "thunderstruck-lessons.toml.example"
+SEED_TITLES = {   # AC-10's seven, by id: the pattern each is about (or every hotspot), and its title
+    "L-001": ("S28", "Releasing a lock removes an implicit guarantee"),
+    "L-002": ("all", "State that flips late"),
+    "L-003": ("S09", "A missing dedup on a sibling path"),
+    "L-004": ("S10", "A retry storm under parallelism"),
+    "L-005": ("all", "Quote a mapping verbatim"),
+    "L-006": ("all", "What a mock cannot show"),
+    "L-007": ("all", "Resolve the numbers first")}
+
+
+def copy_example(repo: Path) -> None:
+    (repo / NAME).write_bytes(EXAMPLE.read_bytes())
+
+
+def test_the_example_loads_with_no_warnings_through_the_real_loader(tmp_path):
+    copy_example(tmp_path)
+    block, warnings = load(tmp_path)
+    assert warnings == [] and block["status"] == "loaded" and block["skipped"] == 0
+    assert [l["id"] for l in block["accepted"]] == list(SEED_TITLES)
+
+
+def test_each_example_lesson_is_about_the_pattern_the_catalog_has_for_it_or_every_hotspot(tmp_path):
+    copy_example(tmp_path)
+    for l in load(tmp_path)[0]["accepted"]:
+        pattern, title = SEED_TITLES[l["id"]]
+        assert l["applies_to"] == [pattern], l["id"]
+        assert l["statement"].startswith(title + ". "), l["id"]
+
+
+def test_the_example_says_where_it_comes_from_and_that_nobody_has_confirmed_it(tmp_path):
+    copy_example(tmp_path)
+    for l in load(tmp_path)[0]["accepted"]:
+        assert "#104" in l["source"] and "not in this repository" in l["source"], l["id"]
+        assert l["confirmed_by"] == "pending maintainer review", l["id"]
+
+
+def test_the_example_documents_the_pattern_ids_the_catalog_scans(catalog):
+    ids = sorted(catalog["_by_id"])
+    runs: list[str] = []
+    for pid in ids:
+        number = int(pid[1:])
+        if runs and runs[-1][1] == number - 1:
+            runs[-1][1] = number
+        else:
+            runs.append([number, number])
+    spelled = ", ".join(f"S{a:02d}-S{b:02d}" if a != b else f"S{a:02d}" for a, b in runs)
+    normalized = " ".join(EXAMPLE.read_text(encoding="utf-8").replace("#", " ").split())
+    assert f"({spelled})" in normalized, spelled
+
+
+def test_the_example_is_not_enabled_by_default():
+    assert not (ROOT / NAME).exists() and EXAMPLE.name.endswith(".example")
+
+
+def test_copying_the_example_into_a_scanned_repository_loads_without_a_warning(scanned_copy):
+    copy_example(scanned_copy)
+    signals(scanned_copy)
+    data = hotspots(scanned_copy)
+    assert data["lessons"]["status"] == "loaded" and len(data["lessons"]["accepted"]) == 7
+    assert not [w for w in data["warnings"] if "lesson" in w.lower()]
+    shown = {i for h in data["hotspots"] for i in data["lessons"]["applied"][h["id"]]["shown"]}
+    assert shown >= {"L-002", "L-004", "L-005", "L-006", "L-007"}
