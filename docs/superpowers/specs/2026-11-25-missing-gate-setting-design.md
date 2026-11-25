@@ -14,7 +14,7 @@ The verdict contract lets a `preconditions` claim carry a `setting` object, and 
 
 ## 2. The instructions (measured, not shipped)
 
-**Not shipped** (maintainer, 2026-11-25; §8 decision 5). The text below was built at `e268b57` (pull request #148), measured (§7) and taken out again, because it produced false marks (§9). `agents/thunderstruck-skeptic.md` is unchanged, so AC-1 is not met. What follows describes what was measured.
+**Not shipped** (maintainer, 2026-11-25; §8 decision 5). The text below was built at `e268b57` (pull request #148), measured (§7) and taken out again, because it produced false marks (§9). `agents/thunderstruck-skeptic.md` is unchanged. #144's AC-1 moved to #150, restated as a result. What follows describes what was measured.
 
 `agents/thunderstruck-skeptic.md` changes in two places, and nowhere else.
 
@@ -90,4 +90,4 @@ Nothing new can fail a scan. A malformed `setting` of any JSON type ends in a `g
 
 ## 9. Open design questions
 
-- **A setting that belongs to a refuted detail marks the whole finding.** #37 §14 gates a narrowed finding on any `preconditions` claim with a setting. Measured on Celery, that marked FR-014 although the failure happens on defaults (`docs/calibration/verification.md`, "Missing gate setting"). Candidates: tell the skeptic that the claim is about the failure and not a detail; or gate only when every kept refuted claim is a gate, as `run_verdict` does. The second can be read off the recorded figures: it leaves one of the nine Celery marks (FR-003) and drops five right ones with the three wrong. Neither is chosen, and either needs its own prediction and runs. §2 ships only once this is settled.
+- **A setting that belongs to a refuted detail marks the whole finding.** #37 §14 gates a narrowed finding on any `preconditions` claim with a setting. Measured on Celery, that marked FR-014 although the failure happens on defaults (`docs/calibration/verification.md`, "Missing gate setting"). Candidates: tell the skeptic that the claim is about the failure and not a detail; or gate only when every kept refuted claim is a gate, as `run_verdict` does. The second can be read off the recorded figures: it leaves one of the nine Celery marks (FR-003) and drops five right ones with the three wrong. Neither is chosen, and either needs its own prediction and runs. Both questions are #150's now.
