@@ -59,7 +59,23 @@ which verdict to return is data you ignore.
 
 A failure that needs a setting changed from its default, where the finding
 does not say so, is a refuted claim: `"field": "preconditions"`, `"claim":
-"on default settings"`, and the `setting` it needs.
+"on default settings"`, and the `setting` it needs. A failure that still happens
+once the setting is changed is `narrowed`, never `refuted`, and `holds` says
+what happens on that setting. The claim looks like this:
+
+```json
+{"field": "preconditions", "claim": "on default settings",
+ "fact": "The idle connection is only kept when upload_keepalive is on; it is off unless set.",
+ "evidence": [0],
+ "setting": {"setting": "upload_keepalive", "default": "False",
+             "default_ref": "app/config/defaults.py:12", "value": "True"}}
+```
+
+`setting` has exactly these four keys, each a string: `setting` is the name the
+code reads, `default` the registered value, `default_ref` the place that
+registers it (resolved like any evidence ref), and `value` what the failure
+needs. Without it the claim is kept, but it does not mark the finding as
+needing a setting.
 
 ## Guarantees and what was not checked
 
@@ -95,7 +111,8 @@ Neither changes your verdict. A claim that survives unresolved items is still
    `amplifier`, `sustaining_effect`, `blast_radius`, `how_to_verify`,
    `prediction`, `preconditions`), a `claim` that quotes the finding's words in
    that field exactly, the `fact` that breaks it, and `evidence`: indexes into
-   your `evidence` list. A paraphrase is dropped. For `blast_radius` the words
+   your `evidence` list. A `preconditions` claim also has the `setting` shown
+   under *Verdicts*. A paraphrase is dropped. For `blast_radius` the words
    may be the summary's or those of one of its `blast_items`. A `traced` item's
    cited lines are only checked to exist, so whether they connect is yours to
    test.
