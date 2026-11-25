@@ -715,7 +715,7 @@ git commit -m "Lessons: read and validate the repository's lessons file (#106)"
 **Interfaces:**
 - Consumes: Task 1's `check_entry`. Produces: `applicable(accepted, patterns)`, `fence(text)`, `entry_block(lesson)`, `select(ordered) -> (shown, left_out)`, `applied(accepted, rows)`, `scan(repo, catalog, rows) -> (block | None, warnings)`, `for_hotspot(data, hotspot_id) -> (lessons, left_out_ids)`, `investigator_section(shown, left_out)`, `skeptic_section(shown, left_out)`, and the constants `MAX_SHOWN`, `ENTRY_CHARS`, `NOTE_IDS`, `MAX_SECTION_CHARS`, `INVESTIGATOR_INTRO`, `SKEPTIC_INTRO`.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
 
 ```````python
 # --- Task 2 -----------------------------------------------------------------
@@ -898,7 +898,7 @@ def test_a_lesson_never_stops_a_scan_whatever_goes_wrong(tmp_path, monkeypatch):
     assert warnings == [f"{NAME} could not be applied (RuntimeError); no lessons were applied."]
 ```````
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -906,7 +906,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: FAIL. Collection fails: `AttributeError: module 'lessons' has no attribute 'investigator_section'`.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 Append to `scripts/lessons.py`:
 
@@ -1055,7 +1055,7 @@ def skeptic_section(shown: list[dict], left_out: list[str]) -> str:
     return _section(SKEPTIC_INTRO, shown, left_out)
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass, then the neighbours, then the full suite**
+- [x] **Step 4: Run the tests to verify they pass, then the neighbours, then the full suite**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -1065,7 +1065,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: PASS, then `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/lessons.py tests/test_lessons.py
