@@ -28,7 +28,7 @@
 
 ## Task 3: the instructions show the setting (AC-1)
 
-Built, measured, then removed (Task 6): AC-1 is not met.
+Built, measured, then removed (Task 6). AC-1 moved to #150.
 
 **Files:** `agents/thunderstruck-skeptic.md`, `tests/test_skeptic_contract.py`.
 
@@ -52,4 +52,4 @@ Built, measured, then removed (Task 6): AC-1 is not met.
 **Files:** `agents/thunderstruck-skeptic.md`, `tests/test_skeptic_contract.py`, `tests/test_fix_impact.py` (all back to `main`'s), `docs/calibration/verification.md`, `CHANGELOG.md`.
 
 - [x] Spec first; then the three files, the record and the changelog.
-- [ ] Whole suite, catalog and sample checks, `validate_plugin.py`.
+- [x] Whole suite, catalog and sample checks, `validate_plugin.py`.

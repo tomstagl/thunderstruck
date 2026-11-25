@@ -289,7 +289,7 @@ The prediction was committed at `0547ded` before any run was scored.
 
 **What ships is the *before* prompt** with the `verify.py` all twelve runs were
 settled with. The *after* prompt (`e268b57`, pull request #148) was taken out
-again because of the false marks below; #144 AC-1 is not met.
+again because of the false marks below; #144's AC-1 moved to #150.
 
 - **Arms.** *Before*: plugin 0.20.0 at `0547ded`, whose skeptic prompt is
   `main`'s. *After*: `c5b6b7a`. What a skeptic is given differs in
