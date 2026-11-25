@@ -102,3 +102,27 @@ def test_a_placeholder_in_an_unparseable_yaml_still_counts(rules):
     got = observed.observe_text(text, "yaml", "chart/t.yaml", rules, [])
     assert [o["value"] for o in got.observations] == ["LEDGER_URL"]
     assert got.yaml_failed
+
+
+# --- Repair round (code review) ----------------------------------------------
+
+@pytest.mark.parametrize("text", [
+    'const { PAY_URL } = process.env;\nfetch("PAY_URL");\n',
+    "const { PAY_URL } = process.env;\nfetch('see PAY_URL docs');\n",
+    "const { PAY_URL } = process.env;\nfetch(`PAY_URL is ${other}`);\n",
+    "const { PAY_URL } = process.env;\nfetch(x, { PAY_URL: 1 });\n",
+], ids=["double-quoted", "single-quoted", "template-text", "object-key"])
+def test_a_string_or_key_equal_to_the_name_is_not_a_use(rules, text):
+    assert env(text, rules) == []
+
+
+def test_a_template_substitution_is_still_a_use(rules):
+    text = "const { PAY_URL } = process.env;\nfetch(`${PAY_URL}/v1`, { a: PAY_URL });\n"
+    assert env(text, rules) == ["PAY_URL:2"]
+
+
+@pytest.mark.parametrize("text", ["a: &x [*x]\n",
+                                  "a: &a [1, 2]\nb: &b [*a, *a, *a]\nc: &c [*b, *b, *b]\n"])
+def test_recursive_and_nested_yaml_aliases_neither_crash_nor_hang(rules, text):
+    got = observed.observe_text(text + "spec:\n  containers: []\n", "yaml", "a.yaml", rules, [])
+    assert got.observations == []

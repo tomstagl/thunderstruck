@@ -173,3 +173,10 @@ def test_map_hash_is_stable_and_covers_map_and_ignore():
 def test_no_observed_table_is_an_empty_config():
     assert observed.load_config({}) == ({"own_hosts_annotation": "thunderstruck.io/own-hosts",
                                         "map": [], "ignore": []}, [])
+
+
+def test_an_ignore_reason_is_capped():
+    loaded, warnings = observed.load_config({"observed": {"ignore": [
+        {"env": "A_URL", "reason": "x" * 201}, {"env": "B_URL", "reason": "y" * 200}]}})
+    assert [r["value"] for r in loaded["ignore"]] == ["B_URL"]
+    assert len(warnings) == 1 and "200" in warnings[0]

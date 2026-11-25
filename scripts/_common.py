@@ -82,6 +82,16 @@ MAX_NEIGHBOURS_PER_DIRECTION = 25
 OBSERVED_SCHEMA = "thunderstruck.observed/v1"
 OBSERVED_FILENAME = "observed.json"
 OBSERVED_HASHED = ("observations", "resolutions", "not_observed", "no_mapping", "truncated")
+# What observed.py can write (#6, spec §2): the same allow-lists load_observed
+# re-checks, so a hand-edited file can't smuggle free text into a bundle.
+OBSERVED_VALUE = {
+    "host": re.compile(r"^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?)*\Z"),
+    "env": re.compile(r"^[A-Z][A-Z0-9_]{0,63}\Z"),
+    "secret": re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_./-]{0,127}\Z"),
+}
+OBSERVED_RESOLUTIONS = ("documented", "dependent_only", "mapped_undocumented", "ambiguous",
+                        "unmatched", "ignored")
+MAX_IGNORE_REASON = 200
 
 # Files that are churn-heavy or complexity-heavy for reasons that say nothing
 # about fragility. Scanning them wastes subagents on noise. Each entry carries
@@ -371,20 +381,69 @@ def observed_hash(doc: dict[str, Any]) -> str:
                                   ensure_ascii=False))
 
 
-def load_observed(repo_root: Path) -> dict[str, Any] | None:
-    """observed.json when it is `ok` and its content still matches its hash, else None.
+def _observed_value(kind: Any, value: Any, wildcard: bool = False) -> bool:
+    if kind not in OBSERVED_VALUE or not isinstance(value, str):
+        return False
+    if wildcard and kind == "host" and value.startswith("*."):
+        value = value[2:]
+    return bool(OBSERVED_VALUE[kind].match(value))
 
-    A document edited by hand without recomputing the hash is treated as missing,
-    so no observation can be cited from it."""
+
+def _observed_edge(ref: Any) -> bool:
+    if not isinstance(ref, str):
+        return False
+    rtype, _, neighbour = ref.partition(" ")
+    return bool(RELATION_TYPE.match(rtype) and ENTITY_REF.match(neighbour))
+
+
+def _well_formed_observed(doc: dict[str, Any]) -> bool:
+    for o in doc["observations"]:
+        if not (isinstance(o, dict) and _observed_value(o.get("kind"), o.get("value"))
+                and isinstance(o.get("file"), str) and is_utf8(o["file"])
+                and not path_problem(o["file"]) and not re.search(r"\s", o["file"])
+                and isinstance(o.get("line"), int) and not isinstance(o["line"], bool)
+                and o["line"] > 0
+                and o.get("ref") == f"observed {o['kind']}:{o['value']} {o['file']}:{o['line']}"):
+            return False
+    for r in doc["resolutions"]:
+        if not (isinstance(r, dict) and _observed_value(r.get("kind"), r.get("value"))
+                and r.get("resolution") in OBSERVED_RESOLUTIONS
+                and (r.get("entity") is None or (isinstance(r["entity"], str)
+                                                 and ENTITY_REF.match(r["entity"])))
+                and (r.get("edge") is None or _observed_edge(r["edge"]))
+                and r.get("via") in (None, "map", "name")
+                and all(_observed_edge(e) for e in r.get("candidates") or [])
+                and (r.get("reason") is None or (isinstance(r["reason"], str)
+                                                 and len(r["reason"]) <= MAX_IGNORE_REASON
+                                                 and "\n" not in r["reason"]))):
+            return False
+    if not all(_observed_edge(e) for key in ("not_observed", "no_mapping")
+               for e in doc.get(key) or []):
+        return False
+    for rule in doc.get("ignored") or []:
+        kind, _, value = str((rule or {}).get("rule", "")).partition(" ")
+        reason = (rule or {}).get("reason")
+        if not (_observed_value(kind, value, wildcard=True) and isinstance(reason, str)
+                and len(reason) <= MAX_IGNORE_REASON and "\n" not in reason):
+            return False
+    return True
+
+
+def load_observed(repo_root: Path) -> dict[str, Any] | None:
+    """observed.json when it is `ok`, its content still matches its hash and it
+    holds only what observed.py could have written, else None.
+
+    A document edited by hand is treated as missing, so no observation can be
+    cited from it and no text from it reaches a bundle or the report."""
     doc = load_json(out_dir(repo_root) / OBSERVED_FILENAME)
     if not (isinstance(doc, dict) and doc.get("schema") == OBSERVED_SCHEMA
             and doc.get("status") == "ok" and isinstance(doc.get("observations"), list)
             and isinstance(doc.get("resolutions"), list)):
         return None
     try:
-        if observed_hash(doc) != doc.get("observed_hash"):
+        if observed_hash(doc) != doc.get("observed_hash") or not _well_formed_observed(doc):
             return None
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, KeyError):
         return None
     return doc
 

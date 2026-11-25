@@ -166,3 +166,10 @@ def test_reserved_hosts_are_never_observed_even_at_a_call_site(rules):
                                 with_test_host_forms(rules), [])
     assert project(got, "host") == []
     assert got.dropped["host"] == 1   # `${HOST}`; `{{ .Values.host }}` has no path, so rule 2 skips it first
+
+
+def test_userinfo_never_reaches_into_the_query(rules):
+    text = ('const a = await fetch("https://u:p@api.internal/send?to=ops@corp.internal");\n'
+            'a.json();\n')
+    got = observed.observe_text(text, "typescript", "src/a.ts", with_test_host_forms(rules), [])
+    assert project(got) == ["host:api.internal:1"]

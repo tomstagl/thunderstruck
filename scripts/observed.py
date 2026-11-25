@@ -28,9 +28,9 @@ import _common as c  # noqa: E402
 KINDS = ("host", "env", "secret")
 FORM_KINDS = ("request", "response", "connect", "read", "config", "mesh")
 
-HOST_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?)*\Z")
-ENV_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}\Z")
-SECRET_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_./-]{0,127}\Z")
+HOST_RE = c.OBSERVED_VALUE["host"]
+ENV_RE = c.OBSERVED_VALUE["env"]
+SECRET_RE = c.OBSERVED_VALUE["secret"]
 TEMPLATED = re.compile(r"[${}%<]")
 MAX_HOST_LEN = 253
 MAX_ARGS = 2000
@@ -191,13 +191,15 @@ def _url_host(token: str) -> tuple[str, bool] | None:
     A password may itself hold `@` or `/` (`u:p@ss/w@db.internal`): when the
     authority has a `:` followed by anything but a port, userinfo runs to the
     token's last `@`."""
+    query = re.search(r"[?#]", token)
+    authority_and_path = token if query is None else token[:query.start()]
     slash = token.find("/")
     head = token if slash < 0 else token[:slash]
-    last_at = token.rfind("@")
+    last_at = authority_and_path.rfind("@")
     colon = head.find(":")
     if last_at >= 0 and colon >= 0 \
             and not _PORT_ONLY.fullmatch(head[colon + 1:].split("@", 1)[0].split("/", 1)[0]) \
-            and "@" in token[colon:]:
+            and "@" in authority_and_path[colon:]:
         rest = token[last_at + 1:]
     elif "@" in head:
         rest = token[head.rfind("@") + 1:]
@@ -298,17 +300,29 @@ def _seq(node) -> list:
     return list(node.value) if isinstance(node, yaml.SequenceNode) else []
 
 
+MAX_YAML_NODES = 50_000
+
+
 def _walk(node):
+    """Every node once, iteratively: an alias is the same node object, so a
+    recursive alias or an alias bomb is walked once, never expanded."""
     import yaml
 
-    yield node
-    if isinstance(node, yaml.MappingNode):
-        for k, v in node.value:
-            yield from _walk(k)
-            yield from _walk(v)
-    elif isinstance(node, yaml.SequenceNode):
-        for item in node.value:
-            yield from _walk(item)
+    seen: set[int] = set()
+    stack = [node]
+    while stack:
+        cur = stack.pop()
+        if id(cur) in seen:
+            continue
+        seen.add(id(cur))
+        if len(seen) > MAX_YAML_NODES:
+            raise RecursionError("YAML document too large to walk")
+        yield cur
+        if isinstance(cur, yaml.MappingNode):
+            for k, v in reversed(cur.value):
+                stack += [v, k]
+        elif isinstance(cur, yaml.SequenceNode):
+            stack += reversed(cur.value)
 
 
 def _line(node, offset: int = 0) -> int:
@@ -320,7 +334,7 @@ def _yaml_docs(text: str) -> list | None:
 
     try:
         return [d for d in yaml.compose_all(text, Loader=yaml.SafeLoader) if d is not None]
-    except yaml.YAMLError:
+    except (yaml.YAMLError, RecursionError):
         return None
 
 
@@ -470,6 +484,46 @@ def _reads(blanked: str, forms: dict, lang: str) -> tuple[list[tuple[str, int]],
     return direct, bound
 
 
+def _code_positions(text: str, a: int, b: int) -> list[bool]:
+    """For text[a:b], True where a character is code: outside a string literal,
+    or inside a template literal's `${...}`."""
+    out = [True] * (b - a)
+    i, quote, depth = a, None, 0
+    while i < b:
+        ch = text[i]
+        if quote is None:
+            if ch in _QUOTES:
+                quote = ch
+                out[i - a] = False
+            elif ch == "}" and depth:
+                depth -= 1
+                if depth == 0:
+                    quote = "`"   # back inside the template's text
+        elif ch == "\\":
+            out[i - a] = False
+            if i + 1 < b:
+                out[i + 1 - a] = False
+            i += 2
+            continue
+        elif quote == "`" and text.startswith("${", i):
+            out[i - a] = out[i + 1 - a if i + 1 < b else i - a] = False
+            quote, depth = None, 1
+            i += 2
+            continue
+        else:
+            out[i - a] = False
+            if ch == quote:
+                quote = None
+        if quote is None and depth and ch == "{" and text[i - 1:i + 1] != "${":
+            depth += 1
+        i += 1
+    return out
+
+
+_OBJECT_KEY_BEFORE = re.compile(r"[{,]\s*$")
+_OBJECT_KEY_AFTER = re.compile(r"\s*:(?!:)")
+
+
 def _code_env(blanked: str, rules: dict, lang: str, starts: list[int], add_env) -> None:
     forms = _forms(rules, lang)
     if not forms.get("read"):
@@ -486,7 +540,13 @@ def _code_env(blanked: str, rules: dict, lang: str, starts: list[int], add_env) 
         for a, b in spans:
             if b <= after:
                 continue
+            code = _code_positions(blanked, a, b)
             for m in use.finditer(blanked, max(a, after), b):
+                if not code[m.start() - a]:
+                    continue   # inside a string literal: text, not the variable
+                if _OBJECT_KEY_BEFORE.search(blanked, a, m.start()) \
+                        and _OBJECT_KEY_AFTER.match(blanked, m.end()):
+                    continue   # an object key of that name, not the variable
                 add_env(name, _line_of(starts, m.start()))
 
 
@@ -557,12 +617,18 @@ def observe_text(text: str, lang: str, rel: str, rules: dict,
         if "config.host.key" in _ids(forms, "config"):
             _config_hosts(blanked, rules, own_hosts, ex, add)
         docs = _yaml_docs(text) if lang == "yaml" else None
-        _config_env(text, blanked, docs, rules, lang, starts, add_env)
+        try:
+            _config_env(text, blanked, docs, rules, lang, starts, add_env)
+        except RecursionError:
+            docs = None
         if lang == "yaml":
             if docs is None:
                 ex.yaml_failed = True
             else:
-                _yaml_secrets(docs, add_secret)
+                try:
+                    _yaml_secrets(docs, add_secret)
+                except RecursionError:
+                    ex.yaml_failed = True
                 if "mesh.service-entry" in _ids(forms, "mesh"):
                     for doc in docs:
                         if _scalar(_get(doc, "kind")) == "ServiceEntry":
@@ -668,6 +734,8 @@ def load_config(profile: dict) -> tuple[dict, list[str]]:
             problem = f"accepts only {kinds[0]} and reason"
         elif not isinstance(entry.get("reason"), str) or not entry["reason"].strip():
             problem = "needs a non-empty reason"
+        elif len(" ".join(entry["reason"].split())) > c.MAX_IGNORE_REASON:
+            problem = f"reason must be at most {c.MAX_IGNORE_REASON} characters"
         if problem is None:
             value = _valid_value(kinds[0], entry[kinds[0]], wildcard=kinds[0] == "host")
             if value is None:
@@ -846,6 +914,9 @@ def _cap(observations: list[dict], ranked: set[str]) -> tuple[list[dict], int]:
 
 def run(repo: Path, limit: int = DEFAULT_LIMIT) -> dict:
     out = c.out_dir(repo) / c.OBSERVED_FILENAME
+    # A run that fails part-way must not leave an earlier scan's document to be
+    # read as this one's: missing is read as skipped (§9).
+    out.unlink(missing_ok=True)
     try:
         profile = c.load_profile(repo)
     except c.ThunderstruckError:
@@ -873,18 +944,24 @@ def run(repo: Path, limit: int = DEFAULT_LIMIT) -> dict:
     if len(files) > limit:
         warnings.append(f"observed dependencies: stopped after {limit} files (--limit); "
                         f"{len(files) - limit} more were not read, so the drift section is partial")
-        files = files[:limit]
+        # ranked files first, so a hotspot's bundle can always cite its own calls (§5)
+        first = [p for p in files if p in ranked]
+        files = sorted(first[:limit] + [p for p in files if p not in ranked][:max(0, limit - len(first))])
 
     observations: list[dict] = []
     dropped = {k: 0 for k in KINDS}
-    excluded_own = unreadable = yaml_failed = 0
+    excluded_own = unreadable = yaml_failed = broken = 0
     for rel in files:
         try:
             text = (repo / rel).read_bytes().decode("utf-8")
         except (OSError, UnicodeDecodeError):
             unreadable += 1
             continue
-        ex = observe_text(text, c.detect_language(rel, langmap), rel, rules, own_hosts)
+        try:
+            ex = observe_text(text, c.detect_language(rel, langmap), rel, rules, own_hosts)
+        except (RecursionError, MemoryError, ValueError):
+            broken += 1   # one pathological file never sinks the step
+            continue
         observations += ex.observations
         for k, n in ex.dropped.items():
             dropped[k] += n
@@ -893,6 +970,9 @@ def run(repo: Path, limit: int = DEFAULT_LIMIT) -> dict:
     if unreadable:
         warnings.append(f"{unreadable} file(s) could not be read as UTF-8; "
                         f"no dependencies were observed in them")
+    if broken:
+        warnings.append(f"{broken} file(s) could not be analysed for observed dependencies "
+                        f"and were skipped")
     if yaml_failed:
         warnings.append(f"{yaml_failed} YAML file(s) could not be parsed; their structural forms "
                         f"(container env names, secret references) were skipped")
@@ -907,7 +987,7 @@ def run(repo: Path, limit: int = DEFAULT_LIMIT) -> dict:
     truncated = ctx.get("truncated") or {}
     doc: dict[str, Any] = {
         "schema": c.OBSERVED_SCHEMA, "status": "ok", "context_hash": ctx["context_hash"],
-        "map_hash": map_hash(cfg), "observed_hash": None, "files_scanned": len(files) - unreadable,
+        "map_hash": map_hash(cfg), "observed_hash": None, "files_scanned": len(files) - unreadable - broken,
         "observations": [{"ref": ref(o), **o} for o in kept],
         "resolutions": resolved["resolutions"],
         "not_observed": resolved["not_observed"], "no_mapping": resolved["no_mapping"],

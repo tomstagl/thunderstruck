@@ -54,7 +54,7 @@ Component-level context from the service catalog: it describes the whole compone
 
 Compares the dependencies this scan observed in the code and configuration with the service catalog. These are leads to check, not findings.
 
-_Not observed: hosts held only in configuration tables, env values passed through more than one variable or across files, and vendor SDK clients. No form is measured yet for python, java, properties files, so they are not observed. No host form is measured yet, so only env vars and secret references are observed._
+_Not observed: hosts held only in configuration tables, env values passed through more than one variable or across files, and vendor SDK clients. No env or host form is measured yet for python, java, properties files. No host form is measured yet, so only env vars and secret references are observed._
 
 **Observed, not in the catalog** (2)
 

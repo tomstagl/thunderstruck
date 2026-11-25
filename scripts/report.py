@@ -678,7 +678,8 @@ def catalog_drift(obs: dict | None) -> dict | None:
         return None
     where: dict[tuple[str, str], list[dict]] = {}
     for o in obs.get("observations") or []:
-        where.setdefault((o["kind"], o["value"]), []).append({"file": o["file"], "line": o["line"]})
+        where.setdefault((o["kind"], o["value"]), []).append(
+            {"file": o["file"], "line": o["line"], "url": None})
 
     def row(r: dict, *extra: str) -> dict:
         return {"kind": r["kind"], "value": r["value"], "occurrences": r["occurrences"],
@@ -732,8 +733,8 @@ def render_catalog_drift(drift: dict | None) -> list[str]:
         return []
     notes = [DRIFT_GAPS]
     if drift.get("unobserved_languages"):
-        notes.append(f"No form is measured yet for {', '.join(drift['unobserved_languages'])} "
-                     f"files, so they are not observed.")
+        notes.append(f"No env or host form is measured yet for "
+                     f"{', '.join(drift['unobserved_languages'])} files.")
     if drift.get("hosts_observed") is False:
         notes.append("No host form is measured yet, so only env vars and secret references "
                      "are observed.")
