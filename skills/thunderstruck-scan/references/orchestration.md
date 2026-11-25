@@ -105,6 +105,7 @@ force every finding to be checked again, delete `.thunderstruck/checks/`.
 | No supported language changed | Stop. Say which languages are supported. |
 | Service context command fails or times out | The scan continues. With a cached copy younger than 2 × `max_age_days` it reuses that and warns; otherwise it runs without context and warns. Relay the warning. |
 | Service context not approved on this machine | Continue without it and say so. The user approves with `/thunderstruck-context-config`; never approve on their behalf. |
+| A lesson in `.thunderstruck-lessons.toml` is malformed, or the file cannot be read | `signals.py` warns and carries on without it. Relay the warning; never edit the file to silence it. |
 | An investigator returns prose, not JSON | `save_finding.py` strips a markdown fence automatically. If it still fails, record `--failed`. |
 | Hook did not save a result | `save_finding.py --check` says `missing`; save it with `--fallback`; the report counts it. |
 | Validation fails | Exactly one repair round for that hotspot, then `--failed`. |
@@ -134,6 +135,10 @@ context command, `context.py` runs it, and that command may call your service
 catalog. thunderstruck passes it the entity ref (and, when neighbour
 attributes are configured, each neighbour's ref), and it runs with the user's
 environment.
+
+A lessons file kept in the repository is read by `signals.py`. The lessons that apply to a
+hotspot are in that hotspot's bundle, and in the brief of each of its findings when
+verification runs.
 
 Dependency source for the skeptics is read from what is already installed
 for the project's declared dependencies (its virtual environment,

@@ -55,7 +55,7 @@ Every task's code and tests were applied, in this order, on a `main` with #105 b
 
 This ticket depends on #105 (`Depends on: #105` in the ticket): it is built on a `main` where #105 has merged. #105 raises `VALIDATION_RULES` to 5 and this plan raises it to 6; it also edits files this plan edits (`scripts/bundle.py`, `scripts/verify.py`, `scripts/report.py`, `templates/report.html`, `scripts/validate.py`, the two agent prompts, `CLAUDE.md`, the README). So it first checks that #105 has landed, then that every text it replaces is still on `main`.
 
-- [ ] **Step 1: Check that #105 has landed.**
+- [x] **Step 1: Check that #105 has landed.**
 
 ```bash
 git fetch -q origin
@@ -66,7 +66,7 @@ git show origin/main:catalog/stability.yaml | grep -q 'fix_touches' && echo "ok 
 
 Expected: every line `ok`.
 
-- [ ] **Step 2: Check the anchors.**
+- [x] **Step 2: Check the anchors.**
 
 ```bash
 python3 - <<'EOF'
@@ -142,9 +142,9 @@ git cat-file -e origin/main:docs/calibration/correctness/celery/scan/report.json
 
 Expected: every line `ok`.
 
-- [ ] **Step 3: Stop if anything is missing.** A `MISSING` line from Step 1 ends the run before Task 1: replace `agent:in-progress` with `agent:blocked` on #106, comment "Blocked at Task 0: #105 is not merged (<the missing lines>)", open no PR. The picker already waits for #105 to close; this catches a #105 that closed without merging. A `MISSING` anchor from Step 2 is a text this plan replaces that has moved, an amendable gap (the plan's wording conflicts with `main`): follow the skill's amendment path, with the commit on `main` that moved it, not a guess at the new text.
+- [x] **Step 3: Stop if anything is missing.** A `MISSING` line from Step 1 ends the run before Task 1: replace `agent:in-progress` with `agent:blocked` on #106, comment "Blocked at Task 0: #105 is not merged (<the missing lines>)", open no PR. The picker already waits for #105 to close; this catches a #105 that closed without merging. A `MISSING` anchor from Step 2 is a text this plan replaces that has moved, an amendable gap (the plan's wording conflicts with `main`): follow the skill's amendment path, with the commit on `main` that moved it, not a guess at the new text.
 
-- [ ] **Step 4: Record the baseline.** AC-1 says a repository without a lessons file gets the bundles and briefs it gets today. That is shown against the code before this change, once, not pinned in a test (a permanent golden would break whenever another change alters bundles). Create `$S/baseline.py`:
+- [x] **Step 4: Record the baseline.** AC-1 says a repository without a lessons file gets the bundles and briefs it gets today. That is shown against the code before this change, once, not pinned in a test (a permanent golden would break whenever another change alters bundles). Create `$S/baseline.py`:
 
 ```python
 """Hash every bundle, skeptic brief and plan entry the pipeline writes over the sample fixture.
@@ -207,7 +207,7 @@ No commit: this task changes nothing in the repository.
 **Interfaces:**
 - Produces: `c.LESSONS_FILENAME`; in `lessons`: `NAME`, `EVERY`, `MAX_FILE_BYTES`, `MAX_ENTRIES`, `MAX_APPLIES_TO`, `TEXT_CAPS`, `ENTRY_KEYS`, `ID_RE`; `check_entry(raw, catalog) -> (lesson | None, problems)`; `load(repo, catalog) -> (block | None, warnings)` where `block` is `{file, status, accepted, skipped}`.
 
-- [ ] **Step 1: Write the failing tests.** Create `tests/test_lessons.py`:
+- [x] **Step 1: Write the failing tests.** Create `tests/test_lessons.py`:
 
 ```python
 """#106: lessons a repository keeps reach every later briefing: the file and its
@@ -450,7 +450,7 @@ def test_a_fifo_swapped_in_after_the_check_cannot_hang_the_scan(tmp_path):
     assert proc.stdout.strip() == "(None, 'is not a regular file in the working tree')"
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -458,7 +458,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: FAIL. Collection fails: `ModuleNotFoundError: No module named 'lessons'`.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 In `scripts/_common.py`, replace
 
@@ -687,7 +687,7 @@ def load(repo: Path, catalog: dict) -> tuple[dict | None, list[str]]:
     return block, warnings
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass, then the neighbours, then the full suite**
+- [x] **Step 4: Run the tests to verify they pass, then the neighbours, then the full suite**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -697,7 +697,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: PASS, then `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/_common.py scripts/lessons.py tests/test_lessons.py
@@ -715,7 +715,7 @@ git commit -m "Lessons: read and validate the repository's lessons file (#106)"
 **Interfaces:**
 - Consumes: Task 1's `check_entry`. Produces: `applicable(accepted, patterns)`, `fence(text)`, `entry_block(lesson)`, `select(ordered) -> (shown, left_out)`, `applied(accepted, rows)`, `scan(repo, catalog, rows) -> (block | None, warnings)`, `for_hotspot(data, hotspot_id) -> (lessons, left_out_ids)`, `investigator_section(shown, left_out)`, `skeptic_section(shown, left_out)`, and the constants `MAX_SHOWN`, `ENTRY_CHARS`, `NOTE_IDS`, `MAX_SECTION_CHARS`, `INVESTIGATOR_INTRO`, `SKEPTIC_INTRO`.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
 
 ```````python
 # --- Task 2 -----------------------------------------------------------------
@@ -898,7 +898,7 @@ def test_a_lesson_never_stops_a_scan_whatever_goes_wrong(tmp_path, monkeypatch):
     assert warnings == [f"{NAME} could not be applied (RuntimeError); no lessons were applied."]
 ```````
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -906,7 +906,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: FAIL. Collection fails: `AttributeError: module 'lessons' has no attribute 'investigator_section'`.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 Append to `scripts/lessons.py`:
 
@@ -1055,7 +1055,7 @@ def skeptic_section(shown: list[dict], left_out: list[str]) -> str:
     return _section(SKEPTIC_INTRO, shown, left_out)
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass, then the neighbours, then the full suite**
+- [x] **Step 4: Run the tests to verify they pass, then the neighbours, then the full suite**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -1065,7 +1065,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: PASS, then `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/lessons.py tests/test_lessons.py
@@ -1083,7 +1083,7 @@ git commit -m "Lessons: match a hotspot, bound a briefing, render it as data (#1
 **Interfaces:**
 - Consumes: `lessons.scan`. Produces: the `lessons` key of `hotspots.json` (§3), present only when the repository has the file.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
 
 ```python
 # --- Task 3 -----------------------------------------------------------------
@@ -1165,7 +1165,7 @@ def test_the_record_covers_only_the_hotspots_the_scan_kept(scanned_copy):
     assert len(data["hotspots"]) == 2 and set(data["lessons"]["applied"]) == kept
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -1173,7 +1173,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: FAIL. Four tests fail with `KeyError: 'lessons'` (the record, the bad lesson, the broken file, `--top`); the ones about no file and the ranking pass already.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 In `scripts/signals.py` (the imports), replace
 
@@ -1230,7 +1230,7 @@ with
     return payload
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass, then the neighbours, then the full suite**
+- [x] **Step 4: Run the tests to verify they pass, then the neighbours, then the full suite**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -1240,7 +1240,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: PASS, then `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/signals.py tests/test_lessons.py
@@ -1258,7 +1258,7 @@ git commit -m "Lessons: signals.py records what applies to which hotspot (#106)"
 **Interfaces:**
 - Consumes: `lessons.for_hotspot`, `lessons.investigator_section`. Produces: the `## Lessons this repository keeps` section of a bundle (§5.1).
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
 
 ```````python
 # --- Task 4 -----------------------------------------------------------------
@@ -1424,7 +1424,7 @@ def test_a_hostile_lesson_cannot_break_out_of_its_block_or_forge_a_section(scann
                                     "### L-001 (applies to: every hotspot)"] + old[at:], hs["file"]
 ```````
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -1432,7 +1432,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: FAIL. Seven tests fail on a missing `## Lessons` section; the ones that hold with no section (a hotspot no lesson applies to, reproducibility) pass already.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 In `scripts/bundle.py` (the imports), replace
 
@@ -1479,7 +1479,7 @@ with
         kept,
 ```
 
-- [ ] **Step 4: Show that a repository without a lessons file is unchanged (AC-1).**
+- [x] **Step 4: Show that a repository without a lessons file is unchanged (AC-1).**
 
 ```bash
 rm -rf "$S/after" && mkdir -p "$S/after"
@@ -1490,7 +1490,7 @@ cmp "$S/baseline.json" "$S/after.json" && echo "ok: every bundle, brief and plan
 Expected: the `ok:` line. A difference means a no-lessons path changed: fix the code, not the baseline.
 
 
-- [ ] **Step 5: Run the tests to verify they pass, then the neighbours, then the full suite**
+- [x] **Step 5: Run the tests to verify they pass, then the neighbours, then the full suite**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -1500,7 +1500,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: PASS, then `exit=0`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/bundle.py tests/test_lessons.py
@@ -1518,7 +1518,7 @@ git commit -m "Lessons: the applicable lessons in the investigator's bundle (#10
 **Interfaces:**
 - Consumes: `lessons.for_hotspot`, `lessons.skeptic_section`. Produces: `verify.render_brief(..., lessons_for)` and a `lessons` key on a `checks/plan.json` entry (§5.2).
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
 
 ```python
 # --- Task 5 -----------------------------------------------------------------
@@ -1622,7 +1622,7 @@ def test_a_verdict_saved_for_another_lesson_text_is_stale(validated_repo, valida
         "The only verdict on disk was for an earlier version of this finding."
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -1630,7 +1630,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: FAIL. Three tests fail (the lessons are not in the brief, the frozen test finds no `lessons` to exclude, a verdict is not stale).
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 In `scripts/verify.py` (the imports), replace
 
@@ -1707,7 +1707,7 @@ with
             e["lessons"] = {"shown": [l["id"] for l in shown], "left_out": left_out}
 ```
 
-- [ ] **Step 4: Show that a repository without a lessons file is unchanged (AC-1).**
+- [x] **Step 4: Show that a repository without a lessons file is unchanged (AC-1).**
 
 ```bash
 rm -rf "$S/after" && mkdir -p "$S/after"
@@ -1718,7 +1718,7 @@ cmp "$S/baseline.json" "$S/after.json" && echo "ok: every bundle, brief and plan
 Expected: the `ok:` line. A difference means a no-lessons path changed: fix the code, not the baseline.
 
 
-- [ ] **Step 5: Run the tests to verify they pass, then the neighbours, then the full suite**
+- [x] **Step 5: Run the tests to verify they pass, then the neighbours, then the full suite**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -1728,7 +1728,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: PASS, then `exit=0`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/verify.py tests/test_lessons.py
@@ -1748,7 +1748,7 @@ git commit -m "Lessons: the applicable lessons in the skeptic's brief (#106)"
 **Interfaces:**
 - Produces: a `Validator._resolve` rejection of `c.LESSONS_FILENAME`; `VALIDATION_RULES` one higher.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
 
 ```python
 # --- Task 6 -----------------------------------------------------------------
@@ -1827,7 +1827,7 @@ def test_the_lessons_file_is_refused_whatever_the_case_of_its_name(repo):  # noq
     assert [e for e in errors if "is the repository's lessons file" in e], errors
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -1835,7 +1835,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: FAIL. Seven tests fail: the file's refs resolve like any tracked file's, in any casing.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 In `scripts/validate.py` (in `Validator._resolve`), replace
 
@@ -1858,7 +1858,7 @@ with
 
 Raise `VALIDATION_RULES` by one. Read its value first: `grep -n '^VALIDATION_RULES' scripts/_common.py` prints `VALIDATION_RULES = N` (5 once #105 has merged, so the new value is 6); set it to `N + 1` and call that number `V` below. Then list the tests that pin the number with `grep -rn 'VALIDATION_RULES ==' tests/` and change each assertion's `N` to `V`. With #105 merged there are two, and both are committed with this task: `tests/test_checked_confidence.py::test_validation_writes_check_and_history` (`assert saved["validated_with"] == c.VALIDATION_RULES == N`) and `tests/test_fix_impact.py::test_findings_validated_under_rules_4_are_investigated_again` (`assert c.VALIDATION_RULES == N`). Leave every `validated_with = <older number>` alone: those mean "older than now". The pins change on purpose: they name the rules version. If the grep lists a file other than these two, change and commit it too.
 
-- [ ] **Step 4: Run the tests to verify they pass, then the neighbours, then the full suite**
+- [x] **Step 4: Run the tests to verify they pass, then the neighbours, then the full suite**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -1868,7 +1868,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: PASS, then `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/_common.py scripts/validate.py tests/test_checked_confidence.py tests/test_fix_impact.py tests/test_lessons.py
@@ -1888,7 +1888,7 @@ git commit -m "Lessons: the validator refuses a reference into the lessons file 
 **Interfaces:**
 - Consumes: the record of Task 3. Produces: `lessons.summary(data, investigated_ids)`; in `report`: `LESSONS_NOT_READ`, `LESSONS_LEFT_OUT`, `LESSONS_SKIPPED`, `render_lessons_line(data)`, the `lessons` key of `collect()` and of `report.json`; the lessons line of `templates/report.html`.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py` (the other two files get one test each, below):
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py` (the other two files get one test each, below):
 
 ```python
 # --- Task 7 -----------------------------------------------------------------
@@ -2070,7 +2070,7 @@ def test_the_overview_says_how_many_lessons_applied(page, scanned_copy, plugin_r
             in page(report).page.text_content("#doc"))
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_inert_report.py tests/test_lessons.py tests/test_report_html.py tests/test_report_html_browser.py -q
@@ -2080,7 +2080,7 @@ Expected: FAIL. Ten tests fail, the two new inert tests among them: no line, no 
 
 The inert tests need the renderers the full-suite command installs (`markdown-it-py`, `linkify-it-py`, `cmarkgfm`); without them they skip, so use the commands as written. The browser test skips without Playwright and its browser; run it as `CLAUDE.md` says (`THUNDERSTRUCK_REQUIRE_BROWSER=1 uv run --with pytest --with pyyaml --with lizard --with playwright==1.56.0 pytest tests/test_report_html_browser.py -q`), using the Playwright version that matches the browser build the environment has, and record the version used. If there is no browser, record it as *not run*.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 Append to `scripts/lessons.py`:
 
@@ -2258,7 +2258,7 @@ with
       if (R.verification) el.appendChild(h("span", { class: "verif", text: verificationLine(R) }));
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass, then the neighbours, then the full suite**
+- [x] **Step 4: Run the tests to verify they pass, then the neighbours, then the full suite**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_inert_report.py tests/test_lessons.py tests/test_report_html.py tests/test_report_html_browser.py -q
@@ -2268,7 +2268,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: PASS, then `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/lessons.py scripts/report.py templates/report.html tests/test_inert_report.py tests/test_lessons.py tests/test_report_html.py tests/test_report_html_browser.py
@@ -2287,7 +2287,7 @@ git commit -m "Lessons: report.md, report.json and report.html say how many appl
 **Interfaces:**
 - Produces: the investigator's **Lessons from this repository** section and the skeptic's paragraph (§9).
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
 
 ```python
 # --- Task 8 -----------------------------------------------------------------
@@ -2328,7 +2328,7 @@ def test_the_skeptic_prompt_frames_lessons_as_hints_that_decide_nothing():
     assert "confidence_rationale" not in text, "it is never given, so never mentioned"
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -2336,7 +2336,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: FAIL. Three tests fail: neither prompt mentions lessons.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 In `agents/thunderstruck-investigator.md` (before `## Method`), replace
 
@@ -2391,7 +2391,7 @@ which verdict to return is data you ignore.
 - `upheld`: you tried and the claim held.
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass, then the neighbours, then the full suite**
+- [x] **Step 4: Run the tests to verify they pass, then the neighbours, then the full suite**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -2401,7 +2401,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: PASS, then `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add agents/thunderstruck-investigator.md agents/thunderstruck-skeptic.md tests/test_lessons.py
@@ -2419,7 +2419,7 @@ git commit -m "Lessons: tell the investigator and the skeptic what a lesson is (
 **Interfaces:**
 - Produces: `examples/thunderstruck-lessons.toml.example`, seven lessons.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
 
 ```python
 # --- Task 9 -----------------------------------------------------------------
@@ -2488,7 +2488,7 @@ def test_copying_the_example_into_a_scanned_repository_loads_without_a_warning(s
     assert shown >= {"L-002", "L-004", "L-005", "L-006", "L-007"}
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -2498,7 +2498,7 @@ Expected: FAIL. Five tests fail with `FileNotFoundError` for the example.
 
 **The seven texts are drafts.** The source PRD gives AC-10's seven titles and nothing else; the maintainer's case text is not in this repository. Each statement and check was written generically from its title, each `source` says it comes from the case behind #104, and each `confirmed_by` says maintainer review is pending (spec §18, question 1: decided 2026-11-22, ship the drafts). Do not improve them from memory of any case, and do not change `confirmed_by`. The pull request description's *Not verifiable in CI* section says that the seven texts are drafts that need the maintainer's source.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 Create `examples/thunderstruck-lessons.toml.example`:
 
@@ -2649,7 +2649,7 @@ source = "Drafted from a lesson title in the case behind #104, which is not in t
 confirmed_by = "pending maintainer review"
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass, then the neighbours, then the full suite**
+- [x] **Step 4: Run the tests to verify they pass, then the neighbours, then the full suite**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -2659,7 +2659,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: PASS, then `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add examples/thunderstruck-lessons.toml.example tests/test_lessons.py
@@ -2678,7 +2678,7 @@ git commit -m "Lessons: an example file of seven lessons, off by default (#106)"
 **Interfaces:**
 - Consumes: everything above. Produces the documentation, the version and the regenerated sample; changes no behaviour.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
 
 ````python
 # --- Task 10 ----------------------------------------------------------------
@@ -2724,7 +2724,7 @@ def test_the_changelog_records_the_lessons_and_the_rules_version():
     assert f"Validation rules version {c.VALIDATION_RULES}" in top
 ````
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -2732,7 +2732,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: FAIL. The README has no lessons section, the skill and the references do not name the file, `CLAUDE.md` has no lessons paragraph, and the changelog's top entry does not mention #106.
 
-- [ ] **Step 3: Write the documentation.**
+- [x] **Step 3: Write the documentation.**
 
 In `README.md` (before `## Privacy`), replace
 
@@ -2959,7 +2959,7 @@ Changing what a lesson may do needs the spec changed first.
 **The plugin must not exhibit the patterns it hunts.** At most 4 subagents
 ```
 
-- [ ] **Step 4: Version and CHANGELOG.** Read the current version from `pyproject.toml` on `origin/main` (`X.Y.Z`) and bump the minor to `X.(Y+1).0` in all four places: `pyproject.toml`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and the heading of a new top entry in `CHANGELOG.md` (`test_versions_agree` checks the four). Do not hard-code a number: another ticket of #104 may take the next one. Add, above the previous top entry, with `<version>` the new version and `<V>` the value `VALIDATION_RULES` now has in `scripts/_common.py` (Task 6):
+- [x] **Step 4: Version and CHANGELOG.** Read the current version from `pyproject.toml` on `origin/main` (`X.Y.Z`) and bump the minor to `X.(Y+1).0` in all four places: `pyproject.toml`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and the heading of a new top entry in `CHANGELOG.md` (`test_versions_agree` checks the four). Do not hard-code a number: another ticket of #104 may take the next one. Add, above the previous top entry, with `<version>` the new version and `<V>` the value `VALIDATION_RULES` now has in `scripts/_common.py` (Task 6):
 
 ```markdown
 ## <version>
@@ -2980,7 +2980,7 @@ Lessons a repository keeps reach every later briefing (#106), part of #104.
 - **Validation rules version <V>.** A reference into the lessons file is rejected in a finding, a precondition, a location and a verdict, so a lesson cannot stand in for a citation. Cached findings from earlier versions are checked again on the next scan and investigated again only if they cite it.
 ```
 
-- [ ] **Step 5: Regenerate the sample, once.** The template changed in Task 7, which changes the embedded script and its CSP hash; no lessons file is in the fixture, so the Markdown sample does not change.
+- [x] **Step 5: Regenerate the sample, once.** The template changed in Task 7, which changes the embedded script and its CSP hash; no lessons file is in the fixture, so the Markdown sample does not change.
 
 ```bash
 uv run scripts/gen_sample_report.py
@@ -2990,7 +2990,7 @@ git diff --stat -- examples/
 
 Expected: `exit=0`, and the diff names `examples/sample-report.html` only. Read its diff: the CSP hash and the lessons line of the template, nothing else. If `examples/sample-report.md` changed, a no-lessons path changed: find it before going on.
 
-- [ ] **Step 6: Show that a repository without a lessons file is unchanged (AC-1).**
+- [x] **Step 6: Show that a repository without a lessons file is unchanged (AC-1).**
 
 ```bash
 rm -rf "$S/after" && mkdir -p "$S/after"
@@ -3000,7 +3000,7 @@ cmp "$S/baseline.json" "$S/after.json" && echo "ok: every bundle, brief and plan
 
 Expected: the `ok:` line. A difference means a no-lessons path changed: fix the code, not the baseline.
 
-- [ ] **Step 7: Run the full suite and the generated-file and plugin checks**
+- [x] **Step 7: Run the full suite and the generated-file and plugin checks**
 
 ```bash
 THUNDERSTRUCK_REQUIRE_RENDERER=1 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/ -q; echo "exit=$?"
@@ -3013,7 +3013,7 @@ claude plugin marketplace add "$PWD" && claude plugin install thunderstruck@thun
 
 Expected: every `exit=0`; `test_versions_agree` passes; `claude plugin list` shows thunderstruck `enabled`, not `failed to load`. `validate_plugin.py` exit 2 means `claude` is not on `PATH`: record that check as *not run*, never as passed, and do the same for the install line. The browser line needs the browser build Playwright 1.56.0 expects; with another build, pass the Playwright version that matches it and record which, and with no browser record it as *not run*. The scan's own sample and `claude plugin validate` need no lessons file.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add README.md CLAUDE.md skills/thunderstruck-scan/SKILL.md skills/thunderstruck-scan/references/report-format.md skills/thunderstruck-scan/references/orchestration.md CHANGELOG.md .claude-plugin/plugin.json .claude-plugin/marketplace.json pyproject.toml examples/sample-report.html tests/test_lessons.py

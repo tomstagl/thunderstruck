@@ -221,3 +221,37 @@ def test_hostile_linked_file_names_stay_inert(scanned_copy, plugin_root):
         body = markdown.split(section, 1)[1].split("\n## ", 1)[0]
         for renderer in RENDERERS:
             assert renderer(body).tags.count("a") == 1, (section, renderer.__name__)
+
+
+def test_hostile_lesson_text_never_reaches_the_report_and_what_does_is_inert(scanned_copy, plugin_root):
+    """#106: a lesson goes to models, not to report.md. Its id is checked, its text is not
+    printed, and what the report says about a bad lesson is inert text."""
+    from test_lessons import NAME, rebuild, toml_of
+    entries = [
+        {"id": "L-001", "applies_to": ["all"], "statement": f"statement: {HOSTILE}",
+         "how_to_check": f"how_to_check: {HOSTILE}", "source": f"source: {HOSTILE}",
+         "confirmed_by": f"confirmed_by: {HOSTILE[:100]}"},
+        {"id": HOSTILE, "applies_to": ["all"], "statement": "s", "how_to_check": "h",
+         "source": "o", "confirmed_by": "c"},
+        {"id": "L-003", "applies_to": [HOSTILE], "statement": "s", "how_to_check": "h",
+         "source": "o", "confirmed_by": "c"}]
+    (scanned_copy / NAME).write_text(toml_of(*entries), encoding="utf-8")
+    rebuild(scanned_copy)
+    hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
+    _write_finding(scanned_copy, hid, doc)
+    assert _validate(scanned_copy, plugin_root).returncode == 0
+    subprocess.run([sys.executable, str(plugin_root / "scripts" / "report.py"),
+                    "--repo", str(scanned_copy)], check=True, capture_output=True)
+    out = scanned_copy / ".thunderstruck"
+    markdown = (out / "report.md").read_text()
+    _assert_inert(markdown)
+    html = render(markdown)
+    assert html.tags.count("h1") == 1 and html.tags.count("h3") == 1, "a lesson must not add structure"
+    text = "".join(html.text)
+    for field in ("statement:", "how_to_check:", "source:", "confirmed_by:"):
+        assert field not in text, f"{field} is lesson text, which the report never prints"
+    warnings = markdown.split("## Run warnings", 1)[1].split("\n## ", 1)[0]
+    assert warnings.count("skipped:") == 2, "both bad lessons are named, inertly"
+    assert "Lessons (" in markdown and "1 lesson applied to" in markdown
+    saved = json.loads((out / "report.json").read_text())
+    assert "evil.example" not in json.dumps(saved["lessons"]) and "statement" not in json.dumps(saved["lessons"])

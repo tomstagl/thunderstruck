@@ -29,6 +29,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _common as c  # noqa: E402
+import lessons  # noqa: E402
 from detectors import Boundary, find_boundaries  # noqa: E402
 
 DEFAULT_BUDGET_TOKENS = 8000
@@ -482,12 +483,18 @@ def build_bundle(repo: Path, hs: dict, data: dict, catalog: dict, profile: dict,
     own = data.get("own_packages")
     own = own if isinstance(own, dict) else None  # None: gated boundary rules skipped
     service = section_service_context(ctx)
-    # The service section is never trimmed; the other sections share what is left.
-    rest = max(budget - c.estimate_tokens(service), budget // 2) if service else budget
+    # The lessons that apply to this hotspot (#106): empty unless one does, so a
+    # hotspot none applies to keeps its bytes, and its cached finding.
+    kept = lessons.investigator_section(*lessons.for_hotspot(data, hs["id"]))
+    # The service and lessons sections are never trimmed (the lessons have a cap
+    # of their own); the other sections share what is left.
+    fixed = (c.estimate_tokens(service) if service else 0) + (c.estimate_tokens(kept) if kept else 0)
+    rest = max(budget - fixed, budget // 2) if fixed else budget
     parts = [
         section_header(hs, data),
         section_profile(profile),
         service,
+        kept,
         section_boundaries(text, hs["file"], hs["language"], catalog, own),
         section_detectors(hs, catalog),
         section_retry_layers(hs, data, catalog),

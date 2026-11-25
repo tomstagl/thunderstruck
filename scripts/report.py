@@ -33,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _common as c  # noqa: E402
 import deps  # noqa: E402
 import finding_shape  # noqa: E402
+import lessons  # noqa: E402
 import links  # noqa: E402
 import mdtext as md  # noqa: E402
 import reproduction  # noqa: E402
@@ -52,6 +53,10 @@ LEADS_INTRO = ("Each row is a stability pattern the detectors searched for. A le
                "investigated hotspots; leads confirmed counts those cited by a finding whose citations resolved.")
 LEADS_FOOTNOTE = ("No lead means no line matched a detector's rule. It does not mean the "
                   "pattern is present: a detector sees only the shapes its rule describes.")
+# The lessons line's fixed phrases (#106). templates/report.html carries the same words.
+LESSONS_NOT_READ = "none applied, the file was not read; see Run warnings."
+LESSONS_LEFT_OUT = "left out of a briefing by the cap"
+LESSONS_SKIPPED = "skipped, listed under Run warnings"
 
 
 def verification_run(out: Path, hotspots: dict) -> dict | None:
@@ -228,7 +233,9 @@ def collect(repo: Path) -> dict[str, Any]:
             "links": link_meta, "link_warnings": link_warnings,
             "hotspot_links": hotspot_links,
             "usage": usage, "usage_warnings": usage_warnings,
-            "check_warnings": check_warnings}
+            "check_warnings": check_warnings,
+            # what the repository's lessons did in this scan, or None (#106)
+            "lessons": lessons.summary(hotspots, {h["id"] for h in investigated})}
 
 
 def _usage(out: Path, generated_at: str) -> tuple[dict | None, list[str]]:
@@ -706,6 +713,23 @@ def render_verification_line(data: dict) -> str:
     total = len(data["findings"]) + len(data["refuted"])
     return (f"Verification: ran on {total} findings, {v['checked']} checked by {md.code(v['model'])}"
             f" and {v['reused']} reused — " + " · ".join(parts))
+
+
+def render_lessons_line(data: dict) -> list[str]:
+    """What the repository's lessons did in this scan; nothing when it keeps none (#106)."""
+    s = data.get("lessons")
+    if not s:
+        return []
+    name = md.code(s["file"])
+    if s["status"] != "loaded":
+        return [f"Lessons ({name}): {LESSONS_NOT_READ}  "]
+    parts = [f"{_plural(s['applied_lessons'], 'lesson')} applied to "
+             f"{_plural(s['applied_hotspots'], 'hotspot')}"]
+    if s["left_out_lessons"]:
+        parts.append(f"{_plural(s['left_out_lessons'], 'lesson')} {LESSONS_LEFT_OUT}")
+    if s["skipped"]:
+        parts.append(f"{s['skipped']} {LESSONS_SKIPPED}")
+    return [f"Lessons ({name}): " + " · ".join(parts) + "  "]
 
 
 def _refuted_claims(check: dict) -> list[dict]:
@@ -1224,6 +1248,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
         f"**{len(findings)} finding(s)** across {files_affected} file(s)"
         + (f" — {breakdown}" if breakdown else "") + "  ",
         *([check_line] if check_line else []),
+        *render_lessons_line(data),
         render_verification_line(data),
         *([dl + "  "] if (dl := defaults_line({"counts": {
             "defaults": defaults_counts(findings),
@@ -1435,6 +1460,7 @@ def render_json(data: dict) -> dict:
         "lead_precision": lead_precision(data),
         "consumption": data.get("usage") or None,
         "verification": data["verification"],
+        **({"lessons": data["lessons"]} if data.get("lessons") else {}),
         "findings": data["findings"],
         "refuted": [{k: v for k, v in f.items() if k != "id"} for f in data["refuted"]],
         "clean": [{**e, "cited_by": cited_by.get(e["file"], [])} for e in data["clean"]],

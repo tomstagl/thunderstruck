@@ -41,6 +41,15 @@ history* below).
   (hotspot and link warnings only).
 - `suppressed`: `[{detector, path, hits, reason}]`, one per suppression rule
   in `.thunderstruck.toml`.
+- `lessons`: present only when the repository has a `.thunderstruck-lessons.toml`:
+  `{file, status, accepted, skipped, applied_lessons, applied_hotspots,
+  left_out_lessons, by_hotspot}`, the figures behind the **Lessons** line under the
+  run header. `status` is `loaded` or `not_loaded` (the reason is a run warning, as is
+  each skipped lesson); `by_hotspot` maps each investigated hotspot a lesson applies
+  to `{shown: [ids], left_out: [ids]}`. Ids and counts only, never lesson text.
+  `hotspots.json` holds the record behind it under `lessons` (the accepted lessons and
+  `applied`, by hotspot id), and an entry of `checks/plan.json` carries `lessons:
+  {shown, left_out}` when its finding's hotspot has any.
 - `coverage_rows`: the **Detector leads by pattern** table, in order:
   `{id, name, tier, unconfirmed_files, leads_read, leads_confirmed, findings}`.
   The `OTHER` row, when present, has `null` where `report.md` shows `—`.

@@ -1,0 +1,144 @@
+# .thunderstruck-lessons.toml: what this repository has learned from its own failures
+#
+# Copy this file to the root of the repository you scan, name it
+# .thunderstruck-lessons.toml, and commit it, so every lesson goes through the
+# repository's normal review. Nothing here is on until you do that.
+#
+# A lesson is a hint about what to check in code like yours: a pitfall of the
+# obvious fix, a limit of a mock, a number nobody resolved. Each scan reads this
+# file once. A lesson that applies to a hotspot is added to that hotspot's
+# briefing for the investigator and to the brief of each finding on it, as data
+# to check. A lesson is never evidence: it cannot suppress a finding, raise a
+# confidence or stand in for a citation, and a finding cannot cite this file.
+#
+# Fields, all required:
+#   id            1 to 40 letters, digits, '.', '_' or '-'. Unique in this file.
+#   applies_to    a list of stability pattern ids the lesson is about (S01-S19,
+#                 S27-S30), or ["all"] for every hotspot. A hotspot gets the
+#                 lesson when its detector leads include one of these patterns.
+#                 Use "all" sparingly: it adds the lesson to every briefing.
+#   statement     what goes wrong. At most 600 characters.
+#   how_to_check  what to look at to find out. At most 400 characters.
+#   source        where the lesson comes from. At most 200 characters.
+#   confirmed_by  who confirmed it still holds. At most 120 characters.
+#
+# A lesson that breaks a rule is skipped and named in the report's run warnings,
+# and the scan carries on. Each briefing takes at most 6 lessons and about 3000
+# characters of them, most specific first; what does not fit is named in the
+# briefing. Keep the lessons that earn their place and delete the rest.
+#
+# The seven below are generic starting points, written from the titles of
+# lessons in the case behind #104, which is not in this repository. Replace
+# them with what your own reviews have taught you.
+
+[[lesson]]
+id = "L-001"
+applies_to = ["S28"]
+statement = """
+Releasing a lock removes an implicit guarantee. A lock held across a fetch or a
+write often does more than exclude: it also makes concurrent callers take
+turns, so only one of them does the work. Releasing or narrowing it to stop a
+stall can remove that guarantee too, and callers that used to wait start doing
+the same work at once.
+"""
+how_to_check = """
+List what the lock makes true besides mutual exclusion (one caller fetches,
+ordering, one write per key). For each, find what provides it after the change,
+or say that nothing does.
+"""
+source = "Drafted from a lesson title in the case behind #104, which is not in this repository."
+confirmed_by = "pending maintainer review"
+
+[[lesson]]
+id = "L-002"
+applies_to = ["all"]
+statement = """
+State that flips late. A status, flag or marker that is set only after slow work
+finishes lets other callers act on the old value for the whole duration. The
+failure looks like duplicate work or a stale decision, never like an error.
+"""
+how_to_check = """
+Find where the state is written and where it is read. Measure the window
+between starting the work and the write, and name who can read the old value
+inside it.
+"""
+source = "Drafted from a lesson title in the case behind #104, which is not in this repository."
+confirmed_by = "pending maintainer review"
+
+[[lesson]]
+id = "L-003"
+applies_to = ["S09"]
+statement = """
+A missing dedup on a sibling path. When one path to a resource coalesces or
+deduplicates concurrent requests, a sibling path to the same resource may not.
+Reading or fixing only the guarded path misses the unguarded one, which then
+carries the duplicate load.
+"""
+how_to_check = """
+Find every caller that reaches the same upstream call or cache key. For each,
+say whether it goes through the deduplication, and cite the one that does not.
+"""
+source = "Drafted from a lesson title in the case behind #104, which is not in this repository."
+confirmed_by = "pending maintainer review"
+
+[[lesson]]
+id = "L-004"
+applies_to = ["S10"]
+statement = """
+A retry storm under parallelism. A retry that is harmless for one caller
+multiplies: N workers each retrying R times send N times R requests to a
+dependency that is already struggling, and all of them wait for the same
+recovery.
+"""
+how_to_check = """
+Find how many callers run this code at once and how many retries each makes.
+Multiply, and compare the product with the limit the dependency is known to
+have. Say so if that limit was not read.
+"""
+source = "Drafted from a lesson title in the case behind #104, which is not in this repository."
+confirmed_by = "pending maintainer review"
+
+[[lesson]]
+id = "L-005"
+applies_to = ["all"]
+statement = """
+Quote a mapping verbatim. A mapping, switch or branch that a finding describes in
+its own words can be wrong in a detail that matters: one state mapped to
+another, one case missing. A paraphrase hides that.
+"""
+how_to_check = """
+Quote the mapping from the code word for word and cite its lines. Check each
+case against the claim, and say which cases the claim does not cover.
+"""
+source = "Drafted from a lesson title in the case behind #104, which is not in this repository."
+confirmed_by = "pending maintainer review"
+
+[[lesson]]
+id = "L-006"
+applies_to = ["all"]
+statement = """
+What a mock cannot show. A test that mocks a dependency shows how the code
+reacts to the mock, not how the dependency behaves. Timing, limits, ordering and
+partial failure usually come from what the mock leaves out.
+"""
+how_to_check = """
+For each claim a mock or test double supports, name what the real dependency
+does differently, and mark that part as not checked.
+"""
+source = "Drafted from a lesson title in the case behind #104, which is not in this repository."
+confirmed_by = "pending maintainer review"
+
+[[lesson]]
+id = "L-007"
+applies_to = ["all"]
+statement = """
+Resolve the numbers first. A claim of impact rests on numbers: timeouts, limits,
+durations, counts. Left unresolved, they turn a precise-sounding claim into a
+guess, and a wrong number can change the conclusion.
+"""
+how_to_check = """
+Find each number the claim uses in code or configuration and cite where it is
+set. If a value cannot be found, say so instead of assuming one.
+"""
+source = "Drafted from a lesson title in the case behind #104, which is not in this repository."
+confirmed_by = "pending maintainer review"

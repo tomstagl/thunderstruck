@@ -25,6 +25,7 @@ from finding_shape import FINDING_SCHEMA_VERSION  # noqa: F401  (re-exported)
 
 OUTPUT_DIRNAME = ".thunderstruck"
 PROFILE_FILENAME = ".thunderstruck.toml"
+LESSONS_FILENAME = ".thunderstruck-lessons.toml"
 REPORT_SCHEMA_VERSION = "thunderstruck.report/v2"
 USAGE_SCHEMA = "thunderstruck.usage/v1"
 
@@ -919,7 +920,7 @@ def load_suppressions(profile: dict[str, Any]) -> tuple[list[Suppression], list[
 # Bumped whenever validate.py's rules tighten. A findings file carries the
 # version that validated it; older ones are re-checked before they are reused
 # (bundle.py) and never reported unchecked (report.py).
-VALIDATION_RULES = 5
+VALIDATION_RULES = 6
 
 
 def ref_path(path: Any) -> str:

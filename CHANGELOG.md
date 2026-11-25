@@ -4,6 +4,23 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.19.0
+
+Lessons a repository keeps reach every later briefing (#106), part of #104.
+
+### Added
+
+- **`.thunderstruck-lessons.toml`**, a committed file of lessons at the root of the scanned repository. Each lesson has an id, the stability patterns it applies to (or every hotspot), a statement, how to check it, its source and who confirmed it. `signals.py` reads it once and records which lessons apply to which hotspot in `hotspots.json`.
+- **The lessons that apply to a hotspot are in its investigator bundle and in the skeptic's brief of each of its findings**, as hints inside a fence, never evidence. A hotspot no lesson applies to keeps its exact bundle and its cached finding; editing a lesson re-investigates only the hotspots it applies to.
+- **Bounds.** At most 6 lessons and about 3000 characters of them in one briefing, with the rest named as left out; at most 40 lessons and 64 KiB in the file.
+- **A malformed lesson, or a file that cannot be read, is a run warning** and the scan completes without it.
+- **The report says how many lessons applied**: `report.md`, the HTML report and `report.json`'s `lessons`.
+- `examples/thunderstruck-lessons.toml.example`: seven starting points, off until copied.
+
+### Changed
+
+- **Validation rules version 6.** A reference into the lessons file is rejected in a finding, a precondition, a location and a verdict, so a lesson cannot stand in for a citation. Cached findings from earlier versions are checked again on the next scan and investigated again only if they cite it.
+
 ## 0.18.0
 
 A re-scan keeps what it replaces, a reproduction is recorded, and a missing result says why (#96, #97, #98, #100, #101, #103).

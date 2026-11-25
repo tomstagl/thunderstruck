@@ -240,7 +240,7 @@ def test_validation_writes_check_and_history(scanned_copy, plugin_root):
     assert _check(scanned_copy, plugin_root, hid, doc).returncode == 0
     saved = json.loads((scanned_copy / ".thunderstruck" / "findings" / f"{hid}.json").read_text())
     f = saved["findings"][0]
-    assert saved["validated_with"] == c.VALIDATION_RULES == 5
+    assert saved["validated_with"] == c.VALIDATION_RULES == 6
     assert f["check"] == {"status": "unchecked", "by": None, "reason": None}
     assert f["confidence"] == "high"                      # the claim is kept as written
     assert f["history"] == [

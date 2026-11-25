@@ -183,6 +183,9 @@ class Validator:
         if (why := c.path_problem(rel)):
             error = (f"{why}. Cite the path relative to the repository root, exactly "
                      f"as the bundle shows it")
+        elif rel.casefold() == c.LESSONS_FILENAME.casefold():   # a case-insensitive filesystem reads either
+            error = ("is the repository's lessons file: a lesson is a hint, never evidence. "
+                     "Cite the code it is about")
         elif (mode := self._tracked().get(rel)) is None:
             hint = self._spelling_hint(rel)
             if hint:

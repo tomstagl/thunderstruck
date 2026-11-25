@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _common as c  # noqa: E402
 import deps  # noqa: E402
 import finding_shape  # noqa: E402
+import lessons  # noqa: E402
 import validate  # noqa: E402
 
 PLAN_SCHEMA = "thunderstruck.check-plan/v1"
@@ -190,7 +191,8 @@ def defaults_section(finding: dict) -> list[str]:
 
 
 def render_brief(finding: dict, others: list[dict], deps_index: dict | None,
-                 messages: list[tuple[str, str]]) -> str:
+                 messages: list[tuple[str, str]],
+                 lessons_for: tuple[list[dict], list[str]] = ([], [])) -> str:
     loc = finding.get("location") or {}
     L = [f"# Finding {finding['key']}", "",
          "Everything below in a fenced block was written by the investigator or by the "
@@ -237,7 +239,11 @@ def render_brief(finding: dict, others: list[dict], deps_index: dict | None,
             L.append(f"- `{p['id']}`: not available ({p.get('reason')}){mark}")
     if not packages:
         L.append("None available for this repository.")
-    L += ["", "## Other findings in this scan (the investigators')", ""]
+    L.append("")
+    kept = lessons.skeptic_section(*lessons_for)
+    if kept:
+        L.append(kept)
+    L += ["## Other findings in this scan (the investigators')", ""]
     for o in others:
         ol = o.get("location") or {}
         L += _block(f"{o['key']} at {ol.get('file')}" + (f":{ol['lines']}" if ol.get("lines") else ""),
@@ -276,10 +282,15 @@ def prepare(repo: Path, model: str, frozen: Path | None = None) -> dict:
             continue
         f = item["finding"]
         others = [o["finding"] for o in items if o["finding"]["key"] != f["key"]]
-        body = render_brief(f, others, index, commit_messages(repo, f))
+        # the lessons the finding's hotspot was briefed with (#106); a frozen run
+        # belongs to another scan's hotspots and gets none
+        shown, left_out = ([], []) if frozen else lessons.for_hotspot(hotspots, e["hotspot_id"])
+        body = render_brief(f, others, index, commit_messages(repo, f), (shown, left_out))
         rel = f"{c.OUTPUT_DIRNAME}/{c.CHECKS_DIRNAME}/briefs/{f['key']}.md"
         (repo / rel).write_text(body, encoding="utf-8")
         e.update(brief=rel, brief_hash=c.sha256_text(body))
+        if shown or left_out:
+            e["lessons"] = {"shown": [l["id"] for l in shown], "left_out": left_out}
     plan = {"schema": PLAN_SCHEMA, "generated_at": hotspots["generated_at"],
             "head": hotspots["repo"]["head"], "model": model,
             "frozen": str(frozen) if frozen else None, "findings": entries}

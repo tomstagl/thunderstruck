@@ -456,3 +456,19 @@ def test_no_reproduction_no_line(page, scanned_copy, plugin_root):
     p = page(_report(scanned_copy, plugin_root))
     p.page.keyboard.press("j")
     assert "Reproduction — " not in p.page.text_content("#doc")
+
+
+def test_the_overview_says_how_many_lessons_applied(page, scanned_copy, plugin_root):
+    """#106: the overview carries the same line report.md does. Skips without Playwright; CI runs it."""
+    report = _report(scanned_copy, plugin_root)
+    report["lessons"] = {"file": ".thunderstruck-lessons.toml", "status": "loaded", "accepted": 3, "skipped": 1,
+                         "applied_lessons": 2, "applied_hotspots": 4, "left_out_lessons": 0, "by_hotspot": {}}
+    p = page(report)
+    assert ("Lessons (.thunderstruck-lessons.toml): 2 lessons applied to 4 hotspots · "
+            "1 skipped, listed under Run warnings") in p.page.text_content("#doc")
+    assert p.errors == [] and p.requests == [p.url]
+    report["lessons"] = {"file": ".thunderstruck-lessons.toml", "status": "not_loaded", "accepted": 0,
+                         "skipped": 0, "applied_lessons": 0, "applied_hotspots": 0, "left_out_lessons": 0,
+                         "by_hotspot": {}}
+    assert ("Lessons (.thunderstruck-lessons.toml): none applied, the file was not read; see Run warnings."
+            in page(report).page.text_content("#doc"))
