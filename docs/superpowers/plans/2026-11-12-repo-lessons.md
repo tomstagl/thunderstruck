@@ -55,7 +55,7 @@ Every task's code and tests were applied, in this order, on a `main` with #105 b
 
 This ticket depends on #105 (`Depends on: #105` in the ticket): it is built on a `main` where #105 has merged. #105 raises `VALIDATION_RULES` to 5 and this plan raises it to 6; it also edits files this plan edits (`scripts/bundle.py`, `scripts/verify.py`, `scripts/report.py`, `templates/report.html`, `scripts/validate.py`, the two agent prompts, `CLAUDE.md`, the README). So it first checks that #105 has landed, then that every text it replaces is still on `main`.
 
-- [ ] **Step 1: Check that #105 has landed.**
+- [x] **Step 1: Check that #105 has landed.**
 
 ```bash
 git fetch -q origin
@@ -66,7 +66,7 @@ git show origin/main:catalog/stability.yaml | grep -q 'fix_touches' && echo "ok 
 
 Expected: every line `ok`.
 
-- [ ] **Step 2: Check the anchors.**
+- [x] **Step 2: Check the anchors.**
 
 ```bash
 python3 - <<'EOF'
@@ -142,9 +142,9 @@ git cat-file -e origin/main:docs/calibration/correctness/celery/scan/report.json
 
 Expected: every line `ok`.
 
-- [ ] **Step 3: Stop if anything is missing.** A `MISSING` line from Step 1 ends the run before Task 1: replace `agent:in-progress` with `agent:blocked` on #106, comment "Blocked at Task 0: #105 is not merged (<the missing lines>)", open no PR. The picker already waits for #105 to close; this catches a #105 that closed without merging. A `MISSING` anchor from Step 2 is a text this plan replaces that has moved, an amendable gap (the plan's wording conflicts with `main`): follow the skill's amendment path, with the commit on `main` that moved it, not a guess at the new text.
+- [x] **Step 3: Stop if anything is missing.** A `MISSING` line from Step 1 ends the run before Task 1: replace `agent:in-progress` with `agent:blocked` on #106, comment "Blocked at Task 0: #105 is not merged (<the missing lines>)", open no PR. The picker already waits for #105 to close; this catches a #105 that closed without merging. A `MISSING` anchor from Step 2 is a text this plan replaces that has moved, an amendable gap (the plan's wording conflicts with `main`): follow the skill's amendment path, with the commit on `main` that moved it, not a guess at the new text.
 
-- [ ] **Step 4: Record the baseline.** AC-1 says a repository without a lessons file gets the bundles and briefs it gets today. That is shown against the code before this change, once, not pinned in a test (a permanent golden would break whenever another change alters bundles). Create `$S/baseline.py`:
+- [x] **Step 4: Record the baseline.** AC-1 says a repository without a lessons file gets the bundles and briefs it gets today. That is shown against the code before this change, once, not pinned in a test (a permanent golden would break whenever another change alters bundles). Create `$S/baseline.py`:
 
 ```python
 """Hash every bundle, skeptic brief and plan entry the pipeline writes over the sample fixture.
@@ -207,7 +207,7 @@ No commit: this task changes nothing in the repository.
 **Interfaces:**
 - Produces: `c.LESSONS_FILENAME`; in `lessons`: `NAME`, `EVERY`, `MAX_FILE_BYTES`, `MAX_ENTRIES`, `MAX_APPLIES_TO`, `TEXT_CAPS`, `ENTRY_KEYS`, `ID_RE`; `check_entry(raw, catalog) -> (lesson | None, problems)`; `load(repo, catalog) -> (block | None, warnings)` where `block` is `{file, status, accepted, skipped}`.
 
-- [ ] **Step 1: Write the failing tests.** Create `tests/test_lessons.py`:
+- [x] **Step 1: Write the failing tests.** Create `tests/test_lessons.py`:
 
 ```python
 """#106: lessons a repository keeps reach every later briefing: the file and its
@@ -450,7 +450,7 @@ def test_a_fifo_swapped_in_after_the_check_cannot_hang_the_scan(tmp_path):
     assert proc.stdout.strip() == "(None, 'is not a regular file in the working tree')"
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -458,7 +458,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: FAIL. Collection fails: `ModuleNotFoundError: No module named 'lessons'`.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 In `scripts/_common.py`, replace
 
@@ -687,7 +687,7 @@ def load(repo: Path, catalog: dict) -> tuple[dict | None, list[str]]:
     return block, warnings
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass, then the neighbours, then the full suite**
+- [x] **Step 4: Run the tests to verify they pass, then the neighbours, then the full suite**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -697,7 +697,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: PASS, then `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/_common.py scripts/lessons.py tests/test_lessons.py
