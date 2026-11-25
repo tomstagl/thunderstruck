@@ -570,3 +570,213 @@ def observe_text(text: str, lang: str, rel: str, rules: dict,
     ex.observations.sort(key=lambda o: (o["line"], o["kind"], o["value"]))
     return ex
 
+
+# --------------------------------------------------------------------------
+# the [observed] profile table (§4)
+# --------------------------------------------------------------------------
+
+DEFAULT_OWN_HOSTS_ANNOTATION = "thunderstruck.io/own-hosts"
+_MAP_KEYS = {"hosts": "host", "env": "env", "secrets": "secret"}
+_ANNOTATION_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9./_-]{0,252}\Z")
+
+
+def _valid_value(kind: str, value: Any, wildcard: bool = False) -> str | None:
+    if not isinstance(value, str):
+        return None
+    if kind == "host":
+        host = value.strip().lower().rstrip(".")
+        bare = host[2:] if wildcard and host.startswith("*.") else host
+        return host if len(bare) <= MAX_HOST_LEN and HOST_RE.match(bare) else None
+    if kind == "env":
+        return value if ENV_RE.match(value) else None
+    return value if SECRET_RE.match(value) else None
+
+
+def load_config(profile: dict) -> tuple[dict, list[str]]:
+    """The `[observed]` table, validated like `[[suppress]]`: an invalid entry is
+    dropped with one warning naming it, and the rest still runs."""
+    from context_extract import ENTITY_REF
+
+    section = profile.get("observed") if isinstance(profile, dict) else None
+    section = section if isinstance(section, dict) else {}
+    warnings: list[str] = []
+    cfg: dict[str, Any] = {"own_hosts_annotation": DEFAULT_OWN_HOSTS_ANNOTATION,
+                           "map": [], "ignore": []}
+    if "own_hosts_annotation" in section:
+        value = section["own_hosts_annotation"]
+        if isinstance(value, str) and _ANNOTATION_KEY.match(value):
+            cfg["own_hosts_annotation"] = value
+        else:
+            warnings.append("[observed] own_hosts_annotation must be an annotation key; "
+                            f"using {DEFAULT_OWN_HOSTS_ANNOTATION}")
+    seen: set[tuple[str, str]] = set()
+    raw_map = section.get("map", [])
+    for i, entry in enumerate(raw_map if isinstance(raw_map, list) else [], 1):
+        where = f"[[observed.map]] entry {i}"
+        problem = None
+        values: dict[str, list[str]] = {"host": [], "env": [], "secret": []}
+        if not isinstance(entry, dict):
+            problem = "must be a table"
+        elif not isinstance(entry.get("entity"), str) or not ENTITY_REF.match(entry["entity"]):
+            problem = "entity must look like kind:namespace/name"
+        elif set(entry) - {"entity", *_MAP_KEYS}:
+            problem = f"accepts only entity, {', '.join(_MAP_KEYS)}"
+        else:
+            for key, kind in _MAP_KEYS.items():
+                raw = entry.get(key, [])
+                if not isinstance(raw, list):
+                    problem = f"{key} must be a list"
+                    break
+                for value in raw:
+                    good = _valid_value(kind, value)
+                    if good is None:
+                        problem = f"{key} holds a value that is not a valid {kind}"
+                        break
+                    if (kind, good) in seen:
+                        problem = f"{key} repeats a value another map entry names"
+                        break
+                    values[kind].append(good)
+                if problem:
+                    break
+            if not problem and not any(values.values()):
+                problem = "names no hosts, env or secrets"
+        if problem:
+            warnings.append(f"{where} ignored: {problem}")
+            continue
+        seen |= {(k, v) for k, vs in values.items() for v in vs}
+        cfg["map"].append({"entity": entry["entity"],
+                           **{k: sorted(set(v)) for k, v in values.items()}})
+    raw_ignore = section.get("ignore", [])
+    for i, entry in enumerate(raw_ignore if isinstance(raw_ignore, list) else [], 1):
+        where = f"[[observed.ignore]] entry {i}"
+        kinds = [k for k in KINDS if isinstance(entry, dict) and k in entry]
+        problem = None
+        if not isinstance(entry, dict):
+            problem = "must be a table"
+        elif len(kinds) != 1:
+            problem = "must name exactly one of host, env, secret"
+        elif set(entry) - {kinds[0], "reason"}:
+            problem = f"accepts only {kinds[0]} and reason"
+        elif not isinstance(entry.get("reason"), str) or not entry["reason"].strip():
+            problem = "needs a non-empty reason"
+        if problem is None:
+            value = _valid_value(kinds[0], entry[kinds[0]], wildcard=kinds[0] == "host")
+            if value is None:
+                problem = f"{kinds[0]} is not a valid {kinds[0]}"
+        if problem:
+            warnings.append(f"{where} ignored: {problem}")
+            continue
+        cfg["ignore"].append({"kind": kinds[0], "value": value,
+                              "reason": " ".join(entry["reason"].split())})
+    return cfg, warnings
+
+
+def map_hash(cfg: dict) -> str:
+    return c.sha256_text(_canonical({"map": cfg["map"], "ignore": cfg["ignore"]}))
+
+
+def _canonical(value: Any) -> str:
+    import json
+
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+# --------------------------------------------------------------------------
+# matching (§3)
+# --------------------------------------------------------------------------
+
+
+def match_name(kind: str, value: str, rules: dict) -> str | None:
+    """The name §3 rule 3 compares with a neighbour's, or None (a generic first label)."""
+    if kind == "host":
+        label = value.split(".", 1)[0]
+        return None if label in rules["generic_first_labels"] else label
+    if kind == "env":
+        for suffix in sorted(rules["config_env_suffixes"], key=len, reverse=True):
+            if value.endswith(suffix) and len(value) > len(suffix):
+                value = value[:-len(suffix)]
+                break
+        return value.lower().replace("_", "-")
+    return value.rsplit("/", 1)[-1].lower()
+
+
+def _ignore_rule(kind: str, value: str, cfg: dict) -> dict | None:
+    for rule in cfg["ignore"]:
+        if rule["kind"] != kind:
+            continue
+        pattern = rule["value"]
+        if pattern == value or (kind == "host" and pattern.startswith("*.")
+                                and value.endswith(pattern[1:])):
+            return rule
+    return None
+
+
+def _rule_name(rule: dict) -> str:
+    return f"{rule['kind']} {rule['value']}"
+
+
+def resolve(observations: list[dict], edges: list[dict], cfg: dict, rules: dict) -> dict:
+    """Resolve each distinct (kind, value) once, then classify the documented
+    outbound edges no observation reached (§3). Sorted per §5."""
+    counts: dict[tuple[str, str], int] = {}
+    for o in observations:
+        key = (o["kind"], o["value"])
+        counts[key] = counts.get(key, 0) + 1
+    mapped = {(kind, v): entry["entity"] for entry in cfg["map"]
+              for kind in KINDS for v in entry[kind]}
+    map_entities = {entry["entity"] for entry in cfg["map"]}
+    outbound: dict[str, list[str]] = {}
+    inbound: dict[str, list[str]] = {}
+    for e in edges:
+        (outbound if e["direction"] == "outbound" else inbound) \
+            .setdefault(e["neighbour"], []).append(e["ref"])
+    by_name: dict[str, set[str]] = {}
+    for entity in set(outbound) | set(inbound):
+        by_name.setdefault(entity.rsplit("/", 1)[-1].lower(), set()).add(entity)
+
+    hits = {_rule_name(r): 0 for r in cfg["ignore"]}
+    resolutions: list[dict] = []
+    reached: set[str] = set()
+    candidates: set[str] = set()
+    for (kind, value), n in sorted(counts.items()):
+        res: dict[str, Any] = {"kind": kind, "value": value, "resolution": "unmatched",
+                               "entity": None, "edge": None, "via": None, "occurrences": n}
+        rule = _ignore_rule(kind, value, cfg)
+        entity = via = None
+        if rule is not None:
+            hits[_rule_name(rule)] += n
+            res.update(resolution="ignored", rule=_rule_name(rule), reason=rule["reason"])
+        elif (kind, value) in mapped:
+            entity, via = mapped[(kind, value)], "map"
+        else:
+            name = match_name(kind, value, rules)
+            found = sorted(by_name.get(name, ())) if name else []
+            if len(found) == 1:
+                entity, via = found[0], "name"
+            elif len(found) > 1:
+                refs = sorted(r for ent in found
+                              for r in outbound.get(ent, []) + inbound.get(ent, []))
+                candidates |= set(refs)
+                res.update(resolution="ambiguous", candidates=refs)
+        if entity is not None:
+            res.update(entity=entity, via=via)
+            if entity in outbound:
+                res.update(resolution="documented", edge=sorted(outbound[entity])[0])
+                reached |= set(outbound[entity])
+            elif entity in inbound:
+                res.update(resolution="dependent_only", edge=sorted(inbound[entity])[0])
+            else:
+                res["resolution"] = "mapped_undocumented"
+        resolutions.append(res)
+
+    not_observed: list[str] = []
+    no_mapping: list[str] = []
+    for entity, refs in outbound.items():
+        for r in refs:
+            if r in reached or r in candidates:
+                continue
+            (not_observed if entity in map_entities else no_mapping).append(r)
+    ignored = sorted(({"rule": _rule_name(r), "reason": r["reason"], "hits": hits[_rule_name(r)]}
+                      for r in cfg["ignore"]), key=lambda x: x["rule"])
+    return {"resolutions": resolutions, "not_observed": sorted(not_observed),
+            "no_mapping": sorted(no_mapping), "ignored": ignored}
