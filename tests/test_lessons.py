@@ -759,3 +759,79 @@ def test_a_verdict_saved_for_another_lesson_text_is_stale(validated_repo, valida
     _prepare(validated_repo, validated_env)
     assert _apply(validated_repo, validated_env)[target["key"]]["reason"] == \
         "The only verdict on disk was for an earlier version of this finding."
+
+
+# --- Task 6 -----------------------------------------------------------------
+from test_validate_paths import _doc, _git, _validator, repo  # noqa: E402,F401
+
+
+def with_lessons_file(repo: Path) -> Path:
+    write_lessons(repo, lesson("L-001", ["all"]))
+    _git(repo, "add", NAME)
+    _git(repo, "commit", "-qm", "lessons")
+    return repo
+
+
+@pytest.mark.parametrize("ref", [f"{NAME}:3", f"./{NAME}:3", f"{NAME}:1-4"])
+def test_a_code_ref_to_the_lessons_file_is_rejected(repo, ref):  # noqa: F811
+    errors = _validator(with_lessons_file(repo)).check_document(_doc("src/a.ts", code_ref=ref))
+    about = [e for e in errors if "is the repository's lessons file" in e]
+    assert len(about) == 1, errors
+    assert "a lesson is a hint, never evidence" in about[0] and NAME in about[0]
+
+
+def test_the_lessons_file_is_neither_a_location_nor_a_precondition_ref(repo):  # noqa: F811
+    v = _validator(with_lessons_file(repo))
+    assert any("is the repository's lessons file" in e for e in v.check_document(_doc(NAME, lines="1")))
+    doc = _doc("src/a.ts")
+    doc["findings"][0]["preconditions"] = [{
+        "setting": "S", "default": "1", "default_ref": f"{NAME}:2", "needs": "default",
+        "documented": "yes", "doc_ref": f"{NAME}:3"}]
+    about = [e for e in v.check_document(doc) if "is the repository's lessons file" in e]
+    assert {e.split(" ", 1)[0].split(".")[-1] for e in about} == {"default_ref", "doc_ref"}, about
+    assert len(about) == 2
+
+
+def test_a_verdict_cannot_cite_the_lessons_file(repo):  # noqa: F811
+    v = _validator(with_lessons_file(repo))
+    errors: list[str] = []
+    assert v.check_verdict_evidence({"type": "code", "ref": f"{NAME}:2", "note": "n"},
+                                    "evidence[0]", errors, ["src/a.ts"]) is None
+    assert len(errors) == 1 and "is the repository's lessons file" in errors[0]
+
+
+def test_an_ordinary_file_is_still_citable_beside_a_lessons_file(repo):  # noqa: F811
+    assert _validator(with_lessons_file(repo)).check_document(_doc("src/a.ts", code_ref="src/a.ts:3")) == []
+
+
+def test_a_cached_finding_that_cites_the_lessons_file_is_checked_again(repo):  # noqa: F811
+    import bundle
+    v = _validator(with_lessons_file(repo))
+    doc = _doc("src/a.ts", code_ref=f"{NAME}:2")
+    doc["findings"][0]["key"] = "0123456789ab"
+    doc["validated_with"] = c.VALIDATION_RULES - 1
+    assert bundle._validated_under_older_rules(doc)
+    assert bundle._still_valid(v, doc) is False
+    ordinary = _doc("src/a.ts")
+    ordinary["findings"][0]["key"] = "0123456789ab"
+    assert bundle._still_valid(v, ordinary) is True
+
+
+def test_a_finding_that_cites_no_lesson_validates_as_before(scanned_copy, plugin_root):
+    """Detector leads and code, as always: a lessons file in the repository changes nothing else."""
+    write_lessons(scanned_copy, lesson("L-ANY", ["all"]))
+    from test_pipeline import _hotspots, _valid_finding, _validate, _write_finding
+    hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
+    _write_finding(scanned_copy, hid, doc)
+    assert _validate(scanned_copy, plugin_root).returncode == 0
+
+
+def test_the_lessons_file_is_refused_whatever_the_case_of_its_name(repo):  # noqa: F811
+    """On a case-insensitive filesystem the loader reads `.Thunderstruck-Lessons.toml` as the lessons
+    file, so the validator must not let a differently cased spelling be cited."""
+    other = ".Thunderstruck-Lessons.toml"
+    (repo / other).write_text(toml_of(lesson("L-001", ["all"])), encoding="utf-8")
+    _git(repo, "add", other)
+    _git(repo, "commit", "-qm", "lessons, cased")
+    errors = _validator(repo).check_document(_doc("src/a.ts", code_ref=f"{other}:2"))
+    assert [e for e in errors if "is the repository's lessons file" in e], errors

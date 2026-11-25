@@ -1748,7 +1748,7 @@ git commit -m "Lessons: the applicable lessons in the skeptic's brief (#106)"
 **Interfaces:**
 - Produces: a `Validator._resolve` rejection of `c.LESSONS_FILENAME`; `VALIDATION_RULES` one higher.
 
-- [ ] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
+- [x] **Step 1: Write the failing tests.** Append to `tests/test_lessons.py`:
 
 ```python
 # --- Task 6 -----------------------------------------------------------------
@@ -1827,7 +1827,7 @@ def test_the_lessons_file_is_refused_whatever_the_case_of_its_name(repo):  # noq
     assert [e for e in errors if "is the repository's lessons file" in e], errors
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -1835,7 +1835,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: FAIL. Seven tests fail: the file's refs resolve like any tracked file's, in any casing.
 
-- [ ] **Step 3: Write the implementation.**
+- [x] **Step 3: Write the implementation.**
 
 In `scripts/validate.py` (in `Validator._resolve`), replace
 
@@ -1858,7 +1858,7 @@ with
 
 Raise `VALIDATION_RULES` by one. Read its value first: `grep -n '^VALIDATION_RULES' scripts/_common.py` prints `VALIDATION_RULES = N` (5 once #105 has merged, so the new value is 6); set it to `N + 1` and call that number `V` below. Then list the tests that pin the number with `grep -rn 'VALIDATION_RULES ==' tests/` and change each assertion's `N` to `V`. With #105 merged there are two, and both are committed with this task: `tests/test_checked_confidence.py::test_validation_writes_check_and_history` (`assert saved["validated_with"] == c.VALIDATION_RULES == N`) and `tests/test_fix_impact.py::test_findings_validated_under_rules_4_are_investigated_again` (`assert c.VALIDATION_RULES == N`). Leave every `validated_with = <older number>` alone: those mean "older than now". The pins change on purpose: they name the rules version. If the grep lists a file other than these two, change and commit it too.
 
-- [ ] **Step 4: Run the tests to verify they pass, then the neighbours, then the full suite**
+- [x] **Step 4: Run the tests to verify they pass, then the neighbours, then the full suite**
 
 ```bash
 uv run --with pytest --with pyyaml --with lizard --with packaging --with markdown-it-py==4.2.0 --with linkify-it-py==2.2.0 --with cmarkgfm==2025.10.22 pytest tests/test_lessons.py -q
@@ -1868,7 +1868,7 @@ uv run --with pytest --with pyyaml --with lizard --with packaging --with markdow
 
 Expected: PASS, then `exit=0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/_common.py scripts/validate.py tests/test_checked_confidence.py tests/test_fix_impact.py tests/test_lessons.py

@@ -278,7 +278,7 @@ def test_findings_validated_under_rules_4_are_investigated_again(scanned_copy):
     import bundle
     from test_pipeline import _hotspots, _valid_finding
     from validate import Validator
-    assert c.VALIDATION_RULES == 5
+    assert c.VALIDATION_RULES == 6
     hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
     doc["validated_with"] = 4
     assert bundle._validated_under_older_rules(doc | {"findings": [{"key": "k"}]})
