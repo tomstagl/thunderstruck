@@ -1,0 +1,86 @@
+# What a scan observes as an outbound dependency (#6). Read by scripts/observed.py.
+#
+# Spec: docs/superpowers/specs/2026-09-25-observed-dependencies-design.md (§2, §3).
+# Only measured forms ship (§12): every form id below is in the "Measured forms"
+# table of docs/calibration/observed-dependencies.md, and
+# tests/observed/test_measured_forms.py fails otherwise. Adding a form is a data
+# change backed by a calibration run and a positive and a negative sample under
+# tests/observed/samples/.
+#
+# Every pattern runs over comment-blanked text (string contents stay).
+schema: thunderstruck.observed-rules/v2
+
+# forms[language][kind] -> [{id, pattern}]. Kinds: request, response, connect,
+# read, config, mesh. A structural form (one read from a parsed YAML tree) has
+# no pattern. `javascript` uses the typescript forms through the catalog's aliases.
+forms:
+  typescript:
+    request:
+      - id: ts.request.fetchlike
+        pattern: '\b\w*(?:fetch|Fetch|request|Request)\w*\('
+    connect:
+      # Kept only when the argument list matches `requires`: a generated gRPC client.
+      - id: ts.connect.grpc-client
+        pattern: '\bnew\s+\w+Client\('
+        requires: 'ChannelCredentials|credentials\.'
+    read:
+      - id: ts.read.destructure
+        pattern: '\{([^{}]*)\}\s*=\s*process\.env\b'
+  yaml:
+    config:
+      - id: config.env.placeholder
+        pattern: '\$\{([A-Z][A-Z0-9_]{0,63})(?::[^}]*)?\}'
+      - id: config.env.k8s-name
+
+# §2.1 rule 2: a URL with no path still names an API when the literal is the
+# value of such a name, or the argument of `new URL(`. Matched against the 60
+# characters before the literal's opening quote.
+api_name: '(?i)(?:\b\w*(?:api|base|endpoint)\w*\s*[:=]\s*|new\s+URL\(\s*)$'
+
+# §2.2: configuration names an address only through one of these suffixes.
+config_env_suffixes: [_URL, _URI, _HOST, _HOSTNAME, _ENDPOINT, _ADDR, _DSN, _CONNECT, _SERVER]
+
+# §2.1: in YAML and properties a URL counts by its key's last segment.
+config_host_key_words: [url, uri, endpoint, host, base, api]
+
+# §3 rule 3: a first DNS label never compared with a neighbour's name.
+generic_first_labels: [api, www, app, cdn, static]
+
+# §2.3: a call whose name ends in one of these takes a secret's path or name.
+secret_calls: [read_secret_version, read_secret, readSecret, getSecretValue]
+
+# §2.4: never observed (AC-9).
+exclude_hosts:
+  exact:
+    - localhost
+    - 0.0.0.0
+    - example.com
+    - example.org
+    - example.net
+    # identifier hosts: they name a schema or a namespace, not a server
+    - www.w3.org
+    - json-schema.org
+    - schemas.xmlsoap.org
+    - schemas.microsoft.com
+    - xmlns.com
+    - purl.org
+    - maven.apache.org
+    - www.apache.org
+    - schemas.android.com
+    # documentation hosts: code links to them, it doesn't call them
+    - github.com
+    - gitlab.com
+    - developer.mozilla.org
+    - stackoverflow.com
+  suffix:
+    - .localhost
+    - .example.com
+    - .example.org
+    - .example.net
+    - .example
+    - .test
+    - .invalid
+    - .readthedocs.io
+  prefix:
+    - docs.
+  ipv4_loopback: true
