@@ -112,6 +112,49 @@ worth internalising:
 Complexity comes from `lizard`, which already covers most mainstream
 languages, so you usually get the complexity axis for free.
 
+Once a pattern means something different on one stack (a blocking call is
+correct in a servlet controller and starves a WebFlux event loop), that idiom
+belongs in a plane rubric, not in a longer detector note.
+
+## Adding a plane
+
+A plane is stack-specific guidance on what counts as protection for each Tier
+A and B pattern. A script selects it from the scanned repository's tracked
+files, never the model, and its text reaches the investigator's bundle and the
+skeptic's brief.
+
+```
+planes/<id>/
+├── plane.yaml   schema, id (= the directory name), title, maturity, languages,
+│                detect rules ({file: <glob>, contains: <text>}), supersedes, cells
+└── rubric.md    ## General, then one ## S<nn> section per pattern it covers
+```
+
+Every Tier A/B pattern is in exactly one of four states for each plane:
+
+- **rubric**: `rubric.md` has a section for it, with a `**Counts as protection.**`
+  and a `**Does not count.**` paragraph (and a `**Baseline.**` where the stack
+  has a correct default). At most 700 characters; `## General` at most 800; no
+  headings or code fences inside a section.
+- **n/a**: `cells: {S02: {na: "<why the failure does not exist here>"}}`.
+- **planned**: `cells: {S03: {planned: "<the known gap>"}}`.
+- **missing**: none of the above. This fails the build.
+
+`maturity: seed` may have `planned` cells. `maturity: calibrated` may not, and
+needs a ledger at `docs/calibration/planes/<id>.md` that names `Repository:`,
+`Commit:` and `n:`. Write only distinctions a design or a calibration run has
+recorded.
+
+The coverage matrix in `skills/stability-catalog/references/planes.md` is
+generated, and CI fails when it is stale:
+
+```bash
+uv run scripts/gen_plane_docs.py          # --check exits 1 if stale
+```
+
+Editing a rubric changes the bundle of every hotspot the plane covers, so those
+hotspots are re-investigated on the next scan.
+
 ## Things that must stay true
 
 These have tests, and the tests are the specification:

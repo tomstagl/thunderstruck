@@ -30,8 +30,9 @@ uv run --with pytest --with pyyaml --with lizard pytest \
 # One detector's samples (ids are <PATTERN>-<language>-<polarity>)
 uv run --with pytest --with pyyaml --with lizard pytest tests/detectors -k "S02-typescript"
 
-# Regenerate the two generated artefacts (both checked in CI)
+# Regenerate the three generated artefacts (all checked in CI)
 uv run scripts/gen_catalog_docs.py          # --check exits 1 if stale
+uv run scripts/gen_plane_docs.py            # the plane coverage matrix (#112); --check exits 1 if stale
 uv run scripts/gen_sample_report.py         # runs the real pipeline over the fixture; --check diffs every sample
 
 # The HTML report in Chromium (Playwright pinned to the pre-installed browser build)
@@ -73,6 +74,7 @@ python3 tests/fixtures/build_fixture.py /tmp/fixture
 ```
 signals.py    deterministic   churn × complexity × (1+weight), coupling, detectors
 lessons.py    deterministic   .thunderstruck-lessons.toml → hotspots.json, called by signals.py; bundle, verify, report read the record
+fracture_planes.py deterministic planes/ → hotspots.json planes, selected by signals.py; bundle and verify embed the guidance (#112)
 context.py    deterministic   runs the approved catalog command → context.json (optional)
 observed.py   deterministic   tracked files + context.json → observed.json (catalog drift, #6)
 bundle.py     deterministic   one token-budgeted briefing per hotspot
@@ -210,6 +212,20 @@ brief (`checks/briefs/<key>.md`) carries the claim and its evidence, never
 `confidence`, `confidence_rationale`, `notes`, `history` or `check`, and no
 volatile value: `apply` tells a stale verdict from this scan's by the plan's
 `brief_hash`.
+
+**Planes are plugin content, chosen by a script.** A plane (`planes/<id>/`,
+#112) is the maintainers' text on what counts as protection on one stack.
+`fracture_planes.select`, called by `signals.py`, picks it from the scanned
+repository's tracked files, never the model, and `hotspots.json` records it with
+its `rubric_hash`. `bundle.py` and `verify.py` embed it in the bundle and the
+skeptic's brief, so both hashes cover it: editing a rubric re-investigates and
+re-checks what it touches, and a plane edited after `signals.py` ran is left out
+with a warning. A bundle or brief with no active plane is byte-identical to one
+written before planes, so its cached finding and settled verdict stand. Plane
+guidance is not repository content and not evidence: a finding still needs
+`code` evidence, and nothing cites a rubric. `fracture_planes.py` is imported by
+the pipeline only; the guardrail never imports it. The word *profile* means
+`.thunderstruck.toml` only, never a plane.
 
 **Lessons are hints, never evidence.** `.thunderstruck-lessons.toml` (repo root, committed) is
 read once, by `signals.py` through `lessons.scan`, and recorded in `hotspots.json` under
@@ -363,6 +379,7 @@ exercised.
 ## Generated files — never hand-edit
 
 - `skills/stability-catalog/references/patterns.md` ← `gen_catalog_docs.py`
+- `skills/stability-catalog/references/planes.md` ← `gen_plane_docs.py` (the plane coverage matrix)
 - `examples/sample-report.md` and `examples/sample-report.html` ← `gen_sample_report.py`
 - `examples/sample-ticket.md` ← `gen_sample_report.py` (the ticket for the first sample finding)
 
