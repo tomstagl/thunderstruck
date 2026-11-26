@@ -1064,6 +1064,24 @@ def test_apply_records_the_guidance_hash_and_the_verdict_is_then_reused(
     assert _by_file(verify.prepare(validated_repo, "sonnet"), "labels.ts")["action"] == "reuse"
 
 
+def test_a_duplicate_key_records_the_checked_entrys_guidance_hash(validated_repo, tmp_path, monkeypatch):
+    _activate(validated_repo, tmp_path, monkeypatch)
+    entry = _by_file(verify.prepare(validated_repo, "sonnet"), "labels.ts")
+    path = validated_repo / CHECKS / "plan.json"
+    plan = c.load_json(path)
+    plan["findings"].append(dict(entry, action="skip", brief=None, brief_hash=None,
+                                 guidance_hash="sha256:the-skipped-twin", reason="same key"))
+    c.write_json(path, plan)
+    result = tmp_path / "verdict.json"
+    result.write_text(json.dumps({"key": entry["key"], "verdict": "upheld", "reason": "r", "holds": None,
+                                  "refuted_claims": [], "evidence": [], "dependencies_read": [],
+                                  "duplicate_of": None}))
+    assert verify.main(["save", "--repo", str(validated_repo), "--key", entry["key"],
+                        "--from", str(result)]) == 0
+    verify.apply(validated_repo)
+    ledger = c.load_json(validated_repo / CHECKS / "ledger.json")["entries"]
+    assert ledger[entry["key"]]["guidance_hash"] == entry["guidance_hash"]
+
 def test_a_plan_warning_reaches_run_json(validated_repo, tmp_path, monkeypatch):
     planes = _write_planes_dir(tmp_path, monkeypatch, ("ts", "typescript"))
     _set_recorded(validated_repo, [dict(_record(planes["ts"])[0], rubric_hash="sha256:old")])

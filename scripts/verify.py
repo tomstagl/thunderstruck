@@ -834,7 +834,9 @@ def apply(repo: Path) -> dict:
         ledger, ledger_warning = {}, "checks/ledger.json could not be read; every finding was checked."
     checks: dict[str, dict] = {}
     empty = c.sha256_text("")
-    guidance_hashes = {e["key"]: e.get("guidance_hash", empty) for e in plan["findings"]}
+    guidance_hashes: dict[str, str] = {}
+    for e in plan["findings"]:  # the first entry of a key is the one checked; a skip is its twin
+        guidance_hashes.setdefault(e["key"], e.get("guidance_hash", empty))
     for entry in plan["findings"]:
         item = by_key.get(entry["key"])
         if item is None:
