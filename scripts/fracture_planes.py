@@ -18,8 +18,10 @@ Stdlib and _common only; pyyaml is imported inside the loader, as
 from __future__ import annotations
 
 import re
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable, Iterable, Sequence
 
 import _common as c
 
@@ -347,3 +349,266 @@ def check_planes(planes: dict[str, Plane], catalog: dict, repo_root: Path | None
                 problems.append(f"planes/{pid}: calibrated, but docs/calibration/planes/{pid}.md is "
                                 f"missing or does not name Repository:, Commit: and n:")
     return problems
+
+
+# --------------------------------------------------------------------------
+# selection (spec §3)
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Selected:
+    plane_id: str
+    matched_by: str
+    rubric_hash: str
+
+
+def glob_to_regex(pattern: str) -> re.Pattern[str]:
+    """`*` within a path segment, `**/` across zero or more directories, the rest literal."""
+    out, i = [], 0
+    while i < len(pattern):
+        if pattern.startswith("**/", i):
+            out.append(r"(?:[^/]+/)*")
+            i += 3
+        elif pattern[i] == "*":
+            out.append(r"[^/]*")
+            i += 1
+        else:
+            out.append(re.escape(pattern[i]))
+            i += 1
+    return re.compile("".join(out))
+
+
+def head_reader(repo: Path) -> Callable[[str], str | None]:
+    """Read the first MAX_READ_BYTES of a tracked file, or None.
+
+    Undecodable bytes are replaced. A path git surrogate-escaped can raise
+    UnicodeEncodeError (a ValueError) or FileNotFoundError: both are None.
+    """
+    def read(rel: str) -> str | None:
+        try:
+            with open(Path(repo) / rel, "rb") as fh:
+                return fh.read(MAX_READ_BYTES).decode("utf-8", errors="replace")
+        except (OSError, ValueError):
+            return None
+    return read
+
+
+def _depth_order(path: str) -> tuple[int, str]:
+    return path.count("/"), path
+
+
+def _match(plane: Plane, paths: list[str], read: Callable[[str], str | None],
+           usable: Callable[[str], bool]) -> tuple[str | None, list[str]]:
+    """The first path that matches one of the plane's rules, and warnings."""
+    warnings: list[str] = []
+    for rule in plane.detect:
+        rx = glob_to_regex(rule.file)
+        candidates = sorted((p for p in paths if rx.fullmatch(p)), key=_depth_order)
+        candidates = [p for p in candidates if usable(p)]
+        for path in candidates[:MAX_RULE_FILES]:
+            if rule.contains is None:
+                return path, warnings
+            head = read(path)
+            if head is not None and rule.contains in head:
+                return path, warnings
+        if len(candidates) > MAX_RULE_FILES:
+            warnings.append(f"plane {plane.id}: rule {rule.file} had {len(candidates)} "
+                            f"candidates, examined {MAX_RULE_FILES}")
+    return None, warnings
+
+
+def select(index: Iterable[str], read: Callable[[str], str | None], planes: dict[str, Plane],
+           usable: Callable[[str], bool] = lambda p: True) -> tuple[list[Selected], list[str]]:
+    """The active planes, sorted by id, with the first path that matched each.
+
+    A pure function of the paths, what `read` returns for them and the
+    planes: index order never matters. `usable` is asked only about paths a
+    rule's glob already matched. A plane another active plane supersedes is
+    dropped.
+    """
+    paths = sorted(set(index))
+    active: dict[str, str] = {}
+    warnings: list[str] = []
+    for pid in sorted(planes):
+        matched, rule_warnings = _match(planes[pid], paths, read, usable)
+        warnings += rule_warnings
+        if matched is not None:
+            active[pid] = matched
+    superseded = {s for pid in active for s in planes[pid].supersedes}
+    selected = [Selected(pid, path, planes[pid].rubric_hash)
+                for pid, path in sorted(active.items()) if pid not in superseded]
+    return selected, warnings
+
+
+# --------------------------------------------------------------------------
+# guidance in bundles and briefs (spec §4)
+# --------------------------------------------------------------------------
+
+RUBRIC_DIRNAME = "planes"
+PREFACE = ("The plugin maintainers' text on what counts as protection on this stack, "
+           "selected from this repository's tracked files. It is not repository content "
+           "and not evidence: a finding still rests on code it cites.")
+
+
+def rubric_path(plane_id: str) -> str:
+    """Where the full rubric is written for the agents, relative to the repository."""
+    return f"{c.OUTPUT_DIRNAME}/{RUBRIC_DIRNAME}/{plane_id}.md"
+
+
+def covers(plane: Plane, language: str | None, catalog: dict) -> bool:
+    """Does the plane apply to files in `language`? Both sides through detector_language."""
+    if not language:
+        return False
+    lang = c.detector_language(catalog, language)
+    return lang in {c.detector_language(catalog, l) for l in plane.languages}
+
+
+def resolve_active(loaded: dict[str, Plane], recorded: Sequence) -> tuple[list[str], list[str]]:
+    """The recorded planes that still load with the recorded rubric_hash, and warnings.
+
+    The one place a stale plane is skipped: bundle.py and verify.py embed
+    only what signals.py selected, never text edited since.
+    """
+    ids: list[str] = []
+    warnings: list[str] = []
+    entries = [e for e in recorded or [] if isinstance(e, dict) and isinstance(e.get("id"), str)]
+    for entry in sorted(entries, key=lambda e: e["id"]):
+        pid = entry["id"]
+        plane = loaded.get(pid)
+        if plane is None:
+            warnings.append(f"plane {pid} is recorded in hotspots.json but does not load; "
+                            f"its guidance is left out.")
+        elif plane.rubric_hash != entry.get("rubric_hash"):
+            warnings.append(f"plane {pid} changed after signals.py ran (recorded "
+                            f"{entry.get('rubric_hash')}, now {plane.rubric_hash}); its "
+                            f"guidance is left out. Re-run signals.py.")
+        else:
+            ids.append(pid)
+    return ids, warnings
+
+
+@dataclass
+class _Block:
+    plane: Plane
+    general: str
+    sections: list[tuple[str, str]]
+
+
+def _render(blocks: list[_Block], omitted: list[tuple[str, str]]) -> str:
+    L = ["## Plane guidance", "", PREFACE, ""]
+    for b in blocks:
+        L += [f"### {b.plane.id} — {b.plane.title}", "",
+              f"rubric {b.plane.rubric_hash}",
+              f"full rubric: `{rubric_path(b.plane.id)}`", ""]
+        if b.general:
+            L += [b.general, ""]
+        for pid, text in b.sections:
+            L += [f"#### {pid}", "", text, ""]
+    if omitted:
+        by_plane: dict[str, list[str]] = {}
+        for plane_id, name in omitted:
+            by_plane.setdefault(plane_id, []).append(name)
+        groups = []
+        for plane_id in sorted(by_plane):
+            names = sorted(by_plane[plane_id], key=lambda n: (n != "General", n))
+            groups.append(f"{plane_id} {', '.join(names)}")
+        L += ["Omitted to fit the budget: " + "; ".join(groups) + ".", ""]
+    return "\n".join(L)
+
+
+def _fit(blocks: list[_Block], cap_tokens: int) -> tuple[str, bool]:
+    """Drop whole sections, last plane first and highest id first, then General."""
+    blocks = [_Block(b.plane, b.general, list(b.sections)) for b in blocks]
+    omitted: list[tuple[str, str]] = []
+    while True:
+        text = _render(blocks, omitted)
+        if c.estimate_tokens(text) <= cap_tokens:
+            return text, True
+        victim = next((b for b in reversed(blocks) if b.sections or b.general), None)
+        if victim is None:
+            return text, False
+        if victim.sections:
+            omitted.append((victim.plane.id, victim.sections.pop()[0]))
+        else:
+            omitted.append((victim.plane.id, "General"))
+            victim.general = ""
+
+
+def render_guidance(planes: dict[str, Plane], active_ids: Sequence[str], language: str | None,
+                    pattern_ids: Iterable[str], catalog: dict, cap_tokens: int | None = None,
+                    *, include_general: bool) -> tuple[str, list[str]]:
+    """The `## Plane guidance` section and warnings; `""` when nothing applies.
+
+    With `include_general` (the bundle) every active plane that covers the
+    language contributes at least its title, hash and rubric path. Without it
+    (the skeptic's brief) a plane contributes only when it has a section for
+    a requested pattern. `cap_tokens` is met by omitting whole sections, then
+    whole planes from the last, each named in a warning.
+    """
+    wanted = sorted(set(pattern_ids))
+    blocks: list[_Block] = []
+    for pid in sorted(set(active_ids)):
+        plane = planes.get(pid)
+        if plane is None or not covers(plane, language, catalog):
+            continue
+        sections = [(p, plane.rubric[p].text) for p in wanted if p in plane.rubric]
+        general = plane.general if include_general else ""
+        if include_general or sections:
+            blocks.append(_Block(plane, general, sections))
+    if not blocks:
+        return "", []
+    if cap_tokens is None:
+        return _render(blocks, []), []
+    warnings: list[str] = []
+    while blocks:
+        text, fits = _fit(blocks, cap_tokens)
+        if fits:
+            return text, warnings
+        dropped = blocks.pop()
+        warnings.append(f"plane {dropped.plane.id}: guidance does not fit a {cap_tokens}-token "
+                        f"cap and is left out")
+    return "", warnings
+
+
+def guidance(planes: dict[str, Plane], active_ids: Sequence[str], language: str | None,
+             pattern_ids: Iterable[str], catalog: dict, cap_tokens: int | None = None,
+             *, include_general: bool) -> str:
+    """`render_guidance` without its warnings."""
+    return render_guidance(planes, active_ids, language, pattern_ids, catalog, cap_tokens,
+                           include_general=include_general)[0]
+
+
+def full_rubric(plane: Plane) -> str:
+    """The whole rubric as the agents read it from disk. LF, no volatile value."""
+    L = [f"# {plane.id} — {plane.title}", ""]
+    if plane.general:
+        L += ["## General", "", plane.general, ""]
+    for pid in sorted(plane.rubric):
+        L += [f"## {pid}", "", plane.rubric[pid].text, ""]
+    return "\n".join(L)
+
+
+def write_plane_rubrics(dest: Path, loaded: dict[str, Plane], active_ids: Sequence[str]) -> list[Path]:
+    """Replace `<dest>/planes/` with one full rubric per active plane.
+
+    Whatever is there is removed first and never followed: a scanned
+    repository can commit a link named `.thunderstruck/planes`, and the agents
+    read what is under it as the maintainers' text. With no active plane the
+    directory is left absent.
+    """
+    target = Path(dest) / RUBRIC_DIRNAME
+    if target.is_symlink() or (target.exists() and not target.is_dir()):
+        target.unlink()
+    elif c.is_real_dir(target):
+        shutil.rmtree(target)
+    ids = [pid for pid in sorted(set(active_ids)) if pid in loaded]
+    if not ids:
+        return []
+    target.mkdir(parents=True)
+    written = []
+    for pid in ids:
+        path = target / f"{pid}.md"
+        path.write_text(full_rubric(loaded[pid]), encoding="utf-8", newline="\n")
+        written.append(path)
+    return written

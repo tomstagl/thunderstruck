@@ -30,6 +30,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _common as c  # noqa: E402
+import fracture_planes  # noqa: E402
 import lessons  # noqa: E402
 import previous  # noqa: E402
 from detectors import run_detectors  # noqa: E402
@@ -419,6 +420,33 @@ def stability_weight(hits: list, patterns: dict[str, dict],
 # --------------------------------------------------------------------------
 
 
+def plane_usable(repo: Path, rel: str, mode: str, filters: c.Filters) -> bool:
+    """May this tracked path activate a plane? The candidate rule, except `--path`.
+
+    A name that is not UTF-8 cannot be written to hotspots.json as
+    `matched_by`; a link, a submodule or a non-regular file is never opened;
+    an excluded directory (tests, vendored code) never activates a plane. The
+    `--path` restriction does not apply: a repository-root manifest still
+    describes a subdirectory that is scanned on its own.
+    """
+    return (c.is_utf8(rel) and not c.path_problem(rel)
+            and c.tracked_file_problem(repo, rel, mode) is None
+            and filters.exclusion_reason(rel) in (None, "path"))
+
+
+def select_planes(repo: Path, index: dict[str, str],
+                  filters: c.Filters) -> tuple[list[dict], list[str]]:
+    """The planes this repository's tracked files select (#112), and warnings."""
+    loaded, problems = fracture_planes.load_planes()
+    warnings = [f"plane skipped: {problem}" for problem in problems]
+    selected, sel_warnings = fracture_planes.select(
+        index, fracture_planes.head_reader(repo), loaded,
+        usable=lambda p: plane_usable(repo, p, index[p], filters))
+    warnings += sel_warnings
+    return ([{"id": s.plane_id, "matched_by": s.matched_by, "rubric_hash": s.rubric_hash}
+             for s in selected], warnings)
+
+
 def build(args: argparse.Namespace) -> dict[str, Any]:
     repo = c.find_repo_root(args.repo)
     warnings: list[str] = []
@@ -456,6 +484,8 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
     index = c.tracked_index(repo)
     own, own_warnings = c.own_packages(repo, index)
     warnings.extend(own_warnings)
+    planes, plane_warnings = select_planes(repo, index, filters)
+    warnings.extend(plane_warnings)
     candidates: list[str] = []
     not_citable = 0
     for p in per_file:
@@ -602,6 +632,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         "degraded": degraded,
         "warnings": warnings,
         "own_packages": own,
+        "planes": planes,
         "counts": {"files_considered": len(considered), "files_ranked": len(rows),
                    "files_not_citable": not_citable,
                    "hotspots": len(top),

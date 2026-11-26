@@ -12,6 +12,8 @@ All output lives in `.thunderstruck/` in the scanned repository.
 ├── validation.json    thunderstruck.validation/v1 — what passed, what failed and why
 ├── usage.json         thunderstruck.usage/v1 — what the scan consumed, counts only
 ├── catalog-brief.md   the Tier A/B catalog the investigator reads
+├── planes/            the full rubric of each plane this scan selected (#112), for the
+│                      agents to read; absent when no plane was selected
 ├── context.json       thunderstruck.context/v1 — service context used by this scan
 ├── context/raw/       raw catalog responses, kept for audit, never read by bundles
 ├── bundles/           one briefing per hotspot, plus index.json
