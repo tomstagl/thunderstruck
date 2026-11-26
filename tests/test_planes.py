@@ -302,3 +302,46 @@ def test_the_real_planes_pass_the_gate(catalog):
     planes, problems = fp.load_planes()
     assert problems == []
     assert fp.check_planes(planes, catalog) == []
+
+
+# --------------------------------------------------------------------------
+# Task 3: the generated matrix (AC-7)
+# --------------------------------------------------------------------------
+
+
+def _matrix_row(text, plane_id):
+    return next(line for line in text.splitlines() if line.startswith(f"| `{plane_id}` |"))
+
+
+def test_render_marks_each_cell_state_and_detector(loaded):
+    import gen_plane_docs
+
+    text = gen_plane_docs.render({"good": loaded[0]["good"]}, _stub_catalog())
+    cells = [cell.strip() for cell in _matrix_row(text, "good").strip("|").split("|")][1:]
+    # S01 rubric + java detector, S02 n/a (detector only for python),
+    # S03 planned (no detector), S04 undeclared + java detector.
+    assert cells == ["R D", "n/a", "planned", "MISSING D"]
+    assert "no such failure on this example stack" in text
+    assert "not yet written" in text
+    assert "`**/pom.xml` containing `spring-boot`" in text
+
+
+def test_render_with_no_planes_says_so():
+    import gen_plane_docs
+
+    text = gen_plane_docs.render({}, _stub_catalog())
+    assert text.startswith(gen_plane_docs.BANNER)
+    assert "No planes are installed." in text
+    assert "| Plane |" not in text
+
+
+def test_render_is_deterministic_and_has_no_path_or_date(loaded):
+    import re
+
+    import gen_plane_docs
+
+    planes = {k: loaded[0][k] for k in ("good", "hash-b")}
+    first = gen_plane_docs.render(planes, _stub_catalog())
+    assert first == gen_plane_docs.render(dict(reversed(planes.items())), _stub_catalog())
+    assert "/Users" not in first and "/tmp" not in first
+    assert not re.search(r"\b(19|20)\d\d\b", first)
