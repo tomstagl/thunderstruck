@@ -20,7 +20,10 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 
-GENERATED = {ROOT / "skills" / "stability-catalog" / "references" / "patterns.md"}
+GENERATED = {
+    ROOT / "skills" / "stability-catalog" / "references" / "patterns.md",
+    ROOT / "skills" / "stability-catalog" / "references" / "planes.md",
+}
 CONTENT = sorted(
     p for p in [*ROOT.glob("skills/**/*.md"), *ROOT.glob("agents/*.md")]
     if p not in GENERATED

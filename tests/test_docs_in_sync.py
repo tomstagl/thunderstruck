@@ -28,6 +28,15 @@ def test_patterns_reference_is_regenerated(plugin_root):
         "\nRun: uv run scripts/gen_catalog_docs.py")
 
 
+
+def test_plane_matrix_is_regenerated(plugin_root):
+    proc = subprocess.run(
+        [sys.executable, str(plugin_root / "scripts" / "gen_plane_docs.py"), "--check"],
+        capture_output=True, text=True)
+    assert proc.returncode == 0, (
+        proc.stdout + proc.stderr +
+        "\nRun: uv run scripts/gen_plane_docs.py")
+
 def test_sample_report_covers_every_scanned_pattern(catalog):
     sample = (ROOT / "examples" / "sample-report.md").read_text()
     missing = [p["id"] for p in catalog["patterns"] if f"`{p['id']}`" not in sample]

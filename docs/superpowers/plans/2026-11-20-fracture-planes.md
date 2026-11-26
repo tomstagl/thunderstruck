@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-20-fracture-planes-design.md`
 **Ticket:** #112. Tasks name the `AC-n` they satisfy; the criteria are in the parent ticket.
-**Branch:** `feat/112-fracture-planes`, built in an interactive session while #112 carries `agent:in-progress`. Not `agent/112-…`: the nightly picker resumes a draft PR on such a branch (never push to `main`).
+**Branches:** one per subticket, `feat/<subticket>-…` (for example `feat/113-plane-definitions`), built in an interactive session while #112 carries `agent:in-progress`. Not `agent/112-…`: the nightly picker resumes a draft PR on such a branch (never push to `main`).
 
 | Subticket | Tasks |
 |---|---|
@@ -19,7 +19,7 @@
 | #115 — skeptic guidance and reuse | 6–7 |
 | #116 — report, Spring seed and release documentation | 8–10 |
 
-Tasks 0 and 11 belong to #112. These are tracking subtickets, not separate nightly jobs. Use Superpowers red–green–refactor for each slice: run the new focused tests before writing implementation and confirm the red result is for the missing behavior. After each slice, record its focused result, review, commits and next step or blocker in a progress comment on #112. Stay on the implementation branch, fetch and sync `origin/main` at each slice boundary and before Task 11, following the nightly skill's conflict rules. Do not edit the parent issue body while implementing. Subtickets are done on the branch once their changes pass focused tests and are integrated; don't wait for GitHub issue closure to run Task 11.
+Tasks 0 and 11 belong to #112. These subtickets are not separate nightly jobs. Each one is delivered in its own PR, which closes it, and merges before the next subticket starts, in the order of the table. Main stays safe between them: until #116 adds the seed plane no plane is installed, so every bundle, brief and report keeps today's bytes. Use Superpowers red–green–refactor for each slice: run the new focused tests before writing implementation and confirm the red result is for the missing behavior. After each slice merges, record its focused result, review, PR and next step or blocker in a progress comment on #112. Start each subticket's branch from current `origin/main`. Task 11 runs on the #116 PR, which also carries Task 10's version bump, and closes #112.
 
 ## Global Constraints
 
@@ -331,8 +331,8 @@ Input classes the spec implies and no task's happy path exercises, most likely f
 
 **Files:** none.
 
-- [ ] **Step 1:** Confirm all four subtickets passed focused checks and are integrated on the parent implementation branch. Fetch and sync `origin/main`, then run the parent release-gate command (`THUNDERSTRUCK_REQUIRE_RENDERER=1` plus the full test command under Global Constraints), without selectors or ignores. Record the tested SHA, exit code, pass/skip counts and any newly skipped tests against Task 0. Require exit 0 and no newly skipped tests. If the branch changes after this check, rerun the gate on the resulting revision.
+- [ ] **Step 1:** Confirm #113, #114 and #115 are merged and #116's branch holds Tasks 8 to 10. Fetch and sync `origin/main`, then run the parent release-gate command (`THUNDERSTRUCK_REQUIRE_RENDERER=1` plus the full test command under Global Constraints), without selectors or ignores. Record the tested SHA, exit code, pass/skip counts and any newly skipped tests against Task 0. Require exit 0 and no newly skipped tests. If the branch changes after this check, rerun the gate on the resulting revision.
 - [ ] **Step 2:** Run `uv run scripts/gen_catalog_docs.py --check`, `uv run scripts/gen_plane_docs.py --check` and `uv run scripts/gen_sample_report.py --check`. Expected: exit 0 for each. Task 8 already regenerated the samples for the new `planes` key. If a sample is stale now, a plane matched the fixture or a bundle changed: find out which before regenerating again.
 - [ ] **Step 3:** Run `uv run scripts/validate_plugin.py`, then `claude plugin marketplace add "$PWD" && claude plugin install thunderstruck@thunderstruck && claude plugin list`. Expected: `enabled`, not `failed to load`. The local install runs the source checkout and is only a smoke test. Separately, in an isolated Claude configuration, install from a Git-backed marketplace at the implementation revision (not a local-directory marketplace). Verify the install path is not the source checkout, that both committed `java-spring` assets are present there, and that its own loader reads them. If the runtime cannot do this, record the exact missing check for the maintainer; do not count it as passed.
 - [ ] **Step 4:** Scan a real Spring repository with `signals.py` then `bundle.py`. Expected: `hotspots.json["planes"]` names `java-spring`; a Java hotspot's bundle has a `## Plane guidance` section; a second `bundle.py` run leaves every `bundle_hash` in `bundles/index.json` unchanged (compare the two index files; `cached` is only set when investigator findings exist, so it proves nothing here). State the repository, commit and window in the PR.
-- [ ] **Step 5:** As the ticket agent, follow `.claude/skills/implement-ticket` for PR and issue updates; include separate `Closes #113`, `Closes #114`, `Closes #115` and `Closes #116` lines alongside `Closes #112` after the gate passes. Leave the issue body checklist for the maintainer to tick after merge.
+- [ ] **Step 5:** Put the gate's record in the #116 PR, with separate `Closes #116` and `Closes #112` lines, and mark it ready only after the gate passes. Leave the issue body checklist for the maintainer to tick after merge.

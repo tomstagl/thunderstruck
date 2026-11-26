@@ -1,0 +1,11 @@
+schema: thunderstruck.plane/v1
+id: bad-supersedes-cycle-a
+title: Example stack
+maturity: seed
+languages: [java]
+detect:
+  - {file: "**/pom.xml", contains: "spring-boot"}
+supersedes: [bad-supersedes-cycle-b]
+cells:
+  S02: {na: "no such failure on this example stack"}
+  S03: {planned: "not yet written"}
