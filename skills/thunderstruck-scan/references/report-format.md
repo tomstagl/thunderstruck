@@ -52,6 +52,12 @@ history* below).
   `hotspots.json` holds the record behind it under `lessons` (the accepted lessons and
   `applied`, by hotspot id), and an entry of `checks/plan.json` carries `lessons:
   {shown, left_out}` when its finding's hotspot has any.
+- `planes`: `[{id, matched_by}]`, the fracture planes `signals.py` selected (#112),
+  sorted by id, behind the **Planes applied** line under the run header; empty when
+  none. `matched_by` is the first tracked file that matched the plane's rules.
+  `hotspots.json` holds the record under `planes` as `[{id, matched_by,
+  rubric_hash}]`; `bundle.py` and `verify.py` embed a plane only while its rubric
+  still hashes to `rubric_hash`, and otherwise leave it out with a warning.
 - `coverage_rows`: the **Detector leads by pattern** table, in order:
   `{id, name, tier, unconfirmed_files, leads_read, leads_confirmed, findings}`.
   The `OTHER` row, when present, has `null` where `report.md` shows `—`.
@@ -218,6 +224,13 @@ The skeptic returns exactly one JSON object with the top-level keys `key`,
 the four, or a `key` it was not given leaves the finding `unchecked` with the
 reason. A `refuted` or `narrowed` verdict with no resolving evidence is
 `inconclusive`.
+
+`checks/plan.json` carries `warnings` (a plane that failed to load or changed
+after `signals.py` ran, or a `hotspots.json` with no `planes` key), which
+`apply` adds to `run.json`'s `warnings`, and each entry carries `guidance_hash`:
+the hash of the brief's `## Plane guidance` text, or of the empty string when no
+plane applies. A settled verdict is reused only when it is unchanged; the ledger
+records it, and an entry written before planes counts as the empty string.
 
 In `report.json`:
 

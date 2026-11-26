@@ -897,6 +897,21 @@ def render_lessons_line(data: dict) -> list[str]:
     return [f"Lessons ({name}): " + " · ".join(parts) + "  "]
 
 
+def planes_applied(hs: dict) -> list[dict]:
+    """The planes signals.py selected, as the report shows them (#112)."""
+    return [{"id": p["id"], "matched_by": p["matched_by"]} for p in hs.get("planes") or []
+            if isinstance(p, dict) and isinstance(p.get("id"), str) and isinstance(p.get("matched_by"), str)]
+
+
+def render_planes_line(hs: dict) -> list[str]:
+    """`Planes applied: …`, each id with the tracked file that matched it; nothing when none."""
+    planes = planes_applied(hs)
+    if not planes:
+        return []
+    return ["Planes applied: " + ", ".join(f"{md.code(p['id'])} (matched {md.code(p['matched_by'])})"
+                                           for p in planes) + "  "]
+
+
 def _refuted_claims(check: dict) -> list[dict]:
     return [rc for rc in (check.get("refuted_claims") or []) if isinstance(rc, dict)]
 
@@ -1417,6 +1432,7 @@ def render_markdown(data: dict, repo: Path, now: datetime | None = None) -> str:
         + (f" — {breakdown}" if breakdown else "") + "  ",
         *([check_line] if check_line else []),
         *render_lessons_line(data),
+        *render_planes_line(hs),
         render_verification_line(data),
         *([dl + "  "] if (dl := defaults_line({"counts": {
             "defaults": defaults_counts(findings),
@@ -1612,6 +1628,7 @@ def render_json(data: dict) -> dict:
                         "reason": r["reason"]} for r in hs.get("suppressed") or []],
         "links": data.get("links"),
         "degraded": hs.get("degraded", {}),
+        "planes": planes_applied(hs),
         "service_context": ({k: data["context"].get(k) for k in
                              ("status", "entity_ref", "context_hash", "fetched_at",
                               "edges", "truncated")}

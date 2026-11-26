@@ -303,7 +303,11 @@ branch, since your repository does not have them.
 
 23 stability patterns drawn from Nygard's *Release It!*, the Amazon Builders'
 Library, the Google SRE book, and the metastable-failure literature.
-[Full list](skills/stability-catalog/references/patterns.md).
+[Full list](skills/stability-catalog/references/patterns.md). On a stack the
+plugin recognises from your tracked files, a *fracture plane* adds the
+maintainers' guidance on what counts as protection there; the first,
+`java-spring`, covers four Spring-specific patterns
+([coverage matrix](skills/stability-catalog/references/planes.md)).
 
 Tier A: timeouts · capped backoff with full jitter · honouring `Retry-After` ·
 transient-only retry · client-side rate limiting · request prioritisation ·

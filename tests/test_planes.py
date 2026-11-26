@@ -1146,3 +1146,71 @@ def test_the_brief_still_withholds_the_claimed_confidence(validated_repo, tmp_pa
     for word in ("confidence", "history", "notes"):
         assert f"`{word}`" not in brief and f"## {word.title()}" not in brief
     assert str(validated_repo) not in brief and str(tmp_path) not in brief
+
+
+# --------------------------------------------------------------------------
+# Task 9: the seed plane, java-spring (AC-9)
+# --------------------------------------------------------------------------
+
+SPRING_SECTIONS = {"S10", "S27", "S28", "S29"}
+
+
+@pytest.fixture(scope="module")
+def shipped():
+    planes, problems = fp.load_planes()
+    assert problems == []
+    return planes
+
+
+def test_java_spring_is_a_seed_plane_with_rubrics_for_the_spring_specific_patterns(shipped, catalog):
+    plane = shipped["java-spring"]
+    assert plane.maturity == "seed" and list(plane.languages) == ["java"]
+    assert set(plane.rubric) == SPRING_SECTIONS
+    for pid in fp.tier_ab_ids(catalog):
+        state = fp.cell_state(plane, pid)
+        if pid in SPRING_SECTIONS:
+            assert state == "rubric", pid
+        else:
+            assert state == "planned" and plane.cells[pid]["planned"].strip(), pid
+    assert fp.check_planes({"java-spring": plane}, catalog) == []
+
+
+@pytest.mark.parametrize("files", [
+    {"pom.xml": "<parent><artifactId>spring-boot-starter-parent</artifactId></parent>"},
+    {"app/build.gradle.kts": 'plugins { id("org.springframework.boot") version "3.3.0" }\n'
+                             'dependencies { implementation("org.springframework.boot:spring-boot-starter-web") }'},
+    {"build.gradle": "dependencies { implementation 'org.springframework.boot:spring-boot-starter' }"},
+])
+def test_java_spring_matches_a_spring_boot_pom_and_a_gradle_build(shipped, files):
+    selected, warnings = fp.select(files, files.get, shipped)
+    assert [s.plane_id for s in selected] == ["java-spring"] and warnings == []
+    assert selected[0].matched_by == next(iter(files))
+
+
+def test_java_spring_does_not_match_a_plain_pom(shipped):
+    files = {"pom.xml": PLAIN_POM, "build.gradle": "dependencies { implementation 'com.google.guava:guava' }"}
+    assert fp.select(files, files.get, shipped)[0] == []
+
+
+PY_JOB = ("import requests\n\n\ndef sync_all(urls):\n    out = []\n    for url in urls:\n"
+          "        out.append(requests.get(url).json())\n    return out\n")
+
+
+def test_python_files_in_a_spring_repo_get_no_guidance(fixture_repo, tmp_path, shipped, catalog):
+    import subprocess
+    import sys
+
+    repo = _repo_with(fixture_repo, tmp_path / "repo", {"pom.xml": SPRING_POM, "worker/jobs.py": PY_JOB})
+    scripts = Path(__file__).resolve().parent.parent / "scripts"
+    for script, args in (("signals.py", ["--top", "20", "--since", "24m"]), ("bundle.py", [])):
+        proc = subprocess.run([sys.executable, str(scripts / script), "--repo", str(repo), *args],
+                              capture_output=True, text=True)
+        assert proc.returncode == 0, proc.stderr
+    data = json.loads((repo / ".thunderstruck" / "hotspots.json").read_text())
+    assert [p["id"] for p in data["planes"]] == ["java-spring"]
+    assert "worker/jobs.py" in {h["file"] for h in data["hotspots"]}
+    assert all(h["language"] != "java" for h in data["hotspots"])
+    for bundle_file in (repo / ".thunderstruck" / "bundles").glob("*.md"):
+        assert "## Plane guidance" not in bundle_file.read_text(), bundle_file.name
+    assert fp.guidance(shipped, ["java-spring"], "python", ["S01", "S10", "S27"], catalog,
+                       include_general=True) == ""

@@ -282,3 +282,22 @@ def test_hostile_observed_values_stay_inert(scanned_copy, plugin_root):
     assert "## Catalog drift" in markdown
     _assert_inert(markdown)
     assert render(markdown).tags.count("h1") == 1
+
+
+def test_a_matched_path_is_rendered_inert(scanned_copy, plugin_root):
+    """#112: a plane's matched_by is a repository path, so it is inert in report.md."""
+    path = scanned_copy / ".thunderstruck" / "hotspots.json"
+    data = json.loads(path.read_text())
+    data["planes"] = [{"id": "java-spring", "matched_by": "[x](https://example.com)", "rubric_hash": "sha256:a"},
+                      {"id": "p", "matched_by": HOSTILE, "rubric_hash": "sha256:b"}]
+    path.write_text(json.dumps(data))
+    hid, doc = _valid_finding(scanned_copy, _hotspots(scanned_copy))
+    _write_finding(scanned_copy, hid, doc)
+    assert _validate(scanned_copy, plugin_root).returncode == 0
+    subprocess.run([sys.executable, str(plugin_root / "scripts" / "report.py"),
+                    "--repo", str(scanned_copy)], check=True, capture_output=True)
+    markdown = (scanned_copy / ".thunderstruck" / "report.md").read_text()
+    assert "Planes applied: `java-spring` (matched `[x](https://example.com)`)" in markdown
+    _assert_inert(markdown)
+    assert "example.com" not in "".join(_hrefs(markdown))
+    assert render(markdown).tags.count("h1") == 1, "a matched path must not add structure"

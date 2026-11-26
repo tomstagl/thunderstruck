@@ -4,11 +4,23 @@ All notable changes to thunderstruck are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 0.21.0
+
+Fracture planes: stack-specific guidance on what counts as protection, selected by a script and given to both agents (#112).
 
 ### Added
 
+- **Fracture planes** (#112). A plane (`planes/<id>/plane.yaml` and `rubric.md`) is the maintainers' text on what counts as protection for each Tier A/B pattern on one stack. `signals.py` selects planes from the scanned repository's tracked files, never the model, and records them in `hotspots.json` under `planes` with each `rubric_hash`.
+- **Plane guidance in the bundle and the brief.** A bundle carries a capped `## Plane guidance` section with the sections for its detector leads; a skeptic's brief carries the sections for the finding's missing patterns. Both name the full rubric, written to `.thunderstruck/planes/<id>.md`. A settled verdict is reused only when its brief's guidance is unchanged (`guidance_hash`). A plane that fails to load or changed after `signals.py` ran is left out with a warning.
+- **The completeness gate.** Every Tier A/B pattern is a rubric section, `n/a` or `planned` for every plane; anything undeclared fails the build, as do over-long sections and a `calibrated` plane without a ledger.
+- **The coverage matrix**, generated into `skills/stability-catalog/references/planes.md` by `scripts/gen_plane_docs.py` and checked in CI.
+- **The seed plane `java-spring`**, active on a tracked `pom.xml` or Gradle build that names `spring-boot`, with rubrics for `S10`, `S27`, `S28` and `S29`; every other pattern is `planned`.
+- **The report names the planes applied**: a `Planes applied` line in `report.md` and the HTML report, and `planes` in `report.json`.
 - **A gate without a usable setting is visible** (#144). A `preconditions` claim that names none, or one the script cannot use, keeps its place in the check with `gate_problem`, the reports say why it does not gate, and a JSON scalar in a setting is read as the value it stands for.
+
+### Changed
+
+- Repositories where `java-spring` is active re-investigate their Java hotspots on the first scan after upgrading, because their bundles now carry plane guidance. Repositories with no active plane are unaffected: their bundles and briefs are byte-identical.
 
 ### Measured
 
