@@ -152,7 +152,7 @@ the orchestrating session stays small:
   `subagent_type: thunderstruck-investigator` and `model: <the --model value>`.
   Never ask for a background agent (never set `run_in_background`).
 - Never use agent teams, `SendMessage` or `ListAgents` for investigators, and never poll.
-- Never read a bundle, a finding file or `catalog-brief.md`. Read
+- Never read a bundle, a finding file, `catalog-brief.md` or `planes/*.md`. Read
   `bundles/index.json` for ids and paths, and the last lines of each script's
   output.
 - Never re-spawn an investigator. A hotspot gets one investigation and at
@@ -280,8 +280,8 @@ with `model: <M>` and exactly this task:
 **At most four in parallel**, as up to four `Agent` calls in one message, in
 either mode and under the rule of step 3 (a batch is done when every agent of
 it has produced its result and its completion notification). The rules of step
-3 apply: never ask for a background agent, no polling. Never read a brief, a result or a dependency snapshot
-yourself.
+3 apply: never ask for a background agent, no polling. Never read a brief, a result, a dependency snapshot or
+`planes/*.md` yourself.
 
 After each batch:
 
