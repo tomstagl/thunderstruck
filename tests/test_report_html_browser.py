@@ -530,3 +530,18 @@ def test_the_overview_says_how_many_lessons_applied(page, scanned_copy, plugin_r
                          "by_hotspot": {}}
     assert ("Lessons (.thunderstruck-lessons.toml): none applied, the file was not read; see Run warnings."
             in page(report).page.text_content("#doc"))
+
+
+def test_the_planes_line_is_shown_inert_and_absent_without_planes(page, scanned_copy, plugin_root):
+    """#112: the overview names each plane and the file that matched it, as text."""
+    report = _report(scanned_copy, plugin_root)
+    assert "Planes applied" not in page(report).page.text_content("#doc")
+    report["planes"] = [{"id": "java-spring", "matched_by": "pom.xml"},
+                        {"id": "x", "matched_by": HOSTILE}]
+    p = page(report)
+    body = p.page.text_content("#doc")
+    assert "Planes applied: java-spring (matched pom.xml), x (matched " + HOSTILE + ")" in body
+    assert p.page.evaluate("window.pwned") is None
+    for sel in ("#pwn", "#pwn-img", "#pwn-b", "img"):
+        assert p.page.query_selector(sel) is None, sel
+    assert p.errors == [] and p.requests == [p.url]

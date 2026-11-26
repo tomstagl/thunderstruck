@@ -154,3 +154,39 @@ def test_report_json_carries_not_scanned(scanned_copy, plugin_root):
     assert payload["not_scanned"] == report.not_scanned(gaps)
     assert payload["not_scanned"] is not None
     assert "`" not in json.dumps(payload["not_scanned"])
+
+
+# --- #112 Task 8: the planes the scan applied --------------------------------
+
+def _set_planes(repo: Path, planes) -> None:
+    path = repo / ".thunderstruck" / "hotspots.json"
+    data = json.loads(path.read_text())
+    data["planes"] = planes
+    path.write_text(json.dumps(data))
+
+
+TWO_PLANES = [{"id": "java-spring", "matched_by": "pom.xml", "rubric_hash": "sha256:a"},
+              {"id": "kotlin-ktor", "matched_by": "app/build.gradle.kts", "rubric_hash": "sha256:b"}]
+
+
+def test_report_json_lists_the_planes_applied(scanned_copy, plugin_root):
+    _set_planes(scanned_copy, TWO_PLANES)
+    _, saved = _report(scanned_copy, plugin_root)
+    assert saved["planes"] == [{"id": "java-spring", "matched_by": "pom.xml"},
+                               {"id": "kotlin-ktor", "matched_by": "app/build.gradle.kts"}]
+    assert saved["schema"] == "thunderstruck.report/v2"
+
+
+def test_report_md_names_each_plane_with_its_matched_file(scanned_copy, plugin_root):
+    _set_planes(scanned_copy, TWO_PLANES)
+    markdown, _ = _report(scanned_copy, plugin_root)
+    line = ("Planes applied: `java-spring` (matched `pom.xml`), "
+            "`kotlin-ktor` (matched `app/build.gradle.kts`)  ")
+    lines = markdown.splitlines()
+    assert line in lines
+    assert lines[lines.index(line) + 1].startswith("Verification: ")
+
+
+def test_no_planes_leaves_the_report_unchanged(scanned_copy, plugin_root):
+    markdown, saved = _report(scanned_copy, plugin_root)
+    assert "Planes applied" not in markdown and saved["planes"] == []

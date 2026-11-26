@@ -794,6 +794,8 @@ h2{margin:0;font-family:var(--serif);font-size:19px;line-height:1.3;font-weight:
           (breakdown ? " — " + breakdown : "") })
       ]));
       if (R.lessons) el.appendChild(h("span", { class: "verif", text: lessonsLine(R.lessons) }));
+      var planes = (R.planes || []).map(function (p) { return p.id + " (matched " + p.matched_by + ")"; });
+      if (planes.length) el.appendChild(h("span", { class: "verif", text: "Planes applied: " + planes.join(", ") }));
       if (R.verification) el.appendChild(h("span", { class: "verif", text: verificationLine(R) }));
       var dline = defaultsLine(R);
       if (dline) el.appendChild(h("span", { class: "verif", text: dline }));
