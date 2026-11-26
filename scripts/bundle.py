@@ -29,6 +29,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _common as c  # noqa: E402
+import fracture_planes  # noqa: E402
 import lessons  # noqa: E402
 import mdtext as md  # noqa: E402
 from detectors import Boundary, find_boundaries  # noqa: E402
@@ -530,9 +531,32 @@ def section_related(repo: Path, hs: dict, all_hotspots: list[dict], budget: int)
 # --------------------------------------------------------------------------
 
 
+PLANE_SHARE = 0.12
+
+
+def section_planes(hs: dict, data: dict, loaded: dict, catalog: dict, cap_tokens: int,
+                   warnings: list[str] | None = None) -> str:
+    """Plane guidance for this hotspot (#112): empty unless an active plane covers its language.
+
+    Active means recorded by signals.py with the rubric_hash that still loads.
+    The sections shown are those for the patterns with a lead here.
+    """
+    if not loaded:
+        return ""
+    active, stale = fracture_planes.resolve_active(loaded, data.get("planes") or [])
+    leads = {h.get("pattern_id") for h in hs.get("detector_hits") or []}
+    text, fit = fracture_planes.render_guidance(
+        loaded, active, hs.get("language"), (p for p in leads if p), catalog, cap_tokens,
+        include_general=True)
+    if warnings is not None:
+        warnings += stale + [f"{hs['id']}: {w}" for w in fit]
+    return text
+
+
 def build_bundle(repo: Path, hs: dict, data: dict, catalog: dict, profile: dict,
                  budget: int, commits: int, all_hotspots: list[dict],
-                 ctx: dict | None = None, obs: dict | None = None) -> str:
+                 ctx: dict | None = None, obs: dict | None = None,
+                 loaded_planes: dict | None = None, warnings: list[str] | None = None) -> str:
     text = c.read_text(repo / hs["file"]) or ""
     own = data.get("own_packages")
     own = own if isinstance(own, dict) else None  # None: gated boundary rules skipped
@@ -541,10 +565,14 @@ def build_bundle(repo: Path, hs: dict, data: dict, catalog: dict, profile: dict,
     # The lessons that apply to this hotspot (#106): empty unless one does, so a
     # hotspot none applies to keeps its bytes, and its cached finding.
     kept = lessons.investigator_section(*lessons.for_hotspot(data, hs["id"]))
-    # The service, observed and lessons sections are never trimmed (the observed
-    # and lessons sections have caps of their own); the other sections share
+    # Plane guidance (#112): empty unless a plane covers this file's language,
+    # capped by omitting whole sections.
+    planes = section_planes(hs, data, loaded_planes or {}, catalog,
+                            int(budget * PLANE_SHARE), warnings)
+    # The service, observed, lessons and plane sections are never trimmed (each
+    # but the service context has a cap of its own); the other sections share
     # what is left.
-    fixed = sum(c.estimate_tokens(p) for p in (service, observed, kept) if p)
+    fixed = sum(c.estimate_tokens(p) for p in (service, observed, kept, planes) if p)
     rest = max(budget - fixed, budget // 2) if fixed else budget
     parts = [
         section_header(hs, data),
@@ -554,6 +582,7 @@ def build_bundle(repo: Path, hs: dict, data: dict, catalog: dict, profile: dict,
         kept,
         section_boundaries(text, hs["file"], hs["language"], catalog, own),
         section_detectors(hs, catalog),
+        planes,
         section_retry_layers(hs, data, catalog),
         section_source(repo, hs, int(rest * SHARE["source"])),
         section_history(repo, hs, data["window"]["since_date"],
@@ -682,6 +711,15 @@ def main(argv: list[str] | None = None) -> int:
         c.die(str(exc))
         return 2
 
+    loaded_planes, plane_problems = fracture_planes.load_planes()
+    for problem in plane_problems:
+        print(f"warning: plane skipped: {problem}", file=sys.stderr)
+    if "planes" not in data:
+        print("warning: hotspots.json records no planes (written before this version); "
+              "re-run signals.py.", file=sys.stderr)
+    active_planes, _ = fracture_planes.resolve_active(loaded_planes, data.get("planes") or [])
+    plane_warnings: list[str] = []
+
     if not isinstance(data.get("own_packages"), dict):
         print("warning: hotspots.json records no own package names (written before "
               "#58); calls through a library's own name are not listed as boundaries. "
@@ -699,7 +737,8 @@ def main(argv: list[str] | None = None) -> int:
     validator = None  # built once, only if some cached file needs a re-check
     for hs in hotspots + dormant:
         body = build_bundle(repo, hs, data, catalog, profile,
-                            args.budget, args.commits, hotspots, ctx, obs)
+                            args.budget, args.commits, hotspots, ctx, obs,
+                            loaded_planes=loaded_planes, warnings=plane_warnings)
         path = dest_dir / f"{hs['id']}.md"
         path.write_text(body, encoding="utf-8")
         if f"## Call sites elsewhere in the repo\n\n{CALL_SITES_NOT_SEARCHED}" in body:
@@ -742,6 +781,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{hs['id']}  ~{c.estimate_tokens(body):>5} tokens  {flag}  {hs['file']}")
 
     brief = write_catalog_brief(c.out_dir(repo), catalog, profile)
+    fracture_planes.write_plane_rubrics(c.out_dir(repo), loaded_planes, active_planes)
+    for warning in dict.fromkeys(plane_warnings):
+        print(f"warning: {warning}", file=sys.stderr)
     if args.verbose:
         print(f"catalog brief -> {brief}")
     if ctx:

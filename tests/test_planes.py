@@ -7,12 +7,15 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import json
 import random
 import shutil
 from pathlib import Path
 
 import pytest
 
+import _common as c
+import bundle
 import fracture_planes as fp
 
 FIXTURES = Path(__file__).resolve().parent / "planes" / "fixtures"
@@ -555,3 +558,379 @@ def test_a_broken_plane_is_skipped_with_a_warning_and_the_scan_continues(
     payload = _build(repo)
     assert "plane skipped: planes/bad-yaml/plane.yaml: not valid YAML" in payload["warnings"]
     assert [p["id"] for p in payload["planes"]] == ["good"]
+
+
+# --------------------------------------------------------------------------
+# Task 5: plane guidance in the bundle (AC-4)
+# --------------------------------------------------------------------------
+
+
+def _plane(loaded, pid="ts", languages=("typescript",), sections=None, general=None, rubric_hash=None):
+    good = loaded[0]["good"]
+    rubric = good.rubric if sections is None else {
+        k: fp.RubricEntry(k, v) for k, v in sections.items()}
+    return dataclasses.replace(
+        good, id=pid, languages=languages, rubric=rubric,
+        general=good.general if general is None else general,
+        rubric_hash=rubric_hash or f"sha256:{pid}-{len(rubric)}")
+
+
+def _record(*planes):
+    return [{"id": p.id, "matched_by": "package.json", "rubric_hash": p.rubric_hash} for p in planes]
+
+
+def _section(body: str) -> str:
+    if "## Plane guidance" not in body:
+        return ""
+    rest = body.split("## Plane guidance", 1)[1]
+    return "## Plane guidance" + rest.split("\n## ", 1)[0]
+
+
+def _body(pid, n=1):
+    return SECTION + f" Rule {pid} for case {n}."
+
+
+def test_guidance_is_empty_for_a_language_no_active_plane_covers(loaded, catalog):
+    good = loaded[0]["good"]
+    assert fp.guidance({"good": good}, ["good"], "python", ["S01"], catalog, include_general=True) == ""
+    assert fp.guidance({"good": good}, [], "java", ["S01"], catalog, include_general=True) == ""
+
+
+def test_guidance_lists_only_requested_patterns_in_id_order_with_general_first(loaded, catalog):
+    plane = _plane(loaded, sections={"S01": _body("S01"), "S02": _body("S02"), "S10": _body("S10")})
+    text = fp.guidance({"ts": plane}, ["ts"], "typescript", ["S10", "S01", "S05"], catalog,
+                       include_general=True)
+    assert text.startswith("## Plane guidance\n")
+    assert "### ts — Example stack" in text
+    assert f"rubric {plane.rubric_hash}" in text
+    assert "full rubric: `.thunderstruck/planes/ts.md`" in text
+    assert "#### S02" not in text and "#### S05" not in text
+    assert text.index(plane.general) < text.index("#### S01") < text.index("#### S10")
+    assert _body("S10") in text
+    assert "Omitted" not in text
+
+
+def test_without_general_a_plane_with_no_requested_section_adds_nothing(loaded, catalog):
+    plane = _plane(loaded)
+    assert fp.guidance({"ts": plane}, ["ts"], "typescript", ["S05"], catalog, include_general=False) == ""
+    text = fp.guidance({"ts": plane}, ["ts"], "typescript", ["S01"], catalog, include_general=False)
+    assert "#### S01" in text and plane.general not in text
+
+
+def test_with_general_a_covering_plane_always_shows_its_hash_and_path(loaded, catalog):
+    plane = _plane(loaded, general="")
+    text = fp.guidance({"ts": plane}, ["ts"], "typescript", [], catalog, include_general=True)
+    assert f"rubric {plane.rubric_hash}" in text and "full rubric:" in text and "####" not in text
+
+
+def test_two_active_planes_both_shown_in_id_order(loaded, catalog):
+    planes = {"b": _plane(loaded, "b"), "a": _plane(loaded, "a")}
+    first = fp.guidance(planes, ["b", "a"], "typescript", ["S01"], catalog, include_general=True)
+    assert first.index("### a — ") < first.index("### b — ")
+    assert first.count("#### S01") == 2
+    assert first == fp.guidance(dict(reversed(planes.items())), ["a", "b"], "typescript", ["S01"],
+                                catalog, include_general=True)
+
+
+def test_a_js_hotspot_gets_guidance_from_a_typescript_plane(loaded, catalog):
+    plane = _plane(loaded)
+    assert "#### S01" in fp.guidance({"ts": plane}, ["ts"], "javascript", ["S01"], catalog,
+                                     include_general=True)
+
+
+def test_a_yaml_hotspot_gets_guidance_only_from_a_plane_that_lists_yaml(loaded, catalog):
+    yaml_plane = _plane(loaded, "k8s", languages=("yaml",))
+    java_plane = _plane(loaded, "jv", languages=("java",))
+    planes = {"k8s": yaml_plane, "jv": java_plane}
+    text = fp.guidance(planes, ["jv", "k8s"], "yaml", ["S01"], catalog, include_general=True)
+    assert "### k8s — " in text and "### jv — " not in text
+
+
+def test_whole_sections_are_omitted_to_fit_the_cap_and_the_omission_is_named(loaded, catalog):
+    sections = {pid: _body(pid) + " " + "w" * 300 for pid in ("S01", "S02", "S03")}
+    plane = _plane(loaded, sections=sections)
+    full = fp.guidance({"ts": plane}, ["ts"], "typescript", list(sections), catalog, include_general=True)
+    cap = c.estimate_tokens(full) - 10
+    text, warnings = fp.render_guidance({"ts": plane}, ["ts"], "typescript", list(sections), catalog,
+                                        cap_tokens=cap, include_general=True)
+    assert c.estimate_tokens(text) <= cap and warnings == []
+    assert sections["S01"] in text and sections["S02"] in text
+    assert "S03" not in text.replace("Omitted to fit the budget: ts S03.", "")
+    assert text.rstrip().endswith("Omitted to fit the budget: ts S03.")
+    small = c.estimate_tokens(fp.guidance({"ts": plane}, ["ts"], "typescript", ["S01"], catalog,
+                                          include_general=True)) + 15
+    text, _ = fp.render_guidance({"ts": plane}, ["ts"], "typescript", list(sections), catalog,
+                                 cap_tokens=small, include_general=True)
+    assert text.rstrip().endswith("Omitted to fit the budget: ts S02, S03.")
+    for pid in ("S02", "S03"):
+        assert sections[pid] not in text
+
+
+def test_the_last_plane_gives_way_first(loaded, catalog):
+    sections = {"S01": _body("S01") + " " + "w" * 300}
+    planes = {"a": _plane(loaded, "a", sections=sections), "b": _plane(loaded, "b", sections=sections)}
+    full = fp.guidance(planes, ["a", "b"], "typescript", ["S01"], catalog, include_general=True)
+    text, _ = fp.render_guidance(planes, ["a", "b"], "typescript", ["S01"], catalog,
+                                 cap_tokens=c.estimate_tokens(full) - 10, include_general=True)
+    assert text.rstrip().endswith("Omitted to fit the budget: b S01.")
+
+
+def test_the_cap_holds_at_every_budget_and_a_plane_that_cannot_fit_is_left_out_with_a_warning(
+        loaded, catalog):
+    sections = {pid: _body(pid) + " " + "w" * 500 for pid in ("S01", "S02", "S10")}
+    plane = _plane(loaded, sections=sections, general="g" * 700)
+    for budget in (100, 300, 1000, 2000, 8000, 30000):
+        cap = int(budget * 0.12)
+        text, warnings = fp.render_guidance({"ts": plane}, ["ts"], "typescript", list(sections),
+                                            catalog, cap_tokens=cap, include_general=True)
+        if text:
+            assert c.estimate_tokens(text) <= cap, budget
+            assert f"rubric {plane.rubric_hash}" in text
+        else:
+            assert warnings == [f"plane ts: guidance does not fit a {cap}-token cap and is left out"]
+    text, _ = fp.render_guidance({"ts": plane}, ["ts"], "typescript", list(sections), catalog,
+                                 cap_tokens=int(1000 * 0.12), include_general=True)
+    assert text and "General" in text and "####" not in text, "title, hash and path only"
+
+
+def test_resolve_active_skips_unloaded_and_changed_planes_and_names_them(loaded):
+    a, b = _plane(loaded, "a"), _plane(loaded, "b")
+    recorded = _record(a, b) + [{"id": "gone", "matched_by": "pom.xml", "rubric_hash": "sha256:x"}]
+    recorded[1] = dict(recorded[1], rubric_hash="sha256:old")
+    ids, warnings = fp.resolve_active({"a": a, "b": b}, recorded)
+    assert ids == ["a"]
+    assert warnings == [
+        f"plane b changed after signals.py ran (recorded sha256:old, now {b.rubric_hash}); "
+        f"its guidance is left out. Re-run signals.py.",
+        "plane gone is recorded in hotspots.json but does not load; its guidance is left out.",
+    ]
+    assert fp.resolve_active({"a": a}, [None, {"id": 3}, "x"]) == ([], [])
+
+
+def _hs(data, hid):
+    return next(h for h in data["hotspots"] + (data.get("dormant") or []) if h["id"] == hid)
+
+
+def _build_bundle(repo, data, hs, catalog, loaded_planes=None, budget=bundle.DEFAULT_BUDGET_TOKENS,
+                  planes_warnings=None):
+    return bundle.build_bundle(repo, hs, data, catalog, {}, budget, 15, data["hotspots"], None, None,
+                               loaded_planes=loaded_planes, warnings=planes_warnings)
+
+
+def test_a_bundle_with_no_active_plane_is_byte_identical(scanned_repo, loaded, catalog):
+    data = json.loads((scanned_repo / ".thunderstruck" / "hotspots.json").read_text())
+    hs = _hs(data, "H01")
+    before = _build_bundle(scanned_repo, data, hs, catalog)
+    ts, py = _plane(loaded), _plane(loaded, "py", languages=("python",))
+    assert _build_bundle(scanned_repo, {**data, "planes": []}, hs, catalog, {"ts": ts}) == before
+    assert _build_bundle(scanned_repo, {**data, "planes": _record(py)}, hs, catalog, {"py": py}) == before
+    covered = _build_bundle(scanned_repo, {**data, "planes": _record(ts)}, hs, catalog, {"ts": ts})
+    assert covered != before
+    assert _section(covered).startswith("## Plane guidance")
+    assert covered.index("## Detector leads") < covered.index("## Plane guidance")
+
+
+def test_with_neither_section_the_bundle_is_the_bytes_the_old_formula_gave(scanned_repo, loaded, catalog):
+    data = json.loads((scanned_repo / ".thunderstruck" / "hotspots.json").read_text())
+    budget = bundle.DEFAULT_BUDGET_TOKENS
+    for hid in ("H01", "H04"):
+        hs = _hs(data, hid)
+        # build_bundle as it was before #112, with no context, observed or lessons section
+        text = c.read_text(scanned_repo / hs["file"]) or ""
+        own = data.get("own_packages")
+        own = own if isinstance(own, dict) else None
+        service, observed = bundle.section_service_context(None), bundle.section_observed(None, hs["file"])
+        kept = bundle.lessons.investigator_section(*bundle.lessons.for_hotspot(data, hs["id"]))
+        fixed = sum(c.estimate_tokens(p) for p in (service, observed, kept) if p)
+        rest = max(budget - fixed, budget // 2) if fixed else budget
+        parts = [bundle.section_header(hs, data), bundle.section_profile({}), service, observed, kept,
+                 bundle.section_boundaries(text, hs["file"], hs["language"], catalog, own),
+                 bundle.section_detectors(hs, catalog), bundle.section_retry_layers(hs, data, catalog),
+                 bundle.section_source(scanned_repo, hs, int(rest * bundle.SHARE["source"])),
+                 bundle.section_history(scanned_repo, hs, data["window"]["since_date"],
+                                        int(rest * bundle.SHARE["history"]), 15,
+                                        c.profile_fix_keywords({})),
+                 bundle.section_related(scanned_repo, hs, data["hotspots"], int(rest * bundle.SHARE["context"]))]
+        old = "\n".join(p for p in parts if p).rstrip() + "\n"
+        py = _plane(loaded, "py", languages=("python",))
+        assert _build_bundle(scanned_repo, data, hs, catalog) == old
+        assert _build_bundle(scanned_repo, {**data, "planes": _record(py)}, hs, catalog, {"py": py}) == old
+
+
+def test_the_source_budget_shrinks_by_the_plane_share_and_the_floor_holds(
+        scanned_repo, loaded, catalog, monkeypatch):
+    data = json.loads((scanned_repo / ".thunderstruck" / "hotspots.json").read_text())
+    hs = _hs(data, "H01")
+    ts = _plane(loaded)
+    data = {**data, "planes": _record(ts)}
+    budgets = []
+    monkeypatch.setattr(bundle, "section_source", lambda repo, hs, budget: budgets.append(budget) or "")
+    budget = 2000
+    planes_text = bundle.section_planes(hs, data, {"ts": ts}, catalog, int(budget * 0.12))
+    assert planes_text
+    _build_bundle(scanned_repo, data, hs, catalog, {"ts": ts}, budget=budget)
+    assert budgets[-1] == int((budget - c.estimate_tokens(planes_text)) * bundle.SHARE["source"])
+    lesson = "L" * 400
+    monkeypatch.setattr(bundle.lessons, "investigator_section", lambda *a: lesson)
+    _build_bundle(scanned_repo, data, hs, catalog, {"ts": ts}, budget=budget)
+    fixed = c.estimate_tokens(lesson) + c.estimate_tokens(planes_text)
+    assert budgets[-1] == int((budget - fixed) * bundle.SHARE["source"])
+    monkeypatch.setattr(bundle.lessons, "investigator_section", lambda *a: "L" * 8000)
+    _build_bundle(scanned_repo, data, hs, catalog, {"ts": ts}, budget=budget)
+    assert budgets[-1] == int((budget // 2) * bundle.SHARE["source"])
+
+
+def test_a_rubric_edit_changes_the_bundle_of_every_hotspot_the_plane_covers_and_no_other(
+        scanned_repo, loaded, catalog):
+    data = json.loads((scanned_repo / ".thunderstruck" / "hotspots.json").read_text())
+    hotspots = [_hs(data, "H01"), _hs(data, "H05"), dict(_hs(data, "H02"), language="python")]
+    ts = _plane(loaded, rubric_hash="sha256:before")
+    # a section for S27, which no fixture hotspot has a lead on
+    edited = dataclasses.replace(ts, rubric=dict(ts.rubric, S27=fp.RubricEntry("S27", _body("S27"))),
+                                 rubric_hash="sha256:after")
+    one = [_build_bundle(scanned_repo, {**data, "planes": _record(ts)}, hs, catalog, {"ts": ts})
+           for hs in hotspots]
+    two = [_build_bundle(scanned_repo, {**data, "planes": _record(edited)}, hs, catalog, {"ts": edited})
+           for hs in hotspots]
+    assert one[0] != two[0] and one[1] != two[1]
+    assert one[2] == two[2]
+    assert _body("S27") not in two[0]
+
+
+def test_a_plane_edited_after_signals_is_skipped_with_a_warning(scanned_repo, loaded, catalog):
+    data = json.loads((scanned_repo / ".thunderstruck" / "hotspots.json").read_text())
+    hs = _hs(data, "H01")
+    ts = _plane(loaded)
+    stale = {**data, "planes": [dict(_record(ts)[0], rubric_hash="sha256:old")]}
+    warnings = []
+    body = _build_bundle(scanned_repo, stale, hs, catalog, {"ts": ts}, planes_warnings=warnings)
+    assert body == _build_bundle(scanned_repo, data, hs, catalog)
+    assert warnings and "plane ts changed after signals.py ran" in warnings[0]
+
+
+def test_a_dormant_bundle_gets_guidance_on_the_same_rule(scanned_repo, loaded, catalog):
+    data = json.loads((scanned_repo / ".thunderstruck" / "hotspots.json").read_text())
+    assert data["dormant"], "the fixture has a dormant integration point"
+    ts = _plane(loaded)
+    body = _build_bundle(scanned_repo, {**data, "planes": _record(ts)}, data["dormant"][0], catalog, {"ts": ts})
+    assert "## Plane guidance" in body and "#### S01" in body
+
+
+def test_a_covered_bundle_stays_within_budget(scanned_repo, loaded, catalog):
+    data = json.loads((scanned_repo / ".thunderstruck" / "hotspots.json").read_text())
+    biggest = SECTION + " " + "w" * (700 - len(SECTION) - 1)
+    ids = ["S01", "S02", "S05", "S10", "S11", "S15", "S19"]
+    ts = _plane(loaded, sections={pid: biggest for pid in ids}, general="g" * 800)
+    for budget in (1000, bundle.DEFAULT_BUDGET_TOKENS):
+        for hs in data["hotspots"]:
+            body = _build_bundle(scanned_repo, {**data, "planes": _record(ts)}, hs, catalog, {"ts": ts},
+                                 budget=budget)
+            assert c.estimate_tokens(_section(body)) <= int(budget * 0.12) + 1
+            if budget == bundle.DEFAULT_BUDGET_TOKENS:
+                # the bound test_bundles_are_within_budget_and_deterministic holds at the
+                # default budget; at 1000 the untrimmed sections alone exceed it
+                assert c.estimate_tokens(body) <= budget * 1.1, (budget, hs["id"])
+
+
+# bundle.main and the rubric files
+
+def _write_planes_dir(tmp_path, monkeypatch, *planes, extra=()):
+    directory = tmp_path / "plugin-planes"
+    directory.mkdir()
+    for pid, languages in planes:
+        shutil.copytree(FIXTURES / "good", directory / pid)
+        manifest = directory / pid / "plane.yaml"
+        manifest.write_text(manifest.read_text().replace("id: good", f"id: {pid}")
+                            .replace("languages: [java]", f"languages: [{languages}]"))
+    for name in extra:
+        shutil.copytree(FIXTURES / name, directory / name)
+    monkeypatch.setattr(fp, "planes_dir", lambda: directory)
+    return fp.load_planes(directory)[0]
+
+
+def _set_recorded(repo, recorded):
+    path = repo / ".thunderstruck" / "hotspots.json"
+    data = json.loads(path.read_text())
+    if recorded is None:
+        data.pop("planes", None)
+    else:
+        data["planes"] = recorded
+    path.write_text(json.dumps(data))
+
+
+def test_write_plane_rubrics_writes_each_active_plane_deterministically(loaded, tmp_path):
+    planes = {"a": _plane(loaded, "a"), "b": _plane(loaded, "b")}
+    written = fp.write_plane_rubrics(tmp_path, planes, ["a"])
+    assert written == [tmp_path / "planes" / "a.md"]
+    first = written[0].read_bytes()
+    assert b"\r" not in first and b"## S01" in first and b"## General" in first
+    assert not (tmp_path / "planes" / "b.md").exists()
+    fp.write_plane_rubrics(tmp_path, planes, ["a"])
+    assert written[0].read_bytes() == first
+    assert fp.write_plane_rubrics(tmp_path, planes, []) == []
+    assert not (tmp_path / "planes").exists()
+
+
+def test_a_symlink_at_the_planes_directory_is_replaced_and_never_followed(loaded, tmp_path):
+    target = tmp_path / "elsewhere"
+    target.mkdir()
+    (target / "keep.txt").write_text("mine")
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "planes").symlink_to(target, target_is_directory=True)
+    fp.write_plane_rubrics(out, {"a": _plane(loaded, "a")}, ["a"])
+    assert sorted(p.name for p in target.iterdir()) == ["keep.txt"]
+    assert (out / "planes").is_dir() and not (out / "planes").is_symlink()
+    assert (out / "planes" / "a.md").is_file()
+    (out / "planes").rename(out / "moved")
+    (out / "planes").write_text("a file")
+    fp.write_plane_rubrics(out, {"a": _plane(loaded, "a")}, ["a"])
+    assert (out / "planes" / "a.md").is_file()
+
+
+def test_bundle_main_embeds_active_guidance_and_writes_the_rubric(scanned_copy, tmp_path, monkeypatch, capsys):
+    planes = _write_planes_dir(tmp_path, monkeypatch, ("ts", "typescript"))
+    _set_recorded(scanned_copy, _record(planes["ts"]))
+    (scanned_copy / ".thunderstruck" / "planes").mkdir(exist_ok=True)
+    (scanned_copy / ".thunderstruck" / "planes" / "old.md").write_text("stale")
+    assert bundle.main(["--repo", str(scanned_copy)]) == 0
+    out = scanned_copy / ".thunderstruck"
+    assert sorted(p.name for p in (out / "planes").iterdir()) == ["ts.md"]
+    assert "## Plane guidance" in (out / "bundles" / "H01.md").read_text()
+    first = json.loads((out / "bundles" / "index.json").read_text())
+    assert bundle.main(["--repo", str(scanned_copy)]) == 0
+    second = json.loads((out / "bundles" / "index.json").read_text())
+    assert [b["bundle_hash"] for b in first["bundles"]] == [b["bundle_hash"] for b in second["bundles"]]
+
+
+def test_a_stale_plane_file_is_removed_on_the_next_bundle_run(scanned_copy, tmp_path, monkeypatch):
+    _write_planes_dir(tmp_path, monkeypatch, ("ts", "typescript"))
+    _set_recorded(scanned_copy, [])
+    (scanned_copy / ".thunderstruck" / "planes").mkdir(exist_ok=True)
+    (scanned_copy / ".thunderstruck" / "planes" / "ts.md").write_text("from an earlier scan")
+    assert bundle.main(["--repo", str(scanned_copy)]) == 0
+    assert not (scanned_copy / ".thunderstruck" / "planes").exists()
+
+
+def test_a_hotspots_json_without_a_planes_key_does_not_crash_bundle(scanned_copy, tmp_path, monkeypatch, capsys):
+    _write_planes_dir(tmp_path, monkeypatch, ("ts", "typescript"))
+    _set_recorded(scanned_copy, None)
+    assert bundle.main(["--repo", str(scanned_copy)]) == 0
+    assert "hotspots.json records no planes (written before this version); re-run signals.py" \
+        in capsys.readouterr().err
+    assert "## Plane guidance" not in (scanned_copy / ".thunderstruck" / "bundles" / "H01.md").read_text()
+
+
+def test_a_broken_plane_does_not_stop_bundle_main(scanned_copy, tmp_path, monkeypatch, capsys):
+    _write_planes_dir(tmp_path, monkeypatch, extra=("bad-yaml",))
+    assert bundle.main(["--repo", str(scanned_copy)]) == 0
+    assert "plane skipped: planes/bad-yaml/plane.yaml: not valid YAML" in capsys.readouterr().err
+
+
+def test_bundle_main_warns_about_a_stale_plane(scanned_copy, tmp_path, monkeypatch, capsys):
+    planes = _write_planes_dir(tmp_path, monkeypatch, ("ts", "typescript"))
+    _set_recorded(scanned_copy, [dict(_record(planes["ts"])[0], rubric_hash="sha256:old")])
+    assert bundle.main(["--repo", str(scanned_copy)]) == 0
+    assert "plane ts changed after signals.py ran" in capsys.readouterr().err
+    assert not (scanned_copy / ".thunderstruck" / "planes").exists()
+    assert "## Plane guidance" not in (scanned_copy / ".thunderstruck" / "bundles" / "H01.md").read_text()
