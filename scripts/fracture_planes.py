@@ -20,6 +20,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable, Iterable
 
 import _common as c
 
@@ -347,3 +348,93 @@ def check_planes(planes: dict[str, Plane], catalog: dict, repo_root: Path | None
                 problems.append(f"planes/{pid}: calibrated, but docs/calibration/planes/{pid}.md is "
                                 f"missing or does not name Repository:, Commit: and n:")
     return problems
+
+
+# --------------------------------------------------------------------------
+# selection (spec §3)
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Selected:
+    plane_id: str
+    matched_by: str
+    rubric_hash: str
+
+
+def glob_to_regex(pattern: str) -> re.Pattern[str]:
+    """`*` within a path segment, `**/` across zero or more directories, the rest literal."""
+    out, i = [], 0
+    while i < len(pattern):
+        if pattern.startswith("**/", i):
+            out.append(r"(?:[^/]+/)*")
+            i += 3
+        elif pattern[i] == "*":
+            out.append(r"[^/]*")
+            i += 1
+        else:
+            out.append(re.escape(pattern[i]))
+            i += 1
+    return re.compile("".join(out))
+
+
+def head_reader(repo: Path) -> Callable[[str], str | None]:
+    """Read the first MAX_READ_BYTES of a tracked file, or None.
+
+    Undecodable bytes are replaced. A path git surrogate-escaped can raise
+    UnicodeEncodeError (a ValueError) or FileNotFoundError: both are None.
+    """
+    def read(rel: str) -> str | None:
+        try:
+            with open(Path(repo) / rel, "rb") as fh:
+                return fh.read(MAX_READ_BYTES).decode("utf-8", errors="replace")
+        except (OSError, ValueError):
+            return None
+    return read
+
+
+def _depth_order(path: str) -> tuple[int, str]:
+    return path.count("/"), path
+
+
+def _match(plane: Plane, paths: list[str], read: Callable[[str], str | None],
+           usable: Callable[[str], bool]) -> tuple[str | None, list[str]]:
+    """The first path that matches one of the plane's rules, and warnings."""
+    warnings: list[str] = []
+    for rule in plane.detect:
+        rx = glob_to_regex(rule.file)
+        candidates = sorted((p for p in paths if rx.fullmatch(p)), key=_depth_order)
+        candidates = [p for p in candidates if usable(p)]
+        for path in candidates[:MAX_RULE_FILES]:
+            if rule.contains is None:
+                return path, warnings
+            head = read(path)
+            if head is not None and rule.contains in head:
+                return path, warnings
+        if len(candidates) > MAX_RULE_FILES:
+            warnings.append(f"plane {plane.id}: rule {rule.file} had {len(candidates)} "
+                            f"candidates, examined {MAX_RULE_FILES}")
+    return None, warnings
+
+
+def select(index: Iterable[str], read: Callable[[str], str | None], planes: dict[str, Plane],
+           usable: Callable[[str], bool] = lambda p: True) -> tuple[list[Selected], list[str]]:
+    """The active planes, sorted by id, with the first path that matched each.
+
+    A pure function of the paths, what `read` returns for them and the
+    planes: index order never matters. `usable` is asked only about paths a
+    rule's glob already matched. A plane another active plane supersedes is
+    dropped.
+    """
+    paths = sorted(set(index))
+    active: dict[str, str] = {}
+    warnings: list[str] = []
+    for pid in sorted(planes):
+        matched, rule_warnings = _match(planes[pid], paths, read, usable)
+        warnings += rule_warnings
+        if matched is not None:
+            active[pid] = matched
+    superseded = {s for pid in active for s in planes[pid].supersedes}
+    selected = [Selected(pid, path, planes[pid].rubric_hash)
+                for pid, path in sorted(active.items()) if pid not in superseded]
+    return selected, warnings

@@ -33,6 +33,9 @@ def _leads_for(data: dict, path_fragment: str) -> set[str]:
 # ---------------------------------------------------------------- signals --
 
 
+def test_hotspots_json_records_planes_even_when_none(scanned_repo):
+    assert _hotspots(scanned_repo)["planes"] == []
+
 def test_scan_produces_hotspots(scanned_repo):
     data = _hotspots(scanned_repo)
     assert data["schema"] == "thunderstruck.hotspots/v1"

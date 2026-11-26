@@ -5,7 +5,9 @@ Spec: docs/superpowers/specs/2026-11-20-fracture-planes-design.md
 
 from __future__ import annotations
 
+import argparse
 import dataclasses
+import random
 import shutil
 from pathlib import Path
 
@@ -345,3 +347,211 @@ def test_render_is_deterministic_and_has_no_path_or_date(loaded):
     assert first == gen_plane_docs.render(dict(reversed(planes.items())), _stub_catalog())
     assert "/Users" not in first and "/tmp" not in first
     assert not re.search(r"\b(19|20)\d\d\b", first)
+
+
+# --------------------------------------------------------------------------
+# Task 4: deterministic selection (AC-3)
+# --------------------------------------------------------------------------
+
+SPRING_POM = "<project><parent><artifactId>spring-boot-starter-parent</artifactId></parent></project>\n"
+PLAIN_POM = "<project><artifactId>plain</artifactId></project>\n"
+
+
+def _good(loaded):
+    return {"good": loaded[0]["good"]}
+
+
+def test_glob_star_stays_in_a_segment_and_double_star_spans():
+    rx = fp.glob_to_regex("**/pom.xml")
+    assert rx.fullmatch("pom.xml") and rx.fullmatch("a/b/pom.xml")
+    assert not rx.fullmatch("a/xpom.xml") and not rx.fullmatch("pom.xml.bak")
+    assert not fp.glob_to_regex("*.xml").fullmatch("a/pom.xml")
+    assert fp.glob_to_regex("*.xml").fullmatch("pom.xml")
+    assert not fp.glob_to_regex("a.b").fullmatch("axb")
+    gradle = fp.glob_to_regex("**/build.gradle*")
+    assert gradle.fullmatch("build.gradle") and gradle.fullmatch("app/build.gradle.kts")
+    assert not gradle.fullmatch("build.gradle/x")
+
+
+def test_select_matches_on_contains_and_reports_the_first_path(loaded):
+    files = {"pom.xml": PLAIN_POM, "service/pom.xml": SPRING_POM, "z/pom.xml": SPRING_POM}
+    selected, warnings = fp.select(files, files.get, _good(loaded))
+    assert selected == [fp.Selected("good", "service/pom.xml", loaded[0]["good"].rubric_hash)]
+    assert warnings == []
+
+
+def test_select_without_a_match_selects_nothing(loaded):
+    files = {"pom.xml": PLAIN_POM, "App.java": "spring-boot"}
+    assert fp.select(files, files.get, _good(loaded)) == ([], [])
+
+
+def test_select_is_independent_of_index_order(loaded):
+    files = {f"m{i}/pom.xml": (SPRING_POM if i in (7, 12) else PLAIN_POM) for i in range(20)}
+    expected = fp.select(files, files.get, _good(loaded))
+    keys = list(files)
+    for seed in range(5):
+        random.Random(seed).shuffle(keys)
+        assert fp.select(keys, files.get, _good(loaded)) == expected
+
+
+def _thirty(marker_at):
+    # (depth, path) order is the zero-padded name order here
+    return {f"m{i:02d}/pom.xml": (SPRING_POM if i == marker_at else PLAIN_POM) for i in range(30)}
+
+
+def test_rule_examines_at_most_25_files(loaded):
+    files = _thirty(marker_at=25)       # the 26th in order
+    selected, _ = fp.select(files, files.get, _good(loaded))
+    assert selected == []
+    files = _thirty(marker_at=24)       # the 25th
+    assert fp.select(files, files.get, _good(loaded))[0][0].matched_by == "m24/pom.xml"
+
+
+def test_a_truncated_rule_warns(loaded):
+    files = _thirty(marker_at=25)
+    _, warnings = fp.select(files, files.get, _good(loaded))
+    assert warnings == ["plane good: rule **/pom.xml had 30 candidates, examined 25"]
+
+
+def test_a_root_manifest_sorts_before_a_deep_one(loaded):
+    files = _thirty(marker_at=-1)
+    files["pom.xml"] = SPRING_POM
+    selected, _ = fp.select(files, files.get, _good(loaded))
+    assert selected[0].matched_by == "pom.xml"
+
+
+def test_unreadable_binary_and_huge_files(loaded, tmp_path):
+    (tmp_path / "huge").mkdir()
+    (tmp_path / "huge" / "pom.xml").write_bytes(b"x" * fp.MAX_READ_BYTES + b"spring-boot")
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "pom.xml").write_bytes(b"\xff\xfe\x00spring\xffboot\x00")
+    read = fp.head_reader(tmp_path)
+    assert read("absent/pom.xml") is None
+    assert read("a\udcffb/pom.xml") is None
+    assert "spring-boot" not in read("huge/pom.xml")
+    assert "�" in read("bin/pom.xml")
+    index = ["absent/pom.xml", "a\udcffb/pom.xml", "huge/pom.xml", "bin/pom.xml"]
+    assert fp.select(index, read, _good(loaded)) == ([], [])
+
+
+def test_supersedes_drops_the_superseded_plane(loaded):
+    good = loaded[0]["good"]
+    top = dataclasses.replace(good, id="top", supersedes=("good",))
+    files = {"pom.xml": SPRING_POM}
+    selected, _ = fp.select(files, files.get, {"good": good, "top": top})
+    assert [s.plane_id for s in selected] == ["top"]
+    # a superseding plane that is not active drops nothing
+    idle = dataclasses.replace(top, detect=(fp.DetectRule("**/nothing", None),))
+    selected, _ = fp.select(files, files.get, {"good": good, "top": idle})
+    assert [s.plane_id for s in selected] == ["good"]
+
+
+def test_planes_are_selected_in_id_order(loaded):
+    good = loaded[0]["good"]
+    planes = {"zeta": dataclasses.replace(good, id="zeta"), "alpha": dataclasses.replace(good, id="alpha")}
+    files = {"pom.xml": SPRING_POM}
+    assert [s.plane_id for s in fp.select(files, files.get, planes)[0]] == ["alpha", "zeta"]
+
+
+def test_a_rule_without_contains_matches_on_the_path_alone(loaded):
+    plane = dataclasses.replace(loaded[0]["good"], detect=(fp.DetectRule("**/Chart.yaml", None),))
+    files = {"deploy/Chart.yaml": ""}
+    selected, _ = fp.select(files, lambda p: None, {"good": plane})
+    assert selected[0].matched_by == "deploy/Chart.yaml"
+
+
+def test_usable_is_only_called_for_paths_that_match_a_rule(loaded):
+    files = {"pom.xml": PLAIN_POM, "src/App.java": "", "README.md": "", "lib/pom.xml": SPRING_POM}
+    asked = []
+    fp.select(files, files.get, _good(loaded), usable=lambda p: asked.append(p) or True)
+    assert sorted(asked) == ["lib/pom.xml", "pom.xml"]
+
+
+def test_an_unusable_path_is_never_read(loaded):
+    files = {"pom.xml": SPRING_POM, "lib/pom.xml": SPRING_POM}
+    opened = []
+    selected, _ = fp.select(files, lambda p: opened.append(p) or files[p], _good(loaded),
+                            usable=lambda p: p != "pom.xml")
+    assert opened == ["lib/pom.xml"]
+    assert selected[0].matched_by == "lib/pom.xml"
+
+
+def test_a_symlink_named_pom_xml_is_not_opened(loaded, tmp_path):
+    import _common as c
+    import signals
+
+    (tmp_path / "real.xml").write_text(SPRING_POM)
+    (tmp_path / "pom.xml").symlink_to("real.xml")
+    index = {"pom.xml": "120000", "real.xml": "100644"}
+    filters = c.Filters.from_profile({})
+    opened = []
+    read = fp.head_reader(tmp_path)
+    selected, _ = fp.select(index, lambda p: opened.append(p) or read(p), _good(loaded),
+                            usable=lambda p: signals.plane_usable(tmp_path, p, index[p], filters))
+    assert selected == [] and opened == []
+
+
+def test_a_path_that_is_not_utf8_is_not_usable(monkeypatch, tmp_path):
+    import _common as c
+    import signals
+
+    monkeypatch.setattr(c, "tracked_file_problem", lambda repo, rel, mode: None)
+    filters = c.Filters.from_profile({})
+    assert signals.plane_usable(tmp_path, "a\udcffb/pom.xml", "100644", filters) is False
+    assert signals.plane_usable(tmp_path, "a/pom.xml", "100644", filters) is True
+
+
+# signals.build in-process, on copies of the session fixture repository
+
+def _repo_with(src, dest, files):
+    from build_fixture import run
+
+    shutil.copytree(src, dest, symlinks=True)
+    for rel, body in files.items():
+        (dest / rel).parent.mkdir(parents=True, exist_ok=True)
+        (dest / rel).write_text(body)
+    run(dest, "add", *files)
+    run(dest, "commit", "-q", "-m", "feat: add build manifests")
+    return dest
+
+
+def _build(repo, path=None):
+    import signals
+
+    return signals.build(argparse.Namespace(
+        repo=str(repo), top=10, since="24m", path=path, include_tests=False,
+        dormant=0, dormant_limit=0))
+
+
+@pytest.fixture
+def plane_dir(tmp_path, monkeypatch):
+    directory = tmp_path / "planes"
+    directory.mkdir()
+    shutil.copytree(FIXTURES / "good", directory / "good")
+    monkeypatch.setattr(fp, "planes_dir", lambda: directory)
+    return directory
+
+
+def test_a_pom_under_a_test_directory_does_not_activate_a_plane(fixture_repo, tmp_path, plane_dir):
+    repo = _repo_with(fixture_repo, tmp_path / "repo", {"src/test/resources/pom.xml": SPRING_POM})
+    assert _build(repo)["planes"] == []
+
+
+def test_a_root_manifest_activates_a_plane_when_only_a_subdirectory_is_scanned(
+        fixture_repo, tmp_path, plane_dir):
+    repo = _repo_with(fixture_repo, tmp_path / "repo", {
+        "pom.xml": SPRING_POM,
+        "services/foo/App.java": "class App {\n  void run() {}\n}\n",
+    })
+    payload = _build(repo, path="services/foo")
+    good = fp.load_planes(plane_dir)[0]["good"]
+    assert payload["planes"] == [{"id": "good", "matched_by": "pom.xml", "rubric_hash": good.rubric_hash}]
+
+
+def test_a_broken_plane_is_skipped_with_a_warning_and_the_scan_continues(
+        fixture_repo, tmp_path, plane_dir):
+    shutil.copytree(FIXTURES / "bad-yaml", plane_dir / "bad-yaml")
+    repo = _repo_with(fixture_repo, tmp_path / "repo", {"pom.xml": SPRING_POM})
+    payload = _build(repo)
+    assert "plane skipped: planes/bad-yaml/plane.yaml: not valid YAML" in payload["warnings"]
+    assert [p["id"] for p in payload["planes"]] == ["good"]
