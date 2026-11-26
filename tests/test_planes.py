@@ -5,6 +5,7 @@ Spec: docs/superpowers/specs/2026-11-20-fracture-planes-design.md
 
 from __future__ import annotations
 
+import dataclasses
 import shutil
 from pathlib import Path
 
@@ -144,3 +145,160 @@ def test_a_plane_superseding_a_skipped_plane_is_skipped_too(tmp_path):
     planes, problems = fp.load_planes(tmp_path)
     assert planes == {}
     assert "planes/top/plane.yaml: supersedes unknown plane 'bad-yaml'" in problems
+
+
+# --------------------------------------------------------------------------
+# Task 2: the completeness gate (AC-2)
+# --------------------------------------------------------------------------
+
+
+def _stub_catalog():
+    """Four Tier A/B patterns, one Tier C, and the typescript/javascript alias."""
+    return {
+        "patterns": [
+            {"id": "S01", "tier": "A", "detectors": {"java": [{"kind": "regex"}]}},
+            {"id": "S02", "tier": "A", "detectors": {"python": [{"kind": "regex"}]}},
+            {"id": "S03", "tier": "B", "detectors": {}},
+            {"id": "S04", "tier": "B", "detectors": {"java": [{"kind": "regex"}]}},
+        ],
+        "tier_c": [{"id": "S20"}],
+        "languages": {"java": {}, "python": {}, "typescript": {}, "javascript": {}},
+        "aliases": {"javascript": "typescript"},
+    }
+
+
+def _complete(loaded, **changes):
+    """`good` with S04 declared, so it passes the stub gate, then changed."""
+    good = loaded[0]["good"]
+    cells = dict(good.cells, S04={"planned": "not yet written"})
+    return dataclasses.replace(good, **{"cells": cells, **changes})
+
+
+def _gate(plane, root=None):
+    return fp.check_planes({plane.id: plane}, _stub_catalog(), repo_root=root)
+
+
+def _with_section(plane, pid, text):
+    return dataclasses.replace(plane, rubric=dict(plane.rubric, **{pid: fp.RubricEntry(pid, text)}))
+
+
+SECTION = "**Counts as protection.** A deadline.\n\n**Does not count.** No deadline."
+
+
+def test_cell_state_covers_all_four_states(loaded):
+    good = loaded[0]["good"]
+    assert fp.cell_state(good, "S01") == "rubric"
+    assert fp.cell_state(good, "S02") == "na"
+    assert fp.cell_state(good, "S03") == "planned"
+    assert fp.cell_state(good, "S04") == "missing"
+
+
+def test_a_complete_plane_passes_the_gate(loaded):
+    assert _gate(_complete(loaded)) == []
+
+
+def test_the_gate_names_each_missing_cell(loaded):
+    plane = dataclasses.replace(loaded[0]["good"], id="only-s01", cells={})
+    problems = _gate(plane)
+    for pid in ("S02", "S03", "S04"):
+        assert any("planes/only-s01" in p and pid in p and "no rubric section" in p for p in problems), problems
+    assert not any("S01" in p for p in problems)
+
+
+def test_both_rubric_and_cell_is_a_problem(loaded):
+    plane = _complete(loaded, id="both")
+    plane = dataclasses.replace(plane, cells=dict(plane.cells, S01={"na": "x"}))
+    assert _gate(plane) == ["planes/both/plane.yaml: S01 has both a rubric section and a cells entry"]
+
+
+def test_unknown_pattern_id_is_a_problem(loaded):
+    in_rubric = _with_section(_complete(loaded, id="unknown"), "S20", SECTION)
+    assert _gate(in_rubric) == ["planes/unknown/rubric.md: S20 is not a Tier A/B pattern"]
+    in_cells = _complete(loaded, id="unknown")
+    in_cells = dataclasses.replace(in_cells, cells=dict(in_cells.cells, S99={"na": "x"}))
+    assert _gate(in_cells) == ["planes/unknown/plane.yaml: S99 is not a Tier A/B pattern"]
+
+
+@pytest.mark.parametrize("label", ["**Counts as protection.**", "**Does not count.**"])
+def test_section_without_the_two_labels_is_a_problem(loaded, label):
+    text = SECTION.replace(label, "")
+    plane = _with_section(_complete(loaded, id="labels"), "S01", text)
+    assert _gate(plane) == [f"planes/labels/rubric.md: S01 lacks a {label} paragraph"]
+
+
+def test_a_label_counts_only_at_the_start_of_a_paragraph(loaded):
+    text = "Mentions **Counts as protection.** inline.\n\n**Does not count.** No deadline."
+    plane = _with_section(_complete(loaded, id="labels"), "S01", text)
+    assert _gate(plane) == ["planes/labels/rubric.md: S01 lacks a **Counts as protection.** paragraph"]
+
+
+def test_oversized_sections_are_a_problem(loaded):
+    at_limit = SECTION + " " + "x" * (700 - len(SECTION) - 1)
+    assert len(at_limit) == 700
+    assert _gate(_with_section(_complete(loaded, id="big"), "S01", at_limit)) == []
+    over = _with_section(_complete(loaded, id="big"), "S01", at_limit + "x")
+    assert _gate(over) == ["planes/big/rubric.md: S01 is 701 characters, over the 700 limit"]
+    general = _complete(loaded, id="big", general="y" * 800)
+    assert _gate(general) == []
+    general = _complete(loaded, id="big", general="y" * 801)
+    assert _gate(general) == ["planes/big/rubric.md: General is 801 characters, over the 800 limit"]
+
+
+LEDGER = "# Ledger\n\n- **Repository:** example/app\n- **Commit:** `abc123`\n- **n:** 12\n"
+
+
+def test_calibrated_needs_no_planned_cells_and_a_ledger(loaded, tmp_path):
+    calibrated = _complete(loaded, id="cal", maturity="calibrated")
+    assert _gate(calibrated, tmp_path) == [
+        "planes/cal/plane.yaml: calibrated, but S03 is planned",
+        "planes/cal/plane.yaml: calibrated, but S04 is planned",
+        "planes/cal: calibrated, but docs/calibration/planes/cal.md is missing or does not name Repository:, Commit: and n:",
+    ]
+    ledger = tmp_path / "docs" / "calibration" / "planes" / "cal.md"
+    ledger.parent.mkdir(parents=True)
+    ledger.write_text(LEDGER.replace("- **n:** 12\n", ""))
+    no_planned = dataclasses.replace(calibrated, cells={"S02": {"na": "x"}, "S03": {"na": "x"}, "S04": {"na": "x"}})
+    assert _gate(no_planned, tmp_path) == [
+        "planes/cal: calibrated, but docs/calibration/planes/cal.md is missing or does not name Repository:, Commit: and n:",
+    ]
+    ledger.write_text(LEDGER)
+    assert _gate(no_planned, tmp_path) == []
+
+
+def test_language_not_in_the_catalog_or_an_alias_key_is_a_problem(loaded):
+    unknown = _complete(loaded, id="lang", languages=("go",))
+    assert _gate(unknown) == ["planes/lang/plane.yaml: language 'go' is not in the catalog"]
+    alias = _complete(loaded, id="lang", languages=("javascript",))
+    assert _gate(alias) == [
+        "planes/lang/plane.yaml: language 'javascript' is an alias of 'typescript'; name 'typescript'"
+    ]
+    assert _gate(_complete(loaded, id="lang", languages=("typescript",))) == []
+
+
+@pytest.mark.parametrize("line, what", [
+    ("# Title", "a heading"),
+    ("#### Sub", "a heading"),
+    ("   ## Indented", "a heading"),
+    ("#", "a heading"),
+    ("===", "a setext underline"),
+    ("  ---", "a setext underline"),
+    ("```", "a code fence"),
+    ("~~~python", "a code fence"),
+])
+def test_a_body_with_a_heading_or_a_fence_is_a_problem(loaded, line, what):
+    plane = _with_section(_complete(loaded, id="struct"), "S01", SECTION + "\n" + line + "\nmore")
+    assert _gate(plane) == [f"planes/struct/rubric.md: S01 contains {what}"]
+    general = _complete(loaded, id="struct", general="Intro.\n" + line)
+    assert _gate(general) == [f"planes/struct/rubric.md: General contains {what}"]
+
+
+@pytest.mark.parametrize("line", ["#hashtag", "- a list item", "    #### indented code", "``inline``"])
+def test_ordinary_markdown_in_a_body_is_not_structure(loaded, line):
+    plane = _with_section(_complete(loaded, id="ok"), "S01", SECTION + "\n" + line)
+    assert _gate(plane) == []
+
+
+def test_the_real_planes_pass_the_gate(catalog):
+    planes, problems = fp.load_planes()
+    assert problems == []
+    assert fp.check_planes(planes, catalog) == []

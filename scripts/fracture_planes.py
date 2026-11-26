@@ -254,3 +254,96 @@ def load_planes(directory: Path | None = None) -> tuple[dict[str, Plane], list[s
         del planes[pid]
         problems.append(f"planes/{pid}/plane.yaml: {text}")
     return dict(sorted(planes.items())), sorted(problems)
+
+
+# --------------------------------------------------------------------------
+# the completeness gate (spec §2.2)
+# --------------------------------------------------------------------------
+
+MAX_SECTION_CHARS = 700
+MAX_GENERAL_CHARS = 800
+LABELS = ("**Counts as protection.**", "**Does not count.**")
+
+# Spec §2.2 writes these with \s; [ \t] is meant, so a match never runs on
+# across a line break.
+_STRUCTURE = (
+    ("a heading", re.compile(r"^[ \t]{0,3}#{1,6}([ \t]|$)", re.MULTILINE)),
+    ("a setext underline", re.compile(r"^[ \t]{0,3}(=+|-+)[ \t]*$", re.MULTILINE)),
+    ("a code fence", re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})", re.MULTILINE)),
+)
+_LEDGER_FIELD = re.compile(r"^[ \t>*-]*(?:\*\*)?(Repository|Commit|n):", re.MULTILINE)
+
+
+def tier_ab_ids(catalog: dict) -> list[str]:
+    """Tier A and B pattern ids, in catalog order."""
+    return [p["id"] for p in catalog.get("patterns") or []
+            if str(p.get("tier", "")).upper() in ("A", "B")]
+
+
+def cell_state(plane: Plane, pattern_id: str) -> str:
+    """`rubric`, `na`, `planned` or `missing`. Both rubric and cell is a gate problem."""
+    if pattern_id in plane.rubric:
+        return "rubric"
+    cell = plane.cells.get(pattern_id)
+    if cell:
+        return next(iter(cell))
+    return "missing"
+
+
+def _body_problems(where: str, name: str, text: str, limit: int) -> list[str]:
+    problems = []
+    if len(text) > limit:
+        problems.append(f"{where}: {name} is {len(text)} characters, over the {limit} limit")
+    for what, pattern in _STRUCTURE:
+        if pattern.search(text):
+            problems.append(f"{where}: {name} contains {what}")
+    return problems
+
+
+def check_planes(planes: dict[str, Plane], catalog: dict, repo_root: Path | None = None) -> list[str]:
+    """Every completeness rule a loaded plane breaks; `[]` when clean.
+
+    `repo_root` is the plugin root, where `docs/calibration/planes/` lives.
+    Unknown and cyclic `supersedes` are load problems and never reach here.
+    """
+    root = Path(repo_root) if repo_root is not None else c.plugin_root()
+    ab = tier_ab_ids(catalog)
+    known = set(ab)
+    languages = catalog.get("languages") or {}
+    aliases = catalog.get("aliases") or {}
+    problems: list[str] = []
+    for pid in sorted(planes):
+        plane = planes[pid]
+        manifest, rubric = f"planes/{pid}/plane.yaml", f"planes/{pid}/rubric.md"
+        for lang in plane.languages:
+            if lang in aliases:
+                problems.append(f"{manifest}: language '{lang}' is an alias of '{aliases[lang]}'; "
+                                f"name '{aliases[lang]}'")
+            elif lang not in languages:
+                problems.append(f"{manifest}: language '{lang}' is not in the catalog")
+        for name in sorted(set(plane.rubric) - known):
+            problems.append(f"{rubric}: {name} is not a Tier A/B pattern")
+        for name in sorted(set(plane.cells) - known):
+            problems.append(f"{manifest}: {name} is not a Tier A/B pattern")
+        for name in ab:
+            if name in plane.rubric and name in plane.cells:
+                problems.append(f"{manifest}: {name} has both a rubric section and a cells entry")
+            elif cell_state(plane, name) == "missing":
+                problems.append(f"{manifest}: {name} has no rubric section and no cells entry")
+        for name, entry in sorted(plane.rubric.items()):
+            for label in LABELS:
+                if not re.search(r"^" + re.escape(label), entry.text, re.MULTILINE):
+                    problems.append(f"{rubric}: {name} lacks a {label} paragraph")
+            problems += _body_problems(rubric, name, entry.text, MAX_SECTION_CHARS)
+        problems += _body_problems(rubric, "General", plane.general, MAX_GENERAL_CHARS)
+        if plane.maturity == "calibrated":
+            for name in ab:
+                if cell_state(plane, name) == "planned":
+                    problems.append(f"{manifest}: calibrated, but {name} is planned")
+            ledger = root / "docs" / "calibration" / "planes" / f"{pid}.md"
+            text = c.read_text(ledger) if ledger.is_file() else None
+            found = set(_LEDGER_FIELD.findall(text or ""))
+            if found != {"Repository", "Commit", "n"}:
+                problems.append(f"planes/{pid}: calibrated, but docs/calibration/planes/{pid}.md is "
+                                f"missing or does not name Repository:, Commit: and n:")
+    return problems
