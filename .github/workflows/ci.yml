@@ -11,9 +11,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Every job has a timeout-minutes of about 4x its slowest green run, so a
+  # hung step (a stalled browser download once ran 3.5 h) fails in minutes,
+  # not at GitHub's 6 h default.
   tests:
     name: tests (python ${{ matrix.python }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -60,6 +64,7 @@ jobs:
     name: html report in chromium
     # The pinned Playwright supports 24.04, not 26.04.
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -88,6 +93,7 @@ jobs:
     # runs here; the full suite stays on Linux.
     name: sample report on macOS
     runs-on: macos-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -102,6 +108,7 @@ jobs:
     # macOS git grep -E missed every call site while Linux passed (#66).
     name: call sites on macOS
     runs-on: macos-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -115,6 +122,7 @@ jobs:
   dogfood:
     name: scan this repo with itself
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -142,6 +150,7 @@ jobs:
   plugin:
     name: plugin manifest
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -186,6 +195,7 @@ jobs:
   guardrail:
     name: guardrail contract
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
