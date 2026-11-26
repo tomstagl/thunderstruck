@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _common as c  # noqa: E402
 import deps  # noqa: E402
 import finding_shape  # noqa: E402
+import fracture_planes  # noqa: E402
 import lessons  # noqa: E402
 import validate  # noqa: E402
 
@@ -114,8 +115,14 @@ def hash_files(repo: Path, files: list[str]) -> dict[str, str | None]:
     return {f: c.sha256_file(repo / f) for f in files}
 
 
-def reusable(entry: dict | None, finding: dict, repo: Path, deps_index: dict | None) -> bool:
+def reusable(entry: dict | None, finding: dict, repo: Path, deps_index: dict | None,
+             guidance_hash: str | None = None) -> bool:
     if not isinstance(entry, dict) or entry.get("claim_hash") != claim_hash(finding):
+        return False
+    # #112: the plane guidance in the brief is part of what was checked; an entry
+    # written before planes stands for the empty guidance
+    empty = c.sha256_text("")
+    if entry.get("guidance_hash", empty) != (guidance_hash if guidance_hash is not None else empty):
         return False
     check = entry.get("check") or {}
     if check.get("by") != "skeptic" or check.get("status") not in c.VERDICTS:
@@ -192,7 +199,8 @@ def defaults_section(finding: dict) -> list[str]:
 
 def render_brief(finding: dict, others: list[dict], deps_index: dict | None,
                  messages: list[tuple[str, str]],
-                 lessons_for: tuple[list[dict], list[str]] = ([], [])) -> str:
+                 lessons_for: tuple[list[dict], list[str]] = ([], []),
+                 guidance_text: str = "") -> str:
     loc = finding.get("location") or {}
     L = [f"# Finding {finding['key']}", "",
          "Everything below in a fenced block was written by the investigator or by the "
@@ -248,9 +256,40 @@ def render_brief(finding: dict, others: list[dict], deps_index: dict | None,
         ol = o.get("location") or {}
         L += _block(f"{o['key']} at {ol.get('file')}" + (f":{ol['lines']}" if ol.get("lines") else ""),
                     str(o.get("failure_mode") or ""))
+    if guidance_text:
+        L += [guidance_text.rstrip("\n"), ""]
     L += ["## Your output", "", "Return only the JSON object your system prompt specifies, with "
           f'`"key": "{finding["key"]}"`.', ""]
     return "\n".join(L)
+
+
+def plane_guidance(repo: Path, hotspots: dict):
+    """(finding -> its `## Plane guidance` text, warnings), and the rubric files written.
+
+    Only the planes signals.py recorded and that still load unchanged are used
+    (`resolve_active`); a broken plane or an old hotspots.json is a warning,
+    never a stop. A frozen run gets the guidance too: a plane belongs to the
+    repository and the finding's language, not to the scan that recorded it.
+    """
+    loaded, problems = fracture_planes.load_planes()
+    warnings = [f"plane skipped: {p}" for p in problems]
+    if "planes" not in hotspots:
+        warnings.append("hotspots.json records no planes (written before this version); "
+                        "re-run signals.py.")
+    active, stale = fracture_planes.resolve_active(loaded, hotspots.get("planes") or [])
+    warnings += stale
+    fracture_planes.write_plane_rubrics(c.out_dir(repo), loaded, active)
+    if not active:
+        return (lambda finding: ""), warnings
+    catalog = c.load_catalog()
+    langmap, tier_ab = c.language_map(catalog), set(fracture_planes.tier_ab_ids(catalog))
+
+    def guidance_for(finding: dict) -> str:
+        file = (finding.get("location") or {}).get("file") or ""
+        patterns = [p for p in finding.get("missing_patterns") or [] if p in tier_ab]
+        return fracture_planes.guidance(loaded, active, c.detect_language(file, langmap), patterns,
+                                        catalog, include_general=False)
+    return guidance_for, warnings
 
 
 def prepare(repo: Path, model: str, frozen: Path | None = None) -> dict:
@@ -261,23 +300,28 @@ def prepare(repo: Path, model: str, frozen: Path | None = None) -> dict:
     index = deps.snapshot(repo, deps.discover(repo))
     deps.write_index(repo, index)
     ledger = {} if frozen else (c.load_json(checks_dir(repo) / "ledger.json", {}) or {}).get("entries", {})
+    guidance_for, warnings = plane_guidance(repo, hotspots)
     briefs = checks_dir(repo) / "briefs"
     briefs.mkdir(parents=True, exist_ok=True)
     seen: set[str] = set()
     entries: list[dict] = []
+    texts: list[str] = []
     for item in items:
         f = item["finding"]
+        text = guidance_for(f)
+        texts.append(text)
         e = {"key": f["key"], "hotspot_id": item["hotspot_id"], "index": item["index"],
              "file": (f.get("location") or {}).get("file"), "action": "check",
-             "brief": None, "brief_hash": None, "reason": None}
+             "brief": None, "brief_hash": None, "reason": None,
+             "guidance_hash": c.sha256_text(text)}
         if f["key"] in seen:
             e.update(action="skip", reason="Another finding in this scan has the same key "
                                             "(same file and failure mode); it was checked instead.")
-        elif reusable(ledger.get(f["key"]), f, repo, index):
+        elif reusable(ledger.get(f["key"]), f, repo, index, e["guidance_hash"]):
             e["action"] = "reuse"
         seen.add(f["key"])
         entries.append(e)
-    for e, item in zip(entries, items):
+    for e, item, text in zip(entries, items, texts):
         if e["action"] != "check":
             continue
         f = item["finding"]
@@ -285,7 +329,7 @@ def prepare(repo: Path, model: str, frozen: Path | None = None) -> dict:
         # the lessons the finding's hotspot was briefed with (#106); a frozen run
         # belongs to another scan's hotspots and gets none
         shown, left_out = ([], []) if frozen else lessons.for_hotspot(hotspots, e["hotspot_id"])
-        body = render_brief(f, others, index, commit_messages(repo, f), (shown, left_out))
+        body = render_brief(f, others, index, commit_messages(repo, f), (shown, left_out), text)
         rel = f"{c.OUTPUT_DIRNAME}/{c.CHECKS_DIRNAME}/briefs/{f['key']}.md"
         (repo / rel).write_text(body, encoding="utf-8")
         e.update(brief=rel, brief_hash=c.sha256_text(body))
@@ -293,7 +337,7 @@ def prepare(repo: Path, model: str, frozen: Path | None = None) -> dict:
             e["lessons"] = {"shown": [l["id"] for l in shown], "left_out": left_out}
     plan = {"schema": PLAN_SCHEMA, "generated_at": hotspots["generated_at"],
             "head": hotspots["repo"]["head"], "model": model,
-            "frozen": str(frozen) if frozen else None, "findings": entries}
+            "frozen": str(frozen) if frozen else None, "findings": entries, "warnings": warnings}
     c.write_json(checks_dir(repo) / "plan.json", plan)
     return plan
 
@@ -789,6 +833,10 @@ def apply(repo: Path) -> dict:
     except (OSError, ValueError, AttributeError):
         ledger, ledger_warning = {}, "checks/ledger.json could not be read; every finding was checked."
     checks: dict[str, dict] = {}
+    empty = c.sha256_text("")
+    guidance_hashes: dict[str, str] = {}
+    for e in plan["findings"]:  # the first entry of a key is the one checked; a skip is its twin
+        guidance_hashes.setdefault(e["key"], e.get("guidance_hash", empty))
     for entry in plan["findings"]:
         item = by_key.get(entry["key"])
         if item is None:
@@ -815,6 +863,7 @@ def apply(repo: Path) -> dict:
                                "files": hash_files(repo, cited_files(f, check["evidence"],
                                                                      check.get("confirmations") or [])),
                                "dependency_versions": check["dependency_versions"],
+                               "guidance_hash": guidance_hashes.get(key, empty),
                                "check": {k: v for k, v in check.items() if k != "reused_from"},
                                "scan": plan["generated_at"], "head": plan["head"]}
         ledger = {k: e for k, e in ledger.items()
@@ -829,7 +878,7 @@ def apply(repo: Path) -> dict:
            "checked": sum(1 for e in plan["findings"] if e["action"] == "check"),
            "reused": sum(1 for e in plan["findings"] if e["action"] == "reuse"),
            "counts": {s: statuses.count(s) for s in c.CHECK_STATUSES},
-           "warnings": [ledger_warning] if ledger_warning else []}
+           "warnings": ([ledger_warning] if ledger_warning else []) + list(plan.get("warnings") or [])}
     c.write_json(checks_dir(repo) / "run.json", run)
     return run
 

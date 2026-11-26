@@ -934,3 +934,215 @@ def test_bundle_main_warns_about_a_stale_plane(scanned_copy, tmp_path, monkeypat
     assert "plane ts changed after signals.py ran" in capsys.readouterr().err
     assert not (scanned_copy / ".thunderstruck" / "planes").exists()
     assert "## Plane guidance" not in (scanned_copy / ".thunderstruck" / "bundles" / "H01.md").read_text()
+
+
+# --------------------------------------------------------------------------
+# Task 6: plane guidance in the skeptic's brief (AC-5)
+# --------------------------------------------------------------------------
+
+import verify  # noqa: E402
+
+S01_TEXT = "**Counts as protection.** An explicit deadline on the client the call uses."
+CHECKS = Path(".thunderstruck") / "checks"
+
+
+def _java_finding():
+    return {"key": "a" * 12, "location": {"file": "src/main/java/App.java", "lines": "3"},
+            "missing_patterns": ["S01"], "failure_mode": "The call has no deadline.",
+            "confidence": "high", "confidence_rationale": "THE-RATIONALE", "evidence": []}
+
+
+def _labels(repo):
+    return next(i for i in verify.load_findings(repo) if i["finding"]["location"]["file"].endswith("labels.ts"))
+
+
+def _by_file(plan, fragment):
+    return next(e for e in plan["findings"] if fragment in e["file"])
+
+
+def _activate(repo, tmp_path, monkeypatch, languages="typescript"):
+    """A `ts` plane (the `good` fixture, so one S01 section) recorded as selected."""
+    planes = _write_planes_dir(tmp_path, monkeypatch, ("ts", languages))
+    _set_recorded(repo, _record(planes["ts"]))
+    return planes
+
+
+def _brief(repo, entry):
+    return (repo / entry["brief"]).read_text()
+
+
+def test_brief_carries_the_rubric_for_the_findings_patterns(loaded, catalog):
+    plane = _plane(loaded, "java-x", languages=("java",),
+                   sections={"S01": _body("S01"), "S02": _body("S02")})
+    text = fp.guidance({"java-x": plane}, ["java-x"], "java", ["S01"], catalog, include_general=False)
+    brief = verify.render_brief(_java_finding(), [], None, [], guidance_text=text)
+    assert _body("S01") in brief and _body("S02") not in brief
+    assert plane.general not in brief  # the brief carries sections, never General
+    assert brief.index("## Other findings") < brief.index("## Plane guidance") < brief.index("## Your output")
+    assert "full rubric: `.thunderstruck/planes/java-x.md`" in brief
+
+
+def test_brief_without_an_active_plane_has_no_plane_section():
+    f = _java_finding()
+    plain = verify.render_brief(f, [], None, [])
+    assert verify.render_brief(f, [], None, [], guidance_text="") == plain
+    assert "Plane guidance" not in plain
+
+
+def test_prepare_puts_guidance_only_in_briefs_whose_patterns_have_a_section(
+        validated_repo, tmp_path, monkeypatch):
+    _activate(validated_repo, tmp_path, monkeypatch)
+    plan = verify.prepare(validated_repo, "sonnet")
+    labels, releases = _by_file(plan, "labels.ts"), _by_file(plan, "releases.ts")
+    assert S01_TEXT in _brief(validated_repo, labels)
+    assert "## Plane guidance" not in _brief(validated_repo, releases)  # S02, S10: no section
+    assert (validated_repo / ".thunderstruck" / "planes" / "ts.md").is_file()
+    assert labels["guidance_hash"] != c.sha256_text("") == releases["guidance_hash"]
+    assert plan["warnings"] == []
+
+
+def test_brief_hash_moves_with_the_rubric_and_only_then(validated_repo, tmp_path, monkeypatch):
+    without = {e["key"]: e["brief_hash"] for e in verify.prepare(validated_repo, "sonnet")["findings"]}
+    _activate(validated_repo, tmp_path, monkeypatch)
+    first = {e["key"]: e["brief_hash"] for e in verify.prepare(validated_repo, "sonnet")["findings"]}
+    assert {e["key"]: e["brief_hash"] for e in verify.prepare(validated_repo, "sonnet")["findings"]} == first
+    rubric = tmp_path / "plugin-planes" / "ts" / "rubric.md"
+    rubric.write_text(rubric.read_text().replace("explicit deadline", "explicit, bounded deadline"))
+    _set_recorded(validated_repo, _record(fp.load_planes(tmp_path / "plugin-planes")[0]["ts"]))
+    edited = {e["key"]: e["brief_hash"] for e in verify.prepare(validated_repo, "sonnet")["findings"]}
+    key = _labels(validated_repo)["finding"]["key"]
+    assert first[key] != without[key] and edited[key] not in (first[key], without[key])
+    assert {k: v for k, v in edited.items() if k != key} == {k: v for k, v in without.items() if k != key}
+
+
+def _ledger(repo, item, **extra):
+    f = item["finding"]
+    entry = {"location": f["location"]["file"], "claim_hash": verify.claim_hash(f),
+             "files": verify.hash_files(repo, verify.cited_files(f)), "dependency_versions": {},
+             "check": {"status": "upheld", "by": "skeptic", "reason": "held", "model": "claude-haiku-5-5"},
+             "scan": "2026-01-01T00:00:00+00:00", "head": "0" * 40, **extra}
+    c.write_json(repo / CHECKS / "ledger.json",
+                 {"schema": verify.LEDGER_SCHEMA, "entries": {f["key"]: entry}})
+
+
+def test_a_settled_verdict_is_not_reused_when_the_guidance_changed(validated_repo, tmp_path, monkeypatch):
+    item = _labels(validated_repo)
+    _ledger(validated_repo, item, guidance_hash=c.sha256_text(""))
+    _activate(validated_repo, tmp_path, monkeypatch)
+    plan = verify.prepare(validated_repo, "sonnet")
+    entry = _by_file(plan, "labels.ts")
+    assert entry["action"] == "check"
+    _ledger(validated_repo, item, guidance_hash=entry["guidance_hash"])
+    assert _by_file(verify.prepare(validated_repo, "sonnet"), "labels.ts")["action"] == "reuse"
+    assert verify.reusable({"guidance_hash": "x"}, item["finding"], validated_repo, None, "y") is False
+
+
+def test_an_entry_without_guidance_hash_is_reused_when_no_plane_applies(validated_repo, tmp_path, monkeypatch):
+    item = _labels(validated_repo)
+    _ledger(validated_repo, item)  # written before planes: no guidance_hash
+    assert _by_file(verify.prepare(validated_repo, "sonnet"), "labels.ts")["action"] == "reuse"
+    _activate(validated_repo, tmp_path, monkeypatch, languages="python")  # covers no .ts file
+    assert _by_file(verify.prepare(validated_repo, "sonnet"), "labels.ts")["action"] == "reuse"
+    (tmp_path / "ts").mkdir()
+    _activate(validated_repo, tmp_path / "ts", monkeypatch)
+    assert _by_file(verify.prepare(validated_repo, "sonnet"), "labels.ts")["action"] == "check"
+
+
+def test_apply_records_the_guidance_hash_and_the_verdict_is_then_reused(
+        validated_repo, tmp_path, monkeypatch):
+    _activate(validated_repo, tmp_path, monkeypatch)
+    entry = _by_file(verify.prepare(validated_repo, "sonnet"), "labels.ts")
+    result = tmp_path / "verdict.json"
+    result.write_text(json.dumps({"key": entry["key"], "verdict": "upheld", "reason": "r", "holds": None,
+                                  "refuted_claims": [], "evidence": [], "dependencies_read": [],
+                                  "duplicate_of": None}))
+    assert verify.main(["save", "--repo", str(validated_repo), "--key", entry["key"],
+                        "--from", str(result)]) == 0
+    assert verify.apply(validated_repo)["counts"]["upheld"] == 1
+    ledger = c.load_json(validated_repo / CHECKS / "ledger.json")["entries"]
+    assert ledger[entry["key"]]["guidance_hash"] == entry["guidance_hash"]
+    assert _by_file(verify.prepare(validated_repo, "sonnet"), "labels.ts")["action"] == "reuse"
+
+
+def test_a_duplicate_key_records_the_checked_entrys_guidance_hash(validated_repo, tmp_path, monkeypatch):
+    _activate(validated_repo, tmp_path, monkeypatch)
+    entry = _by_file(verify.prepare(validated_repo, "sonnet"), "labels.ts")
+    path = validated_repo / CHECKS / "plan.json"
+    plan = c.load_json(path)
+    plan["findings"].append(dict(entry, action="skip", brief=None, brief_hash=None,
+                                 guidance_hash="sha256:the-skipped-twin", reason="same key"))
+    c.write_json(path, plan)
+    result = tmp_path / "verdict.json"
+    result.write_text(json.dumps({"key": entry["key"], "verdict": "upheld", "reason": "r", "holds": None,
+                                  "refuted_claims": [], "evidence": [], "dependencies_read": [],
+                                  "duplicate_of": None}))
+    assert verify.main(["save", "--repo", str(validated_repo), "--key", entry["key"],
+                        "--from", str(result)]) == 0
+    verify.apply(validated_repo)
+    ledger = c.load_json(validated_repo / CHECKS / "ledger.json")["entries"]
+    assert ledger[entry["key"]]["guidance_hash"] == entry["guidance_hash"]
+
+def test_a_plan_warning_reaches_run_json(validated_repo, tmp_path, monkeypatch):
+    planes = _write_planes_dir(tmp_path, monkeypatch, ("ts", "typescript"))
+    _set_recorded(validated_repo, [dict(_record(planes["ts"])[0], rubric_hash="sha256:old")])
+    plan = verify.prepare(validated_repo, "sonnet")
+    assert len(plan["warnings"]) == 1 and plan["warnings"][0].startswith("plane ts changed after signals.py ran")
+    assert verify.apply(validated_repo)["warnings"] == plan["warnings"]
+    path = validated_repo / CHECKS / "plan.json"
+    old = c.load_json(path)
+    del old["warnings"]
+    for e in old["findings"]:
+        del e["guidance_hash"]
+    c.write_json(path, old)
+    assert verify.apply(validated_repo)["warnings"] == []
+
+
+def test_a_frozen_run_gets_the_guidance(validated_repo, tmp_path, monkeypatch):
+    _activate(validated_repo, tmp_path, monkeypatch, languages="python")
+    frozen = Path(__file__).resolve().parent.parent / "docs" / "calibration" / "correctness" / "celery" / "scan"
+    plan = verify.prepare(validated_repo, "sonnet", frozen)
+    by_key = {i["finding"]["key"]: i["finding"] for i in verify.load_frozen(frozen)}
+    s01 = [e for e in plan["findings"] if e["action"] == "check"
+           and "S01" in (by_key[e["key"]].get("missing_patterns") or [])]
+    assert s01 and all(S01_TEXT in _brief(validated_repo, e) for e in s01)
+
+
+def test_a_plane_edited_after_signals_is_skipped_with_a_warning_in_the_plan(
+        validated_repo, tmp_path, monkeypatch):
+    planes = _write_planes_dir(tmp_path, monkeypatch, ("ts", "typescript"))
+    _set_recorded(validated_repo, [dict(_record(planes["ts"])[0], rubric_hash="sha256:old")])
+    plan = verify.prepare(validated_repo, "sonnet")
+    assert plan["warnings"] == [
+        f"plane ts changed after signals.py ran (recorded sha256:old, now {planes['ts'].rubric_hash}); "
+        f"its guidance is left out. Re-run signals.py."]
+    assert "## Plane guidance" not in _brief(validated_repo, _by_file(plan, "labels.ts"))
+    assert not (validated_repo / ".thunderstruck" / "planes").exists()
+
+
+def test_a_broken_plane_does_not_stop_verify_prepare(validated_repo, tmp_path, monkeypatch):
+    planes = _write_planes_dir(tmp_path, monkeypatch, ("ts", "typescript"), extra=("bad-yaml",))
+    _set_recorded(validated_repo, _record(planes["ts"]))
+    plan = verify.prepare(validated_repo, "sonnet")
+    assert "plane skipped: planes/bad-yaml/plane.yaml: not valid YAML" in plan["warnings"]
+    assert S01_TEXT in _brief(validated_repo, _by_file(plan, "labels.ts"))
+
+
+def test_verify_prepare_reads_a_hotspots_json_without_a_planes_key(validated_repo, tmp_path, monkeypatch):
+    _write_planes_dir(tmp_path, monkeypatch, ("ts", "typescript"))
+    _set_recorded(validated_repo, None)
+    plan = verify.prepare(validated_repo, "sonnet")
+    assert plan["warnings"] == [
+        "hotspots.json records no planes (written before this version); re-run signals.py."]
+    assert all("## Plane guidance" not in _brief(validated_repo, e) for e in plan["findings"] if e["brief"])
+
+
+def test_the_brief_still_withholds_the_claimed_confidence(validated_repo, tmp_path, monkeypatch):
+    _activate(validated_repo, tmp_path, monkeypatch)
+    entry = _by_file(verify.prepare(validated_repo, "sonnet"), "labels.ts")
+    brief = _brief(validated_repo, entry)
+    f = _labels(validated_repo)["finding"]
+    assert S01_TEXT in brief and f["failure_mode"] in brief
+    assert f["confidence_rationale"] not in brief
+    for word in ("confidence", "history", "notes"):
+        assert f"`{word}`" not in brief and f"## {word.title()}" not in brief
+    assert str(validated_repo) not in brief and str(tmp_path) not in brief

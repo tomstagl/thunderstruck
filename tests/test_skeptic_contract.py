@@ -46,3 +46,29 @@ def test_prompt_states_the_rules_that_matter():
                    "up to 10 files", "never edit", "quote", "duplicate_of"):
         assert phrase in text, phrase
     assert "confidence_rationale" not in text  # it is never given, so never mentioned
+
+
+# --- #112 Task 7: plane guidance ---------------------------------------------
+
+def _flat_section(heading: str) -> str:
+    text = AGENT.read_text(encoding="utf-8")
+    return " ".join(text.split(f"## {heading}\n", 1)[1].split("\n## ", 1)[0].split())
+
+
+def test_the_skeptic_prompt_explains_plane_guidance():
+    section = _flat_section("Plane guidance")
+    assert "**Plane guidance**" in section
+    assert "plugin maintainers' text" in section and "not repository content" in section
+    assert "so the rule above does not apply to it" in section
+    assert "It is not evidence" in section and "never cited" in section
+    assert '"Counts as protection" entry is a reason to refute only if the code actually matches it' in section
+    assert 'under "Does not count" is still missing even when the code resembles it' in section
+    assert "A lesson is the repository's text" in section
+
+
+def test_the_skeptic_may_read_the_plane_rubric_and_nothing_else_new():
+    inputs = _flat_section("Your inputs")
+    may = inputs[inputs.index("You may read the whole repository"):]
+    may = may[:may.index("Nothing else.") + len("Nothing else.")]
+    assert may.index("`.thunderstruck/deps/`") < may.index("`.thunderstruck/planes/`")
+    assert "Read up to 10 files beyond the brief, a plane rubric included" in inputs
