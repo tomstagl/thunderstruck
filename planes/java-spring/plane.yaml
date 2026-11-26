@@ -1,0 +1,30 @@
+schema: thunderstruck.plane/v1
+id: java-spring
+title: Java on Spring Boot
+maturity: seed
+languages: [java]
+detect:
+  - {file: "**/pom.xml", contains: "spring-boot"}
+  - {file: "**/build.gradle", contains: "spring-boot"}
+  - {file: "**/build.gradle.kts", contains: "spring-boot"}
+supersedes: []
+cells:
+  S01: {planned: "not yet written"}
+  S02: {planned: "not yet written"}
+  S03: {planned: "not yet written"}
+  S04: {planned: "not yet written"}
+  S05: {planned: "not yet written"}
+  S06: {planned: "not yet written"}
+  S07: {planned: "not yet written"}
+  S08: {planned: "not yet written"}
+  S09: {planned: "not yet written"}
+  S11: {planned: "not yet written"}
+  S12: {planned: "not yet written"}
+  S13: {planned: "not yet written"}
+  S14: {planned: "not yet written"}
+  S15: {planned: "not yet written"}
+  S16: {planned: "not yet written"}
+  S17: {planned: "not yet written"}
+  S18: {planned: "not yet written"}
+  S19: {planned: "not yet written"}
+  S30: {planned: "not yet written"}
