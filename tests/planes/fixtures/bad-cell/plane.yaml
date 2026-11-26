@@ -1,0 +1,10 @@
+schema: thunderstruck.plane/v1
+id: bad-cell
+title: Example stack
+maturity: seed
+languages: [java]
+detect:
+  - {file: "**/pom.xml", contains: "spring-boot"}
+supersedes: []
+cells:
+  S02: {na: ""}

@@ -1,0 +1,11 @@
+schema: thunderstruck.plane/v1
+id: bad-detect
+title: x
+maturity: seed
+languages: [java]
+detect:
+  - {contains: "spring-boot"}
+supersedes: []
+cells:
+  S02: {na: "no such failure on this example stack"}
+  S03: {planned: "not yet written"}

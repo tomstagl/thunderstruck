@@ -1,0 +1,10 @@
+schema: thunderstruck.plane/v1
+id: hash-b
+title: Example stack
+maturity: calibrated
+languages: [java]
+detect:
+  - {file: "**/pom.xml", contains: "spring-boot"}
+supersedes: []
+cells:
+  S02: {planned: "a different reason"}
