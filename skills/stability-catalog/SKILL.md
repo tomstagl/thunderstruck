@@ -74,5 +74,12 @@ retry layer with capped jittered backoff that honours `Retry-After`, a
 persisted cursor on anything that loops, an explicit bound on every result
 set, and a TTL on every cache.
 
+On some stacks a pattern's protection looks different. For Spring Boot,
+`${CLAUDE_PLUGIN_ROOT}/planes/java-spring/rubric.md` says what counts as
+protection, and what does not, for retry layers (S10), blocking calls on
+reactive threads (S27), locks held across I/O (S28) and N+1 lazy loading (S29).
+`${CLAUDE_SKILL_DIR}/references/planes.md` shows which patterns each stack
+covers.
+
 To find where an existing repository violates these, run
 `/thunderstruck-scan`.
