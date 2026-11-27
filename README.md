@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/svg/thunderstruck-lockup-vertical-dark.svg">
+    <img src="brand/svg/thunderstruck-lockup-vertical-light.svg" alt="thunderstruck" width="260">
+  </picture>
+</p>
+
 # thunderstruck
 
 **Resilience forensics for your codebase. Find the thundering herd before it
@@ -86,6 +93,7 @@ Written to `.thunderstruck/` in the scanned repository:
 | `tickets/<key>.md` | A ticket for one finding, written by `/thunderstruck-ticket`, ready to paste into your tracker |
 | `hotspots.json` | The deterministic layer's output, inspectable |
 | `bundles/` | Exactly what each investigator was shown; source lines carry their own file line numbers |
+| `planes/<id>.md` | The full rubric of each fracture plane the scan selected, which the agents may read |
 | `findings/` | Per-hotspot results, keyed by bundle hash |
 | `reproductions/<key>.json` | The outcome of a `/thunderstruck-verify` test run, recorded by script: shown beside the check, and as stale once the test or the finding changes. Display only; a re-scan keeps it |
 | `previous/<date>-<head>/` | A copy of the finished scan a new, different scan replaced: its report, findings, verdicts and usage. The last three are kept; a re-run of the same scan copies nothing. `--since previous` repeats the earlier scan's window |
@@ -158,6 +166,9 @@ finding_ticket.py  tickets/<key>.md, from report.json and git (a model may propo
 ```
 
 Verification (the three middle steps) is skipped with `--no-verify`.
+
+`signals.py` also picks the [fracture planes](#fracture-planes) that fit the
+repository. Their guidance goes into each bundle and each skeptic's brief.
 
 **The rule: models for judgment, scripts for anything that must be
 reproducible.** Detection, scoring, evidence checking and rendering never
@@ -303,11 +314,7 @@ branch, since your repository does not have them.
 
 23 stability patterns drawn from Nygard's *Release It!*, the Amazon Builders'
 Library, the Google SRE book, and the metastable-failure literature.
-[Full list](skills/stability-catalog/references/patterns.md). On a stack the
-plugin recognises from your tracked files, a *fracture plane* adds the
-maintainers' guidance on what counts as protection there; the first,
-`java-spring`, covers four Spring-specific patterns
-([coverage matrix](skills/stability-catalog/references/planes.md)).
+[Full list](skills/stability-catalog/references/patterns.md).
 
 Tier A: timeouts · capped backoff with full jitter · honouring `Retry-After` ·
 transient-only retry · client-side rate limiting · request prioritisation ·
@@ -322,6 +329,24 @@ Tier A, JVM-specific: no blocking calls on event-loop threads · locks and
 waits with a bound · bounded query fan-out (no N+1 lazy loading).
 
 Tier A, configuration: liveness probes that check only the process itself.
+
+### Fracture planes
+
+A pattern says what fails. It does not say what counts as protection on your
+stack: the same `RestTemplate` call is correct in a Spring MVC controller and
+starves the event loop in a WebFlux handler. A *fracture plane* is the plugin
+maintainers' guidance on exactly that, pattern by pattern, for one stack.
+
+A script picks the planes from your tracked files, never the model. The first
+plane, `java-spring`, is active when a `pom.xml` or Gradle build names
+`spring-boot`. It covers retry layers (S10), blocking calls on reactive threads
+(S27), locks held across I/O (S28) and N+1 lazy loading (S29); the other
+patterns are marked planned in the
+[coverage matrix](skills/stability-catalog/references/planes.md). The guidance
+tells an investigator what to look for and a skeptic what may refute a claim.
+It is never evidence: a finding still needs code that fails. The report names
+each plane applied and the file that matched it. A repository no plane fits is
+scanned exactly as before.
 
 ### The metastability lens
 
@@ -566,7 +591,8 @@ mostly catalog work — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE). The logo is in [brand/](brand/README.md); its fonts
+are IBM Plex under the [SIL OFL](brand/fonts/LICENSE.txt).
 
 The name is an ordinary English word describing what a thundering herd does to
 a service. No affiliation with, or reference to, any band or recording is
